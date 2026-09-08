@@ -14,8 +14,8 @@ the test suite would catch if it were wrong.
 from functional_process.cottax._harness import (
     Tier1Contract,
     bounds_from_iteration_variables,
-    legacy_sample,
 )
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.density_limits import (
     calculate_ecrh_density_limit,
     calculate_sudo_density_limit,
@@ -74,39 +74,7 @@ class TestSudoDensityLimit(Tier1Contract):
     # The first two points are from test_stellarator.py::test_stdlim in PROCESS's own
     # suite, itself generated from helias_5b.IN.DAT — already-validated realistic
     # operating points, reused rather than re-derived.
-    samples = [
-        legacy_sample(
-            "stdlim-helias5b-0",
-            b_plasma_toroidal_on_axis=5.5,
-            p_plasma_loss_mw=432.20449197454559,
-            rmajor=22,
-            rminor=1.7842660178426601,
-            nd_plasma_electrons_vol_avg=2.0914e20,
-            nd_plasma_electron_line=2.357822619799476e20,
-        ),
-        legacy_sample(
-            "stdlim-helias5b-1",
-            b_plasma_toroidal_on_axis=5.5,
-            p_plasma_loss_mw=431.98698920075435,
-            rmajor=22,
-            rminor=1.7842660178426601,
-            nd_plasma_electrons_vol_avg=2.0914e20,
-            nd_plasma_electron_line=2.357822619799476e20,
-        ),
-        # Not from a PROCESS test: a deliberately out-of-domain point, since every
-        # bound above is positive and fuzzing alone would never produce one. This is
-        # what exercises `reference_domain_errors` — PROCESS raises here, so the port
-        # is required to return NaN rather than a finite number.
-        legacy_sample(
-            "out-of-domain-negative-power",
-            b_plasma_toroidal_on_axis=5.5,
-            p_plasma_loss_mw=-1.0,
-            rmajor=22,
-            rminor=1.7842660178426601,
-            nd_plasma_electrons_vol_avg=2.0914e20,
-            nd_plasma_electron_line=2.357822619799476e20,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **bounds_from_iteration_variables(
@@ -133,16 +101,7 @@ class TestEcrhDensityLimit(Tier1Contract):
     # A precondition, not a domain to sample: see the port's docstring.
     static_argnames = ("i_plasma_pedestal",)
 
-    samples = [
-        # tests/unit/models/stellarator/test_stellarator.py::test_stdlim_ecrh,
-        # generated from stellarator_helias.IN.DAT.
-        legacy_sample(
-            "stdlim-ecrh-helias",
-            gyro_frequency_max=400000000000,
-            b_plasma_toroidal_on_axis=6.9100000000000001,
-            i_plasma_pedestal=0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **bounds_from_iteration_variables("b_plasma_toroidal_on_axis"),

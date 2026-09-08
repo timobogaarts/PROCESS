@@ -1,0 +1,287 @@
+{
+ "TestDivertorGeometryConventional": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "kappa": 1.85,
+    "triang": 0.5,
+    "plsepi": 1.0,
+    "plsepo": 1.5,
+    "plleni": 1.0,
+    "plleno": 1.0,
+    "betai": 1.0,
+    "betao": 1.0
+   }
+  }
+ ],
+ "TestDivertorGeometrySphericalTokamak": [
+  {
+   "label": "spherical_tokamak_eval-input",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 2.5
+   }
+  }
+ ],
+ "TestDrTfInboardFromWindingPack": [
+  {
+   "label": "large_tokamak_eval-converged-wp",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_tf_wp_with_insulation": 0.8434020284970785,
+    "dr_tf_plasma_case": 0.07491064938739048,
+    "dr_tf_nose_case": 0.2816873221155309
+   }
+  }
+ ],
+ "TestDrTfWpWithInsulation": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_tf_inboard": 1.2,
+    "dr_tf_plasma_case": 0.07491064938739048,
+    "dr_tf_nose_case": 0.2816873221155309
+   }
+  }
+ ],
+ "TestDzBlktUpper": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_blkt_inboard": 0.7,
+    "dr_blkt_outboard": 1.0
+   }
+  }
+ ],
+ "TestOutboardBuildChain": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "dr_fw_outboard": 0.018000000000000002,
+    "dr_blkt_outboard": 1.0,
+    "dr_shld_outboard": 0.8,
+    "dr_shld_blkt_gap": 0.02,
+    "dr_vv_outboard": 0.3,
+    "gapomin": 0.234,
+    "dr_shld_thermal_outboard": 0.05,
+    "dr_tf_shld_gap": 0.05,
+    "dr_tf_inboard": 1.2,
+    "ripple_b_tf_plasma_edge_max": 0.6,
+    "n_tf_coils": 16.0,
+    "dx_tf_wp_primary_toroidal": 1.2533980800120443,
+    "dx_tf_wp_insulation": 0.008,
+    "dx_tf_wp_insertion_gap": 0.01
+   }
+  }
+ ],
+ "TestRCpTop": [
+  {
+   "label": "st_regression-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 1.3405301988363134
+   }
+  },
+  {
+   "label": "spherical_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 1.208855401921066
+   }
+  }
+ ],
+ "TestRCpTopSuperconductingSphericalTokamak": [
+  {
+   "label": "st_regression-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 1.3405301988363134
+   }
+  },
+  {
+   "label": "spherical_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 1.208855401921066
+   }
+  }
+ ],
+ "TestRShldInboardInner": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_blkt_inboard": 0.7,
+    "dr_shld_inboard": 0.3
+   }
+  }
+ ],
+ "TestRbld": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_sh_inboard_out": 4.6186074717418535,
+    "dr_shld_blkt_gap": 0.02,
+    "dr_blkt_inboard": 0.7,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "rminor": 2.6666666666666665
+   }
+  }
+ ],
+ "TestRipplePictureFrame": [
+  {
+   "label": "spherical_tokamak_eval-inputs",
+   "provenance": "legacy",
+   "kwargs": {
+    "ripple_b_tf_plasma_edge_max": 1.0,
+    "r_tf_outboard_mid": 10.274594873354488,
+    "n_tf_coils": 12.0,
+    "rmajor": 4.5,
+    "rminor": 2.5
+   }
+  }
+ ],
+ "TestRippleSuperconducting": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "ripple_b_tf_plasma_edge_max": 0.6,
+    "r_tf_outboard_mid": 14.978406000060053,
+    "n_tf_coils": 16.0,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "dx_tf_wp_primary_toroidal": 1.2533980800120443,
+    "dx_tf_wp_insulation": 0.008,
+    "dx_tf_wp_insertion_gap": 0.01
+   }
+  },
+  {
+   "label": "large_tokamak_eval-unrippled-leg",
+   "provenance": "legacy",
+   "kwargs": {
+    "ripple_b_tf_plasma_edge_max": 0.6,
+    "r_tf_outboard_mid": 13.988666666666669,
+    "n_tf_coils": 16.0,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "dx_tf_wp_primary_toroidal": 1.2533980800120443,
+    "dx_tf_wp_insulation": 0.008,
+    "dx_tf_wp_insertion_gap": 0.01
+   }
+  }
+ ],
+ "TestTfInboardRadii": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_bore": 2.003843190236783,
+    "dr_cs": 0.546816593988753,
+    "fseppc": 350000000.0,
+    "fcspc": 0.6,
+    "sigallpc": 300000000.0,
+    "dr_cs_tf_gap": 0.08,
+    "dr_tf_inboard": 1.2
+   }
+  }
+ ],
+ "TestTfInboardRadiiNoCsPrecomp": [
+  {
+   "label": "spherical_tokamak_eval-input",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_bore": 0.23375250334739459,
+    "dr_cs": 0.20016400484967947,
+    "dr_cs_tf_gap": 0.0,
+    "dr_tf_inboard": 0.9
+   }
+  }
+ ],
+ "TestTfTopHeightDoubleNull": [
+  {
+   "label": "large_tokamak_eval-converged-geometry",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 8.818217164127493,
+    "dr_tf_inboard": 1.2
+   }
+  }
+ ],
+ "TestTfTopHeightSingleNull": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 8.818217164127493,
+    "dr_tf_inboard": 1.2,
+    "dr_tf_shld_gap": 0.05,
+    "dz_shld_thermal": 0.05,
+    "dz_shld_vv_gap": 0.163,
+    "dz_vv_upper": 0.3,
+    "dz_shld_upper": 0.6,
+    "dr_shld_blkt_gap": 0.02,
+    "dz_blkt_upper": 0.85,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "dz_fw_plasma_gap": 0.6,
+    "z_plasma_xpoint_upper": 4.933333333333334
+   }
+  }
+ ],
+ "TestVacuumVesselAndShieldRadii": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 3.8986074717418546,
+    "dr_tf_shld_gap": 0.05,
+    "dr_shld_thermal_inboard": 0.05,
+    "dr_shld_vv_gap_inboard": 0.02,
+    "dr_vv_inboard": 0.3,
+    "dr_shld_inboard": 0.3
+   }
+  }
+ ],
+ "TestZPlasmaXpoint": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 2.6666666666666665,
+    "kappa": 1.85
+   }
+  }
+ ],
+ "TestZTfInsideHalf": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_upper": 4.933333333333334,
+    "dz_xpoint_divertor": 2.001883830794158,
+    "dz_divertor": 0.62,
+    "dz_shld_lower": 0.7,
+    "dz_vv_lower": 0.3,
+    "dz_shld_vv_gap": 0.163,
+    "dz_shld_thermal": 0.05,
+    "dr_tf_shld_gap": 0.05
+   }
+  }
+ ]
+}

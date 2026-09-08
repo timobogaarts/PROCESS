@@ -25,7 +25,8 @@ so the oracle sees exactly the state PROCESS's own routine sees. See `fields.md`
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
@@ -314,40 +315,7 @@ class TestCalculateBFieldAtPoint(Tier1Contract):
     # `ohcalc`'s end-of-flat-top call: the six PF coils plus the plasma, evaluated at
     # the CS's inner edge. Captured from a live traced run of `pfcoil()` on
     # `large_tokamak_eval.IN.DAT`.
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            r_current_loop=np.array([
-                5.566666666666666,
-                5.566666666666666,
-                16.868931216641325,
-                16.868931216641325,
-                15.359714853856374,
-                15.359714853856374,
-                8.0,
-            ]),
-            z_current_loop=np.array([
-                9.644333333333332,
-                -10.878217164127493,
-                2.6666666666666665,
-                -2.6666666666666665,
-                7.466666666666666,
-                -7.466666666666666,
-                0.0,
-            ]),
-            c_current_loop=np.array([
-                -543745.9921847787,
-                -3621834.290901363,
-                -7673761.566656593,
-                -7673761.566656593,
-                -4929427.869206218,
-                -4929427.869206218,
-                16091095.408042267,
-            ]),
-            r_test_point=2.003843190236783,
-            z_test_point=0.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_current_loop": (np.full(5, 1.0), np.full(5, 20.0)),
@@ -365,14 +333,7 @@ class TestCalculateCoilCurrentWaveform(Tier1Contract):
     reference = _reference_coil_current_waveform
     ported = calculate_coil_current_waveform
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            c_pf_cs_coil_pulse_start_ma=_C_START,
-            c_pf_cs_coil_flat_top_ma=_C_FLAT,
-            c_pf_cs_coil_pulse_end_ma=_C_END,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Opposite signs across the three time points, so the peak-selection branches are
     # exercised rather than always landing on the same one; magnitudes kept away from
@@ -391,29 +352,7 @@ class TestCalculatePFCoilPeakFields(Tier1Contract):
     reference = _reference_pf_coil_peak_fields
     ported = calculate_pf_coil_peak_fields
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            c_pf_cs_coil_pulse_start_ma=_C_START,
-            c_pf_cs_coil_flat_top_ma=_C_FLAT,
-            c_pf_cs_coil_pulse_end_ma=_C_END,
-            r_pf_coil_middle=_R_MID,
-            z_pf_coil_middle=_Z_MID,
-            r_pf_coil_inner=_R_IN,
-            r_pf_coil_outer=_R_OUT,
-            z_pf_coil_upper=_Z_UP,
-            z_pf_coil_lower=_Z_LO,
-            r_pf_coil_middle_group_array=_R_GROUP,
-            z_pf_coil_middle_group_array=_Z_GROUP,
-            r_cs_middle=_R_CS_MIDDLE,
-            dz_cs_full=_DZ_CS_FULL,
-            a_cs_poloidal=_A_CS_POLOIDAL,
-            j_cs_pulse_start=_J_CS_PULSE_START,
-            j_cs_flat_top_end=_J_CS_FLAT_TOP_END,
-            rmajor=_RMAJOR,
-            plasma_current=_PLASMA_CURRENT,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "c_pf_cs_coil_pulse_start_ma": _around(_C_START, 0.15),
@@ -578,15 +517,7 @@ class TestCalculateCSBoreMagneticField(Tier1Contract):
     reference = _reference_cs_bore_magnetic_field
     ported = calculate_cs_bore_magnetic_field
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged-flat-top-end",
-            j_cs=_J_CS_FLAT_TOP_END,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            dz_cs_half=_Z_CS_UPPER,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "j_cs": _around(_J_CS_FLAT_TOP_END, 0.30),
@@ -612,25 +543,7 @@ class TestCalculateCSSelfPeakMagneticField(Tier1Contract):
     reference = _reference_cs_self_peak_magnetic_field
     ported = calculate_cs_self_peak_magnetic_field
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged-beta-3.96",
-            j_cs=_J_CS_FLAT_TOP_END,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            dz_cs_half=_Z_CS_UPPER,
-        ),
-        *[
-            legacy_sample(
-                f"squat-cs-beta-{beta}",
-                j_cs=_J_CS_FLAT_TOP_END,
-                r_cs_inner=_R_CS_INNER,
-                r_cs_outer=_R_CS_OUTER,
-                dz_cs_half=beta * _R_CS_INNER,
-            )
-            for beta in (2.5, 1.5, 0.9, 0.6)
-        ],
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "j_cs": _around(_J_CS_FLAT_TOP_END, 0.30),
@@ -647,24 +560,7 @@ class TestCalculateCSPeakFields(Tier1Contract):
     reference = _reference_cs_peak_fields
     ported = calculate_cs_peak_fields
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            c_pf_cs_coil_pulse_start_ma=_C_START,
-            c_pf_cs_coil_flat_top_ma=_C_FLAT,
-            c_pf_cs_coil_pulse_end_ma=_C_END,
-            r_pf_coil_middle=_R_MID[:N_PF_COILS],
-            z_pf_coil_middle=_Z_MID[:N_PF_COILS],
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            z_cs_middle=_Z_CS_MIDDLE,
-            z_cs_upper=_Z_CS_UPPER,
-            j_cs_flat_top_end=_J_CS_FLAT_TOP_END,
-            j_cs_pulse_start=_J_CS_PULSE_START,
-            rmajor=_RMAJOR,
-            plasma_current=_PLASMA_CURRENT,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "c_pf_cs_coil_pulse_start_ma": _around(_C_START, 0.15),

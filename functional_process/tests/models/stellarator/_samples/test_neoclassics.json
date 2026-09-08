@@ -1,0 +1,60 @@
+{
+ "TestEffectiveThermalDiffusivity": [
+  {
+   "label": "st-calc-eff-chi-helias-0",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_on_axis_kev": 19.108573496973477,
+    "nd_plasma_electron_on_axis": 3.4479000000000007e+20,
+    "f_p_alpha_plasma_deposited": 0.9500000000000001,
+    "pden_alpha_total_mw": 1.2629524018077414,
+    "pden_plasma_core_rad_mw": 0.10762698429338043,
+    "alphan": 0.35000000000000003,
+    "alphat": 1.2,
+    "vol_plasma": 1385.8142655379029,
+    "a_plasma_surface": 1926.055111658513,
+    "rminor": 1.7863900994187722,
+    "radius_plasma_core_norm": 0.6000000000000001,
+    "stella_config_rminor_ref": 1.80206932,
+    "f_st_rmajor": 0.99129932482229
+   }
+  },
+  {
+   "label": "st-calc-eff-chi-helias-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_on_axis_kev": 17.5,
+    "nd_plasma_electron_on_axis": 3.4479000000000007e+20,
+    "f_p_alpha_plasma_deposited": 0.9500000000000001,
+    "pden_alpha_total_mw": 1.0570658694225301,
+    "pden_plasma_core_rad_mw": 0.1002475669217598,
+    "alphan": 0.35000000000000003,
+    "alphat": 1.2,
+    "vol_plasma": 1385.8142655379029,
+    "a_plasma_surface": 1926.055111658513,
+    "rminor": 1.7863900994187722,
+    "radius_plasma_core_norm": 0.6000000000000001,
+    "stella_config_rminor_ref": 1.80206932,
+    "f_st_rmajor": 0.99129932482229
+   }
+  }
+ ],
+ "TestProfileValues": [
+  {
+   "label": "init-profile-values-helias5b",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": 0.6,
+    "temp_plasma_electron_on_axis_kev": 13.241800000000001,
+    "temp_plasma_ion_on_axis_kev": 12.579710000000002,
+    "alphat": 1.2,
+    "nd_plasma_electron_on_axis": 2.7956610000000002e+20,
+    "f_plasma_fuel_deuterium": 0.5,
+    "nd_plasma_ions_on_axis": 2.3930858160000005e+20,
+    "nd_plasma_alphas_thermal_vol_avg": 2.9820384000000004e+19,
+    "alphan": 0.35000000000000003,
+    "rminor": 1.7993820274145451
+   }
+  }
+ ]
+}

@@ -1,0 +1,114 @@
+{
+ "TestCSCriticalCurrentDensityIterNb3Sn": [
+  {
+   "label": "large-tokamak-converged-flat-top-end",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak": 14.040951087341835,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "strain": -0.005,
+    "temp_cs_superconductor_operating": 4.75,
+    "a_cs_cable_space": 4.463921187651396,
+    "a_cs_poloidal": 8.679505454534445
+   }
+  },
+  {
+   "label": "large-tokamak-converged-pulse-start",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak": 13.978498492871925,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "strain": -0.005,
+    "temp_cs_superconductor_operating": 4.75,
+    "a_cs_cable_space": 4.463921187651396,
+    "a_cs_poloidal": 8.679505454534445
+   }
+  }
+ ],
+ "TestCSCriticalCurrentDensityWstNb3Sn": [
+  {
+   "label": "reference-fields-flat-top-end",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak": 14.040951087341835,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "strain": -0.005,
+    "temp_cs_superconductor_operating": 4.75,
+    "a_cs_cable_space": 4.463921187651396,
+    "a_cs_poloidal": 8.679505454534445
+   }
+  }
+ ],
+ "TestCSStrandCriticalCurrentDensity": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_cs_conductor_critical_flat_top_end": 350002855.2,
+    "fcuohsu": 0.7
+   }
+  }
+ ],
+ "TestCSTemperatureMarginIterNb3Sn": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak_flat_top_end": 14.040951087341835,
+    "b_cs_peak_pulse_start": 13.978498492871925,
+    "c_pf_cs_coils_peak_ma": -191.60361,
+    "a_cs_cable_space": 4.463921187651396,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "strain": -0.005,
+    "temp_cs_superconductor_operating": 4.75
+   }
+  }
+ ],
+ "TestCSTemperatureMarginWstNb3Sn": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak_flat_top_end": 14.040951087341835,
+    "b_cs_peak_pulse_start": 13.978498492871925,
+    "c_pf_cs_coils_peak_ma": -191.60361,
+    "a_cs_cable_space": 4.463921187651396,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "strain": -0.005,
+    "temp_cs_superconductor_operating": 4.75
+   }
+  }
+ ],
+ "TestPFStrandCriticalCurrentDensity": [
+  {
+   "label": "large-tokamak-nof-last-pf-coil",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_pf_coil_peak": 2.5773536152742245,
+    "bpf2": 1.5851124381765633,
+    "temp_pf_peak_field": 4.75,
+    "fcupfsu": 0.69
+   }
+  }
+ ],
+ "TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco": [
+  {
+   "label": "spherical-tokamak-plausible-last-pf-coil",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_pf_coil_peak": 1.3945960069778585,
+    "bpf2": 0.977502159795704,
+    "temp_pf_peak_field": 20.0,
+    "fcupfsu": 0.69,
+    "dr_hts_tape": 0.0062886208094437655,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_total": 0.000211
+   }
+  }
+ ]
+}

@@ -30,9 +30,9 @@ import optimistix as optx
 import pytest
 from cottax import (
     AbstractDriver,
-    ImplementedFunction,
     Feasibility,
     Graph,
+    ImplementedFunction,
     RootFind,
     Start,
 )
@@ -52,6 +52,7 @@ from functional_process.cottax._harness import (
     legacy_sample,
 )
 from functional_process.cottax._harness import path as vpath
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.vacuum.vacuum import (
     XMULT,
     DuctDiameterRootFind,
@@ -117,22 +118,7 @@ class TestVacuumPumpingSimple(Tier1Contract):
     ported = calculate_vacuum_pumping_simple
 
     # tests/unit/models/test_vacuum.py::TestVacuum::test_simple_model.
-    samples = [
-        legacy_sample(
-            "simple-model",
-            molflow_plasma_fuelling_required=7.5745668997694112e22,
-            molflow_vac_pumps=1.2155e22,
-            volflow_vac_pumps_max=27.3,
-            f_a_vac_pump_port_plasma_surface=0.0203,
-            f_volflow_vac_pumps_impedance=0.4,
-            a_plasma_surface=1500.3146527709359,
-            n_tf_coils=18,
-            outgasfactor=0.0235,
-            pres_vv_chamber_base=0.0005,
-            outgasindex=1.0,
-            t_plant_pulse_dwell=500.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -224,7 +210,7 @@ class TestSolveDuctDiameter(Tier2Contract):
     ported = solve_duct_diameter
     residual = staticmethod(_duct_diameter_residual_for_contract)
 
-    samples = _duct_diameter_samples()
+    samples = FROM_FILE
 
 
 class _NewtonRootFindDriver(AbstractDriver):
@@ -722,7 +708,7 @@ class TestVacuumPumpingOld(Tier2Contract):
     ported = _solve_vacuum_pumping_old
     residual = staticmethod(_vacuum_pumping_old_residual)
 
-    samples = _vacuum_pumping_old_samples()
+    samples = FROM_FILE
 
 
 def _reference_vacuum_pumping_old_from_fields(
@@ -871,7 +857,7 @@ class TestVacuumPumpingOldFromFields(Tier2Contract):
     ported = _solve_vacuum_pumping_old_from_fields
     residual = staticmethod(_vacuum_pumping_old_residual)
 
-    samples = _vacuum_pumping_old_from_fields_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -950,21 +936,7 @@ class TestCalculateEllipticalVesselVolumes(Tier1Contract):
     ported = calculate_elliptical_vessel_volumes
 
     # tests/unit/models/test_vacuum.py::test_elliptical_vessel_volumes, verbatim.
-    samples = [
-        legacy_sample(
-            "elliptical-vessel-legacy",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            triang=0.5,
-            r_shld_inboard_inner=4.083333333333334,
-            r_shld_outboard_outer=12.716666666666667,
-            dz_vv_half=7.5032752487304135,
-            dr_vv_inboard=0.30000000000000004,
-            dr_vv_outboard=0.30000000000000004,
-            dz_vv_upper=0.30000000000000004,
-            dz_vv_lower=0.30000000000000004,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 

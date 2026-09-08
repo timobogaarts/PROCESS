@@ -16,7 +16,6 @@ from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
 from functional_process.cottax.indat import graph_for, machine_from_indat
 from functional_process.cottax.render_xdsm import (
     MODES,
-    OUTDIR,
     grouped,
     grouped_uncut,
     machine_graph,
@@ -44,7 +43,7 @@ def test_blocking_scc_needs_no_driven_graph_at_all(monkeypatch):
     call path -- `Blocking.scc`, `grouping_report`, `structure_order`,
     `render_grouped_dsm_html` -- reaches for a driver or a declared problem.
     """
-    import functional_process.cottax.mda as mda
+    from functional_process.cottax import mda
 
     def _boom(*a, **k):
         raise AssertionError("grouped_uncut must not call mda.driven_graph")
@@ -53,7 +52,7 @@ def test_blocking_scc_needs_no_driven_graph_at_all(monkeypatch):
     # `render_xdsm` imported `driven_graph` by name into its own module for `grouped`;
     # patching `mda`'s copy alone would not catch a call through that binding, so both
     # are patched -- proving neither path is taken, not just one of them.
-    import functional_process.cottax.render_xdsm as render_xdsm
+    from functional_process.cottax import render_xdsm
 
     if hasattr(render_xdsm, "driven_graph"):
         monkeypatch.setattr(render_xdsm, "driven_graph", _boom)
@@ -62,7 +61,7 @@ def test_blocking_scc_needs_no_driven_graph_at_all(monkeypatch):
 
 
 def test_grouped_uncut_writes_files_distinct_from_grouped(monkeypatch, tmp_path):
-    import functional_process.cottax.render_xdsm as render_xdsm
+    from functional_process.cottax import render_xdsm
 
     monkeypatch.setattr(render_xdsm, "OUTDIR", tmp_path)
     path = grouped_uncut()
@@ -81,7 +80,7 @@ def test_grouped_uncut_writes_files_distinct_from_grouped(monkeypatch, tmp_path)
 
 
 def test_grouped_uncut_writes_the_machine_suffixed_pair(monkeypatch, tmp_path):
-    import functional_process.cottax.render_xdsm as render_xdsm
+    from functional_process.cottax import render_xdsm
 
     monkeypatch.setattr(render_xdsm, "OUTDIR", tmp_path)
     grouped_uncut(input_file=TOKAMAK_INPUT_FILE)

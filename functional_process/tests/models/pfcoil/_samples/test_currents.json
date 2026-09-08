@@ -1,0 +1,89 @@
+{
+ "TestCalculateEfcCurrents": [
+  {
+   "label": "large-tokamak-equilibrium",
+   "provenance": "legacy",
+   "kwargs": {
+    "rpts": {
+     "~array": [
+      8.0
+     ],
+     "dtype": "float64"
+    },
+    "zpts": {
+     "~array": [
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "brin": {
+     "~array": [
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "bzin": {
+     "~array": [
+      -0.7310770137585806
+     ],
+     "dtype": "float64"
+    },
+    "r_fix": {
+     "~array": [
+      5.566666666666666,
+      5.566666666666666
+     ],
+     "dtype": "float64"
+    },
+    "z_fix": {
+     "~array": [
+      9.644333333333332,
+      -10.878217164127493
+     ],
+     "dtype": "float64"
+    },
+    "c_fix": {
+     "~array": [
+      15720143.18611007,
+      17587384.305304807
+     ],
+     "dtype": "float64"
+    },
+    "r_group": {
+     "~array": [
+      [
+       16.868931216641325,
+       16.868931216641325
+      ],
+      [
+       15.359714853856374,
+       15.359714853856374
+      ]
+     ],
+     "dtype": "float64"
+    },
+    "z_group": {
+     "~array": [
+      [
+       2.6666666666666665,
+       -2.6666666666666665
+      ],
+      [
+       7.466666666666666,
+       -7.466666666666666
+      ]
+     ],
+     "dtype": "float64"
+    },
+    "alfa": 5e-10,
+    "n_in_group": {
+     "~seq": [
+      2,
+      2
+     ],
+     "tuple": true
+    }
+   }
+  }
+ ]
+}

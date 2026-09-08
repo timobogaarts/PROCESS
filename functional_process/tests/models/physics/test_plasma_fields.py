@@ -19,7 +19,8 @@ harness's sense (a real, already-validated PROCESS answer), just sourced from a
 regression MFILE rather than a `tests/unit` parametrisation.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_fields import (
     PlasmaInboardToroidalField,
     PlasmaOutboardToroidalField,
@@ -44,14 +45,7 @@ class TestCalculatePlasmaInboardToroidalField(Tier1Contract):
     reference = staticmethod(PlasmaFields.calculate_plasma_inboard_toroidal_field)
     ported = calculate_plasma_inboard_toroidal_field
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            b_plasma_toroidal_on_axis=5.31832217464490409,
-            rmajor=8.0,
-            rminor=2.66666666666666652,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     """`rminor` capped below `rmajor`'s own lower bound (2.0) so fuzz never approaches
@@ -70,14 +64,7 @@ class TestCalculatePlasmaOutboardToroidalField(Tier1Contract):
     reference = staticmethod(PlasmaFields.calculate_plasma_outboard_toroidal_field)
     ported = calculate_plasma_outboard_toroidal_field
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            b_plasma_toroidal_on_axis=5.31832217464490409,
-            rmajor=8.0,
-            rminor=2.66666666666666652,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -100,15 +87,7 @@ class TestCalculateToroidalFieldProfile(Tier1Contract):
 
     static_argnames = ("n_plasma_profile_elements",)
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged-n3",
-            b_plasma_toroidal_on_axis=5.31832217464490409,
-            rmajor=8.0,
-            rminor=2.66666666666666652,
-            n_plasma_profile_elements=3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {"n_plasma_profile_elements": 3}
     fuzz = True

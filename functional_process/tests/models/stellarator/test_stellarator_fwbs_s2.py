@@ -30,6 +30,7 @@ combination.
 from types import MappingProxyType
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax._harness.sampling import Sample, fuzz_samples
 from functional_process.cottax.stellarator.stellarator_fwbs_s2 import (
     calculate_detailed_powerflow_blanket_shield_power,
@@ -104,7 +105,8 @@ def _reference_exponential_attenuation(
     dr_blkt_outboard,
 ):
     """Call PROCESS's `Stellarator.st_fwbs` (`blktmodel=0, ipowerflow=0`) through arm 2's
-    signature."""
+    signature.
+    """
     stel, data = _make_stellarator()
     data.heat_transport.ipowerflow = 0
 
@@ -130,7 +132,8 @@ def _reference_exponential_attenuation(
 
 class TestExponentialAttenuationBlanketShieldPower(Tier1Contract):
     """S2 arm 2 (`st_fwbs`, `blktmodel != 1 & ipowerflow == 0`) ->
-    `calculate_exponential_attenuation_blanket_shield_power`."""
+    `calculate_exponential_attenuation_blanket_shield_power`.
+    """
 
     audit_record = "models/stellarator/stellarator_fwbs_s2.md"
     reference = _reference_exponential_attenuation
@@ -311,7 +314,8 @@ def _ported_detailed_powerflow_observable(*args, **kwargs):
 
 class TestDetailedPowerflowBlanketShieldPower(Tier1Contract):
     """S2 arm 3 (`st_fwbs`, `blktmodel != 1 & ipowerflow == 1`) ->
-    `calculate_detailed_powerflow_blanket_shield_power`."""
+    `calculate_detailed_powerflow_blanket_shield_power`.
+    """
 
     audit_record = "models/stellarator/stellarator_fwbs_s2.md"
     reference = _reference_detailed_powerflow
@@ -343,7 +347,7 @@ class TestDetailedPowerflowBlanketShieldPower(Tier1Contract):
         "pnucloss",
     )
 
-    samples = _arm_c_samples(count=12, seed=0)
+    samples = FROM_FILE
 
 
 def _arm_c_user_input_samples(count, seed):
@@ -459,7 +463,8 @@ def _reference_detailed_powerflow_user_input_pumping(
 def _ported_user_input_pumping_observable(*args, **kwargs):
     """`calculate_detailed_powerflow_blanket_shield_power_user_input_pumping`, minus the
     two outputs that never round-trip through `data`. Same wrapper, same reason, as
-    `_ported_detailed_powerflow_observable`."""
+    `_ported_detailed_powerflow_observable`.
+    """
     full = calculate_detailed_powerflow_blanket_shield_power_user_input_pumping(
         *args, **kwargs
     )
@@ -493,4 +498,4 @@ class TestDetailedPowerflowBlanketShieldPowerUserInputPumping(Tier1Contract):
         "pnucloss",
     )
 
-    samples = _arm_c_user_input_samples(count=12, seed=0)
+    samples = FROM_FILE

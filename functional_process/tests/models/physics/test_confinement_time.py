@@ -18,7 +18,8 @@ backdoor" technique used throughout this harness.
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.confinement_time import (
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,
@@ -95,11 +96,7 @@ class TestNeoAlcatorConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.neo_alcator_confinement_time)
     ported = neo_alcator_confinement_time
 
-    samples = [
-        legacy_sample(
-            "neo_alcator-all-ones", dene20=1.0, rminor=1.0, rmajor=1.0, qstar=1.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -115,9 +112,7 @@ class TestMirnovConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.mirnov_confinement_time)
     ported = mirnov_confinement_time
 
-    samples = [
-        legacy_sample("mirnov-all-ones", rminor=1.0, kappa95=1.0, cur_plasma_ma=1.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -133,18 +128,7 @@ class TestMerezhkinMuhkovatovConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.merezhkin_muhkovatov_confinement_time)
     ported = merezhkin_muhkovatov_confinement_time
 
-    samples = [
-        legacy_sample(
-            "merezhkin_muhkovatov-all-ones",
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            qstar=1.0,
-            nd_plasma_electron_line_20=1.0,
-            afuel=1.0,
-            ten=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -160,16 +144,7 @@ class TestShimomuraConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.shimomura_confinement_time)
     ported = shimomura_confinement_time
 
-    samples = [
-        legacy_sample(
-            "shimomura-all-ones",
-            rmajor=1.0,
-            rminor=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            kappa95=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -185,19 +160,7 @@ class TestKayeGoldstonConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.kaye_goldston_confinement_time)
     ported = kaye_goldston_confinement_time
 
-    samples = [
-        legacy_sample(
-            "kaye_goldston-all-ones",
-            kappa95=1.0,
-            cur_plasma_ma=1.0,
-            n20=1.0,
-            rmajor=1.0,
-            afuel=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            rminor=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -213,19 +176,7 @@ class TestIter89pConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_89p_confinement_time)
     ported = iter_89p_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_89p-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -241,19 +192,7 @@ class TestIter890ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_89_0_confinement_time)
     ported = iter_89_0_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_89_0-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -269,20 +208,7 @@ class TestRebutLalliaConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.rebut_lallia_confinement_time)
     ported = rebut_lallia_confinement_time
 
-    samples = [
-        legacy_sample(
-            "rebut_lallia-all-ones",
-            rminor=1.0,
-            rmajor=1.0,
-            kappa=1.0,
-            afuel=1.0,
-            cur_plasma_ma=1.0,
-            zeff=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -298,17 +224,7 @@ class TestGoldstonConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.goldston_confinement_time)
     ported = goldston_confinement_time
 
-    samples = [
-        legacy_sample(
-            "goldston-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -324,20 +240,7 @@ class TestT10ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.t10_confinement_time)
     ported = t10_confinement_time
 
-    samples = [
-        legacy_sample(
-            "t10-all-ones",
-            nd_plasma_electron_line_20=1.0,
-            rmajor=1.0,
-            qstar=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            p_plasma_loss_mw=1.0,
-            zeff=1.0,
-            cur_plasma_ma=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -353,21 +256,7 @@ class TestJaeriConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.jaeri_confinement_time)
     ported = jaeri_confinement_time
 
-    samples = [
-        legacy_sample(
-            "jaeri-all-ones",
-            kappa95=1.0,
-            rminor=1.0,
-            afuel=1.0,
-            n20=1.0,
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            rmajor=1.0,
-            qstar=1.0,
-            zeff=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -383,19 +272,7 @@ class TestKayeBigConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.kaye_big_confinement_time)
     ported = kaye_big_confinement_time
 
-    samples = [
-        legacy_sample(
-            "kaye_big-all-ones",
-            rmajor=1.0,
-            rminor=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            kappa95=1.0,
-            cur_plasma_ma=1.0,
-            n20=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -411,19 +288,7 @@ class TestIterH90PConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_h90_p_confinement_time)
     ported = iter_h90_p_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_h90_p-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -439,18 +304,7 @@ class TestRiedelLConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.riedel_l_confinement_time)
     ported = riedel_l_confinement_time
 
-    samples = [
-        legacy_sample(
-            "riedel_l-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -466,19 +320,7 @@ class TestChristiansenConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.christiansen_confinement_time)
     ported = christiansen_confinement_time
 
-    samples = [
-        legacy_sample(
-            "christiansen-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -494,18 +336,7 @@ class TestLacknerGottardiConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.lackner_gottardi_confinement_time)
     ported = lackner_gottardi_confinement_time
 
-    samples = [
-        legacy_sample(
-            "lackner_gottardi-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -521,18 +352,7 @@ class TestNeoKayeConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.neo_kaye_confinement_time)
     ported = neo_kaye_confinement_time
 
-    samples = [
-        legacy_sample(
-            "neo_kaye-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -548,19 +368,7 @@ class TestRiedelHConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.riedel_h_confinement_time)
     ported = riedel_h_confinement_time
 
-    samples = [
-        legacy_sample(
-            "riedel_h-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa95=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -576,17 +384,7 @@ class TestIterH90PAmendedConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_h90_p_amended_confinement_time)
     ported = iter_h90_p_amended_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_h90_p_amended-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            afuel=1.0,
-            rmajor=1.0,
-            p_plasma_loss_mw=1.0,
-            kappa=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -602,16 +400,7 @@ class TestSudoEtAlConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.sudo_et_al_confinement_time)
     ported = sudo_et_al_confinement_time
 
-    samples = [
-        legacy_sample(
-            "sudo_et_al-all-ones",
-            rmajor=1.0,
-            rminor=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -627,16 +416,7 @@ class TestGyroReducedBohmConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.gyro_reduced_bohm_confinement_time)
     ported = gyro_reduced_bohm_confinement_time
 
-    samples = [
-        legacy_sample(
-            "gyro_reduced_bohm-all-ones",
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_20=1.0,
-            p_plasma_loss_mw=1.0,
-            rminor=1.0,
-            rmajor=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -654,17 +434,7 @@ class TestLacknerGottardiStellaratorConfinementTime(Tier1Contract):
     )
     ported = lackner_gottardi_stellarator_confinement_time
 
-    samples = [
-        legacy_sample(
-            "lackner_gottardi_stellarator-all-ones",
-            rmajor=1.0,
-            rminor=1.0,
-            nd_plasma_electron_line_20=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            q=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -680,19 +450,7 @@ class TestIter93hConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_93h_confinement_time)
     ported = iter_93h_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_93h-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            afuel=1.0,
-            rmajor=1.0,
-            nd_plasma_electron_line_20=1.0,
-            aspect=1.0,
-            kappa=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -708,19 +466,7 @@ class TestIterH97pConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_h97p_confinement_time)
     ported = iter_h97p_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_h97p-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            nd_plasma_electron_line_19=1.0,
-            rmajor=1.0,
-            aspect=1.0,
-            kappa=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -736,19 +482,7 @@ class TestIterH97pElmyConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_h97p_elmy_confinement_time)
     ported = iter_h97p_elmy_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_h97p_elmy-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            nd_plasma_electron_line_19=1.0,
-            rmajor=1.0,
-            aspect=1.0,
-            kappa=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -764,19 +498,7 @@ class TestIter96pConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_96p_confinement_time)
     ported = iter_96p_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_96p-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            kappa95=1.0,
-            rmajor=1.0,
-            aspect=1.0,
-            nd_plasma_electron_line_19=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -792,19 +514,7 @@ class TestValovicElmyConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.valovic_elmy_confinement_time)
     ported = valovic_elmy_confinement_time
 
-    samples = [
-        legacy_sample(
-            "valovic_elmy-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            afuel=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            kappa=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -820,19 +530,7 @@ class TestKayeConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.kaye_confinement_time)
     ported = kaye_confinement_time
 
-    samples = [
-        legacy_sample(
-            "kaye-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            kappa=1.0,
-            rmajor=1.0,
-            aspect=1.0,
-            nd_plasma_electron_line_19=1.0,
-            afuel=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -848,19 +546,7 @@ class TestIterPb98pyConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_pb98py_confinement_time)
     ported = iter_pb98py_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_pb98py-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -876,19 +562,7 @@ class TestIterIpb98yConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y_confinement_time)
     ported = iter_ipb98y_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_ipb98y-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -904,19 +578,7 @@ class TestIterIpb98y1ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y1_confinement_time)
     ported = iter_ipb98y1_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_ipb98y1-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -932,19 +594,7 @@ class TestIterIpb98y2ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y2_confinement_time)
     ported = iter_ipb98y2_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_ipb98y2-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -960,19 +610,7 @@ class TestIterIpb98y3ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y3_confinement_time)
     ported = iter_ipb98y3_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_ipb98y3-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -988,19 +626,7 @@ class TestIterIpb98y4ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y4_confinement_time)
     ported = iter_ipb98y4_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iter_ipb98y4-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1016,17 +642,7 @@ class TestIss95StellaratorConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iss95_stellarator_confinement_time)
     ported = iss95_stellarator_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iss95_stellarator-all-ones",
-            rminor=1.0,
-            rmajor=1.0,
-            nd_plasma_electron_line_19=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            iotabar=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1042,17 +658,7 @@ class TestIss04StellaratorConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.iss04_stellarator_confinement_time)
     ported = iss04_stellarator_confinement_time
 
-    samples = [
-        legacy_sample(
-            "iss04_stellarator-all-ones",
-            rminor=1.0,
-            rmajor=1.0,
-            nd_plasma_electron_line_19=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            iotabar=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1068,19 +674,7 @@ class TestDs03ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.ds03_confinement_time)
     ported = ds03_confinement_time
 
-    samples = [
-        legacy_sample(
-            "ds03-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa95=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1096,17 +690,7 @@ class TestMurariConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.murari_confinement_time)
     ported = murari_confinement_time
 
-    samples = [
-        legacy_sample(
-            "murari-all-ones",
-            cur_plasma_ma=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            nd_plasma_electron_line_19=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1122,18 +706,7 @@ class TestPetty08ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.petty08_confinement_time)
     ported = petty08_confinement_time
 
-    samples = [
-        legacy_sample(
-            "petty08-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1149,22 +722,7 @@ class TestLangHighDensityConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.lang_high_density_confinement_time)
     ported = lang_high_density_confinement_time
 
-    samples = [
-        legacy_sample(
-            "lang_high_density-all-ones",
-            plasma_current=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            rminor=1.0,
-            q=1.0,
-            qstar=1.0,
-            aspect=1.0,
-            afuel=1.0,
-            kappa_ipb=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1180,15 +738,7 @@ class TestHubbardNominalConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.hubbard_nominal_confinement_time)
     ported = hubbard_nominal_confinement_time
 
-    samples = [
-        legacy_sample(
-            "hubbard_nominal-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_20=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1204,15 +754,7 @@ class TestHubbardLowerConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.hubbard_lower_confinement_time)
     ported = hubbard_lower_confinement_time
 
-    samples = [
-        legacy_sample(
-            "hubbard_lower-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_20=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1228,15 +770,7 @@ class TestHubbardUpperConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.hubbard_upper_confinement_time)
     ported = hubbard_upper_confinement_time
 
-    samples = [
-        legacy_sample(
-            "hubbard_upper-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_20=1.0,
-            p_plasma_loss_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1252,19 +786,7 @@ class TestMenardNstxConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.menard_nstx_confinement_time)
     ported = menard_nstx_confinement_time
 
-    samples = [
-        legacy_sample(
-            "menard_nstx-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1282,19 +804,7 @@ class TestMenardNstxPetty08HybridConfinementTime(Tier1Contract):
     )
     ported = menard_nstx_petty08_hybrid_confinement_time
 
-    samples = [
-        legacy_sample(
-            "menard_nstx_petty08_hybrid-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            kappa_ipb=1.0,
-            aspect=1.0,
-            afuel=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1310,16 +820,7 @@ class TestNstxGyroBohmConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.nstx_gyro_bohm_confinement_time)
     ported = nstx_gyro_bohm_confinement_time
 
-    samples = [
-        legacy_sample(
-            "nstx_gyro_bohm-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            nd_plasma_electron_line_20=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1335,20 +836,7 @@ class TestItpa20ConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.itpa20_confinement_time)
     ported = itpa20_confinement_time
 
-    samples = [
-        legacy_sample(
-            "itpa20-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            nd_plasma_electron_line_19=1.0,
-            p_plasma_loss_mw=1.0,
-            rmajor=1.0,
-            triang=1.0,
-            kappa_ipb=1.0,
-            eps=1.0,
-            aion=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1364,19 +852,7 @@ class TestItpa20IlConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.itpa20_il_confinement_time)
     ported = itpa20_il_confinement_time
 
-    samples = [
-        legacy_sample(
-            "itpa20_il-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            nd_plasma_electron_line_19=1.0,
-            aion=1.0,
-            rmajor=1.0,
-            triang=1.0,
-            kappa_ipb=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1392,15 +868,7 @@ class TestNcstConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.ncst_confinement_time)
     ported = ncst_confinement_time
 
-    samples = [
-        legacy_sample(
-            "ncst-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            nd_plasma_electron_line_19=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1416,15 +884,7 @@ class TestPazSoldanNtConfinementTime(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.paz_soldan_nt_confinement_time)
     ported = paz_soldan_nt_confinement_time
 
-    samples = [
-        legacy_sample(
-            "paz_soldan_nt-all-ones",
-            cur_plasma_ma=1.0,
-            b_plasma_toroidal_on_axis=1.0,
-            p_plasma_loss_mw=1.0,
-            nd_plasma_electron_line_19=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1439,9 +899,7 @@ class TestIterPhysicsBasisElongation(Tier1Contract):
     reference = staticmethod(PlasmaGeom.calculate_iter_physics_basis_elongation)
     ported = calculate_iter_physics_basis_elongation
 
-    samples = [
-        legacy_sample("reference-point", vol_plasma=2426.25, rmajor=8.0, rminor=2.5),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1457,14 +915,7 @@ class TestCalculateDoubleAndTripleProduct(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTime.calculate_double_and_triple_product)
     ported = calculate_double_and_triple_product
 
-    samples = [
-        legacy_sample(
-            "double-triple-product-reference",
-            nd_plasma_electrons_vol_avg=7.5e19,
-            temp_plasma_electrons_vol_avg_kev=3.402116961408892,
-            t_energy_confinement=12.569,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1611,40 +1062,7 @@ class TestConfinementTime(Tier1Contract):
 
     static_argnames = ("i_confinement_time", "i_plasma_ignited", "i_rad_loss")
 
-    samples = [
-        legacy_sample(
-            "sudo-et-al-no-radiation",
-            **_point(21, i_rad_loss=2),
-        ),
-        legacy_sample(
-            "neo-alcator-full-radiation",
-            **_point(1, i_rad_loss=0),
-        ),
-        legacy_sample(
-            "mirnov-core-only-radiation-ignited",
-            **_point(2, i_rad_loss=1, i_plasma_ignited=1),
-        ),
-        legacy_sample(
-            "minimum-iter-89p-89o-no-radiation",
-            **_point(14, i_rad_loss=2),
-        ),
-        legacy_sample(
-            "ipb98y2-core-only-radiation",
-            **_point(34, i_rad_loss=1),
-        ),
-        legacy_sample(
-            "iss04-stellarator-full-radiation",
-            **_point(38, i_rad_loss=0),
-        ),
-        legacy_sample(
-            "menard-nstx-petty08-hybrid-blend-region",
-            **_point(47, i_rad_loss=2, aspect=2.0, eps=0.5),
-        ),
-        legacy_sample(
-            "menard-nstx-petty08-hybrid-nstx-only",
-            **_point(47, i_rad_loss=2, aspect=1.5, eps=1.0 / 1.5),
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {
         "i_confinement_time": 38,  # ISS04_STELLARATOR

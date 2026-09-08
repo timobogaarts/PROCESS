@@ -31,7 +31,8 @@ fuzz bound below is chosen to keep `kappa` comfortably above `1 + triang` (worst
 least `0.3`).
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,
@@ -153,14 +154,7 @@ class TestPlasmaAnglesArcs(Tier1Contract):
     reference = staticmethod(PlasmaGeom.plasma_angles_arcs)
     ported = plasma_angles_arcs
 
-    samples = [
-        legacy_sample(
-            "plasma_angles_arcs-baseline_2018",
-            a=2.8677741935483869,
-            kappa=1.8480000000000001,
-            triang=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -178,15 +172,7 @@ class TestPlasmaPoloidalPerimeter(Tier1Contract):
     reference = staticmethod(PlasmaGeom.plasma_poloidal_perimeter)
     ported = plasma_poloidal_perimeter
 
-    samples = [
-        legacy_sample(
-            "plasma_poloidal_perimeter-baseline_2018",
-            xi=10.510690667870968,
-            thetai=0.52847258461252744,
-            xo=5.4154130183225808,
-            thetao=1.3636548755403939,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -202,17 +188,7 @@ class TestPlasmaSurfaceArea(Tier1Contract):
     reference = staticmethod(PlasmaGeom.plasma_surface_area)
     ported = plasma_surface_area
 
-    samples = [
-        legacy_sample(
-            "plasma_surface_area-baseline_2018",
-            rmajor=8.8901000000000003,
-            rminor=2.8677741935483869,
-            xi=10.510690667870968,
-            thetai=0.52847258461252744,
-            xo=5.4154130183225808,
-            thetao=1.3636548755403939,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -228,17 +204,7 @@ class TestPlasmaVolume(Tier1Contract):
     reference = staticmethod(PlasmaGeom.plasma_volume)
     ported = plasma_volume
 
-    samples = [
-        legacy_sample(
-            "plasma_volume-baseline_2018",
-            rmajor=9.2995201822511735,
-            rminor=2.9998452200810237,
-            xi=10.261919050584332,
-            thetai=0.54748563700358688,
-            xo=5.4205364969154601,
-            thetao=1.4001019213417263,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -254,15 +220,7 @@ class TestPlasmaCrossSection(Tier1Contract):
     reference = staticmethod(PlasmaGeom.plasma_cross_section)
     ported = plasma_cross_section
 
-    samples = [
-        legacy_sample(
-            "plasma_cross_section-baseline_2018",
-            xi=10.261919050584332,
-            thetai=0.54748563700358688,
-            xo=5.4205364969154601,
-            thetao=1.4001019213417263,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -280,16 +238,7 @@ class TestSauterGeometry(Tier1Contract):
     reference = staticmethod(PlasmaGeom.sauter_geometry)
     ported = sauter_geometry
 
-    samples = [
-        legacy_sample(
-            "sauter_geometry-iter-scale",
-            a=2.5,
-            r0=8.0,
-            kappa=1.85,
-            triang=0.5,
-            square=0.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -314,16 +263,7 @@ class TestCalculateGeometrySauter(Tier1Contract):
 
     ported = calculate_geometry_sauter
 
-    samples = [
-        legacy_sample(
-            "calculate_geometry_sauter-iter-scale",
-            rmajor=8.0,
-            rminor=2.5,
-            kappa=1.85,
-            triang=0.5,
-            plasma_square=0.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -339,13 +279,7 @@ class TestCalculateMinorRadius(Tier1Contract):
     reference = staticmethod(_reference_calculate_minor_radius)
     ported = calculate_minor_radius
 
-    samples = [
-        legacy_sample(
-            "calculate_minor_radius-large_tokamak_eval",
-            rmajor=8.0,
-            aspect=3.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -362,13 +296,7 @@ class TestCalculateShapeIpdg89XPoint(Tier1Contract):
     reference = staticmethod(_reference_calculate_shape_ipdg89_x_point)
     ported = calculate_shape_ipdg89_x_point
 
-    samples = [
-        legacy_sample(
-            "calculate_shape_ipdg89_x_point-large_tokamak_eval",
-            kappa=1.85,
-            triang=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -402,20 +330,7 @@ class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
     reference = staticmethod(_reference_calculate_shape_create_data_eu_demo_x_point)
     ported = calculate_shape_create_data_eu_demo_x_point
 
-    samples = [
-        legacy_sample(
-            "calculate_shape_create_data_eu_demo_x_point-low_aspect_ratio_DEMO",
-            aspect=2.8,
-            m_s_limit=0.2,
-            triang=0.5,
-        ),
-        legacy_sample(
-            "calculate_shape_create_data_eu_demo_x_point-corner-fudge-arm",
-            aspect=2.6,
-            m_s_limit=0.0,
-            triang=0.4,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -434,15 +349,6 @@ class TestCalculateGeometryDoubleArc(Tier1Contract):
     reference = staticmethod(_reference_calculate_geometry_double_arc)
     ported = calculate_geometry_double_arc
 
-    samples = [
-        legacy_sample(
-            "calculate_geometry_double_arc-large_tokamak_eval",
-            rmajor=8.0,
-            rminor=2.5,
-            kappa=1.85,
-            triang=0.5,
-            f_vol_plasma=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

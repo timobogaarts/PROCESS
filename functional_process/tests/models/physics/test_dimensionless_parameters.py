@@ -9,7 +9,8 @@ unit ports, is stubbed to raise a sentinel exception, caught immediately after. 
 `outfile`/`mfile` fixture and no stub for any of `outplas`'s other ~15 sub-model calls.
 """
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.dimensionless_parameters import (
     calculate_dimensionless_plasma_parameters,
 )
@@ -106,34 +107,4 @@ class TestDimensionlessPlasmaParameters(Tier1Contract):
     # "fix" it by
     # widening these bounds to include 0 -- that would only assert that the port
     # reproduces an upstream defect it already does.
-    samples = [
-        legacy_sample(
-            "large-tokamak-scale",
-            dlamie=17.5,
-            vol_plasma=1888.0,
-            rmajor=8.0,
-            b_plasma_toroidal_on_axis=5.7,
-            eps=0.32,
-            nd_plasma_electron_line=8.0e19,
-            kappa=1.7,
-            e_plasma_beta=3.0e8,
-            plasma_current=1.8e7,
-            m_ions_total_amu=2.5,
-        ),
-        *fuzz_samples(
-            {
-                "dlamie": (14.0, 20.0),
-                "vol_plasma": (100.0, 3000.0),
-                "rmajor": (3.0, 25.0),
-                "b_plasma_toroidal_on_axis": (2.0, 12.0),
-                "eps": (0.1, 0.9),
-                "nd_plasma_electron_line": (2.0e19, 1.0e21),
-                "kappa": (1.0, 2.5),
-                "e_plasma_beta": (1.0e6, 1.0e9),
-                "plasma_current": (1.0e6, 3.0e7),
-                "m_ions_total_amu": (1.0, 5.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE

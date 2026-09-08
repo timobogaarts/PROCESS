@@ -87,7 +87,8 @@ class TestVendoredTable:
 
     def test_target_name_is_still_unused_in_process(self):
         """`InputVariable.target_name` exists and no row sets it, so the vendored table
-        drops it. This fails the day one does, which is the day the importer needs it."""
+        drops it. This fails the day one does, which is the day the importer needs it.
+        """
         from process.core.input import INPUT_VARIABLES as REFERENCE
 
         assert not [n for n, c in REFERENCE.items() if c.target_name]
@@ -100,7 +101,7 @@ class _StopAfterParse(Exception):  # noqa: N818
     """Abort the `SingleRun` the instant the parse is done -- see `parsed_state`."""
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def parsed_state(input_file: str):
     """`(DataStructure, {name: ...})` as `parse_input_file` left them.
 
@@ -112,9 +113,8 @@ def parsed_state(input_file: str):
     oracle.
     """
     import process.core.init as init_module
-    from process.main import SingleRun
-
     from functional_process.cottax.cold_start import _resolve, _scratch_copy
+    from process.main import SingleRun
 
     captured: dict = {}
     real = init_module.parse_input_file
@@ -173,7 +173,8 @@ def _equal(a, b) -> bool:
 
 def _flat(value):
     """PROCESS stores a >1-D input array column-major and `set_array_variable` ravels it
-    that way before indexing, so a Fortran index maps onto `.T.ravel()`."""
+    that way before indexing, so a Fortran index maps onto `.T.ravel()`.
+    """
     array = np.asarray(value)
     return array.T.ravel() if array.ndim > 1 else array
 
@@ -187,7 +188,8 @@ class TestOracle:
 
     def test_name_set_equals_process_parse(self, stem):
         """Every name PROCESS read, and no other. `parse_input_file`'s return value is
-        the complete statement of that, so the two sets are compared directly."""
+        the complete statement of that, so the two sets are compared directly.
+        """
         _, inputs = parsed_state(_input_file(stem))
         assert read_indat(_input_file(stem)).present == set(inputs)
 
@@ -217,7 +219,8 @@ class TestOracle:
     def test_no_parsed_field_is_missed(self, stem):
         """The reverse direction: a field PROCESS's parse wrote that the importer has no
         entry for. Compared against a bare `DataStructure()`, with the other four
-        initialisation sources named explicitly rather than tolerated silently."""
+        initialisation sources named explicitly rather than tolerated silently.
+        """
         data, _ = parsed_state(_input_file(stem))
         from process.core.model import DataStructure
 
@@ -254,7 +257,8 @@ class TestOracle:
 
     def test_raw_namespace_covers_every_value(self, stem):
         """§24.2 item 2: the same values under a `raw` root, so a sentinel resolution can
-        be a node with a read and a distinct write instead of a self-loop."""
+        be a node with a read and a distinct write instead of a self-loop.
+        """
         imported = read_indat(_input_file(stem))
         raw = imported.raw_values()
         assert len(raw) == len(imported.values)
@@ -274,7 +278,8 @@ def _write(tmp_path: Path, body: str) -> str:
 class TestGrammar:
     def test_indexed_array_is_not_a_last_wins_scalar(self, tmp_path):
         """The defect this module exists to end: a last-wins name scan answered the
-        ten-element `.pf_coil.zref` with the `1.0` of `zref(10) = 1.0` (§22.6)."""
+        ten-element `.pf_coil.zref` with the `1.0` of `zref(10) = 1.0` (§22.6).
+        """
         imported = read_indat(_write(tmp_path, "zref(1) = 3.6\nzref(10) = 1.0\n"))
         value = imported.get("pf_coil", "zref")
         assert isinstance(value, ArrayInput)
@@ -283,7 +288,8 @@ class TestGrammar:
 
     def test_comma_list_is_zero_filled(self, tmp_path):
         """`parse_input_file` does `array[:] = 0.0` before filling a comma list, so an
-        element the list does not reach is `0.0` and not its dataclass default."""
+        element the list does not reach is `0.0` and not its dataclass default.
+        """
         imported = read_indat(_write(tmp_path, "i_pf_location = 2,2,3\n"))
         value = imported.get("pf_coil", "i_pf_location")
         assert value.zero_filled
@@ -293,7 +299,8 @@ class TestGrammar:
     def test_presence_is_recorded_for_a_default_valued_name(self, tmp_path):
         """§24.2 item 1. `dx_tf_side_case_min = 0.0` is indistinguishable from the
         dataclass default *by value*; only the text says the file named it. This is what
-        `indat.py:4420-4428` cannot ask today, and why its scan can only return `0`."""
+        `indat.py:4420-4428` cannot ask today, and why its scan can only return `0`.
+        """
         imported = read_indat(_write(tmp_path, "dx_tf_side_case_min = 0.0\n"))
         assert imported.named("dx_tf_side_case_min")
         assert not imported.named("f_dr_tf_plasma_case")
@@ -316,7 +323,8 @@ class TestGrammar:
 
     def test_unrecognised_name_is_reported_not_raised(self, tmp_path):
         """`parse_input_file` raises here. Refusing to read a file is a validation
-        decision and validation is the next layer (§24.2 item 3), so it is collected."""
+        decision and validation is the next layer (§24.2 item 3), so it is collected.
+        """
         imported = read_indat(_write(tmp_path, "not_a_process_input = 1.0\n"))
         assert [a.name for a in imported.unknown] == ["not_a_process_input"]
         assert imported.values == {}
@@ -325,13 +333,15 @@ class TestGrammar:
     def test_int_type_is_preserved(self, tmp_path):
         imported = read_indat(_write(tmp_path, "i_tf_sup = 1\n"))
         value = imported.get("tfcoil", "i_tf_sup")
-        assert isinstance(value, int) and not isinstance(value, bool)
+        assert isinstance(value, int)
+        assert not isinstance(value, bool)
 
     def test_no_process_import_at_runtime(self):
         """§23, checked rather than asserted: a subprocess with `process` blocked at
         `sys.meta_path` imports the module and reads a real file. In this env `process`
         is importable and already in `sys.modules`, so an in-process blocker would prove
-        nothing -- hence the subprocess."""
+        nothing -- hence the subprocess.
+        """
         import subprocess
         import sys
 
@@ -360,7 +370,8 @@ def test_scalar_count_is_a_strict_subset_of_values():
 
 def test_no_value_is_nan():
     """A parsed number is a number. Guards the `d`->`e` substitution, which turns a
-    stray letter into a cast failure rather than a silent `nan`."""
+    stray letter into a cast failure rather than a silent `nan`.
+    """
     for stem in CONFIGURATIONS:
         for place, value in read_indat(_input_file(stem)).values.items():
             numbers = (

@@ -27,7 +27,9 @@ check that the sample is on the operating point and not near it.
 """
 
 import functools
-from functional_process.cottax._harness import Tier1Contract, Tolerance, legacy_sample
+
+from functional_process.cottax._harness import Tier1Contract, Tolerance
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.blankets.hcpb import (
     calculate_centrepost_angle_fraction,
     calculate_centrepost_fast_neutron_flux_superconducting,
@@ -850,14 +852,7 @@ class TestFirstWallCoolantVoidFractions(Tier1Contract):
     reference = _reference_fw_coolant_void_fractions
     ported = calculate_fw_coolant_void_fractions
 
-    samples = [
-        legacy_sample(
-            "void-fractions-reference-run",
-            radius_fw_channel=0.006,
-            dx_fw_module=0.02,
-            dr_fw_inboard=0.018000000000000002,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -875,17 +870,7 @@ class TestDivertorSurfaceAndPlateMassSingleNull(Tier1Contract):
     reference = _reference_divertor_surface_and_plate_mass_single_null
     ported = calculate_divertor_surface_and_plate_mass_single_null
 
-    samples = [
-        legacy_sample(
-            "divertor-large-tokamak-eval",
-            fdiva=1.1100000000000001,
-            rmajor=8,
-            rminor=2.6666666666666665,
-            den_div_structure=10000,
-            f_vol_div_coolant=0.29999999999999999,
-            dx_div_plate=0.035000000000000003,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -903,17 +888,7 @@ class TestDivertorSurfaceAndPlateMassDoubleNull(Tier1Contract):
     reference = _reference_divertor_surface_and_plate_mass_double_null
     ported = calculate_divertor_surface_and_plate_mass_double_null
 
-    samples = [
-        legacy_sample(
-            "divertor-double-null-large-tokamak-eval",
-            fdiva=1.1100000000000001,
-            rmajor=8,
-            rminor=2.6666666666666665,
-            den_div_structure=10000,
-            f_vol_div_coolant=0.29999999999999999,
-            dx_div_plate=0.035000000000000003,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -933,56 +908,7 @@ class TestComponentMasses(Tier1Contract):
     reference = _reference_component_masses
     ported = calculate_component_masses
 
-    samples = [
-        legacy_sample(
-            "masses-large-tokamak-eval",
-            a_div_surface_total=0,
-            f_vol_div_coolant=0.29999999999999999,
-            dx_div_plate=0.035000000000000003,
-            vol_blkt_total=1182.5433772195902,
-            f_a_blkt_cooling_channels=0.25,
-            vol_shld_total=783.69914576548854,
-            vfshld=0.60000000000000009,
-            a_fw_inboard=505.96109565204046,
-            a_fw_outboard=838.00728058362097,
-            a_fw_total=1343.9683762356615,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            f_a_fw_coolant_inboard=0,
-            f_a_fw_coolant_outboard=0,
-            den_steel=7800,
-            a_plasma_surface=1173.8427771245592,
-            fw_armour_thickness=0.0050000000000000001,
-            breeder_f=0.5,
-            breeder_multiplier=0.75,
-            vfcblkt=0.052949999999999997,
-            vfpblkt=0.10000000000000001,
-        ),
-        legacy_sample(
-            "masses-reference-run",
-            a_div_surface_total=148.7858280740126,
-            f_vol_div_coolant=0.3,
-            dx_div_plate=0.035,
-            vol_blkt_total=1241.7966910494447,
-            f_a_blkt_cooling_channels=0.25,
-            vol_shld_total=785.1983441824412,
-            vfshld=0.6,
-            a_fw_inboard=633.0209600168059,
-            a_fw_outboard=1048.452495290143,
-            a_fw_total=1681.4734553069488,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            f_a_fw_coolant_inboard=0.3141592653589793,
-            f_a_fw_coolant_outboard=0.3141592653589793,
-            den_steel=7800.0,
-            a_plasma_surface=1173.8427771245592,
-            fw_armour_thickness=0.005,
-            breeder_f=0.5,
-            breeder_multiplier=0.75,
-            vfcblkt=0.05295,
-            vfpblkt=0.1,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -999,61 +925,7 @@ class TestNuclearHeatingMagnetsConventional(Tier1Contract):
     reference = _reference_nuclear_heating_magnets_conventional
     ported = calculate_nuclear_heating_magnets_conventional
 
-    samples = [
-        legacy_sample(
-            "magnets-baseline-2018-a",
-            radius_fw_channel=0.0060000000000000001,
-            dx_fw_module=0.02,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            den_steel=7800,
-            m_blkt_total=3501027.3252278985,
-            vol_blkt_total=1397.9003011502937,
-            whtshld=2294873.8131476045,
-            vol_shld_total=735.53647857295027,
-            dr_vv_inboard=0.30000000000000004,
-            dr_vv_outboard=0.30000000000000004,
-            m_vv=9043937.8018644415,
-            vol_vv=1159.4792053672361,
-            dr_blkt_outboard=0.98199999999999998,
-            dr_blkt_inboard=0.75500000000000012,
-            dr_shld_outboard=0.80000000000000004,
-            dr_shld_inboard=0.30000000000000004,
-            fw_armour_thickness=0.0050000000000000001,
-            m_tf_coils_total=19649856.627845347,
-            p_fusion_total_mw=1986.0623241661431,
-        ),
-        legacy_sample(
-            "magnets-baseline-2018-b",
-            radius_fw_channel=0.0060000000000000001,
-            dx_fw_module=0.02,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            den_steel=7800,
-            m_blkt_total=3507503.3737008357,
-            vol_blkt_total=1400.4860764869636,
-            whtshld=2297808.3935174854,
-            vol_shld_total=736.47704920432227,
-            dr_vv_inboard=0.30000000000000004,
-            dr_vv_outboard=0.30000000000000004,
-            m_vv=9056931.558219457,
-            vol_vv=1161.1450715665972,
-            dr_blkt_outboard=0.98199999999999998,
-            dr_blkt_inboard=0.75500000000000012,
-            dr_shld_outboard=0.80000000000000004,
-            dr_shld_inboard=0.30000000000000004,
-            fw_armour_thickness=0.0050000000000000001,
-            m_tf_coils_total=19662548.210142396,
-            p_fusion_total_mw=1985.4423932312809,
-        ),
-        legacy_sample(
-            "magnets-reference-run",
-            **_MAGNETS_REFERENCE_RUN,
-            dr_blkt_inboard=0.7,
-            dr_shld_inboard=0.3,
-            m_tf_coils_total=14339045.099299619,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **_MAGNETS_FUZZ,
@@ -1077,13 +949,7 @@ class TestNuclearHeatingMagnetsSphericalTokamak(Tier1Contract):
     reference = _reference_nuclear_heating_magnets_spherical_tokamak
     ported = calculate_nuclear_heating_magnets_spherical_tokamak
 
-    samples = [
-        legacy_sample(
-            "magnets-st-branch",
-            **_MAGNETS_REFERENCE_RUN,
-            whttflgs=5.0e6,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {**_MAGNETS_FUZZ, "whttflgs": (1.0e5, 3.0e7)}
 
@@ -1102,26 +968,7 @@ class TestNuclearHeatingFw(Tier1Contract):
     ported = nuclear_heating_fw
     reference_domain_errors = (ProcessValueError,)
 
-    samples = [
-        legacy_sample(
-            "fw-baseline-2018-a",
-            m_fw_total=224802.80270851994,
-            fw_armour_u_nuc_heating=6.2500000000000005e-07,
-            p_fusion_total_mw=1986.0623241661431,
-        ),
-        legacy_sample(
-            "fw-baseline-2018-b",
-            m_fw_total=182115.83467868491,
-            fw_armour_u_nuc_heating=6.2500000000000005e-07,
-            p_fusion_total_mw=1985.4423932312809,
-        ),
-        legacy_sample(
-            "fw-reference-run",
-            m_fw_total=161912.50777733992,
-            fw_armour_u_nuc_heating=6.25e-07,
-            p_fusion_total_mw=1630.323245464875,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1137,23 +984,7 @@ class TestNuclearHeatingBlanket(Tier1Contract):
     reference = _reference_nuclear_heating_blanket
     ported = nuclear_heating_blanket
 
-    samples = [
-        legacy_sample(
-            "blanket-baseline-2018-a",
-            m_blkt_total=3501027.3252278985,
-            p_fusion_total_mw=1986.0623241661431,
-        ),
-        legacy_sample(
-            "blanket-baseline-2018-b",
-            m_blkt_total=3507503.3737008357,
-            p_fusion_total_mw=1985.4423932312809,
-        ),
-        legacy_sample(
-            "blanket-reference-run",
-            m_blkt_total=3110067.3947664234,
-            p_fusion_total_mw=1630.323245464875,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1170,35 +1001,7 @@ class TestNuclearHeatingShieldConventional(Tier1Contract):
     reference = _reference_nuclear_heating_shield_conventional
     ported = nuclear_heating_shield_conventional
 
-    samples = [
-        legacy_sample(
-            "shield-baseline-2018-a",
-            dr_shld_outboard=0.80000000000000004,
-            dr_shld_inboard=0.30000000000000004,
-            shield_density=3119.9999999999995,
-            whtshld=2294873.8131476045,
-            x_blanket=2.3374537748527975,
-            p_fusion_total_mw=1986.0623241661431,
-        ),
-        legacy_sample(
-            "shield-baseline-2018-b",
-            dr_shld_outboard=0.80000000000000004,
-            dr_shld_inboard=0.30000000000000004,
-            shield_density=3120,
-            whtshld=2297808.3935174854,
-            x_blanket=2.3374537748527979,
-            p_fusion_total_mw=1985.4423932312809,
-        ),
-        legacy_sample(
-            "shield-reference-run",
-            dr_shld_outboard=0.8,
-            dr_shld_inboard=0.3,
-            shield_density=3120.0,
-            whtshld=2449818.833849217,
-            x_blanket=2.2911207098527977,
-            p_fusion_total_mw=1630.323245464875,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1217,16 +1020,7 @@ class TestNuclearHeatingShieldSphericalTokamak(Tier1Contract):
     reference = _reference_nuclear_heating_shield_spherical_tokamak
     ported = nuclear_heating_shield_spherical_tokamak
 
-    samples = [
-        legacy_sample(
-            "shield-st-branch",
-            dr_shld_outboard=0.80000000000000004,
-            shield_density=3119.9999999999995,
-            whtshld=2294873.8131476045,
-            x_blanket=2.3374537748527975,
-            p_fusion_total_mw=1986.0623241661431,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1244,7 +1038,7 @@ class TestCentrepostNeutronicsAbsent(Tier1Contract):
     reference = _reference_centrepost_neutronics_absent
     ported = calculate_centrepost_neutronics_absent
 
-    samples = [legacy_sample("no-centrepost-reference-run")]
+    samples = FROM_FILE
 
 
 class TestNuclearHeatingRenormalisation(Tier1Contract):
@@ -1261,18 +1055,7 @@ class TestNuclearHeatingRenormalisation(Tier1Contract):
     reference = _reference_nuclear_heating_renormalisation
     ported = calculate_nuclear_heating_renormalisation_single_null_conventional
 
-    samples = [
-        legacy_sample(
-            "renormalisation-reference-run",
-            p_fw_nuclear_heat_total_mw_unnormalised=164.98107822556855,
-            p_blkt_nuclear_heat_total_mw_unnormalised=1245.0032300478786,
-            p_shld_nuclear_heat_mw_unnormalised=1.3640954387315272,
-            p_tf_nuclear_heat_mw_unnormalised=0.03041968903979381,
-            f_ster_div_single=0.0725040362777958,
-            f_p_blkt_multiplication=1.269,
-            p_neutron_total_mw=1301.2682862201025,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1296,18 +1079,7 @@ class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
     reference = _reference_nuclear_heating_renormalisation_double_null
     ported = calculate_nuclear_heating_renormalisation_double_null_conventional
 
-    samples = [
-        legacy_sample(
-            "renormalisation-double-null-reference-run",
-            p_fw_nuclear_heat_total_mw_unnormalised=164.98107822556855,
-            p_blkt_nuclear_heat_total_mw_unnormalised=1245.0032300478786,
-            p_shld_nuclear_heat_mw_unnormalised=1.3640954387315272,
-            p_tf_nuclear_heat_mw_unnormalised=0.03041968903979381,
-            f_ster_div_single=0.0725040362777958,
-            f_p_blkt_multiplication=1.269,
-            p_neutron_total_mw=1301.2682862201025,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1433,23 +1205,7 @@ class TestCentrepostAngleFraction(Tier1Contract):
     value_tolerance = _CP_ANGLE_TOLERANCE
     gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
 
-    samples = [
-        legacy_sample(
-            "cp-angle-fnsf",
-            z_cp_top=2.6714285714285717,
-            r_cp_mid=0.20483000000000001,
-            r_cp_top=0.92643571428571436,
-            rmajor=1.7000000000000002,
-        ),
-        legacy_sample(
-            "cp-angle-spherical-tokamak-eval",
-            z_cp_top=7.0,
-            r_cp_mid=1.8720000000000003,
-            # `rmajor - rminor * triang - 3 * dr_fw_plasma_gap_inboard`.
-            r_cp_top=4.5 - 2.5 * 0.5 - 3 * 0.1,
-            rmajor=4.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # a disagreement or non-finite value at the wider range
@@ -1476,26 +1232,7 @@ class TestCentrepostFastNeutronFluxSuperconducting(Tier1Contract):
     reference = _reference_centrepost_fast_neutron_flux_superconducting
     ported = calculate_centrepost_fast_neutron_flux_superconducting
 
-    samples = [
-        legacy_sample(
-            "cp-flux-menard-a",
-            p_neutron_total_mw=400.65875490746737,
-            sh_width=0.60000000000000009,
-            rmajor=3,
-        ),
-        legacy_sample(
-            "cp-flux-menard-b",
-            p_neutron_total_mw=409.82485143909827,
-            sh_width=0.60000000000000009,
-            rmajor=3,
-        ),
-        legacy_sample(
-            "cp-flux-spherical-tokamak-eval",
-            p_neutron_total_mw=1990.7428899980614,
-            sh_width=0.39314459807893426,
-            rmajor=4.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1520,26 +1257,7 @@ class TestCentrepostNuclearHeatingSuperconducting(Tier1Contract):
     reference = _reference_centrepost_nuclear_heating_superconducting
     ported = calculate_centrepost_nuclear_heating_superconducting
 
-    samples = [
-        legacy_sample(
-            "cp-heating-menard-a",
-            pneut=400.65875490746737,
-            sh_width=0.60000000000000009,
-            rmajor=3,
-        ),
-        legacy_sample(
-            "cp-heating-menard-b",
-            pneut=409.82485143909827,
-            sh_width=0.60000000000000009,
-            rmajor=3,
-        ),
-        legacy_sample(
-            "cp-heating-spherical-tokamak-eval",
-            pneut=1990.7428899980614,
-            sh_width=0.39314459807893426,
-            rmajor=4.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1563,7 +1281,7 @@ class TestCentrepostAndRenormalisationSingleNullSphericalTokamak(Tier1Contract):
     value_tolerance = _CP_ANGLE_TOLERANCE
     gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
 
-    samples = [legacy_sample("st-centrepost-single-null", **_ST_REFERENCE_RUN)]
+    samples = FROM_FILE
 
     fuzz_bounds = _ST_FUZZ
 
@@ -1587,7 +1305,7 @@ class TestCentrepostAndRenormalisationDoubleNullSphericalTokamak(Tier1Contract):
     value_tolerance = _CP_ANGLE_TOLERANCE
     gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
 
-    samples = [legacy_sample("st-centrepost-double-null", **_ST_REFERENCE_RUN)]
+    samples = FROM_FILE
 
     fuzz_bounds = _ST_FUZZ
 
@@ -1606,82 +1324,6 @@ class TestPowerflowCalcMechanicalWithPressureDrop(Tier1Contract):
     reference = _reference_powerflow_calc
     ported = _ported_powerflow_calc
 
-    samples = [
-        legacy_sample(
-            "powerflow-baseline-2018-a",
-            p_plasma_rad_mw=287.44866938104849,
-            f_a_fw_outboard_hcd=0,
-            p_div_rad_total_mw=33.056596978820579,
-            a_fw_outboard=988.92586580655245,
-            a_fw_total=1601.1595634509963,
-            p_beam_orbit_loss_mw=0,
-            p_fw_alpha_mw=19.835845058655043,
-            p_he=8000000,
-            dp_he=550000,
-            gamma_he=1.667,
-            t_in_bb=573.13,
-            t_out_bb=773.13,
-            etaiso=0.90000000000000002,
-            f_p_fw_blkt_pump=1.0,
-            p_fw_nuclear_heat_total_mw=276.80690153753221,
-            p_blkt_nuclear_heat_total_mw=1504.9215740808861,
-            f_p_shld_coolant_pump_total_heat=0.0050000000000000001,
-            p_shld_nuclear_heat_mw=1.3611259588044891,
-            p_cp_shield_nuclear_heat_mw=0,
-            f_p_div_coolant_pump_total_heat=0.0050000000000000001,
-            p_plasma_separatrix_mw=143.6315222649435,
-            p_div_nuclear_heat_total_mw=182.71773382328519,
-        ),
-        legacy_sample(
-            "powerflow-baseline-2018-b",
-            p_plasma_rad_mw=287.44866938104849,
-            f_a_fw_outboard_hcd=0,
-            p_div_rad_total_mw=33.056596978820579,
-            a_fw_outboard=1168.1172772224481,
-            a_fw_total=1891.2865102700493,
-            p_beam_orbit_loss_mw=0,
-            p_fw_alpha_mw=19.829653483586444,
-            p_he=8000000,
-            dp_he=550000,
-            gamma_he=1.667,
-            t_in_bb=573.13,
-            t_out_bb=773.13,
-            etaiso=0.90000000000000002,
-            f_p_fw_blkt_pump=1.0,
-            p_fw_nuclear_heat_total_mw=230.98304919926957,
-            p_blkt_nuclear_heat_total_mw=1550.1447895848396,
-            f_p_shld_coolant_pump_total_heat=0.0050000000000000001,
-            p_shld_nuclear_heat_mw=1.4038170956592293,
-            p_cp_shield_nuclear_heat_mw=0,
-            f_p_div_coolant_pump_total_heat=0.0050000000000000001,
-            p_plasma_separatrix_mw=143.51338080047339,
-            p_div_nuclear_heat_total_mw=182.66070017727785,
-        ),
-        legacy_sample(
-            "powerflow-reference-run",
-            p_plasma_rad_mw=218.68809520720959,
-            f_a_fw_outboard_hcd=0.0,
-            p_div_rad_total_mw=15.855769588425584,
-            a_fw_outboard=1048.452495290143,
-            a_fw_total=1681.4734553069488,
-            p_beam_orbit_loss_mw=0.0,
-            p_fw_alpha_mw=16.391644584793067,
-            p_he=8000000.0,
-            dp_he=550000.0,
-            gamma_he=1.667,
-            t_in_bb=573.13,
-            t_out_bb=773.13,
-            etaiso=0.9,
-            f_p_fw_blkt_pump=1.0,
-            p_fw_nuclear_heat_total_mw=179.03215391121836,
-            p_blkt_nuclear_heat_total_mw=1351.03741774038,
-            f_p_shld_coolant_pump_total_heat=0.005,
-            p_shld_nuclear_heat_mw=1.4802724479874645,
-            p_cp_shield_nuclear_heat_mw=0.0,
-            f_p_div_coolant_pump_total_heat=0.005,
-            p_plasma_separatrix_mw=174.97328472847954,
-            p_div_nuclear_heat_total_mw=94.34720303124747,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

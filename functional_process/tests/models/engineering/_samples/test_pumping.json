@@ -1,0 +1,40 @@
+{
+ "TestCalculateReynoldsNumber": [
+  {
+   "label": "reynolds-tests-unit-test_pumping",
+   "provenance": "legacy",
+   "kwargs": {
+    "den_coolant": 8.86732506012907,
+    "vel_coolant": 12.64911076989688,
+    "radius_channel": 0.006,
+    "visc_coolant": 4.041621983693557e-05
+   }
+  }
+ ],
+ "TestDarcyFrictionHaaland": [
+  {
+   "label": "haaland-tests-unit-test_pumping",
+   "provenance": "legacy",
+   "kwargs": {
+    "reynolds": 5500.0,
+    "roughness_channel": 1e-06,
+    "radius_channel": 0.1
+   }
+  }
+ ],
+ "TestGnielinskiHeatTransferCoefficient": [
+  {
+   "label": "gnielinski-tests-unit-test_pumping",
+   "provenance": "legacy",
+   "kwargs": {
+    "mflux_coolant": 112.19853108876258,
+    "den_coolant": 8.86732506012907,
+    "radius_channel": 0.006,
+    "heatcap_coolant": 5184.933029996758,
+    "visc_coolant": 4.041621983693557e-05,
+    "thermcond_coolant": 0.3211653052986152,
+    "roughness_channel": 6e-08
+   }
+  }
+ ]
+}

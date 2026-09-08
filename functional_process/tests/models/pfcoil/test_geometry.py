@@ -26,7 +26,8 @@ oracle. See `geometry.md` § tier signal.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import N_PF_GROUPS, NFXF
 from functional_process.cottax.pfcoil.geometry import (
     calculate_cs_geometry,
@@ -185,15 +186,7 @@ class TestCalculateCsGeometry(Tier1Contract):
     ported = calculate_cs_geometry
 
     # Read off a converged PROCESS run of `large_tokamak_eval.IN.DAT`, in-process.
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            z_tf_inside_half=8.818217164127494,
-            f_z_cs_tf_internal=0.9,
-            dr_cs=0.546816593988753,
-            dr_cs_bore=2.003843190236783,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -205,16 +198,7 @@ class TestPlaceCsFilaments(Tier1Contract):
     reference = _reference_place_cs_filaments
     ported = place_cs_filaments
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            r_cs_middle=2.2772514872311596,
-            z_cs_inside_half=15.87279089542949 / 2,
-            # `-(a_cs_poloidal * j_cs_flat_top_end)`, `pfcoil.py:209-211`.
-            c_cs_flat_top_end=-(8.679505454534445 * 21443595.371072624),
-            f_j_cs_start_pulse_end_flat_top=0.93491189654662,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -226,19 +210,7 @@ class TestCalculatePFCoilGroupPositions(Tier1Contract):
     reference = _reference_pf_coil_group_positions
     ported = calculate_pf_coil_group_positions
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            triang=0.5,
-            rpf2=-1.825,
-            z_tf_top=8.784333333333333,
-            dz_tf_upper_lower_midplane=-1.233883830794161,
-            zref=np.array([3.6, 1.2, 1.0, 2.8]),
-            r_pf_outside_tf_midplane=17.078406000060053,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (4.0, 14.0),
@@ -278,16 +250,7 @@ class TestCalculateCsTurnGeometryEuDemo(Tier1Contract):
     reference = _reference_cs_turn_geometry_eu_demo
     ported = calculate_cs_turn_geometry_eu_demo
 
-    samples = [
-        legacy_sample(
-            "low-aspect-ratio-demo-converged",
-            a_cs_poloidal=11.351304958597812,
-            n_pf_coil_turns_cs=11.351304958597812 / 0.0026301343838275423,
-            f_dr_dz_cs_turn=3.1818181818181817,
-            radius_cs_turn_corners=0.003,
-            f_a_cs_turn_steel=0.7597743217586591,
-        ),
-    ]
+    samples = FROM_FILE
     """PROCESS's own converged values on `low_aspect_ratio_DEMO.IN.DAT`, read off one
     `SingleRun` -- the machine whose constraint 90 this unit exists to feed. The turn
     count is spelled as the quotient that produces it because that is what the

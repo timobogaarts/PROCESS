@@ -1,0 +1,154 @@
+{
+ "TestEuDemoReAttachmentMetric": [
+  {
+   "label": "large_tokamak_eval-converged-and-violating",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 176.8392744361799,
+    "b_plasma_toroidal_on_axis": 5.318322174646137,
+    "q95": 3.7339078191146116,
+    "aspect": 3.0,
+    "rmajor": 8.0
+   }
+  },
+  {
+   "label": "seed68-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 247.33969517481754,
+    "b_plasma_toroidal_on_axis": 12.8765678437432,
+    "q95": 7.3881781758818965,
+    "aspect": 3.691842709930162,
+    "rmajor": 19.56471658217336
+   }
+  },
+  {
+   "label": "seed68-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 349.467233905239,
+    "b_plasma_toroidal_on_axis": 2.823322923372868,
+    "q95": 6.208374480682795,
+    "aspect": 3.6425959599605626,
+    "rmajor": 5.199018369087227
+   }
+  },
+  {
+   "label": "seed68-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 90.20285023665159,
+    "b_plasma_toroidal_on_axis": 11.486881193362414,
+    "q95": 9.568654969373096,
+    "aspect": 3.404637044569963,
+    "rmajor": 7.59524557605557
+   }
+  },
+  {
+   "label": "seed68-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 11.307671957209484,
+    "b_plasma_toroidal_on_axis": 6.899351367796792,
+    "q95": 6.574901214818859,
+    "aspect": 3.7579440938739825,
+    "rmajor": 18.555295755239534
+   }
+  },
+  {
+   "label": "seed68-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 135.35852942772397,
+    "b_plasma_toroidal_on_axis": 2.3926168398791057,
+    "q95": 5.162047478443573,
+    "aspect": 2.2493852066367177,
+    "rmajor": 11.718812543105837
+   }
+  }
+ ],
+ "TestPsepOverRMetric": [
+  {
+   "label": "st_regression-converged-and-active",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 179.99999999946084,
+    "rmajor": 4.5
+   }
+  },
+  {
+   "label": "spherical_tokamak_eval-converged-and-violating",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 181.2672921059313,
+    "rmajor": 4.5
+   }
+  },
+  {
+   "label": "seed56-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 365.8017644821346,
+    "rmajor": 2.304250660615577
+   }
+  },
+  {
+   "label": "seed56-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 490.59252320694515,
+    "rmajor": 15.042875818228406
+   }
+  },
+  {
+   "label": "seed56-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 276.663957914598,
+    "rmajor": 6.241166160806306
+   }
+  },
+  {
+   "label": "seed56-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 307.24927359282367,
+    "rmajor": 8.466887097551403
+   }
+  },
+  {
+   "label": "seed56-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 298.61011644248464,
+    "rmajor": 6.698460474571597
+   }
+  }
+ ],
+ "TestRadiationFraction": [
+  {
+   "label": "typical-operating-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 250.0,
+    "p_plasma_heating_mw": 450.0
+   }
+  },
+  {
+   "label": "radiation-exceeds-heating-power",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 500.0,
+    "p_plasma_heating_mw": 450.0
+   }
+  },
+  {
+   "label": "zero-heating-power",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 250.0,
+    "p_plasma_heating_mw": 0.0
+   }
+  }
+ ]
+}

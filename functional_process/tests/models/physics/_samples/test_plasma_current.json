@@ -1,0 +1,99 @@
+{
+ "TestCalculateCurrentCoefficientFiesta": [
+  {
+   "label": "calculate_current_coefficient_fiesta-spherical_tokamak_eval",
+   "provenance": "input-file",
+   "kwargs": {
+    "eps": 0.5555555555555556,
+    "kappa": 2.8,
+    "triang": 0.5
+   }
+  }
+ ],
+ "TestCalculateCurrentCoefficientIpdg89": [
+  {
+   "label": "calculate_current_coefficient_ipdg89-large_tokamak_nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "eps": 0.3333333333333333,
+    "kappa95": 1.6517857142857142,
+    "triang95": 0.3333333333333333
+   }
+  }
+ ],
+ "TestCalculateCurrentProfileIndexWesson": [
+  {
+   "label": "calculate_current_profile_index_wesson-unit_test",
+   "provenance": "legacy",
+   "kwargs": {
+    "qstar": 3.5,
+    "q0": 1.5
+   }
+  }
+ ],
+ "TestCalculateCyclindricalPlasmaCurrent": [
+  {
+   "label": "calculate_cyclindrical_plasma_current-large_tokamak_nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 2.6666666666666665,
+    "rmajor": 8.0,
+    "q95": 3.5,
+    "b_plasma_toroidal_on_axis": 5.7
+   }
+  }
+ ],
+ "TestCalculateCylindricalSafetyFactor": [
+  {
+   "label": "calculate_cylindrical_safety_factor-large_tokamak_nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "plasma_current": 18398455.678867526,
+    "b_plasma_toroidal_on_axis": 5.7,
+    "kappa95": 1.6517857142857142,
+    "triang95": 0.3333333333333333
+   }
+  }
+ ],
+ "TestCalculateInternalInductanceWesson": [
+  {
+   "label": "calculate_internal_inductance_wesson-unit_test",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphaj": 0.8
+   }
+  }
+ ],
+ "TestCalculatePlasmaCurrentFiesta": [
+  {
+   "label": "calculate_plasma_current_fiesta-spherical_tokamak_eval",
+   "provenance": "input-file",
+   "kwargs": {
+    "eps": 0.5555555555555556,
+    "kappa": 2.8,
+    "triang": 0.5,
+    "rminor": 2.5,
+    "rmajor": 4.5,
+    "q95": 5.835830999686161,
+    "b_plasma_toroidal_on_axis": 3.0
+   }
+  }
+ ],
+ "TestCalculatePlasmaCurrentIpdg89": [
+  {
+   "label": "calculate_plasma_current_ipdg89-large_tokamak_nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "eps": 0.3333333333333333,
+    "kappa95": 1.6517857142857142,
+    "triang95": 0.3333333333333333,
+    "rminor": 2.6666666666666665,
+    "rmajor": 8.0,
+    "q95": 3.5,
+    "b_plasma_toroidal_on_axis": 5.7
+   }
+  }
+ ]
+}

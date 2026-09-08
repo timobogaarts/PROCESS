@@ -5,7 +5,8 @@ needed) -- the reference adapter only has to set `istell` nonzero (to pass the
 whole-function gate) and the six duration fields the port reads.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.initialization import (
     calculate_pulse_durations,
 )
@@ -65,17 +66,7 @@ class TestPulseDurations(Tier1Contract):
 
     # PROCESS's own defaults (times_variables.py) and st_init's own literals
     # (initialization.py) -- a real stellarator-mode operating point.
-    samples = [
-        legacy_sample(
-            "st-init-defaults",
-            t_plant_pulse_coil_precharge=0.0,
-            t_plant_pulse_plasma_current_ramp_up=0.0,
-            t_plant_pulse_burn=3.15576e7,
-            t_plant_pulse_plasma_current_ramp_down=0.0,
-            t_plant_pulse_fusion_ramp=10.0,
-            t_plant_pulse_dwell=1800.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Only these two are actually read by `st_init` -- the other four are overwritten
     # unconditionally by its own literals regardless of what the reference adapter sets

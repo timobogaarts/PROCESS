@@ -19,7 +19,8 @@ Audit record: `functional_process/_audit/units/models/physics/scrape_off_layer.m
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.scrape_off_layer import (
     Eich2013SOLPowerDecayLength,
     Mast2014SOLPowerDecayLength1,
@@ -51,43 +52,7 @@ class TestCalculateEich2013SolPowerDecayLength(Tier1Contract):
     reference = staticmethod(ScrapeOffLayer.calculate_eich2013_sol_power_decay_length)
     ported = calculate_eich2013_sol_power_decay_length
 
-    samples = [
-        legacy_sample(
-            "exact",
-            p_plasma_separatrix_mw=100.0,
-            rmajor=3.0,
-            b_plasma_surface_poloidal_average=0.5,
-            aspect=3.0,
-        ),
-        legacy_sample(
-            "low-psep",
-            p_plasma_separatrix_mw=10.0,
-            rmajor=3.0,
-            b_plasma_surface_poloidal_average=0.5,
-            aspect=3.0,
-        ),
-        legacy_sample(
-            "high-psep",
-            p_plasma_separatrix_mw=500.0,
-            rmajor=3.0,
-            b_plasma_surface_poloidal_average=0.5,
-            aspect=3.0,
-        ),
-        legacy_sample(
-            "large-rmajor",
-            p_plasma_separatrix_mw=100.0,
-            rmajor=10.0,
-            b_plasma_surface_poloidal_average=0.5,
-            aspect=3.0,
-        ),
-        legacy_sample(
-            "small-rmajor",
-            p_plasma_separatrix_mw=100.0,
-            rmajor=1.0,
-            b_plasma_surface_poloidal_average=0.5,
-            aspect=3.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -101,26 +66,7 @@ class TestCalculateMast2014SolPowerDecayLength1(Tier1Contract):
     reference = staticmethod(ScrapeOffLayer.calculate_mast2014_sol_power_decay_length_1)
     ported = calculate_mast2014_sol_power_decay_length_1
 
-    samples = [
-        legacy_sample(
-            "exact", p_plasma_separatrix_mw=100.0, b_plasma_surface_poloidal_average=0.5
-        ),
-        legacy_sample(
-            "low-psep",
-            p_plasma_separatrix_mw=10.0,
-            b_plasma_surface_poloidal_average=0.5,
-        ),
-        legacy_sample(
-            "high-psep",
-            p_plasma_separatrix_mw=500.0,
-            b_plasma_surface_poloidal_average=0.5,
-        ),
-        legacy_sample(
-            "high-bpol",
-            p_plasma_separatrix_mw=100.0,
-            b_plasma_surface_poloidal_average=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -135,12 +81,7 @@ class TestCalculateMast2014SolPowerDecayLength2(Tier1Contract):
     reference = staticmethod(ScrapeOffLayer.calculate_mast2014_sol_power_decay_length_2)
     ported = calculate_mast2014_sol_power_decay_length_2
 
-    samples = [
-        legacy_sample("exact", p_plasma_separatrix_mw=100.0, cur_plasma_ma=1.0),
-        legacy_sample("low-psep", p_plasma_separatrix_mw=10.0, cur_plasma_ma=1.0),
-        legacy_sample("high-psep", p_plasma_separatrix_mw=500.0, cur_plasma_ma=1.0),
-        legacy_sample("high-current", p_plasma_separatrix_mw=100.0, cur_plasma_ma=3.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -160,16 +101,7 @@ class TestCalculateUpstreamSolOutboardParallelArea(Tier1Contract):
     )
     ported = calculate_upstream_sol_outboard_parallel_area
 
-    samples = [
-        legacy_sample(
-            "exact",
-            rmajor=6.0,
-            rminor=2.0,
-            len_plasma_sol_power_decay=0.001,
-            b_plasma_outboard_total=4.0,
-            b_plasma_surface_poloidal_average=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -240,41 +172,7 @@ class TestScrapeOffLayer(Tier1Contract):
 
     static_argnames = ("i_len_sol_outboard_power_decay",)
 
-    samples = [
-        legacy_sample(
-            "eich2013-reference-arm",
-            p_plasma_separatrix_mw_raw=150.0,
-            rmajor=8.0,
-            rminor=2.5,
-            b_plasma_surface_poloidal_average=0.6,
-            b_plasma_outboard_total=5.0,
-            aspect=3.2,
-            plasma_current=15.0e6,
-            i_len_sol_outboard_power_decay=1,
-        ),
-        legacy_sample(
-            "mast14-1",
-            p_plasma_separatrix_mw_raw=150.0,
-            rmajor=8.0,
-            rminor=2.5,
-            b_plasma_surface_poloidal_average=0.6,
-            b_plasma_outboard_total=5.0,
-            aspect=3.2,
-            plasma_current=15.0e6,
-            i_len_sol_outboard_power_decay=2,
-        ),
-        legacy_sample(
-            "mast14-2",
-            p_plasma_separatrix_mw_raw=150.0,
-            rmajor=8.0,
-            rminor=2.5,
-            b_plasma_surface_poloidal_average=0.6,
-            b_plasma_outboard_total=5.0,
-            aspect=3.2,
-            plasma_current=15.0e6,
-            i_len_sol_outboard_power_decay=3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {"i_len_sol_outboard_power_decay": 1}
     fuzz = True

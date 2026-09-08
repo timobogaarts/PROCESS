@@ -1,0 +1,24 @@
+{
+ "TestScTfCoilNuclearHeating": [
+  {
+   "label": "sctfcoil-heating-helias",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_blkt_inboard": 0.835,
+    "dr_blkt_outboard": 1.085,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "dr_shld_inboard": 0.2,
+    "dr_shld_outboard": 0.2,
+    "f_t_plant_available": 0.7500000000000001,
+    "life_plant": 40,
+    "pflux_fw_neutron_mw": 0.6109596928204221,
+    "dr_tf_plasma_case": 0.05,
+    "tfsai": 0,
+    "tfsao": 0,
+    "dr_tf_wp_with_insulation": 0.7318064621151436,
+    "dx_tf_wp_insulation": 0.01
+   }
+  }
+ ]
+}

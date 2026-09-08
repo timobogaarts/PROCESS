@@ -1,0 +1,100 @@
+{
+ "TestDimensionlessPlasmaParameters": [
+  {
+   "label": "large-tokamak-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "dlamie": 17.5,
+    "vol_plasma": 1888.0,
+    "rmajor": 8.0,
+    "b_plasma_toroidal_on_axis": 5.7,
+    "eps": 0.32,
+    "nd_plasma_electron_line": 8e+19,
+    "kappa": 1.7,
+    "e_plasma_beta": 300000000.0,
+    "plasma_current": 18000000.0,
+    "m_ions_total_amu": 2.5
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "dlamie": 17.821770123928726,
+    "vol_plasma": 882.3814699152239,
+    "rmajor": 3.9014175265962834,
+    "b_plasma_toroidal_on_axis": 2.165276355285291,
+    "eps": 0.750616191360218,
+    "nd_plasma_electron_line": 9.145004657321673e+20,
+    "kappa": 1.9099536636507697,
+    "e_plasma_beta": 154343975.71179038,
+    "plasma_current": 16765124.752497263,
+    "m_ions_total_amu": 4.740289695151073
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "dlamie": 18.895121324729192,
+    "vol_plasma": 107.94165049342948,
+    "rmajor": 21.862894084926527,
+    "b_plasma_toroidal_on_axis": 2.3358557530546435,
+    "eps": 0.6837243571439553,
+    "nd_plasma_electron_line": 1.9214250819050783e+20,
+    "kappa": 2.29476838352483,
+    "e_plasma_beta": 42109846.73528853,
+    "plasma_current": 9691644.825584158,
+    "m_ions_total_amu": 2.690748884790634
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "dlamie": 14.169918026872779,
+    "vol_plasma": 460.42150184873543,
+    "rmajor": 17.753737123259867,
+    "b_plasma_toroidal_on_axis": 8.471895115742502,
+    "eps": 0.5923080891850031,
+    "nd_plasma_electron_line": 3.960040031766458e+20,
+    "kappa": 2.4958149036838164,
+    "e_plasma_beta": 876003852.925705,
+    "plasma_current": 20880717.549940147,
+    "m_ions_total_amu": 3.601837105071265
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "dlamie": 18.13068038342564,
+    "vol_plasma": 1227.872129539401,
+    "rmajor": 5.972123110493047,
+    "b_plasma_toroidal_on_axis": 9.214883401940817,
+    "eps": 0.5202834579805807,
+    "nd_plasma_electron_line": 3.2403703804777654e+20,
+    "kappa": 1.7287530382476837,
+    "e_plasma_beta": 466083257.95885813,
+    "plasma_current": 28087261.962731242,
+    "m_ions_total_amu": 2.431180786836281
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "dlamie": 17.429178984378566,
+    "vol_plasma": 1033.4212341202324,
+    "rmajor": 16.07460066439333,
+    "b_plasma_toroidal_on_axis": 5.379112255071332,
+    "eps": 0.413295200422529,
+    "nd_plasma_electron_line": 8.924688649646965e+20,
+    "kappa": 1.3407363903000695,
+    "e_plasma_beta": 74056201.78316887,
+    "plasma_current": 3436444.96388916,
+    "m_ions_total_amu": 4.330576590613591
+   }
+  }
+ ]
+}

@@ -1,0 +1,168 @@
+{
+ "TestBi2212": [
+  {
+   "label": "bi2212-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_conductor": 7.0,
+    "jstrand": 20000000.0,
+    "temp_conductor": 4.75,
+    "f_strain": 0.2
+   }
+  },
+  {
+   "label": "bi2212-out-of-range",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_conductor": 3.0,
+    "jstrand": 20000000.0,
+    "temp_conductor": 25.0,
+    "f_strain": 0.2
+   }
+  }
+ ],
+ "TestBotturaScaling": [
+  {
+   "label": "bottura-scaling-iter-constants",
+   "provenance": "legacy",
+   "kwargs": {
+    "csc": 19922.0,
+    "p": 0.63,
+    "q": 2.1,
+    "c_a1": 44.48,
+    "c_a2": 0.0,
+    "epsilon_0a": 0.00256,
+    "temp_conductor": 4.75,
+    "b_conductor": 13.008974843466492,
+    "epsilon": 0.001601605753441172,
+    "b_c20max": 32.97,
+    "temp_c0max": 16.06
+   }
+  }
+ ],
+ "TestGlNbti": [
+  {
+   "label": "gl-nbti-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 7.0,
+    "strain": 2,
+    "b_c20max": 9.5,
+    "t_c0": 13.75
+   }
+  }
+ ],
+ "TestGlRebco": [
+  {
+   "label": "gl-rebco-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 7.0,
+    "strain": 2,
+    "b_c20max": 30.0,
+    "t_c0": 25.0
+   }
+  }
+ ],
+ "TestHijcRebco": [
+  {
+   "label": "hijc-rebco-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 7.0,
+    "b_c20max": 30.0,
+    "t_c0": 25.0,
+    "dr_hts_tape": 0.004,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_total": 6.5e-05
+   }
+  },
+  {
+   "label": "hijc-rebco-croco-tape",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 11.7,
+    "b_c20max": 138.0,
+    "t_c0": 92.0,
+    "dr_hts_tape": 0.00628,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_total": 0.000211
+   }
+  }
+ ],
+ "TestItersc": [
+  {
+   "label": "itersc-large-tokamak-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 13.008974843466492,
+    "strain": 0.001601605753441172,
+    "b_c20max": 32.97,
+    "temp_c0max": 16.06
+   }
+  },
+  {
+   "label": "itersc-large-tokamak-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 6.251,
+    "b_conductor": 13.008974843466492,
+    "strain": 0.001601605753441172,
+    "b_c20max": 32.97,
+    "temp_c0max": 16.06
+   }
+  }
+ ],
+ "TestJcritNbti": [
+  {
+   "label": "jcrit-nbti-large-tokamak-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 8.051792363850755,
+    "c0": 10000000000,
+    "b_c20max": 15,
+    "temp_c0max": 9.3
+   }
+  },
+  {
+   "label": "jcrit-nbti-large-tokamak-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 6,
+    "b_conductor": 8.051792363850755,
+    "c0": 10000000000,
+    "b_c20max": 15,
+    "temp_c0max": 9.3
+   }
+  }
+ ],
+ "TestJcritRebco": [
+  {
+   "label": "jcrit-rebco-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 7.0
+   }
+  }
+ ],
+ "TestWesternSuperconductingNb3Sn": [
+  {
+   "label": "western-nb3sn-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_conductor": 4.75,
+    "b_conductor": 27.0,
+    "strain": 0.001,
+    "b_c20max": 30.0,
+    "temp_c0max": 25.0
+   }
+  }
+ ]
+}

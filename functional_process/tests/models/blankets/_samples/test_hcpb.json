@@ -1,0 +1,556 @@
+{
+ "TestCentrepostAndRenormalisationDoubleNullSphericalTokamak": [
+  {
+   "label": "st-centrepost-double-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fw_nuclear_heat_total_mw_unnormalised": 141.3749135766222,
+    "p_blkt_nuclear_heat_total_mw_unnormalised": 1872.8676544479313,
+    "p_shld_nuclear_heat_mw_unnormalised": 0.586506103734957,
+    "p_tf_nuclear_heat_mw_unnormalised": 0.00436359182345013,
+    "f_ster_div_single": 0.048589790347528944,
+    "f_p_blkt_multiplication": 1.269,
+    "p_neutron_total_mw": 1990.7428899980614,
+    "rmajor": 4.5,
+    "rminor": 2.5,
+    "triang": 0.5,
+    "dr_fw_plasma_gap_inboard": 0.1,
+    "z_plasma_xpoint_upper": 7.0,
+    "r_sh_inboard_out": 1.8720000000000003,
+    "dr_shld_inboard": 0.39314459807893426
+   }
+  }
+ ],
+ "TestCentrepostAndRenormalisationSingleNullSphericalTokamak": [
+  {
+   "label": "st-centrepost-single-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fw_nuclear_heat_total_mw_unnormalised": 141.3749135766222,
+    "p_blkt_nuclear_heat_total_mw_unnormalised": 1872.8676544479313,
+    "p_shld_nuclear_heat_mw_unnormalised": 0.586506103734957,
+    "p_tf_nuclear_heat_mw_unnormalised": 0.00436359182345013,
+    "f_ster_div_single": 0.048589790347528944,
+    "f_p_blkt_multiplication": 1.269,
+    "p_neutron_total_mw": 1990.7428899980614,
+    "rmajor": 4.5,
+    "rminor": 2.5,
+    "triang": 0.5,
+    "dr_fw_plasma_gap_inboard": 0.1,
+    "z_plasma_xpoint_upper": 7.0,
+    "r_sh_inboard_out": 1.8720000000000003,
+    "dr_shld_inboard": 0.39314459807893426
+   }
+  }
+ ],
+ "TestCentrepostAngleFraction": [
+  {
+   "label": "cp-angle-fnsf",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_cp_top": 2.6714285714285717,
+    "r_cp_mid": 0.20483,
+    "r_cp_top": 0.9264357142857144,
+    "rmajor": 1.7000000000000002
+   }
+  },
+  {
+   "label": "cp-angle-spherical-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_cp_top": 7.0,
+    "r_cp_mid": 1.8720000000000003,
+    "r_cp_top": 2.95,
+    "rmajor": 4.5
+   }
+  }
+ ],
+ "TestCentrepostFastNeutronFluxSuperconducting": [
+  {
+   "label": "cp-flux-menard-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_neutron_total_mw": 400.65875490746737,
+    "sh_width": 0.6000000000000001,
+    "rmajor": 3
+   }
+  },
+  {
+   "label": "cp-flux-menard-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_neutron_total_mw": 409.82485143909827,
+    "sh_width": 0.6000000000000001,
+    "rmajor": 3
+   }
+  },
+  {
+   "label": "cp-flux-spherical-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_neutron_total_mw": 1990.7428899980614,
+    "sh_width": 0.39314459807893426,
+    "rmajor": 4.5
+   }
+  }
+ ],
+ "TestCentrepostNeutronicsAbsent": [
+  {
+   "label": "no-centrepost-reference-run",
+   "provenance": "legacy",
+   "kwargs": {}
+  }
+ ],
+ "TestCentrepostNuclearHeatingSuperconducting": [
+  {
+   "label": "cp-heating-menard-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "pneut": 400.65875490746737,
+    "sh_width": 0.6000000000000001,
+    "rmajor": 3
+   }
+  },
+  {
+   "label": "cp-heating-menard-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "pneut": 409.82485143909827,
+    "sh_width": 0.6000000000000001,
+    "rmajor": 3
+   }
+  },
+  {
+   "label": "cp-heating-spherical-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "pneut": 1990.7428899980614,
+    "sh_width": 0.39314459807893426,
+    "rmajor": 4.5
+   }
+  }
+ ],
+ "TestComponentMasses": [
+  {
+   "label": "masses-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_div_surface_total": 0,
+    "f_vol_div_coolant": 0.3,
+    "dx_div_plate": 0.035,
+    "vol_blkt_total": 1182.5433772195902,
+    "f_a_blkt_cooling_channels": 0.25,
+    "vol_shld_total": 783.6991457654885,
+    "vfshld": 0.6000000000000001,
+    "a_fw_inboard": 505.96109565204046,
+    "a_fw_outboard": 838.007280583621,
+    "a_fw_total": 1343.9683762356615,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "f_a_fw_coolant_inboard": 0,
+    "f_a_fw_coolant_outboard": 0,
+    "den_steel": 7800,
+    "a_plasma_surface": 1173.8427771245592,
+    "fw_armour_thickness": 0.005,
+    "breeder_f": 0.5,
+    "breeder_multiplier": 0.75,
+    "vfcblkt": 0.05295,
+    "vfpblkt": 0.1
+   }
+  },
+  {
+   "label": "masses-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_div_surface_total": 148.7858280740126,
+    "f_vol_div_coolant": 0.3,
+    "dx_div_plate": 0.035,
+    "vol_blkt_total": 1241.7966910494447,
+    "f_a_blkt_cooling_channels": 0.25,
+    "vol_shld_total": 785.1983441824412,
+    "vfshld": 0.6,
+    "a_fw_inboard": 633.0209600168059,
+    "a_fw_outboard": 1048.452495290143,
+    "a_fw_total": 1681.4734553069488,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "f_a_fw_coolant_inboard": 0.3141592653589793,
+    "f_a_fw_coolant_outboard": 0.3141592653589793,
+    "den_steel": 7800.0,
+    "a_plasma_surface": 1173.8427771245592,
+    "fw_armour_thickness": 0.005,
+    "breeder_f": 0.5,
+    "breeder_multiplier": 0.75,
+    "vfcblkt": 0.05295,
+    "vfpblkt": 0.1
+   }
+  }
+ ],
+ "TestDivertorSurfaceAndPlateMassDoubleNull": [
+  {
+   "label": "divertor-double-null-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "fdiva": 1.11,
+    "rmajor": 8,
+    "rminor": 2.6666666666666665,
+    "den_div_structure": 10000,
+    "f_vol_div_coolant": 0.3,
+    "dx_div_plate": 0.035
+   }
+  }
+ ],
+ "TestDivertorSurfaceAndPlateMassSingleNull": [
+  {
+   "label": "divertor-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "fdiva": 1.11,
+    "rmajor": 8,
+    "rminor": 2.6666666666666665,
+    "den_div_structure": 10000,
+    "f_vol_div_coolant": 0.3,
+    "dx_div_plate": 0.035
+   }
+  }
+ ],
+ "TestFirstWallCoolantVoidFractions": [
+  {
+   "label": "void-fractions-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dx_fw_module": 0.02,
+    "dr_fw_inboard": 0.018000000000000002
+   }
+  }
+ ],
+ "TestNuclearHeatingBlanket": [
+  {
+   "label": "blanket-baseline-2018-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_blkt_total": 3501027.3252278985,
+    "p_fusion_total_mw": 1986.062324166143
+   }
+  },
+  {
+   "label": "blanket-baseline-2018-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_blkt_total": 3507503.3737008357,
+    "p_fusion_total_mw": 1985.442393231281
+   }
+  },
+  {
+   "label": "blanket-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_blkt_total": 3110067.3947664234,
+    "p_fusion_total_mw": 1630.323245464875
+   }
+  }
+ ],
+ "TestNuclearHeatingFw": [
+  {
+   "label": "fw-baseline-2018-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fw_total": 224802.80270851994,
+    "fw_armour_u_nuc_heating": 6.25e-07,
+    "p_fusion_total_mw": 1986.062324166143
+   }
+  },
+  {
+   "label": "fw-baseline-2018-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fw_total": 182115.8346786849,
+    "fw_armour_u_nuc_heating": 6.25e-07,
+    "p_fusion_total_mw": 1985.442393231281
+   }
+  },
+  {
+   "label": "fw-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fw_total": 161912.50777733992,
+    "fw_armour_u_nuc_heating": 6.25e-07,
+    "p_fusion_total_mw": 1630.323245464875
+   }
+  }
+ ],
+ "TestNuclearHeatingMagnetsConventional": [
+  {
+   "label": "magnets-baseline-2018-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dx_fw_module": 0.02,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "den_steel": 7800,
+    "m_blkt_total": 3501027.3252278985,
+    "vol_blkt_total": 1397.9003011502937,
+    "whtshld": 2294873.8131476045,
+    "vol_shld_total": 735.5364785729503,
+    "dr_vv_inboard": 0.30000000000000004,
+    "dr_vv_outboard": 0.30000000000000004,
+    "m_vv": 9043937.801864441,
+    "vol_vv": 1159.479205367236,
+    "dr_blkt_outboard": 0.982,
+    "dr_blkt_inboard": 0.7550000000000001,
+    "dr_shld_outboard": 0.8,
+    "dr_shld_inboard": 0.30000000000000004,
+    "fw_armour_thickness": 0.005,
+    "m_tf_coils_total": 19649856.627845347,
+    "p_fusion_total_mw": 1986.062324166143
+   }
+  },
+  {
+   "label": "magnets-baseline-2018-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dx_fw_module": 0.02,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "den_steel": 7800,
+    "m_blkt_total": 3507503.3737008357,
+    "vol_blkt_total": 1400.4860764869636,
+    "whtshld": 2297808.3935174854,
+    "vol_shld_total": 736.4770492043223,
+    "dr_vv_inboard": 0.30000000000000004,
+    "dr_vv_outboard": 0.30000000000000004,
+    "m_vv": 9056931.558219457,
+    "vol_vv": 1161.1450715665972,
+    "dr_blkt_outboard": 0.982,
+    "dr_blkt_inboard": 0.7550000000000001,
+    "dr_shld_outboard": 0.8,
+    "dr_shld_inboard": 0.30000000000000004,
+    "fw_armour_thickness": 0.005,
+    "m_tf_coils_total": 19662548.210142396,
+    "p_fusion_total_mw": 1985.442393231281
+   }
+  },
+  {
+   "label": "magnets-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dx_fw_module": 0.02,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "den_steel": 7800.0,
+    "m_blkt_total": 3110067.3947664234,
+    "vol_blkt_total": 1241.7966910494447,
+    "whtshld": 2449818.833849217,
+    "vol_shld_total": 785.1983441824412,
+    "dr_vv_inboard": 0.3,
+    "dr_vv_outboard": 0.3,
+    "m_vv": 7938816.368934795,
+    "vol_vv": 1017.7969703762558,
+    "dr_blkt_outboard": 1.0,
+    "dr_shld_outboard": 0.8,
+    "fw_armour_thickness": 0.005,
+    "p_fusion_total_mw": 1630.323245464875,
+    "dr_blkt_inboard": 0.7,
+    "dr_shld_inboard": 0.3,
+    "m_tf_coils_total": 14339045.099299619
+   }
+  }
+ ],
+ "TestNuclearHeatingMagnetsSphericalTokamak": [
+  {
+   "label": "magnets-st-branch",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dx_fw_module": 0.02,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002,
+    "den_steel": 7800.0,
+    "m_blkt_total": 3110067.3947664234,
+    "vol_blkt_total": 1241.7966910494447,
+    "whtshld": 2449818.833849217,
+    "vol_shld_total": 785.1983441824412,
+    "dr_vv_inboard": 0.3,
+    "dr_vv_outboard": 0.3,
+    "m_vv": 7938816.368934795,
+    "vol_vv": 1017.7969703762558,
+    "dr_blkt_outboard": 1.0,
+    "dr_shld_outboard": 0.8,
+    "fw_armour_thickness": 0.005,
+    "p_fusion_total_mw": 1630.323245464875,
+    "whttflgs": 5000000.0
+   }
+  }
+ ],
+ "TestNuclearHeatingRenormalisation": [
+  {
+   "label": "renormalisation-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fw_nuclear_heat_total_mw_unnormalised": 164.98107822556855,
+    "p_blkt_nuclear_heat_total_mw_unnormalised": 1245.0032300478786,
+    "p_shld_nuclear_heat_mw_unnormalised": 1.3640954387315272,
+    "p_tf_nuclear_heat_mw_unnormalised": 0.03041968903979381,
+    "f_ster_div_single": 0.0725040362777958,
+    "f_p_blkt_multiplication": 1.269,
+    "p_neutron_total_mw": 1301.2682862201025
+   }
+  }
+ ],
+ "TestNuclearHeatingRenormalisationDoubleNull": [
+  {
+   "label": "renormalisation-double-null-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fw_nuclear_heat_total_mw_unnormalised": 164.98107822556855,
+    "p_blkt_nuclear_heat_total_mw_unnormalised": 1245.0032300478786,
+    "p_shld_nuclear_heat_mw_unnormalised": 1.3640954387315272,
+    "p_tf_nuclear_heat_mw_unnormalised": 0.03041968903979381,
+    "f_ster_div_single": 0.0725040362777958,
+    "f_p_blkt_multiplication": 1.269,
+    "p_neutron_total_mw": 1301.2682862201025
+   }
+  }
+ ],
+ "TestNuclearHeatingShieldConventional": [
+  {
+   "label": "shield-baseline-2018-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_shld_outboard": 0.8,
+    "dr_shld_inboard": 0.30000000000000004,
+    "shield_density": 3119.9999999999995,
+    "whtshld": 2294873.8131476045,
+    "x_blanket": 2.3374537748527975,
+    "p_fusion_total_mw": 1986.062324166143
+   }
+  },
+  {
+   "label": "shield-baseline-2018-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_shld_outboard": 0.8,
+    "dr_shld_inboard": 0.30000000000000004,
+    "shield_density": 3120,
+    "whtshld": 2297808.3935174854,
+    "x_blanket": 2.337453774852798,
+    "p_fusion_total_mw": 1985.442393231281
+   }
+  },
+  {
+   "label": "shield-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_shld_outboard": 0.8,
+    "dr_shld_inboard": 0.3,
+    "shield_density": 3120.0,
+    "whtshld": 2449818.833849217,
+    "x_blanket": 2.2911207098527977,
+    "p_fusion_total_mw": 1630.323245464875
+   }
+  }
+ ],
+ "TestNuclearHeatingShieldSphericalTokamak": [
+  {
+   "label": "shield-st-branch",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_shld_outboard": 0.8,
+    "shield_density": 3119.9999999999995,
+    "whtshld": 2294873.8131476045,
+    "x_blanket": 2.3374537748527975,
+    "p_fusion_total_mw": 1986.062324166143
+   }
+  }
+ ],
+ "TestPowerflowCalcMechanicalWithPressureDrop": [
+  {
+   "label": "powerflow-baseline-2018-a",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 287.4486693810485,
+    "f_a_fw_outboard_hcd": 0,
+    "p_div_rad_total_mw": 33.05659697882058,
+    "a_fw_outboard": 988.9258658065525,
+    "a_fw_total": 1601.1595634509963,
+    "p_beam_orbit_loss_mw": 0,
+    "p_fw_alpha_mw": 19.835845058655043,
+    "p_he": 8000000,
+    "dp_he": 550000,
+    "gamma_he": 1.667,
+    "t_in_bb": 573.13,
+    "t_out_bb": 773.13,
+    "etaiso": 0.9,
+    "f_p_fw_blkt_pump": 1.0,
+    "p_fw_nuclear_heat_total_mw": 276.8069015375322,
+    "p_blkt_nuclear_heat_total_mw": 1504.921574080886,
+    "f_p_shld_coolant_pump_total_heat": 0.005,
+    "p_shld_nuclear_heat_mw": 1.361125958804489,
+    "p_cp_shield_nuclear_heat_mw": 0,
+    "f_p_div_coolant_pump_total_heat": 0.005,
+    "p_plasma_separatrix_mw": 143.6315222649435,
+    "p_div_nuclear_heat_total_mw": 182.7177338232852
+   }
+  },
+  {
+   "label": "powerflow-baseline-2018-b",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 287.4486693810485,
+    "f_a_fw_outboard_hcd": 0,
+    "p_div_rad_total_mw": 33.05659697882058,
+    "a_fw_outboard": 1168.1172772224481,
+    "a_fw_total": 1891.2865102700493,
+    "p_beam_orbit_loss_mw": 0,
+    "p_fw_alpha_mw": 19.829653483586444,
+    "p_he": 8000000,
+    "dp_he": 550000,
+    "gamma_he": 1.667,
+    "t_in_bb": 573.13,
+    "t_out_bb": 773.13,
+    "etaiso": 0.9,
+    "f_p_fw_blkt_pump": 1.0,
+    "p_fw_nuclear_heat_total_mw": 230.98304919926957,
+    "p_blkt_nuclear_heat_total_mw": 1550.1447895848396,
+    "f_p_shld_coolant_pump_total_heat": 0.005,
+    "p_shld_nuclear_heat_mw": 1.4038170956592293,
+    "p_cp_shield_nuclear_heat_mw": 0,
+    "f_p_div_coolant_pump_total_heat": 0.005,
+    "p_plasma_separatrix_mw": 143.51338080047339,
+    "p_div_nuclear_heat_total_mw": 182.66070017727785
+   }
+  },
+  {
+   "label": "powerflow-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_rad_mw": 218.68809520720959,
+    "f_a_fw_outboard_hcd": 0.0,
+    "p_div_rad_total_mw": 15.855769588425584,
+    "a_fw_outboard": 1048.452495290143,
+    "a_fw_total": 1681.4734553069488,
+    "p_beam_orbit_loss_mw": 0.0,
+    "p_fw_alpha_mw": 16.391644584793067,
+    "p_he": 8000000.0,
+    "dp_he": 550000.0,
+    "gamma_he": 1.667,
+    "t_in_bb": 573.13,
+    "t_out_bb": 773.13,
+    "etaiso": 0.9,
+    "f_p_fw_blkt_pump": 1.0,
+    "p_fw_nuclear_heat_total_mw": 179.03215391121836,
+    "p_blkt_nuclear_heat_total_mw": 1351.03741774038,
+    "f_p_shld_coolant_pump_total_heat": 0.005,
+    "p_shld_nuclear_heat_mw": 1.4802724479874645,
+    "p_cp_shield_nuclear_heat_mw": 0.0,
+    "f_p_div_coolant_pump_total_heat": 0.005,
+    "p_plasma_separatrix_mw": 174.97328472847954,
+    "p_div_nuclear_heat_total_mw": 94.34720303124747
+   }
+  }
+ ]
+}

@@ -1,0 +1,1948 @@
+{
+ "TestAtmosphericRecoveryCost": [
+  {
+   "label": "with-tritium",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_tritium": 0.5,
+    "UCDTC": 0.0,
+    "volrci": 100000.0,
+    "wsvol": 10000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "d-he3-only",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_tritium": 0.0,
+    "UCDTC": 400.0,
+    "volrci": 100000.0,
+    "wsvol": 10000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_tritium": 0.5,
+    "UCDTC": 400.0,
+    "volrci": 100000.0,
+    "wsvol": 10000.0,
+    "fkind": 0.9
+   }
+  }
+ ],
+ "TestAuxiliaryComponentCoolingCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "UCAHTS": 31.0,
+    "p_hcd_electric_loss_mw": 10.0,
+    "p_cryo_plant_electric_mw": 20.0,
+    "vachtmw": 0.5,
+    "p_tritium_plant_electric_mw": 15.0,
+    "fachtmw": 60.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestAuxiliaryFacilityPowerCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCAF": 1500000.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestBlanketCost": [
+  {
+   "label": "capital",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "m_blkt_beryllium": 1130000.0,
+    "ucblbe": 260.0,
+    "m_blkt_li2o": 500000.0,
+    "ucblli2o": 600.0,
+    "m_blkt_steel_total": 1280000.0,
+    "ucblss": 90.0,
+    "m_blkt_vanadium": 0.0,
+    "ucblvd": 280.0,
+    "fkind": 1.0,
+    "ifueltyp": 0
+   }
+  },
+  {
+   "label": "fuel",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "m_blkt_beryllium": 1130000.0,
+    "ucblbe": 260.0,
+    "m_blkt_li2o": 500000.0,
+    "ucblli2o": 600.0,
+    "m_blkt_steel_total": 1280000.0,
+    "ucblss": 90.0,
+    "m_blkt_vanadium": 100000.0,
+    "ucblvd": 280.0,
+    "fkind": 1.0,
+    "ifueltyp": 1
+   }
+  },
+  {
+   "label": "capital-plus-replacement",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 4,
+    "m_blkt_beryllium": 1130000.0,
+    "ucblbe": 260.0,
+    "m_blkt_li2o": 500000.0,
+    "ucblli2o": 600.0,
+    "m_blkt_steel_total": 1280000.0,
+    "ucblss": 90.0,
+    "m_blkt_vanadium": 100000.0,
+    "ucblvd": 280.0,
+    "fkind": 1.0,
+    "ifueltyp": 2
+   }
+  }
+ ],
+ "TestConstructedCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "cdirt": 6570.4,
+    "cindrt": 1843.7,
+    "ccont": 1262.1
+   }
+  }
+ ],
+ "TestConvertFpyToCalendar": [
+  {
+   "label": "fast-branches",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_blkt_fpy": 5.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.8,
+    "life_div_fpy": 3.0,
+    "itart": 0,
+    "cplife": 10.0
+   }
+  },
+  {
+   "label": "slow-branches",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_blkt_fpy": 40.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.8,
+    "life_div_fpy": 40.0,
+    "itart": 1,
+    "cplife": 40.0
+   }
+  },
+  {
+   "label": "itart-fast",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_blkt_fpy": 5.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.8,
+    "life_div_fpy": 3.0,
+    "itart": 1,
+    "cplife": 10.0
+   }
+  }
+ ],
+ "TestCostOfElectricity": [
+  {
+   "label": "reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "itart": 0,
+    "p_plant_electric_net_mw": 1000.0,
+    "f_t_plant_available": 0.75,
+    "t_plant_pulse_burn": 31557600.0,
+    "t_plant_pulse_total": 31559410.0,
+    "concost": 9676.16,
+    "fcap0": 1.15,
+    "fcr0": 0.065,
+    "discount_rate": 0.06,
+    "life_blkt": 19.48,
+    "fwallcst": 0.0,
+    "blkcst": 0.0,
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 2,
+    "fcap0cp": 1.06,
+    "ifueltyp": 0,
+    "life_blkt_fpy": 25.98,
+    "life_plant": 40.0,
+    "life_div": 7.86,
+    "divcst": 0.0,
+    "life_div_fpy": 10.48,
+    "cplife_cal": 0.0,
+    "cpstcst": 0.0,
+    "cplife": 0.0,
+    "cdrlife_cal": 19.48,
+    "cdcost": 0.0,
+    "fcdfuel": 0.1,
+    "ucoam": {
+     "~seq": [
+      68.8,
+      68.8,
+      68.8,
+      74.4
+     ],
+     "tuple": false
+    },
+    "ucfuel": 3.45,
+    "f_plasma_fuel_helium3": 0.0,
+    "wtgpd": 764.38,
+    "uche3": 1000000.0,
+    "ucwst": {
+     "~seq": [
+      0.0,
+      3.94,
+      5.91,
+      7.88
+     ],
+     "tuple": false
+    },
+    "decomf": 0.1,
+    "dintrt": 0.0,
+    "dtlife": 0.0
+   }
+  },
+  {
+   "label": "fuel-costs-active",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "itart": 0,
+    "p_plant_electric_net_mw": 1200.0,
+    "f_t_plant_available": 0.75,
+    "t_plant_pulse_burn": 31557600.0,
+    "t_plant_pulse_total": 31559410.0,
+    "concost": 9676.16,
+    "fcap0": 1.15,
+    "fcr0": 0.065,
+    "discount_rate": 0.06,
+    "life_blkt": 19.48,
+    "fwallcst": 280.0,
+    "blkcst": 530.0,
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 2,
+    "fcap0cp": 1.06,
+    "ifueltyp": 1,
+    "life_blkt_fpy": 25.98,
+    "life_plant": 40.0,
+    "life_div": 7.86,
+    "divcst": 22.6,
+    "life_div_fpy": 10.48,
+    "cplife_cal": 0.0,
+    "cpstcst": 0.0,
+    "cplife": 0.0,
+    "cdrlife_cal": 19.48,
+    "cdcost": 100.0,
+    "fcdfuel": 0.1,
+    "ucoam": {
+     "~seq": [
+      68.8,
+      68.8,
+      68.8,
+      74.4
+     ],
+     "tuple": false
+    },
+    "ucfuel": 3.45,
+    "f_plasma_fuel_helium3": 0.01,
+    "wtgpd": 764.38,
+    "uche3": 1000000.0,
+    "ucwst": {
+     "~seq": [
+      0.0,
+      3.94,
+      5.91,
+      7.88
+     ],
+     "tuple": false
+    },
+    "decomf": 0.1,
+    "dintrt": 0.0,
+    "dtlife": 0.0
+   }
+  },
+  {
+   "label": "prorated-replacements-and-centrepost",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "itart": 1,
+    "p_plant_electric_net_mw": 1200.0,
+    "f_t_plant_available": 0.75,
+    "t_plant_pulse_burn": 31557600.0,
+    "t_plant_pulse_total": 31559410.0,
+    "concost": 9676.16,
+    "fcap0": 1.15,
+    "fcr0": 0.065,
+    "discount_rate": 0.06,
+    "life_blkt": 19.48,
+    "fwallcst": 280.0,
+    "blkcst": 530.0,
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 4,
+    "fcap0cp": 1.06,
+    "ifueltyp": 2,
+    "life_blkt_fpy": 25.98,
+    "life_plant": 40.0,
+    "life_div": 7.86,
+    "divcst": 22.6,
+    "life_div_fpy": 10.48,
+    "cplife_cal": 3.0,
+    "cpstcst": 150.0,
+    "cplife": 4.0,
+    "cdrlife_cal": 19.48,
+    "cdcost": 100.0,
+    "fcdfuel": 0.1,
+    "ucoam": {
+     "~seq": [
+      68.8,
+      68.8,
+      68.8,
+      74.4
+     ],
+     "tuple": false
+    },
+    "ucfuel": 3.45,
+    "f_plasma_fuel_helium3": 0.01,
+    "wtgpd": 764.38,
+    "uche3": 1000000.0,
+    "ucwst": {
+     "~seq": [
+      0.0,
+      3.94,
+      5.91,
+      7.88
+     ],
+     "tuple": false
+    },
+    "decomf": 0.1,
+    "dintrt": 0.01,
+    "dtlife": 2.0
+   }
+  },
+  {
+   "label": "negative-net-electric-power-clamps-to-zero",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "itart": 0,
+    "p_plant_electric_net_mw": -50.0,
+    "f_t_plant_available": 0.75,
+    "t_plant_pulse_burn": 31557600.0,
+    "t_plant_pulse_total": 31559410.0,
+    "concost": 9676.16,
+    "fcap0": 1.15,
+    "fcr0": 0.065,
+    "discount_rate": 0.06,
+    "life_blkt": 19.48,
+    "fwallcst": 0.0,
+    "blkcst": 0.0,
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 2,
+    "fcap0cp": 1.06,
+    "ifueltyp": 0,
+    "life_blkt_fpy": 25.98,
+    "life_plant": 40.0,
+    "life_div": 7.86,
+    "divcst": 0.0,
+    "life_div_fpy": 10.48,
+    "cplife_cal": 0.0,
+    "cpstcst": 0.0,
+    "cplife": 0.0,
+    "cdrlife_cal": 19.48,
+    "cdcost": 0.0,
+    "fcdfuel": 0.1,
+    "ucoam": {
+     "~seq": [
+      68.8,
+      68.8,
+      68.8,
+      74.4
+     ],
+     "tuple": false
+    },
+    "ucfuel": 3.45,
+    "f_plasma_fuel_helium3": 0.0,
+    "wtgpd": 764.38,
+    "uche3": 1000000.0,
+    "ucwst": {
+     "~seq": [
+      0.0,
+      3.94,
+      5.91,
+      7.88
+     ],
+     "tuple": false
+    },
+    "decomf": 0.1,
+    "dintrt": 0.0,
+    "dtlife": 0.0
+   }
+  }
+ ],
+ "TestCryogenicSystemCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "lsa": 2,
+    "uccry": 93000.0,
+    "temp_tf_cryo": 4.5,
+    "helpow": 271064.2,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestDieselGeneratorsCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCDGEN": 1700000.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestDivertorCost": [
+  {
+   "label": "not-ife-capital",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "a_div_surface_total": 100.0,
+    "ucdiv": 280000.0,
+    "fkind": 1.0,
+    "ifueltyp": 0
+   }
+  },
+  {
+   "label": "not-ife-fuel-cost",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "a_div_surface_total": 100.0,
+    "ucdiv": 280000.0,
+    "fkind": 1.0,
+    "ifueltyp": 1
+   }
+  },
+  {
+   "label": "not-ife-both",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "a_div_surface_total": 100.0,
+    "ucdiv": 280000.0,
+    "fkind": 1.0,
+    "ifueltyp": 2
+   }
+  },
+  {
+   "label": "ife",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 1,
+    "a_div_surface_total": 100.0,
+    "ucdiv": 280000.0,
+    "fkind": 1.0,
+    "ifueltyp": 0
+   }
+  }
+ ],
+ "TestElectricPlantEquipmentCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c241": 10.0,
+    "c242": 15.0,
+    "c243": 8.0,
+    "c244": 6.0,
+    "c245": 2.0
+   }
+  }
+ ],
+ "TestEnergyStorageCost": [
+  {
+   "label": "steady-state",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_pulsed_plant": 0,
+    "istore": 1,
+    "p_plant_electric_net_mw": 1000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "pulsed-option-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_pulsed_plant": 1,
+    "istore": 1,
+    "p_plant_electric_net_mw": 1000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "pulsed-option-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_pulsed_plant": 1,
+    "istore": 2,
+    "p_plant_electric_net_mw": 1000.0,
+    "fkind": 0.8
+   }
+  }
+ ],
+ "TestFirstWallCost": [
+  {
+   "label": "capital",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "UCFWA": 60000.0,
+    "UCFWS": 53000.0,
+    "a_fw_total": 3182.3,
+    "UCFWPS": 10000000.0,
+    "fkind": 1.0,
+    "ifueltyp": 0
+   }
+  },
+  {
+   "label": "fuel",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "UCFWA": 60000.0,
+    "UCFWS": 53000.0,
+    "a_fw_total": 3182.3,
+    "UCFWPS": 10000000.0,
+    "fkind": 1.0,
+    "ifueltyp": 1
+   }
+  },
+  {
+   "label": "capital-plus-replacement",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 4,
+    "UCFWA": 60000.0,
+    "UCFWS": 53000.0,
+    "a_fw_total": 3182.3,
+    "UCFWPS": 10000000.0,
+    "fkind": 1.0,
+    "ifueltyp": 2
+   }
+  }
+ ],
+ "TestFuelHandlingCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c2271": 22.3,
+    "c2272": 143.0,
+    "c2273": 162.0,
+    "c2274": 157.2
+   }
+  }
+ ],
+ "TestFuelProcessingCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "rndfuel": 1.06e+21,
+    "m_fuel_amu": 2.5145,
+    "UCFPR": 150000000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestFuellingSystemCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ucf1": 22300000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestFusionPowerIslandCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c221": 1048.6,
+    "c222": 1941.7,
+    "c223": 0.0,
+    "c224": 102.6,
+    "c225": 330.8,
+    "c226": 451.2,
+    "c227": 484.5,
+    "c228": 150.0,
+    "c229": 300.0
+   }
+  }
+ ],
+ "TestHeatRejectionCost": [
+  {
+   "label": "reactor",
+   "provenance": "legacy",
+   "kwargs": {
+    "ireactor": 1,
+    "p_fusion_total_mw": 2000.0,
+    "p_hcd_electric_total_mw": 100.0,
+    "tfcmw": 50.0,
+    "p_plant_primary_heat_mw": 2200.0,
+    "p_plant_electric_gross_mw": 1200.0,
+    "uchrs": 10000000.0,
+    "lsa": 4
+   }
+  },
+  {
+   "label": "non-reactor",
+   "provenance": "legacy",
+   "kwargs": {
+    "ireactor": 0,
+    "p_fusion_total_mw": 2000.0,
+    "p_hcd_electric_total_mw": 100.0,
+    "tfcmw": 50.0,
+    "p_plant_primary_heat_mw": 2200.0,
+    "p_plant_electric_gross_mw": 1200.0,
+    "uchrs": 10000000.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestHeatTransportSystemCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c2261": 145.8,
+    "c2262": 21.1,
+    "c2263": 284.3
+   }
+  }
+ ],
+ "TestIndirectCosts": [
+  {
+   "label": "lsa4",
+   "provenance": "legacy",
+   "kwargs": {
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 4,
+    "cdirt": 1000.0,
+    "cowner": 0.15,
+    "fcontng": 0.195
+   }
+  },
+  {
+   "label": "lsa1",
+   "provenance": "legacy",
+   "kwargs": {
+    "cfind": {
+     "~seq": [
+      0.244,
+      0.244,
+      0.244,
+      0.29
+     ],
+     "tuple": false
+    },
+    "lsa": 1,
+    "cdirt": 1000.0,
+    "cowner": 0.15,
+    "fcontng": 0.195
+   }
+  }
+ ],
+ "TestInstrumentationAndControlCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "uciac": 40000000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestLowVoltageCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCLV": 265.0,
+    "tlvpmw": 10.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestMagnetsCost": [
+  {
+   "label": "magnetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "c2221": 989.5,
+    "c2222": 0.0,
+    "c2223": 952.2
+   }
+  },
+  {
+   "label": "ife",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 1,
+    "c2221": 989.5,
+    "c2222": 0.0,
+    "c2223": 952.2
+   }
+  }
+ ],
+ "TestMaintenanceEquipmentCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ucme": 125000000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestMiscPlantEquipmentCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ucmisc": 25000000.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestNuclearBuildingVentilationCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCNBV": 1000000.0,
+    "volrci": 100000.0,
+    "wsvol": 10000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestPfCoilPowerConditioningCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ucpfps": 35000.0,
+    "peakmva": 300.0,
+    "ucpfic": 10000.0,
+    "pfckts": 12.0,
+    "ucpfb": 10000.0,
+    "spfbusl": 300.0,
+    "acptmax": 30000.0,
+    "ucpfbs": 100000.0,
+    "srcktpm": 30000.0,
+    "ucpfbk": 30000.0,
+    "vpfskv": 20.0,
+    "ucpfdr1": 15000.0,
+    "ensxpfm": 1000.0,
+    "ucpfcb": 75000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "zero-circuits",
+   "provenance": "legacy",
+   "kwargs": {
+    "ucpfps": 35000.0,
+    "peakmva": 300.0,
+    "ucpfic": 10000.0,
+    "pfckts": 0.0,
+    "ucpfb": 10000.0,
+    "spfbusl": 300.0,
+    "acptmax": 30000.0,
+    "ucpfbs": 100000.0,
+    "srcktpm": 30000.0,
+    "ucpfbk": 30000.0,
+    "vpfskv": 20.0,
+    "ucpfdr1": 15000.0,
+    "ensxpfm": 1000.0,
+    "ucpfcb": 75000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestPfMagnetCost": [
+  {
+   "label": "stellarator-no-pf-coils",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cs_pf_coils": 0,
+    "iohcl": 0,
+    "i_pf_conductor": 0,
+    "supercond_cost_model": 0,
+    "lsa": 2,
+    "r_pf_coil_middle": {
+     "~seq": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+     ],
+     "tuple": false
+    },
+    "n_pf_coil_turns": {
+     "~seq": [
+      100.0,
+      120.0,
+      140.0,
+      160.0
+     ],
+     "tuple": false
+    },
+    "cconshpf": 70.0,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_pf_superconductor": 1,
+    "fcupfsu": 0.69,
+    "f_a_pf_coil_void": {
+     "~seq": [
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "tuple": false
+    },
+    "c_pf_cs_coils_peak_ma": {
+     "~seq": [
+      10.0,
+      -12.0,
+      14.0,
+      16.0
+     ],
+     "tuple": false
+    },
+    "j_pf_coil_wp_peak": {
+     "~seq": [
+      10000000.0,
+      11000000.0,
+      12000000.0,
+      13000000.0
+     ],
+     "tuple": false
+    },
+    "dcond": {
+     "~seq": [
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0
+     ],
+     "tuple": false
+    },
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_pf": 600000000.0,
+    "uccu": 75.0,
+    "cconfix": 80.0,
+    "i_cs_superconductor": 1,
+    "a_cs_cable_space": 0.1,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "j_crit_str_cs": 600000000.0,
+    "ucwindpf": 465.0,
+    "uccase": 50.0,
+    "m_pf_coil_structure_total": 0.0,
+    "ucfnc": 35.0,
+    "fncmass": 0.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "superconducting-with-cs",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cs_pf_coils": 4,
+    "iohcl": 1,
+    "i_pf_conductor": 0,
+    "supercond_cost_model": 0,
+    "lsa": 2,
+    "r_pf_coil_middle": {
+     "~seq": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+     ],
+     "tuple": false
+    },
+    "n_pf_coil_turns": {
+     "~seq": [
+      100.0,
+      120.0,
+      140.0,
+      160.0
+     ],
+     "tuple": false
+    },
+    "cconshpf": 70.0,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_pf_superconductor": 1,
+    "fcupfsu": 0.69,
+    "f_a_pf_coil_void": {
+     "~seq": [
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "tuple": false
+    },
+    "c_pf_cs_coils_peak_ma": {
+     "~seq": [
+      10.0,
+      -12.0,
+      14.0,
+      16.0
+     ],
+     "tuple": false
+    },
+    "j_pf_coil_wp_peak": {
+     "~seq": [
+      10000000.0,
+      11000000.0,
+      12000000.0,
+      13000000.0
+     ],
+     "tuple": false
+    },
+    "dcond": {
+     "~seq": [
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0
+     ],
+     "tuple": false
+    },
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_pf": 600000000.0,
+    "uccu": 75.0,
+    "cconfix": 80.0,
+    "i_cs_superconductor": 1,
+    "a_cs_cable_space": 0.1,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "j_crit_str_cs": 600000000.0,
+    "ucwindpf": 465.0,
+    "uccase": 50.0,
+    "m_pf_coil_structure_total": 1000000.0,
+    "ucfnc": 35.0,
+    "fncmass": 500000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "superconducting-strand-cost-model",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cs_pf_coils": 4,
+    "iohcl": 1,
+    "i_pf_conductor": 0,
+    "supercond_cost_model": 1,
+    "lsa": 4,
+    "r_pf_coil_middle": {
+     "~seq": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+     ],
+     "tuple": false
+    },
+    "n_pf_coil_turns": {
+     "~seq": [
+      100.0,
+      120.0,
+      140.0,
+      160.0
+     ],
+     "tuple": false
+    },
+    "cconshpf": 70.0,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_pf_superconductor": 1,
+    "fcupfsu": 0.69,
+    "f_a_pf_coil_void": {
+     "~seq": [
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "tuple": false
+    },
+    "c_pf_cs_coils_peak_ma": {
+     "~seq": [
+      10.0,
+      -12.0,
+      14.0,
+      16.0
+     ],
+     "tuple": false
+    },
+    "j_pf_coil_wp_peak": {
+     "~seq": [
+      10000000.0,
+      11000000.0,
+      12000000.0,
+      13000000.0
+     ],
+     "tuple": false
+    },
+    "dcond": {
+     "~seq": [
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0
+     ],
+     "tuple": false
+    },
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_pf": 600000000.0,
+    "uccu": 75.0,
+    "cconfix": 80.0,
+    "i_cs_superconductor": 1,
+    "a_cs_cable_space": 0.1,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "j_crit_str_cs": 600000000.0,
+    "ucwindpf": 465.0,
+    "uccase": 50.0,
+    "m_pf_coil_structure_total": 1000000.0,
+    "ucfnc": 35.0,
+    "fncmass": 500000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "resistive-no-cs",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cs_pf_coils": 3,
+    "iohcl": 0,
+    "i_pf_conductor": 1,
+    "supercond_cost_model": 0,
+    "lsa": 2,
+    "r_pf_coil_middle": {
+     "~seq": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+     ],
+     "tuple": false
+    },
+    "n_pf_coil_turns": {
+     "~seq": [
+      100.0,
+      120.0,
+      140.0,
+      160.0
+     ],
+     "tuple": false
+    },
+    "cconshpf": 70.0,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_pf_superconductor": 1,
+    "fcupfsu": 0.69,
+    "f_a_pf_coil_void": {
+     "~seq": [
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "tuple": false
+    },
+    "c_pf_cs_coils_peak_ma": {
+     "~seq": [
+      10.0,
+      -12.0,
+      14.0,
+      16.0
+     ],
+     "tuple": false
+    },
+    "j_pf_coil_wp_peak": {
+     "~seq": [
+      10000000.0,
+      11000000.0,
+      12000000.0,
+      13000000.0
+     ],
+     "tuple": false
+    },
+    "dcond": {
+     "~seq": [
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0,
+      6080.0
+     ],
+     "tuple": false
+    },
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_pf": 600000000.0,
+    "uccu": 75.0,
+    "cconfix": 80.0,
+    "i_cs_superconductor": 1,
+    "a_cs_cable_space": 0.1,
+    "f_a_cs_void": 0.3,
+    "fcuohsu": 0.7,
+    "j_crit_str_cs": 600000000.0,
+    "ucwindpf": 465.0,
+    "uccase": 50.0,
+    "m_pf_coil_structure_total": 1000000.0,
+    "ucfnc": 35.0,
+    "fncmass": 500000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestPowerConditioningCost": [
+  {
+   "label": "magnetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "c2251": 330.8,
+    "c2252": 0.0,
+    "c2253": 0.0
+   }
+  },
+  {
+   "label": "ife",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 1,
+    "c2251": 330.8,
+    "c2252": 0.0,
+    "c2253": 0.0
+   }
+  }
+ ],
+ "TestPowerInjectionCost": [
+  {
+   "label": "capital-lower-hybrid",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "ucech": 3.0,
+    "p_hcd_ecrh_injected_total_mw": 50.0,
+    "i_hcd_primary": 5,
+    "uclh": 3.3,
+    "ucich": 3.0,
+    "p_hcd_lowhyb_injected_total_mw": 30.0,
+    "ucnbi": 3.3,
+    "p_beam_injected_mw": 20.0,
+    "ifueltyp": 0,
+    "fcdfuel": 0.1,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "fuel-ich",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "ucech": 3.0,
+    "p_hcd_ecrh_injected_total_mw": 50.0,
+    "i_hcd_primary": 2,
+    "uclh": 3.3,
+    "ucich": 3.0,
+    "p_hcd_lowhyb_injected_total_mw": 30.0,
+    "ucnbi": 3.3,
+    "p_beam_injected_mw": 20.0,
+    "ifueltyp": 1,
+    "fcdfuel": 0.1,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "capital-ifueltyp-2-leaves-c2233-unwritten",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "ucech": 3.0,
+    "p_hcd_ecrh_injected_total_mw": 50.0,
+    "i_hcd_primary": 5,
+    "uclh": 3.3,
+    "ucich": 3.0,
+    "p_hcd_lowhyb_injected_total_mw": 30.0,
+    "ucnbi": 3.3,
+    "p_beam_injected_mw": 20.0,
+    "ifueltyp": 2,
+    "fcdfuel": 0.1,
+    "fkind": 0.8
+   }
+  }
+ ],
+ "TestReactorCoolingSystemCost": [
+  {
+   "label": "water",
+   "provenance": "legacy",
+   "kwargs": {
+    "uchts": {
+     "~seq": [
+      15.3,
+      19.1
+     ],
+     "tuple": false
+    },
+    "i_blkt_coolant_type": 1,
+    "p_fw_div_heat_deposited_mw": 200.0,
+    "p_blkt_nuclear_heat_total_mw": 300.0,
+    "p_shld_nuclear_heat_mw": 20.0,
+    "lsa": 4,
+    "fkind": 1.0,
+    "UCPHX": 15.0,
+    "n_primary_heat_exchangers": 3,
+    "p_plant_primary_heat_mw": 1500.0
+   }
+  },
+  {
+   "label": "helium",
+   "provenance": "legacy",
+   "kwargs": {
+    "uchts": {
+     "~seq": [
+      15.3,
+      19.1
+     ],
+     "tuple": false
+    },
+    "i_blkt_coolant_type": 2,
+    "p_fw_div_heat_deposited_mw": 200.0,
+    "p_blkt_nuclear_heat_total_mw": 300.0,
+    "p_shld_nuclear_heat_mw": 20.0,
+    "lsa": 4,
+    "fkind": 1.0,
+    "UCPHX": 15.0,
+    "n_primary_heat_exchangers": 3,
+    "p_plant_primary_heat_mw": 1500.0
+   }
+  }
+ ],
+ "TestReactorCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c2211": 277.2,
+    "c2212": 531.5,
+    "c2213": 217.3,
+    "c2214": 0.0,
+    "c2215": 22.6
+   }
+  }
+ ],
+ "TestReactorStructureCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "gsmass": 500000.0,
+    "UCGSS": 35.0,
+    "lsa": 4,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestShieldCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "ife": 0,
+    "lsa": 2,
+    "whtshld": 4530000.0,
+    "ucshld": 32.0,
+    "wpenshld": 4530000.0,
+    "ucpens": 32.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestStructuresCost": [
+  {
+   "label": "reactor",
+   "provenance": "legacy",
+   "kwargs": {
+    "csi": 16.0,
+    "lsa": 4,
+    "cland": 19.2,
+    "ucrb": 400.0,
+    "rbvol": 100000.0,
+    "UCMB": 260.0,
+    "rmbvol": 50000.0,
+    "UCWS": 460.0,
+    "wsvol": 10000.0,
+    "UCTR": 370.0,
+    "triv": 40000.0,
+    "UCEL": 380.0,
+    "elevol": 8000.0,
+    "UCAD": 180.0,
+    "admvol": 10000.0,
+    "UCCO": 350.0,
+    "convol": 6000.0,
+    "UCSH": 115.0,
+    "shovol": 5000.0,
+    "UCCR": 460.0,
+    "cryvol": 20000.0,
+    "ireactor": 1,
+    "cturbb": 100.0
+   }
+  },
+  {
+   "label": "non-reactor-lsa1",
+   "provenance": "legacy",
+   "kwargs": {
+    "csi": 16.0,
+    "lsa": 1,
+    "cland": 19.2,
+    "ucrb": 400.0,
+    "rbvol": 100000.0,
+    "UCMB": 260.0,
+    "rmbvol": 50000.0,
+    "UCWS": 460.0,
+    "wsvol": 10000.0,
+    "UCTR": 370.0,
+    "triv": 40000.0,
+    "UCEL": 380.0,
+    "elevol": 8000.0,
+    "UCAD": 180.0,
+    "admvol": 10000.0,
+    "UCCO": 350.0,
+    "convol": 6000.0,
+    "UCSH": 115.0,
+    "shovol": 5000.0,
+    "UCCR": 460.0,
+    "cryvol": 20000.0,
+    "ireactor": 0,
+    "cturbb": 100.0
+   }
+  }
+ ],
+ "TestSwitchyardCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCSWYD": 19000000.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestTfCoilPowerConditioningCost": [
+  {
+   "label": "resistive",
+   "provenance": "legacy",
+   "kwargs": {
+    "uctfps": 24000.0,
+    "tfckw": 1000.0,
+    "tfcmw": 50.0,
+    "i_tf_sup": 0,
+    "uctfbr": 1220000.0,
+    "n_tf_coils": 16.0,
+    "c_tf_turn": 60000.0,
+    "v_tf_coil_dump_quench_kv": 20.0,
+    "uctfsw": 100000.0,
+    "UCTFDR": 0.00175,
+    "e_tf_magnetic_stored_total_gj": 40.0,
+    "UCTFGR": 100000.0,
+    "UCTFIC": 10000.0,
+    "uctfbus": 1.0,
+    "m_tf_bus": 10000.0,
+    "ucbus": 460.0,
+    "len_tf_bus": 300.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "superconducting",
+   "provenance": "legacy",
+   "kwargs": {
+    "uctfps": 24000.0,
+    "tfckw": 1000.0,
+    "tfcmw": 50.0,
+    "i_tf_sup": 1,
+    "uctfbr": 1220000.0,
+    "n_tf_coils": 16.0,
+    "c_tf_turn": 60000.0,
+    "v_tf_coil_dump_quench_kv": 20.0,
+    "uctfsw": 100000.0,
+    "UCTFDR": 0.00175,
+    "e_tf_magnetic_stored_total_gj": 40.0,
+    "UCTFGR": 100000.0,
+    "UCTFIC": 10000.0,
+    "uctfbus": 1.0,
+    "m_tf_bus": 10000.0,
+    "ucbus": 460.0,
+    "len_tf_bus": 300.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestTfMagnetCostResistive": [
+  {
+   "label": "conventional",
+   "provenance": "legacy",
+   "kwargs": {
+    "lsa": 2,
+    "whtcp": 1000000.0,
+    "uccpcl1": 250.0,
+    "whttflgs": 2000000.0,
+    "uccpclb": 150.0,
+    "itart": 0,
+    "ifueltyp": 0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "tart-fuel",
+   "provenance": "legacy",
+   "kwargs": {
+    "lsa": 2,
+    "whtcp": 1000000.0,
+    "uccpcl1": 250.0,
+    "whttflgs": 2000000.0,
+    "uccpclb": 150.0,
+    "itart": 1,
+    "ifueltyp": 1,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "tart-capital-plus-replacement",
+   "provenance": "legacy",
+   "kwargs": {
+    "lsa": 4,
+    "whtcp": 1000000.0,
+    "uccpcl1": 250.0,
+    "whttflgs": 2000000.0,
+    "uccpclb": 150.0,
+    "itart": 1,
+    "ifueltyp": 2,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestTfMagnetCostSuperconducting": [
+  {
+   "label": "legacy-cost-model",
+   "provenance": "legacy",
+   "kwargs": {
+    "supercond_cost_model": 0,
+    "lsa": 2,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_tf_sc_mat": 1,
+    "m_tf_coil_superconductor": 100000.0,
+    "len_tf_coil": 50.0,
+    "n_tf_coil_turns": 200.0,
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_tf": 600000000.0,
+    "uccu": 75.0,
+    "m_tf_coil_copper": 200000.0,
+    "cconshtf": 75.0,
+    "cconfix": 80.0,
+    "n_tf_coils": 50.0,
+    "ucwindtf": 480.0,
+    "m_tf_coil_case": 500000.0,
+    "uccase": 50.0,
+    "aintmass": 5300000.0,
+    "UCINT": 30.0,
+    "clgsmass": 1060000.0,
+    "UCGSS": 35.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "strand-cost-model",
+   "provenance": "legacy",
+   "kwargs": {
+    "supercond_cost_model": 1,
+    "lsa": 4,
+    "ucsc": {
+     "~seq": [
+      600.0,
+      600.0,
+      300.0,
+      600.0,
+      600.0,
+      600.0,
+      300.0,
+      1200.0,
+      1200.0
+     ],
+     "tuple": false
+    },
+    "i_tf_sc_mat": 1,
+    "m_tf_coil_superconductor": 100000.0,
+    "len_tf_coil": 50.0,
+    "n_tf_coil_turns": 200.0,
+    "sc_mat_cost_0": {
+     "~seq": [
+      4.8,
+      2.0,
+      1.0,
+      4.8,
+      4.8,
+      47.4,
+      1.0,
+      47.4,
+      47.4
+     ],
+     "tuple": false
+    },
+    "j_crit_str_0": {
+     "~seq": [
+      596905476.0,
+      1925501530.0,
+      724544683.0,
+      549858624.0,
+      669284510.0,
+      100000000.0,
+      898964415.0,
+      1158753000.0,
+      865652123.0
+     ],
+     "tuple": false
+    },
+    "j_crit_str_tf": 600000000.0,
+    "uccu": 75.0,
+    "m_tf_coil_copper": 200000.0,
+    "cconshtf": 75.0,
+    "cconfix": 80.0,
+    "n_tf_coils": 50.0,
+    "ucwindtf": 480.0,
+    "m_tf_coil_case": 500000.0,
+    "uccase": 50.0,
+    "aintmass": 5300000.0,
+    "UCINT": 30.0,
+    "clgsmass": 1060000.0,
+    "UCGSS": 35.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestTotalPlantDirectCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "c21": 1363.5,
+    "c22": 4809.5,
+    "c23": 263.8,
+    "c24": 30.3,
+    "c25": 22.1,
+    "c26": 81.2
+   }
+  }
+ ],
+ "TestTransformersCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "UCPP": 48.0,
+    "pacpmw": 50.0,
+    "UCAP": 15.0,
+    "p_plant_electric_base_total_mw": 10.0,
+    "lsa": 4
+   }
+  }
+ ],
+ "TestTurbinePlantEquipmentCost": [
+  {
+   "label": "reactor",
+   "provenance": "legacy",
+   "kwargs": {
+    "ireactor": 1,
+    "ucturb": {
+     "~seq": [
+      230000000.0,
+      245000000.0
+     ],
+     "tuple": false
+    },
+    "i_blkt_coolant_type": 1,
+    "p_plant_electric_gross_mw": 1200.0
+   }
+  },
+  {
+   "label": "non-reactor",
+   "provenance": "legacy",
+   "kwargs": {
+    "ireactor": 0,
+    "ucturb": {
+     "~seq": [
+      230000000.0,
+      245000000.0
+     ],
+     "tuple": false
+    },
+    "i_blkt_coolant_type": 1,
+    "p_plant_electric_gross_mw": 1200.0
+   }
+  }
+ ],
+ "TestVacuumSystemCost": [
+  {
+   "label": "turbomolecular",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_vacuum_pump_type": 0,
+    "n_vac_pumps_high": 8.0,
+    "UCCPMP": 250000.0,
+    "UCTPMP": 250000.0,
+    "n_vv_vacuum_ducts": 8.0,
+    "UCBPMP": 25000.0,
+    "dlscal": 1.0,
+    "UCDUCT": 30000.0,
+    "dia_vv_vacuum_ducts": 1.0,
+    "UCVALV": 150000.0,
+    "m_vv_vacuum_duct_shield": 10000.0,
+    "UCVDSH": 90.0,
+    "UCVIAC": 15000000.0,
+    "fkind": 1.0
+   }
+  },
+  {
+   "label": "compound-cryopump",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_vacuum_pump_type": 1,
+    "n_vac_pumps_high": 8.0,
+    "UCCPMP": 250000.0,
+    "UCTPMP": 250000.0,
+    "n_vv_vacuum_ducts": 8.0,
+    "UCBPMP": 25000.0,
+    "dlscal": 1.0,
+    "UCDUCT": 30000.0,
+    "dia_vv_vacuum_ducts": 1.0,
+    "UCVALV": 150000.0,
+    "m_vv_vacuum_duct_shield": 10000.0,
+    "UCVDSH": 90.0,
+    "UCVIAC": 15000000.0,
+    "fkind": 1.0
+   }
+  }
+ ],
+ "TestVacuumVesselAssemblyCost": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_vv": 9000000.0,
+    "uccryo": 32.0,
+    "lsa": 4,
+    "fkind": 1.0
+   }
+  }
+ ]
+}

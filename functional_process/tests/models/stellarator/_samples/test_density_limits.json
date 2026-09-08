@@ -1,0 +1,51 @@
+{
+ "TestEcrhDensityLimit": [
+  {
+   "label": "stdlim-ecrh-helias",
+   "provenance": "legacy",
+   "kwargs": {
+    "gyro_frequency_max": 400000000000,
+    "b_plasma_toroidal_on_axis": 6.91,
+    "i_plasma_pedestal": 0
+   }
+  }
+ ],
+ "TestSudoDensityLimit": [
+  {
+   "label": "stdlim-helias5b-0",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.5,
+    "p_plasma_loss_mw": 432.2044919745456,
+    "rmajor": 22,
+    "rminor": 1.7842660178426601,
+    "nd_plasma_electrons_vol_avg": 2.0914e+20,
+    "nd_plasma_electron_line": 2.357822619799476e+20
+   }
+  },
+  {
+   "label": "stdlim-helias5b-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.5,
+    "p_plasma_loss_mw": 431.98698920075435,
+    "rmajor": 22,
+    "rminor": 1.7842660178426601,
+    "nd_plasma_electrons_vol_avg": 2.0914e+20,
+    "nd_plasma_electron_line": 2.357822619799476e+20
+   }
+  },
+  {
+   "label": "out-of-domain-negative-power",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.5,
+    "p_plasma_loss_mw": -1.0,
+    "rmajor": 22,
+    "rminor": 1.7842660178426601,
+    "nd_plasma_electrons_vol_avg": 2.0914e+20,
+    "nd_plasma_electron_line": 2.357822619799476e+20
+   }
+  }
+ ]
+}

@@ -12,7 +12,8 @@ regression input selects and which `indat.py` still refuses on CoolProp grounds.
 here changes that -- see the port module's docstring.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.engineering.pumping import (
     calculate_reynolds_number,
     darcy_friction_haaland,
@@ -41,15 +42,7 @@ class TestCalculateReynoldsNumber(Tier1Contract):
     reference = staticmethod(_reference_calculate_reynolds_number)
     ported = calculate_reynolds_number
 
-    samples = [
-        legacy_sample(
-            "reynolds-tests-unit-test_pumping",
-            den_coolant=8.8673250601290707,
-            vel_coolant=12.649110769896881,
-            radius_channel=0.0060000000000000001,
-            visc_coolant=4.0416219836935569e-05,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -71,14 +64,7 @@ class TestDarcyFrictionHaaland(Tier1Contract):
     reference = staticmethod(_reference_darcy_friction_haaland)
     ported = darcy_friction_haaland
 
-    samples = [
-        legacy_sample(
-            "haaland-tests-unit-test_pumping",
-            reynolds=5500.0,
-            roughness_channel=1.0e-6,
-            radius_channel=0.1,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -108,17 +94,6 @@ class TestGnielinskiHeatTransferCoefficient(Tier1Contract):
     reference = staticmethod(_reference_gnielinski)
     ported = gnielinski_heat_transfer_coefficient
 
-    samples = [
-        legacy_sample(
-            "gnielinski-tests-unit-test_pumping",
-            mflux_coolant=112.19853108876258,
-            den_coolant=8.8673250601290707,
-            radius_channel=0.0060000000000000001,
-            heatcap_coolant=5184.9330299967578,
-            visc_coolant=4.0416219836935569e-05,
-            thermcond_coolant=0.3211653052986152,
-            roughness_channel=6e-8,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

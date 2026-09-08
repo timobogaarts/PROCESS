@@ -14,7 +14,8 @@ Audit record: `functional_process/_audit/units/models/divertor.md`. Two units:
   and no autodiff rule can agree by construction. See the port function's docstring.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.divertor import (
     calculate_divertor_heat_flux_split,
     calculate_divertor_heat_load_wade,
@@ -66,15 +67,7 @@ class TestCalculateDivertorHeatFluxSplit(Tier1Contract):
     reference = _reference_divertor_heat_flux_split
     ported = calculate_divertor_heat_flux_split
 
-    samples = [
-        legacy_sample(
-            "single-null-plausible",
-            deg_blkt_inboard_poloidal_plasma=100.0,
-            p_plasma_neutron_mw=1500.0,
-            p_plasma_rad_mw=300.0,
-            n_divertors=1,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -134,21 +127,7 @@ class TestCalculateDivertorHeatLoadWade(Tier1Contract):
     # test's own `f_p_div_lower = 1.0` makes the source's `n_divertors == 2` branch
     # collapse to `hldiv_base` too (see divertor.md § sample provenance), so the legacy
     # point is reused unchanged for this `n_divertors == 1` occupant.
-    samples = [
-        legacy_sample(
-            "divwade-legacy",
-            rmajor=2.0,
-            rminor=1.0,
-            aspect=2.0,
-            b_plasma_toroidal_on_axis=0.5,
-            b_plasma_poloidal_average=0.09595,
-            p_plasma_separatrix_mw=1.0e2,
-            f_div_flux_expansion=2.0,
-            nd_plasma_separatrix_electron=1.0e19,
-            deg_div_field_plate=5.0,
-            rad_fraction_sol=8.0e-1,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -212,21 +191,6 @@ class TestCalculateDivertorHeatLoadWadeDoubleNull(Tier1Contract):
     ported = calculate_divertor_heat_load_wade_double_null
     reference_domain_errors = (ValueError,)
 
-    samples = [
-        legacy_sample(
-            "divwade-legacy-double-null",
-            rmajor=2.0,
-            rminor=1.0,
-            aspect=2.0,
-            b_plasma_toroidal_on_axis=0.5,
-            b_plasma_poloidal_average=0.09595,
-            p_plasma_separatrix_mw=1.0e2,
-            f_div_flux_expansion=2.0,
-            nd_plasma_separatrix_electron=1.0e19,
-            deg_div_field_plate=5.0,
-            rad_fraction_sol=8.0e-1,
-            f_p_div_lower=0.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

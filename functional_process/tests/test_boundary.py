@@ -193,8 +193,6 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
     )
 
 
-
-
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
     """Every missing producer, and nothing else, is on the pin.
@@ -219,16 +217,6 @@ def test_no_new_boundary_input_is_something_process_computes():
         if line.strip()
     ]
     assert found == pinned
-
-
-
-
-
-
-
-
-
-
 
 
 def test_the_stellarator_has_no_reactor_structure_cost():

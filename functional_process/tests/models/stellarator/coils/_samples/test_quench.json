@@ -1,0 +1,62 @@
+{
+ "TestMaxDumpVoltage": [
+  {
+   "label": "u_max_protect_v",
+   "provenance": "legacy",
+   "kwargs": {
+    "tf_energy_stored": 2651198129.253049,
+    "t_dump": 10,
+    "current": 122620.32643505408
+   }
+  }
+ ],
+ "TestQuenchProtection": [
+  {
+   "label": "quench-helias5b-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 22.0,
+    "rminor": 1.78,
+    "dr_fw_plasma_gap_inboard": 0.02,
+    "dr_fw_inboard": 0.018,
+    "dr_blkt_inboard": 0.83,
+    "dr_shld_blkt_gap": 0.05,
+    "dr_shld_inboard": 0.2,
+    "dr_fw_plasma_gap_outboard": 0.02,
+    "dr_fw_outboard": 0.018,
+    "dr_blkt_outboard": 1.08,
+    "dr_shld_outboard": 0.2,
+    "b_plasma_toroidal_on_axis": 5.5,
+    "c_tf_total": 320000000.0,
+    "t_tf_superconductor_quench": 15.0,
+    "dr_vv_inboard": 0.3,
+    "dr_vv_outboard": 0.3,
+    "t_tf_quench_detection": 3.0,
+    "f_a_tf_turn_cable_copper": 0.69,
+    "f_a_tf_turn_cable_space_extra_void": 0.3,
+    "tftmp": 4.2,
+    "a_tf_turn_cable_space_no_void": 0.0022,
+    "dx_tf_turn_general": 0.056,
+    "a_tf_wp_conductor": 0.5,
+    "e_tf_magnetic_stored_total_gj": 132.5,
+    "n_tf_coils": 50,
+    "c_tf_turn": 65000.0
+   }
+  }
+ ],
+ "TestQuenchProtectionCurrentDensity": [
+  {
+   "label": "j_max_protect_am2",
+   "provenance": "legacy",
+   "kwargs": {
+    "tau_quench": 10,
+    "t_detect": 0,
+    "f_cu": 0.6900000000000002,
+    "f_cond": 0.7,
+    "temp": 4.2,
+    "a_cable": 0.002214144000000001,
+    "a_turn": 0.0031360000000000008
+   }
+  }
+ ]
+}

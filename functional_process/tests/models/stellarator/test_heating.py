@@ -12,7 +12,8 @@ than one lifted from an existing test -- still run through the real PROCESS func
 the `_stellarator()` adapter, so value/gradient agreement is genuine, not assumed.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.heating import (
     calculate_beam_current,
     calculate_ecrh_heating,
@@ -107,13 +108,7 @@ class TestEcrhHeating(Tier1Contract):
     reference = _reference_ecrh_heating
     ported = calculate_ecrh_heating
 
-    samples = [
-        legacy_sample(
-            "ecrh-round-numbers",
-            p_hcd_primary_extra_heat_mw=50.0,
-            eta_ecrh_injector_wall_plug=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -125,13 +120,7 @@ class TestLowhybHeating(Tier1Contract):
     reference = _reference_lowhyb_heating
     ported = calculate_lowhyb_heating
 
-    samples = [
-        legacy_sample(
-            "lowhyb-round-numbers",
-            p_hcd_primary_extra_heat_mw=50.0,
-            eta_lowhyb_injector_wall_plug=0.6,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -143,13 +132,7 @@ class TestInjectedPowerTotal(Tier1Contract):
     reference = _reference_injected_power_total
     ported = calculate_injected_power_total
 
-    samples = [
-        legacy_sample(
-            "injected-power-total-round-numbers",
-            p_hcd_injected_electrons_mw=40.0,
-            p_hcd_injected_ions_mw=10.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -161,18 +144,7 @@ class TestBeamCurrent(Tier1Contract):
     reference = _reference_beam_current
     ported = calculate_beam_current
 
-    samples = [
-        legacy_sample(
-            "beam-current-nonzero",
-            p_hcd_beam_injected_total_mw=20.0,
-            e_beam_kev=100.0,
-        ),
-        legacy_sample(
-            "beam-current-below-guard",
-            p_hcd_beam_injected_total_mw=1e-10,
-            e_beam_kev=100.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -184,21 +156,6 @@ class TestFusionGain(Tier1Contract):
     reference = _reference_fusion_gain
     ported = calculate_fusion_gain
 
-    samples = [
-        legacy_sample(
-            "fusion-gain-round-numbers",
-            p_fusion_total_mw=500.0,
-            p_hcd_injected_total_mw=50.0,
-            p_beam_orbit_loss_mw=0.0,
-            p_plasma_ohmic_mw=1.0,
-        ),
-        legacy_sample(
-            "fusion-gain-degenerate-denominator",
-            p_fusion_total_mw=500.0,
-            p_hcd_injected_total_mw=0.0,
-            p_beam_orbit_loss_mw=0.0,
-            p_plasma_ohmic_mw=1e-9,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

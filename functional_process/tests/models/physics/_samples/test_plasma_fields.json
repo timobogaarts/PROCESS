@@ -1,0 +1,36 @@
+{
+ "TestCalculatePlasmaInboardToroidalField": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.318322174644904,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665
+   }
+  }
+ ],
+ "TestCalculatePlasmaOutboardToroidalField": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.318322174644904,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665
+   }
+  }
+ ],
+ "TestCalculateToroidalFieldProfile": [
+  {
+   "label": "large_tokamak_eval-converged-n3",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.318322174644904,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "n_plasma_profile_elements": 3
+   }
+  }
+ ]
+}

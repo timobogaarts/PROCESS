@@ -30,7 +30,8 @@ finer split the nodes use -- exactly the trade `models/physics/confinement_time.
 
 import copy
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,
@@ -212,11 +213,7 @@ class TestZPlasmaXpoint(Tier1Contract):
     reference = _reference_z_plasma_xpoint
     ported = calculate_z_plasma_xpoint
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged", rminor=2.6666666666666665, kappa=1.85
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -241,13 +238,7 @@ class TestDzBlktUpper(Tier1Contract):
     reference = _reference_dz_blkt_upper
     ported = calculate_dz_blkt_upper
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            dr_blkt_inboard=0.7,
-            dr_blkt_outboard=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     """`BASELINE`'s own two blanket thicknesses -- both are run inputs at
     `blktmodel == 0`, which is the arm every tracked tokamak takes."""
 
@@ -280,21 +271,7 @@ class TestDivertorGeometryConventional(Tier1Contract):
     reference = _reference_divertor_geometry_conventional
     ported = calculate_divertor_geometry_conventional
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            kappa=1.85,
-            triang=0.5,
-            plsepi=1.0,
-            plsepo=1.5,
-            plleni=1.0,
-            plleno=1.0,
-            betai=1.0,
-            betao=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -328,9 +305,7 @@ class TestDivertorGeometrySphericalTokamak(Tier1Contract):
     reference = _reference_divertor_geometry_spherical_tokamak
     ported = calculate_divertor_geometry_spherical_tokamak
 
-    samples = [
-        legacy_sample("spherical_tokamak_eval-input", rminor=2.5),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -383,19 +358,7 @@ class TestZTfInsideHalf(Tier1Contract):
     reference = _reference_z_tf_inside_half
     ported = calculate_z_tf_inside_half
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            z_plasma_xpoint_upper=4.933333333333334,
-            dz_xpoint_divertor=2.001883830794158,
-            dz_divertor=0.62,
-            dz_shld_lower=0.7,
-            dz_vv_lower=0.3,
-            dz_shld_vv_gap=0.163,
-            dz_shld_thermal=0.05,
-            dr_tf_shld_gap=0.05,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -514,24 +477,7 @@ class TestTfTopHeightSingleNull(Tier1Contract):
     reference = _reference_tf_top_height_single_null
     ported = calculate_tf_top_height_single_null
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            z_tf_inside_half=8.818217164127492,
-            dr_tf_inboard=1.2,
-            dr_tf_shld_gap=0.05,
-            dz_shld_thermal=0.05,
-            dz_shld_vv_gap=0.163,
-            dz_vv_upper=0.3,
-            dz_shld_upper=0.6,
-            dr_shld_blkt_gap=0.02,
-            dz_blkt_upper=0.85,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            dz_fw_plasma_gap=0.6,
-            z_plasma_xpoint_upper=4.933333333333334,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -584,13 +530,7 @@ class TestTfTopHeightDoubleNull(Tier1Contract):
     reference = _reference_tf_top_height_double_null
     ported = calculate_tf_top_height_double_null
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged-geometry",
-            z_tf_inside_half=8.818217164127492,
-            dr_tf_inboard=1.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -623,13 +563,7 @@ class TestDzBlktUpper(Tier1Contract):
     reference = _reference_dz_blkt_upper
     ported = calculate_dz_blkt_upper
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            dr_blkt_inboard=0.7,
-            dr_blkt_outboard=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -656,14 +590,7 @@ class TestDrTfWpWithInsulation(Tier1Contract):
     reference = _reference_dr_tf_wp_with_insulation
     ported = calculate_dr_tf_wp_with_insulation
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            dr_tf_inboard=1.2,
-            dr_tf_plasma_case=0.07491064938739048,
-            dr_tf_nose_case=0.2816873221155309,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -699,14 +626,7 @@ class TestDrTfInboardFromWindingPack(Tier1Contract):
     reference = _reference_dr_tf_inboard
     ported = calculate_dr_tf_inboard
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged-wp",
-            dr_tf_wp_with_insulation=0.8434020284970785,
-            dr_tf_plasma_case=0.07491064938739048,
-            dr_tf_nose_case=0.2816873221155309,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -748,18 +668,7 @@ class TestTfInboardRadii(Tier1Contract):
     reference = _reference_tf_inboard_radii
     ported = calculate_r_tf_inboard_radii_tf_outside_cs
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            dr_bore=2.003843190236783,
-            dr_cs=0.546816593988753,
-            fseppc=350000000.0,
-            fcspc=0.6,
-            sigallpc=300000000.0,
-            dr_cs_tf_gap=0.08,
-            dr_tf_inboard=1.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -810,15 +719,7 @@ class TestTfInboardRadiiNoCsPrecomp(Tier1Contract):
     reference = _reference_tf_inboard_radii_no_precomp
     ported = calculate_r_tf_inboard_radii_no_cs_precomp
 
-    samples = [
-        legacy_sample(
-            "spherical_tokamak_eval-input",
-            dr_bore=0.23375250334739459,
-            dr_cs=0.20016400484967947,
-            dr_cs_tf_gap=0.0,
-            dr_tf_inboard=0.9,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -849,17 +750,7 @@ class TestRShldInboardInner(Tier1Contract):
     reference = _reference_r_shld_inboard_inner
     ported = calculate_r_shld_inboard_inner
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            dr_fw_plasma_gap_inboard=0.25,
-            dr_fw_inboard=0.018000000000000002,
-            dr_blkt_inboard=0.7,
-            dr_shld_inboard=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1049,28 +940,7 @@ class TestOutboardBuildChain(Tier1Contract):
     reference = _reference_outboard_build
     ported = _ported_outboard_build
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            dr_fw_plasma_gap_outboard=0.25,
-            dr_fw_outboard=0.018000000000000002,
-            dr_blkt_outboard=1.0,
-            dr_shld_outboard=0.8,
-            dr_shld_blkt_gap=0.02,
-            dr_vv_outboard=0.3,
-            gapomin=0.234,
-            dr_shld_thermal_outboard=0.05,
-            dr_tf_shld_gap=0.05,
-            dr_tf_inboard=1.2,
-            ripple_b_tf_plasma_edge_max=0.6,
-            n_tf_coils=16.0,
-            dx_tf_wp_primary_toroidal=1.2533980800120443,
-            dx_tf_wp_insulation=0.008,
-            dx_tf_wp_insertion_gap=0.01,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1150,32 +1020,7 @@ class TestRippleSuperconducting(Tier1Contract):
     reference = _reference_ripple_superconducting
     ported = _ported_ripple_superconducting
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            ripple_b_tf_plasma_edge_max=0.6,
-            r_tf_outboard_mid=14.978406000060053,
-            n_tf_coils=16.0,
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            dx_tf_wp_primary_toroidal=1.2533980800120443,
-            dx_tf_wp_insulation=0.008,
-            dx_tf_wp_insertion_gap=0.01,
-        ),
-        legacy_sample(
-            "large_tokamak_eval-unrippled-leg",
-            # The radius PROCESS evaluates the fit at on its *first* call, before the
-            # leg is moved out: `calculate_radial_build:1901-1909`'s stack.
-            ripple_b_tf_plasma_edge_max=0.6,
-            r_tf_outboard_mid=13.988666666666669,
-            n_tf_coils=16.0,
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            dx_tf_wp_primary_toroidal=1.2533980800120443,
-            dx_tf_wp_insulation=0.008,
-            dx_tf_wp_insertion_gap=0.01,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1239,16 +1084,7 @@ class TestRipplePictureFrame(Tier1Contract):
     reference = _reference_ripple_picture_frame
     ported = plasma_outboard_edge_toroidal_ripple_picture_frame
 
-    samples = [
-        legacy_sample(
-            "spherical_tokamak_eval-inputs",
-            ripple_b_tf_plasma_edge_max=1.0,
-            r_tf_outboard_mid=10.274594873354488,
-            n_tf_coils=12.0,
-            rmajor=4.5,
-            rminor=2.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1326,17 +1162,7 @@ class TestVacuumVesselAndShieldRadii(Tier1Contract):
     reference = _reference_vacuum_vessel_and_shield_radii
     ported = calculate_vacuum_vessel_and_shield_radii
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            r_tf_inboard_out=3.8986074717418546,
-            dr_tf_shld_gap=0.05,
-            dr_shld_thermal_inboard=0.05,
-            dr_shld_vv_gap_inboard=0.02,
-            dr_vv_inboard=0.3,
-            dr_shld_inboard=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1388,17 +1214,7 @@ class TestRbld(Tier1Contract):
     reference = _reference_rbld
     ported = calculate_rbld
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            r_sh_inboard_out=4.6186074717418535,
-            dr_shld_blkt_gap=0.02,
-            dr_blkt_inboard=0.7,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_plasma_gap_inboard=0.25,
-            rminor=2.6666666666666665,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1436,12 +1252,7 @@ class TestRCpTop(Tier1Contract):
     reference = _reference_r_cp_top
     ported = calculate_r_cp_top_from_tf_inboard_out
 
-    samples = [
-        legacy_sample("st_regression-converged", r_tf_inboard_out=1.3405301988363134),
-        legacy_sample(
-            "spherical_tokamak_eval-converged", r_tf_inboard_out=1.208855401921066
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1492,11 +1303,6 @@ class TestRCpTopSuperconductingSphericalTokamak(Tier1Contract):
     reference = _reference_r_cp_top_superconducting_spherical_tokamak
     ported = calculate_r_cp_top_from_tf_inboard_out
 
-    samples = [
-        legacy_sample("st_regression-converged", r_tf_inboard_out=1.3405301988363134),
-        legacy_sample(
-            "spherical_tokamak_eval-converged", r_tf_inboard_out=1.208855401921066
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

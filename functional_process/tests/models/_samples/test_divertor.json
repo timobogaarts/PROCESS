@@ -1,0 +1,51 @@
+{
+ "TestCalculateDivertorHeatFluxSplit": [
+  {
+   "label": "single-null-plausible",
+   "provenance": "legacy",
+   "kwargs": {
+    "deg_blkt_inboard_poloidal_plasma": 100.0,
+    "p_plasma_neutron_mw": 1500.0,
+    "p_plasma_rad_mw": 300.0,
+    "n_divertors": 1
+   }
+  }
+ ],
+ "TestCalculateDivertorHeatLoadWade": [
+  {
+   "label": "divwade-legacy",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 2.0,
+    "rminor": 1.0,
+    "aspect": 2.0,
+    "b_plasma_toroidal_on_axis": 0.5,
+    "b_plasma_poloidal_average": 0.09595,
+    "p_plasma_separatrix_mw": 100.0,
+    "f_div_flux_expansion": 2.0,
+    "nd_plasma_separatrix_electron": 1e+19,
+    "deg_div_field_plate": 5.0,
+    "rad_fraction_sol": 0.8
+   }
+  }
+ ],
+ "TestCalculateDivertorHeatLoadWadeDoubleNull": [
+  {
+   "label": "divwade-legacy-double-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 2.0,
+    "rminor": 1.0,
+    "aspect": 2.0,
+    "b_plasma_toroidal_on_axis": 0.5,
+    "b_plasma_poloidal_average": 0.09595,
+    "p_plasma_separatrix_mw": 100.0,
+    "f_div_flux_expansion": 2.0,
+    "nd_plasma_separatrix_electron": 1e+19,
+    "deg_div_field_plate": 5.0,
+    "rad_fraction_sol": 0.8,
+    "f_p_div_lower": 0.7
+   }
+  }
+ ]
+}

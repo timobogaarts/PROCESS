@@ -13,7 +13,8 @@ lookup on `i_ind_plasma_internal_norm` (`process/models/physics/physics.py`, lin
 there is nothing left in it to compare once the four functions below agree.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
@@ -89,22 +90,7 @@ class TestCalculateVoltSecondRequirements(Tier1Contract):
 
     # Converged in-process `SingleRun` of `large_tokamak_eval.IN.DAT`. PROCESS reports
     # `vs_plasma_ramp_required = 279.0949824023401 Wb` at this point.
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            csawth=1.0,
-            eps=0.3333333333333333,
-            f_c_plasma_inductive=0.5757815563319303,
-            ejima_coeff=0.3,
-            kappa=1.85,
-            rmajor=8.0,
-            res_plasma=4.049564473867687e-09,
-            plasma_current=16091095.408042267,
-            t_plant_pulse_fusion_ramp=10.0,
-            t_plant_pulse_burn=7457.899573682509,
-            ind_plasma_internal_norm=1.2568268843995554,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -120,7 +106,7 @@ class TestCalculateInternalInductanceWesson(Tier1Contract):
     reference = _reference_internal_inductance_wesson
     ported = calculate_internal_inductance_wesson
 
-    samples = [legacy_sample("large-tokamak-converged", alphaj=2.0946658953123896)]
+    samples = FROM_FILE
 
     # `1.65 + 0.89 * alphaj` must stay positive for the log; it does for any
     # `alphaj > -1.85`, and a current profile index is positive by construction.
@@ -139,7 +125,7 @@ class TestCalculateInternalInductanceMenard(Tier1Contract):
     reference = _reference_internal_inductance_menard
     ported = calculate_internal_inductance_menard
 
-    samples = [legacy_sample("large-tokamak-converged", kappa=1.85)]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -151,14 +137,6 @@ class TestCalculateNormalisedInternalInductanceIter3(Tier1Contract):
     reference = _reference_normalised_internal_inductance_iter_3
     ported = calculate_normalised_internal_inductance_iter_3
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            b_plasma_poloidal_vol_avg=0.8396810173096521,
-            c_plasma=16091095.408042267,
-            vol_plasma=1888.171153995669,
-            rmajor=8.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

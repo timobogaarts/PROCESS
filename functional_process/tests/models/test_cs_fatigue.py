@@ -21,7 +21,8 @@ a fresh `DataStructure` from the sample. Leaving them at their defaults instead 
 make seven of the port's twelve arguments untested.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.cs_fatigue import (
     calculate_n_cycle,
     surface_stress_intensity_factor,
@@ -85,17 +86,7 @@ class TestSurfaceStressIntensityFactor(Tier1Contract):
     reference = staticmethod(CsFatigue.surface_stress_intensity_factor)
     ported = surface_stress_intensity_factor
 
-    samples = [
-        legacy_sample(
-            "surface_stress_intensity_factor-baseline_2018",
-            hoop_stress=659.99351867335338,
-            t=0.0063104538380405924,
-            w=0.0063104538380405924,
-            a=0.00088999999999999995,
-            c=0.0026699999999999996,
-            phi=1.5707963267948966,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # a disagreement or non-finite value at the wider range
@@ -168,23 +159,7 @@ class TestNCycle(Tier1Contract):
         "sf_fast_fracture",
     )
 
-    samples = [
-        legacy_sample(
-            "ncycle-baseline_2018",
-            max_hoop_stress=659999225.25370133,
-            residual_stress=240000000.0,
-            t_crack_vertical=0.00088999999999999995,
-            dz_cs_turn_conduit=0.0063104538380405924,
-            dr_cs_turn_conduit=0.0063104538380405924,
-            paris_coefficient=65.0e-14,
-            paris_power_law=3.5,
-            walker_coefficient=0.436,
-            sf_vertical_crack=2.0,
-            sf_radial_crack=2.0,
-            fracture_toughness=2.0e2,
-            sf_fast_fracture=1.5,
-        ),
-    ]
+    samples = FROM_FILE
     """`tests/unit/models/test_cs_fatigue.py::test_ncycle`'s point, verbatim, with the
     seven coefficients spelled out at the `cs_fatigue_variables.py` defaults that
     fixture leaves them at. Genuinely legacy -- its own docstring says it came from

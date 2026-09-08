@@ -1,0 +1,51 @@
+{
+ "TestCalculateInternalInductanceMenard": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "kappa": 1.85
+   }
+  }
+ ],
+ "TestCalculateInternalInductanceWesson": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphaj": 2.0946658953123896
+   }
+  }
+ ],
+ "TestCalculateNormalisedInternalInductanceIter3": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_poloidal_vol_avg": 0.8396810173096521,
+    "c_plasma": 16091095.408042267,
+    "vol_plasma": 1888.171153995669,
+    "rmajor": 8.0
+   }
+  }
+ ],
+ "TestCalculateVoltSecondRequirements": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "csawth": 1.0,
+    "eps": 0.3333333333333333,
+    "f_c_plasma_inductive": 0.5757815563319303,
+    "ejima_coeff": 0.3,
+    "kappa": 1.85,
+    "rmajor": 8.0,
+    "res_plasma": 4.049564473867687e-09,
+    "plasma_current": 16091095.408042267,
+    "t_plant_pulse_fusion_ramp": 10.0,
+    "t_plant_pulse_burn": 7457.899573682509,
+    "ind_plasma_internal_norm": 1.2568268843995554
+   }
+  }
+ ]
+}

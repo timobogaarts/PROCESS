@@ -1,0 +1,166 @@
+{
+ "TestCurrentDriveEcrhPrimaryNoSecondary": [
+  {
+   "label": "large-tokamak-eval-operating-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_ecrh": 0.3,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "rmajor": 9.0,
+    "plasma_current": 18000000.0,
+    "f_c_plasma_auxiliary": 0.08,
+    "p_hcd_primary_extra_heat_mw": 75.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.5,
+    "i_plasma_ignited": 0
+   }
+  },
+  {
+   "label": "ignited-wall-plug-reset",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_ecrh": 0.3,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "rmajor": 9.0,
+    "plasma_current": 18000000.0,
+    "f_c_plasma_auxiliary": 0.08,
+    "p_hcd_primary_extra_heat_mw": 75.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.5,
+    "i_plasma_ignited": 1
+   }
+  },
+  {
+   "label": "secondary-injected-power-nonzero",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_ecrh": 0.3,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "rmajor": 9.0,
+    "plasma_current": 18000000.0,
+    "f_c_plasma_auxiliary": 0.08,
+    "p_hcd_primary_extra_heat_mw": 75.0,
+    "p_hcd_secondary_injected_mw": 30.0,
+    "eta_ecrh_injector_wall_plug": 0.5,
+    "i_plasma_ignited": 0
+   }
+  },
+  {
+   "label": "small-machine-high-efficiency",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_ecrh": 0.5,
+    "nd_plasma_electrons_vol_avg": 2e+20,
+    "rmajor": 3.0,
+    "plasma_current": 6000000.0,
+    "f_c_plasma_auxiliary": 0.08,
+    "p_hcd_primary_extra_heat_mw": 10.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.8,
+    "i_plasma_ignited": 0
+   }
+  }
+ ],
+ "TestCurrentDriveFreethyEcrhPrimaryNoSecondary": [
+  {
+   "label": "spherical-tokamak-eval-operating-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 11.814206849688595,
+    "n_charge_plasma_effective_vol_avg": 2.4,
+    "nd_plasma_electrons_vol_avg": 9.69888313737236e+19,
+    "rmajor": 4.5,
+    "b_plasma_toroidal_on_axis": 3.0,
+    "n_ecrh_harmonic": 2.0,
+    "feffcd": 1.0,
+    "plasma_current": 20000000.0,
+    "f_c_plasma_auxiliary": 0.1,
+    "p_hcd_primary_extra_heat_mw": 0.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.45,
+    "i_plasma_ignited": 0,
+    "i_ecrh_wave_mode": 0
+   }
+  },
+  {
+   "label": "ignited-wall-plug-reset",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 11.814206849688595,
+    "n_charge_plasma_effective_vol_avg": 2.4,
+    "nd_plasma_electrons_vol_avg": 9.69888313737236e+19,
+    "rmajor": 4.5,
+    "b_plasma_toroidal_on_axis": 3.0,
+    "n_ecrh_harmonic": 2.0,
+    "feffcd": 1.0,
+    "plasma_current": 20000000.0,
+    "f_c_plasma_auxiliary": 0.1,
+    "p_hcd_primary_extra_heat_mw": 0.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.45,
+    "i_plasma_ignited": 1,
+    "i_ecrh_wave_mode": 0
+   }
+  },
+  {
+   "label": "secondary-injected-power-nonzero",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 11.814206849688595,
+    "n_charge_plasma_effective_vol_avg": 2.4,
+    "nd_plasma_electrons_vol_avg": 9.69888313737236e+19,
+    "rmajor": 4.5,
+    "b_plasma_toroidal_on_axis": 3.0,
+    "n_ecrh_harmonic": 2.0,
+    "feffcd": 1.0,
+    "plasma_current": 20000000.0,
+    "f_c_plasma_auxiliary": 0.1,
+    "p_hcd_primary_extra_heat_mw": 10.0,
+    "p_hcd_secondary_injected_mw": 30.0,
+    "eta_ecrh_injector_wall_plug": 0.45,
+    "i_plasma_ignited": 0,
+    "i_ecrh_wave_mode": 0
+   }
+  },
+  {
+   "label": "near-cutoff-coupling",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 11.814206849688595,
+    "n_charge_plasma_effective_vol_avg": 2.4,
+    "nd_plasma_electrons_vol_avg": 1.5e+20,
+    "rmajor": 4.5,
+    "b_plasma_toroidal_on_axis": 2.2,
+    "n_ecrh_harmonic": 2.0,
+    "feffcd": 1.0,
+    "plasma_current": 20000000.0,
+    "f_c_plasma_auxiliary": 0.1,
+    "p_hcd_primary_extra_heat_mw": 0.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.45,
+    "i_plasma_ignited": 0,
+    "i_ecrh_wave_mode": 0
+   }
+  },
+  {
+   "label": "x-mode-transcription-check",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 11.814206849688595,
+    "n_charge_plasma_effective_vol_avg": 2.4,
+    "nd_plasma_electrons_vol_avg": 9.69888313737236e+19,
+    "rmajor": 4.5,
+    "b_plasma_toroidal_on_axis": 3.0,
+    "n_ecrh_harmonic": 2.0,
+    "feffcd": 1.0,
+    "plasma_current": 20000000.0,
+    "f_c_plasma_auxiliary": 0.1,
+    "p_hcd_primary_extra_heat_mw": 0.0,
+    "p_hcd_secondary_injected_mw": 0.0,
+    "eta_ecrh_injector_wall_plug": 0.45,
+    "i_plasma_ignited": 0,
+    "i_ecrh_wave_mode": 1
+   }
+  }
+ ]
+}

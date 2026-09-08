@@ -11,10 +11,11 @@ deterministically (`ireactor`/`ife`/`ifueltyp`/`itart`/`i_tf_sup`/`i_vacuum_pump
 values), since fuzzing alone would only hit every branch by chance.
 """
 
-from functional_process.cottax._harness.process_reference import process_reference
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.costs.costs import (
     calculate_atmospheric_recovery_cost,
     calculate_auxiliary_component_cooling_cost,
@@ -246,35 +247,7 @@ class TestConvertFpyToCalendar(Tier1Contract):
     ported = convert_fpy_to_calendar
     static_argnames = ("itart",)
 
-    samples = [
-        legacy_sample(
-            "fast-branches",
-            life_blkt_fpy=5.0,
-            life_plant=30.0,
-            f_t_plant_available=0.8,
-            life_div_fpy=3.0,
-            itart=0,
-            cplife=10.0,
-        ),
-        legacy_sample(
-            "slow-branches",
-            life_blkt_fpy=40.0,
-            life_plant=30.0,
-            f_t_plant_available=0.8,
-            life_div_fpy=40.0,
-            itart=1,
-            cplife=40.0,
-        ),
-        legacy_sample(
-            "itart-fast",
-            life_blkt_fpy=5.0,
-            life_plant=30.0,
-            f_t_plant_available=0.8,
-            life_div_fpy=3.0,
-            itart=1,
-            cplife=10.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"itart": 0}
 
@@ -285,60 +258,7 @@ class TestStructuresCost(Tier1Contract):
     ported = calculate_structures_cost
     static_argnames = ("lsa", "ireactor")
 
-    samples = [
-        legacy_sample(
-            "reactor",
-            csi=16.0,
-            lsa=4,
-            cland=19.2,
-            ucrb=400.0,
-            rbvol=1.0e5,
-            UCMB=260.0,
-            rmbvol=5.0e4,
-            UCWS=460.0,
-            wsvol=1.0e4,
-            UCTR=370.0,
-            triv=4.0e4,
-            UCEL=380.0,
-            elevol=8.0e3,
-            UCAD=180.0,
-            admvol=1.0e4,
-            UCCO=350.0,
-            convol=6.0e3,
-            UCSH=115.0,
-            shovol=5.0e3,
-            UCCR=460.0,
-            cryvol=2.0e4,
-            ireactor=1,
-            cturbb=100.0,
-        ),
-        legacy_sample(
-            "non-reactor-lsa1",
-            csi=16.0,
-            lsa=1,
-            cland=19.2,
-            ucrb=400.0,
-            rbvol=1.0e5,
-            UCMB=260.0,
-            rmbvol=5.0e4,
-            UCWS=460.0,
-            wsvol=1.0e4,
-            UCTR=370.0,
-            triv=4.0e4,
-            UCEL=380.0,
-            elevol=8.0e3,
-            UCAD=180.0,
-            admvol=1.0e4,
-            UCCO=350.0,
-            convol=6.0e3,
-            UCSH=115.0,
-            shovol=5.0e3,
-            UCCR=460.0,
-            cryvol=2.0e4,
-            ireactor=0,
-            cturbb=100.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4, "ireactor": 1}
 
@@ -349,24 +269,7 @@ class TestIndirectCosts(Tier1Contract):
     ported = calculate_indirect_costs
     static_argnames = ("lsa",)
 
-    samples = [
-        legacy_sample(
-            "lsa4",
-            cfind=[0.244, 0.244, 0.244, 0.29],
-            lsa=4,
-            cdirt=1000.0,
-            cowner=0.15,
-            fcontng=0.195,
-        ),
-        legacy_sample(
-            "lsa1",
-            cfind=[0.244, 0.244, 0.244, 0.29],
-            lsa=1,
-            cdirt=1000.0,
-            cowner=0.15,
-            fcontng=0.195,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"cfind": [0.244, 0.244, 0.244, 0.29], "lsa": 4}
 
@@ -377,7 +280,7 @@ class TestReactorStructureCost(Tier1Contract):
     ported = calculate_reactor_structure_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", gsmass=5.0e5, UCGSS=35.0, lsa=4, fkind=1.0)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -388,7 +291,7 @@ class TestVacuumVesselAssemblyCost(Tier1Contract):
     ported = calculate_vacuum_vessel_assembly_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", m_vv=9.0e6, uccryo=32.0, lsa=4, fkind=1.0)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -399,40 +302,7 @@ class TestDivertorCost(Tier1Contract):
     ported = calculate_divertor_cost
     static_argnames = ("ife", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "not-ife-capital",
-            ife=0,
-            a_div_surface_total=100.0,
-            ucdiv=2.8e5,
-            fkind=1.0,
-            ifueltyp=0,
-        ),
-        legacy_sample(
-            "not-ife-fuel-cost",
-            ife=0,
-            a_div_surface_total=100.0,
-            ucdiv=2.8e5,
-            fkind=1.0,
-            ifueltyp=1,
-        ),
-        legacy_sample(
-            "not-ife-both",
-            ife=0,
-            a_div_surface_total=100.0,
-            ucdiv=2.8e5,
-            fkind=1.0,
-            ifueltyp=2,
-        ),
-        legacy_sample(
-            "ife",
-            ife=1,
-            a_div_surface_total=100.0,
-            ucdiv=2.8e5,
-            fkind=1.0,
-            ifueltyp=0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "ifueltyp": 0}
 
@@ -443,42 +313,7 @@ class TestVacuumSystemCost(Tier1Contract):
     ported = calculate_vacuum_system_cost
     static_argnames = ("i_vacuum_pump_type",)
 
-    samples = [
-        legacy_sample(
-            "turbomolecular",
-            i_vacuum_pump_type=0,
-            n_vac_pumps_high=8.0,
-            UCCPMP=2.5e5,
-            UCTPMP=2.5e5,
-            n_vv_vacuum_ducts=8.0,
-            UCBPMP=2.5e4,
-            dlscal=1.0,
-            UCDUCT=3.0e4,
-            dia_vv_vacuum_ducts=1.0,
-            UCVALV=1.5e5,
-            m_vv_vacuum_duct_shield=1.0e4,
-            UCVDSH=90.0,
-            UCVIAC=1.5e7,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "compound-cryopump",
-            i_vacuum_pump_type=1,
-            n_vac_pumps_high=8.0,
-            UCCPMP=2.5e5,
-            UCTPMP=2.5e5,
-            n_vv_vacuum_ducts=8.0,
-            UCBPMP=2.5e4,
-            dlscal=1.0,
-            UCDUCT=3.0e4,
-            dia_vv_vacuum_ducts=1.0,
-            UCVALV=1.5e5,
-            m_vv_vacuum_duct_shield=1.0e4,
-            UCVDSH=90.0,
-            UCVIAC=1.5e7,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"i_vacuum_pump_type": 0}
 
@@ -489,50 +324,7 @@ class TestTfCoilPowerConditioningCost(Tier1Contract):
     ported = calculate_tf_coil_power_conditioning_cost
     static_argnames = ("i_tf_sup",)
 
-    samples = [
-        legacy_sample(
-            "resistive",
-            uctfps=2.4e4,
-            tfckw=1.0e3,
-            tfcmw=50.0,
-            i_tf_sup=0,
-            uctfbr=1.22e6,
-            n_tf_coils=16.0,
-            c_tf_turn=6.0e4,
-            v_tf_coil_dump_quench_kv=20.0,
-            uctfsw=1.0e5,
-            UCTFDR=1.75e-3,
-            e_tf_magnetic_stored_total_gj=40.0,
-            UCTFGR=1.0e5,
-            UCTFIC=1.0e4,
-            uctfbus=1.0,
-            m_tf_bus=1.0e4,
-            ucbus=460.0,
-            len_tf_bus=300.0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "superconducting",
-            uctfps=2.4e4,
-            tfckw=1.0e3,
-            tfcmw=50.0,
-            i_tf_sup=1,
-            uctfbr=1.22e6,
-            n_tf_coils=16.0,
-            c_tf_turn=6.0e4,
-            v_tf_coil_dump_quench_kv=20.0,
-            uctfsw=1.0e5,
-            UCTFDR=1.75e-3,
-            e_tf_magnetic_stored_total_gj=40.0,
-            UCTFGR=1.0e5,
-            UCTFIC=1.0e4,
-            uctfbus=1.0,
-            m_tf_bus=1.0e4,
-            ucbus=460.0,
-            len_tf_bus=300.0,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"i_tf_sup": 1}
 
@@ -542,44 +334,7 @@ class TestPfCoilPowerConditioningCost(Tier1Contract):
     reference = _reference_pf_coil_power_conditioning_cost
     ported = calculate_pf_coil_power_conditioning_cost
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            ucpfps=3.5e4,
-            peakmva=300.0,
-            ucpfic=1.0e4,
-            pfckts=12.0,
-            ucpfb=1.0e4,
-            spfbusl=300.0,
-            acptmax=3.0e4,
-            ucpfbs=1.0e5,
-            srcktpm=3.0e4,
-            ucpfbk=3.0e4,
-            vpfskv=20.0,
-            ucpfdr1=1.5e4,
-            ensxpfm=1000.0,
-            ucpfcb=7.5e4,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "zero-circuits",
-            ucpfps=3.5e4,
-            peakmva=300.0,
-            ucpfic=1.0e4,
-            pfckts=0.0,
-            ucpfb=1.0e4,
-            spfbusl=300.0,
-            acptmax=3.0e4,
-            ucpfbs=1.0e5,
-            srcktpm=3.0e4,
-            ucpfbk=3.0e4,
-            vpfskv=20.0,
-            ucpfdr1=1.5e4,
-            ensxpfm=1000.0,
-            ucpfcb=7.5e4,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -589,34 +344,7 @@ class TestReactorCoolingSystemCost(Tier1Contract):
     ported = calculate_reactor_cooling_system_cost
     static_argnames = ("lsa", "i_blkt_coolant_type")
 
-    samples = [
-        legacy_sample(
-            "water",
-            uchts=[15.3, 19.1],
-            i_blkt_coolant_type=1,
-            p_fw_div_heat_deposited_mw=200.0,
-            p_blkt_nuclear_heat_total_mw=300.0,
-            p_shld_nuclear_heat_mw=20.0,
-            lsa=4,
-            fkind=1.0,
-            UCPHX=15.0,
-            n_primary_heat_exchangers=3,
-            p_plant_primary_heat_mw=1500.0,
-        ),
-        legacy_sample(
-            "helium",
-            uchts=[15.3, 19.1],
-            i_blkt_coolant_type=2,
-            p_fw_div_heat_deposited_mw=200.0,
-            p_blkt_nuclear_heat_total_mw=300.0,
-            p_shld_nuclear_heat_mw=20.0,
-            lsa=4,
-            fkind=1.0,
-            UCPHX=15.0,
-            n_primary_heat_exchangers=3,
-            p_plant_primary_heat_mw=1500.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"uchts": [15.3, 19.1], "i_blkt_coolant_type": 1, "lsa": 4}
 
@@ -626,7 +354,7 @@ class TestFuellingSystemCost(Tier1Contract):
     reference = _reference_fuelling_system_cost
     ported = calculate_fuelling_system_cost
 
-    samples = [legacy_sample("nominal", ucf1=2.23e7, fkind=1.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -635,9 +363,7 @@ class TestNuclearBuildingVentilationCost(Tier1Contract):
     reference = _reference_nuclear_building_ventilation_cost
     ported = calculate_nuclear_building_ventilation_cost
 
-    samples = [
-        legacy_sample("nominal", UCNBV=1.0e6, volrci=1.0e5, wsvol=1.0e4, fkind=1.0)
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -646,7 +372,7 @@ class TestInstrumentationAndControlCost(Tier1Contract):
     reference = _reference_instrumentation_and_control_cost
     ported = calculate_instrumentation_and_control_cost
 
-    samples = [legacy_sample("nominal", uciac=4.0e7, fkind=1.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -655,7 +381,7 @@ class TestMaintenanceEquipmentCost(Tier1Contract):
     reference = _reference_maintenance_equipment_cost
     ported = calculate_maintenance_equipment_cost
 
-    samples = [legacy_sample("nominal", ucme=1.25e8, fkind=1.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -665,22 +391,7 @@ class TestTurbinePlantEquipmentCost(Tier1Contract):
     ported = calculate_turbine_plant_equipment_cost
     static_argnames = ("ireactor", "i_blkt_coolant_type")
 
-    samples = [
-        legacy_sample(
-            "reactor",
-            ireactor=1,
-            ucturb=[230.0e6, 245.0e6],
-            i_blkt_coolant_type=1,
-            p_plant_electric_gross_mw=1200.0,
-        ),
-        legacy_sample(
-            "non-reactor",
-            ireactor=0,
-            ucturb=[230.0e6, 245.0e6],
-            i_blkt_coolant_type=1,
-            p_plant_electric_gross_mw=1200.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ireactor": 1, "ucturb": [230.0e6, 245.0e6], "i_blkt_coolant_type": 1}
 
@@ -691,7 +402,7 @@ class TestSwitchyardCost(Tier1Contract):
     ported = calculate_switchyard_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", UCSWYD=1.9e7, lsa=4)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -702,16 +413,7 @@ class TestTransformersCost(Tier1Contract):
     ported = calculate_transformers_cost
     static_argnames = ("lsa",)
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            UCPP=48.0,
-            pacpmw=50.0,
-            UCAP=15.0,
-            p_plant_electric_base_total_mw=10.0,
-            lsa=4,
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -722,7 +424,7 @@ class TestLowVoltageCost(Tier1Contract):
     ported = calculate_low_voltage_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", UCLV=265.0, tlvpmw=10.0, lsa=4)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -733,7 +435,7 @@ class TestDieselGeneratorsCost(Tier1Contract):
     ported = calculate_diesel_generators_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", UCDGEN=1.7e6, lsa=4)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -744,7 +446,7 @@ class TestAuxiliaryFacilityPowerCost(Tier1Contract):
     ported = calculate_auxiliary_facility_power_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", UCAF=1.5e6, lsa=4)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -754,9 +456,7 @@ class TestElectricPlantEquipmentCost(Tier1Contract):
     reference = _reference_electric_plant_equipment_cost
     ported = calculate_electric_plant_equipment_cost
 
-    samples = [
-        legacy_sample("nominal", c241=10.0, c242=15.0, c243=8.0, c244=6.0, c245=2.0)
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -766,7 +466,7 @@ class TestMiscPlantEquipmentCost(Tier1Contract):
     ported = calculate_misc_plant_equipment_cost
     static_argnames = ("lsa",)
 
-    samples = [legacy_sample("nominal", ucmisc=2.5e7, lsa=4)]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 4}
 
@@ -777,30 +477,7 @@ class TestHeatRejectionCost(Tier1Contract):
     ported = calculate_heat_rejection_cost
     static_argnames = ("ireactor", "lsa")
 
-    samples = [
-        legacy_sample(
-            "reactor",
-            ireactor=1,
-            p_fusion_total_mw=2000.0,
-            p_hcd_electric_total_mw=100.0,
-            tfcmw=50.0,
-            p_plant_primary_heat_mw=2200.0,
-            p_plant_electric_gross_mw=1200.0,
-            uchrs=1.0e7,
-            lsa=4,
-        ),
-        legacy_sample(
-            "non-reactor",
-            ireactor=0,
-            p_fusion_total_mw=2000.0,
-            p_hcd_electric_total_mw=100.0,
-            tfcmw=50.0,
-            p_plant_primary_heat_mw=2200.0,
-            p_plant_electric_gross_mw=1200.0,
-            uchrs=1.0e7,
-            lsa=4,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ireactor": 1, "lsa": 4}
 
@@ -1207,41 +884,7 @@ class TestFirstWallCost(Tier1Contract):
     ported = calculate_first_wall_cost
     static_argnames = ("ife", "lsa", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "capital",
-            ife=0,
-            lsa=2,
-            UCFWA=6.0e4,
-            UCFWS=5.3e4,
-            a_fw_total=3182.3,
-            UCFWPS=1.0e7,
-            fkind=1.0,
-            ifueltyp=0,
-        ),
-        legacy_sample(
-            "fuel",
-            ife=0,
-            lsa=2,
-            UCFWA=6.0e4,
-            UCFWS=5.3e4,
-            a_fw_total=3182.3,
-            UCFWPS=1.0e7,
-            fkind=1.0,
-            ifueltyp=1,
-        ),
-        legacy_sample(
-            "capital-plus-replacement",
-            ife=0,
-            lsa=4,
-            UCFWA=6.0e4,
-            UCFWS=5.3e4,
-            a_fw_total=3182.3,
-            UCFWPS=1.0e7,
-            fkind=1.0,
-            ifueltyp=2,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2, "ifueltyp": 0}
 
@@ -1252,53 +895,7 @@ class TestBlanketCost(Tier1Contract):
     ported = calculate_blanket_cost
     static_argnames = ("ife", "lsa", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "capital",
-            ife=0,
-            lsa=2,
-            m_blkt_beryllium=1.13e6,
-            ucblbe=260.0,
-            m_blkt_li2o=5.0e5,
-            ucblli2o=600.0,
-            m_blkt_steel_total=1.28e6,
-            ucblss=90.0,
-            m_blkt_vanadium=0.0,
-            ucblvd=280.0,
-            fkind=1.0,
-            ifueltyp=0,
-        ),
-        legacy_sample(
-            "fuel",
-            ife=0,
-            lsa=2,
-            m_blkt_beryllium=1.13e6,
-            ucblbe=260.0,
-            m_blkt_li2o=5.0e5,
-            ucblli2o=600.0,
-            m_blkt_steel_total=1.28e6,
-            ucblss=90.0,
-            m_blkt_vanadium=1.0e5,
-            ucblvd=280.0,
-            fkind=1.0,
-            ifueltyp=1,
-        ),
-        legacy_sample(
-            "capital-plus-replacement",
-            ife=0,
-            lsa=4,
-            m_blkt_beryllium=1.13e6,
-            ucblbe=260.0,
-            m_blkt_li2o=5.0e5,
-            ucblli2o=600.0,
-            m_blkt_steel_total=1.28e6,
-            ucblss=90.0,
-            m_blkt_vanadium=1.0e5,
-            ucblvd=280.0,
-            fkind=1.0,
-            ifueltyp=2,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2, "ifueltyp": 0}
 
@@ -1309,18 +906,7 @@ class TestShieldCost(Tier1Contract):
     ported = calculate_shield_cost
     static_argnames = ("ife", "lsa")
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            ife=0,
-            lsa=2,
-            whtshld=4.53e6,
-            ucshld=32.0,
-            wpenshld=4.53e6,
-            ucpens=32.0,
-            fkind=1.0,
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2}
 
@@ -1330,11 +916,7 @@ class TestReactorCost(Tier1Contract):
     reference = _reference_reactor_cost
     ported = calculate_reactor_cost
 
-    samples = [
-        legacy_sample(
-            "nominal", c2211=277.2, c2212=531.5, c2213=217.3, c2214=0.0, c2215=22.6
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -1344,60 +926,7 @@ class TestTfMagnetCostSuperconducting(Tier1Contract):
     ported = calculate_tf_magnet_cost_superconducting
     static_argnames = ("supercond_cost_model", "lsa", "i_tf_sc_mat")
 
-    samples = [
-        legacy_sample(
-            "legacy-cost-model",
-            supercond_cost_model=0,
-            lsa=2,
-            ucsc=_UCSC,
-            i_tf_sc_mat=1,
-            m_tf_coil_superconductor=1.0e5,
-            len_tf_coil=50.0,
-            n_tf_coil_turns=200.0,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_tf=6.0e8,
-            uccu=75.0,
-            m_tf_coil_copper=2.0e5,
-            cconshtf=75.0,
-            cconfix=80.0,
-            n_tf_coils=50.0,
-            ucwindtf=480.0,
-            m_tf_coil_case=5.0e5,
-            uccase=50.0,
-            aintmass=5.3e6,
-            UCINT=30.0,
-            clgsmass=1.06e6,
-            UCGSS=35.0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "strand-cost-model",
-            supercond_cost_model=1,
-            lsa=4,
-            ucsc=_UCSC,
-            i_tf_sc_mat=1,
-            m_tf_coil_superconductor=1.0e5,
-            len_tf_coil=50.0,
-            n_tf_coil_turns=200.0,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_tf=6.0e8,
-            uccu=75.0,
-            m_tf_coil_copper=2.0e5,
-            cconshtf=75.0,
-            cconfix=80.0,
-            n_tf_coils=50.0,
-            ucwindtf=480.0,
-            m_tf_coil_case=5.0e5,
-            uccase=50.0,
-            aintmass=5.3e6,
-            UCINT=30.0,
-            clgsmass=1.06e6,
-            UCGSS=35.0,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {
         "supercond_cost_model": 0,
@@ -1415,41 +944,7 @@ class TestTfMagnetCostResistive(Tier1Contract):
     ported = calculate_tf_magnet_cost_resistive
     static_argnames = ("lsa", "itart", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "conventional",
-            lsa=2,
-            whtcp=1.0e6,
-            uccpcl1=250.0,
-            whttflgs=2.0e6,
-            uccpclb=150.0,
-            itart=0,
-            ifueltyp=0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "tart-fuel",
-            lsa=2,
-            whtcp=1.0e6,
-            uccpcl1=250.0,
-            whttflgs=2.0e6,
-            uccpclb=150.0,
-            itart=1,
-            ifueltyp=1,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "tart-capital-plus-replacement",
-            lsa=4,
-            whtcp=1.0e6,
-            uccpcl1=250.0,
-            whttflgs=2.0e6,
-            uccpclb=150.0,
-            itart=1,
-            ifueltyp=2,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 2, "itart": 0, "ifueltyp": 0}
 
@@ -1475,144 +970,7 @@ class TestPfMagnetCost(Tier1Contract):
         "i_cs_superconductor",
     )
 
-    samples = [
-        legacy_sample(
-            "stellarator-no-pf-coils",
-            n_cs_pf_coils=0,
-            iohcl=0,
-            i_pf_conductor=0,
-            supercond_cost_model=0,
-            lsa=2,
-            r_pf_coil_middle=_PF_R,
-            n_pf_coil_turns=_PF_TURNS,
-            cconshpf=70.0,
-            ucsc=_UCSC,
-            i_pf_superconductor=1,
-            fcupfsu=0.69,
-            f_a_pf_coil_void=_PF_VOID,
-            c_pf_cs_coils_peak_ma=_PF_CURRENT,
-            j_pf_coil_wp_peak=_PF_J,
-            dcond=_DCOND,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_pf=6.0e8,
-            uccu=75.0,
-            cconfix=80.0,
-            i_cs_superconductor=1,
-            a_cs_cable_space=0.1,
-            f_a_cs_void=0.3,
-            fcuohsu=0.7,
-            j_crit_str_cs=6.0e8,
-            ucwindpf=465.0,
-            uccase=50.0,
-            m_pf_coil_structure_total=0.0,
-            ucfnc=35.0,
-            fncmass=0.0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "superconducting-with-cs",
-            n_cs_pf_coils=4,
-            iohcl=1,
-            i_pf_conductor=0,
-            supercond_cost_model=0,
-            lsa=2,
-            r_pf_coil_middle=_PF_R,
-            n_pf_coil_turns=_PF_TURNS,
-            cconshpf=70.0,
-            ucsc=_UCSC,
-            i_pf_superconductor=1,
-            fcupfsu=0.69,
-            f_a_pf_coil_void=_PF_VOID,
-            c_pf_cs_coils_peak_ma=_PF_CURRENT,
-            j_pf_coil_wp_peak=_PF_J,
-            dcond=_DCOND,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_pf=6.0e8,
-            uccu=75.0,
-            cconfix=80.0,
-            i_cs_superconductor=1,
-            a_cs_cable_space=0.1,
-            f_a_cs_void=0.3,
-            fcuohsu=0.7,
-            j_crit_str_cs=6.0e8,
-            ucwindpf=465.0,
-            uccase=50.0,
-            m_pf_coil_structure_total=1.0e6,
-            ucfnc=35.0,
-            fncmass=5.0e5,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "superconducting-strand-cost-model",
-            n_cs_pf_coils=4,
-            iohcl=1,
-            i_pf_conductor=0,
-            supercond_cost_model=1,
-            lsa=4,
-            r_pf_coil_middle=_PF_R,
-            n_pf_coil_turns=_PF_TURNS,
-            cconshpf=70.0,
-            ucsc=_UCSC,
-            i_pf_superconductor=1,
-            fcupfsu=0.69,
-            f_a_pf_coil_void=_PF_VOID,
-            c_pf_cs_coils_peak_ma=_PF_CURRENT,
-            j_pf_coil_wp_peak=_PF_J,
-            dcond=_DCOND,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_pf=6.0e8,
-            uccu=75.0,
-            cconfix=80.0,
-            i_cs_superconductor=1,
-            a_cs_cable_space=0.1,
-            f_a_cs_void=0.3,
-            fcuohsu=0.7,
-            j_crit_str_cs=6.0e8,
-            ucwindpf=465.0,
-            uccase=50.0,
-            m_pf_coil_structure_total=1.0e6,
-            ucfnc=35.0,
-            fncmass=5.0e5,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "resistive-no-cs",
-            n_cs_pf_coils=3,
-            iohcl=0,
-            i_pf_conductor=1,
-            supercond_cost_model=0,
-            lsa=2,
-            r_pf_coil_middle=_PF_R,
-            n_pf_coil_turns=_PF_TURNS,
-            cconshpf=70.0,
-            ucsc=_UCSC,
-            i_pf_superconductor=1,
-            fcupfsu=0.69,
-            f_a_pf_coil_void=_PF_VOID,
-            c_pf_cs_coils_peak_ma=_PF_CURRENT,
-            j_pf_coil_wp_peak=_PF_J,
-            dcond=_DCOND,
-            sc_mat_cost_0=_SC_MAT_COST_0,
-            j_crit_str_0=_J_CRIT_STR_0,
-            j_crit_str_pf=6.0e8,
-            uccu=75.0,
-            cconfix=80.0,
-            i_cs_superconductor=1,
-            a_cs_cable_space=0.1,
-            f_a_cs_void=0.3,
-            fcuohsu=0.7,
-            j_crit_str_cs=6.0e8,
-            ucwindpf=465.0,
-            uccase=50.0,
-            m_pf_coil_structure_total=1.0e6,
-            ucfnc=35.0,
-            fncmass=5.0e5,
-            fkind=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {
         "n_cs_pf_coils": 4,
@@ -1640,10 +998,7 @@ class TestMagnetsCost(Tier1Contract):
     ported = calculate_magnets_cost
     static_argnames = ("ife",)
 
-    samples = [
-        legacy_sample("magnetic", ife=0, c2221=989.5, c2222=0.0, c2223=952.2),
-        legacy_sample("ife", ife=1, c2221=989.5, c2222=0.0, c2223=952.2),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0}
 
@@ -1654,53 +1009,7 @@ class TestPowerInjectionCost(Tier1Contract):
     ported = calculate_power_injection_cost
     static_argnames = ("ife", "i_hcd_primary", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "capital-lower-hybrid",
-            ife=0,
-            ucech=3.0,
-            p_hcd_ecrh_injected_total_mw=50.0,
-            i_hcd_primary=5,
-            uclh=3.3,
-            ucich=3.0,
-            p_hcd_lowhyb_injected_total_mw=30.0,
-            ucnbi=3.3,
-            p_beam_injected_mw=20.0,
-            ifueltyp=0,
-            fcdfuel=0.1,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "fuel-ich",
-            ife=0,
-            ucech=3.0,
-            p_hcd_ecrh_injected_total_mw=50.0,
-            i_hcd_primary=2,
-            uclh=3.3,
-            ucich=3.0,
-            p_hcd_lowhyb_injected_total_mw=30.0,
-            ucnbi=3.3,
-            p_beam_injected_mw=20.0,
-            ifueltyp=1,
-            fcdfuel=0.1,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "capital-ifueltyp-2-leaves-c2233-unwritten",
-            ife=0,
-            ucech=3.0,
-            p_hcd_ecrh_injected_total_mw=50.0,
-            i_hcd_primary=5,
-            uclh=3.3,
-            ucich=3.0,
-            p_hcd_lowhyb_injected_total_mw=30.0,
-            ucnbi=3.3,
-            p_beam_injected_mw=20.0,
-            ifueltyp=2,
-            fcdfuel=0.1,
-            fkind=0.8,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "i_hcd_primary": 5, "ifueltyp": 0}
 
@@ -1711,29 +1020,7 @@ class TestEnergyStorageCost(Tier1Contract):
     ported = calculate_energy_storage_cost
     static_argnames = ("i_pulsed_plant", "istore")
 
-    samples = [
-        legacy_sample(
-            "steady-state",
-            i_pulsed_plant=0,
-            istore=1,
-            p_plant_electric_net_mw=1000.0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "pulsed-option-1",
-            i_pulsed_plant=1,
-            istore=1,
-            p_plant_electric_net_mw=1000.0,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "pulsed-option-2",
-            i_pulsed_plant=1,
-            istore=2,
-            p_plant_electric_net_mw=1000.0,
-            fkind=0.8,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"i_pulsed_plant": 0, "istore": 1}
 
@@ -1744,10 +1031,7 @@ class TestPowerConditioningCost(Tier1Contract):
     ported = calculate_power_conditioning_cost
     static_argnames = ("ife",)
 
-    samples = [
-        legacy_sample("magnetic", ife=0, c2251=330.8, c2252=0.0, c2253=0.0),
-        legacy_sample("ife", ife=1, c2251=330.8, c2252=0.0, c2253=0.0),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0}
 
@@ -1758,20 +1042,7 @@ class TestAuxiliaryComponentCoolingCost(Tier1Contract):
     ported = calculate_auxiliary_component_cooling_cost
     static_argnames = ("ife", "lsa")
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            ife=0,
-            lsa=2,
-            UCAHTS=31.0,
-            p_hcd_electric_loss_mw=10.0,
-            p_cryo_plant_electric_mw=20.0,
-            vachtmw=0.5,
-            p_tritium_plant_electric_mw=15.0,
-            fachtmw=60.0,
-            fkind=1.0,
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2}
 
@@ -1782,16 +1053,7 @@ class TestCryogenicSystemCost(Tier1Contract):
     ported = calculate_cryogenic_system_cost
     static_argnames = ("lsa",)
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            lsa=2,
-            uccry=93000.0,
-            temp_tf_cryo=4.5,
-            helpow=271064.2,
-            fkind=1.0,
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"lsa": 2}
 
@@ -1801,7 +1063,7 @@ class TestHeatTransportSystemCost(Tier1Contract):
     reference = _reference_heat_transport_system_cost
     ported = calculate_heat_transport_system_cost
 
-    samples = [legacy_sample("nominal", c2261=145.8, c2262=21.1, c2263=284.3)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -1811,16 +1073,7 @@ class TestFuelProcessingCost(Tier1Contract):
     ported = calculate_fuel_processing_cost
     static_argnames = ("ife",)
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            ife=0,
-            rndfuel=1.06e21,
-            m_fuel_amu=2.5145,
-            UCFPR=1.5e8,
-            fkind=1.0,
-        )
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ife": 0}
 
@@ -1830,32 +1083,7 @@ class TestAtmosphericRecoveryCost(Tier1Contract):
     reference = _reference_atmospheric_recovery_cost
     ported = calculate_atmospheric_recovery_cost
 
-    samples = [
-        legacy_sample(
-            "with-tritium",
-            f_plasma_fuel_tritium=0.5,
-            UCDTC=0.0,
-            volrci=1.0e5,
-            wsvol=1.0e4,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "d-he3-only",
-            f_plasma_fuel_tritium=0.0,
-            UCDTC=400.0,
-            volrci=1.0e5,
-            wsvol=1.0e4,
-            fkind=1.0,
-        ),
-        legacy_sample(
-            "nominal",
-            f_plasma_fuel_tritium=0.5,
-            UCDTC=400.0,
-            volrci=1.0e5,
-            wsvol=1.0e4,
-            fkind=0.9,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -1864,9 +1092,7 @@ class TestFuelHandlingCost(Tier1Contract):
     reference = _reference_fuel_handling_cost
     ported = calculate_fuel_handling_cost
 
-    samples = [
-        legacy_sample("nominal", c2271=22.3, c2272=143.0, c2273=162.0, c2274=157.2)
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -1875,20 +1101,7 @@ class TestFusionPowerIslandCost(Tier1Contract):
     reference = _reference_fusion_power_island_cost
     ported = calculate_fusion_power_island_cost
 
-    samples = [
-        legacy_sample(
-            "nominal",
-            c221=1048.6,
-            c222=1941.7,
-            c223=0.0,
-            c224=102.6,
-            c225=330.8,
-            c226=451.2,
-            c227=484.5,
-            c228=150.0,
-            c229=300.0,
-        )
-    ]
+    samples = FROM_FILE
     fuzz_bounds = dict.fromkeys(
         ("c221", "c222", "c223", "c224", "c225", "c226", "c227", "c228", "c229"),
         (0.0, 3000.0),
@@ -1900,11 +1113,7 @@ class TestTotalPlantDirectCost(Tier1Contract):
     reference = _reference_total_plant_direct_cost
     ported = calculate_total_plant_direct_cost
 
-    samples = [
-        legacy_sample(
-            "nominal", c21=1363.5, c22=4809.5, c23=263.8, c24=30.3, c25=22.1, c26=81.2
-        )
-    ]
+    samples = FROM_FILE
     fuzz_bounds = dict.fromkeys(
         ("c21", "c22", "c23", "c24", "c25", "c26"), (0.0, 6000.0)
     )
@@ -1915,7 +1124,7 @@ class TestConstructedCost(Tier1Contract):
     reference = _reference_constructed_cost
     ported = calculate_constructed_cost
 
-    samples = [legacy_sample("nominal", cdirt=6570.4, cindrt=1843.7, ccont=1262.1)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -1925,168 +1134,7 @@ class TestCostOfElectricity(Tier1Contract):
     ported = calculate_cost_of_electricity
     static_argnames = ("ife", "itart", "lsa", "ifueltyp")
 
-    samples = [
-        legacy_sample(
-            "reference-run",
-            ife=0,
-            itart=0,
-            p_plant_electric_net_mw=1000.0,
-            f_t_plant_available=0.75,
-            t_plant_pulse_burn=31557600.0,
-            t_plant_pulse_total=31559410.0,
-            concost=9676.16,
-            fcap0=1.15,
-            fcr0=0.065,
-            discount_rate=0.06,
-            life_blkt=19.48,
-            fwallcst=0.0,
-            blkcst=0.0,
-            cfind=_CFIND,
-            lsa=2,
-            fcap0cp=1.06,
-            ifueltyp=0,
-            life_blkt_fpy=25.98,
-            life_plant=40.0,
-            life_div=7.86,
-            divcst=0.0,
-            life_div_fpy=10.48,
-            cplife_cal=0.0,
-            cpstcst=0.0,
-            cplife=0.0,
-            cdrlife_cal=19.48,
-            cdcost=0.0,
-            fcdfuel=0.1,
-            ucoam=_UCOAM,
-            ucfuel=3.45,
-            f_plasma_fuel_helium3=0.0,
-            wtgpd=764.38,
-            uche3=1.0e6,
-            ucwst=_UCWST,
-            decomf=0.1,
-            dintrt=0.0,
-            dtlife=0.0,
-        ),
-        legacy_sample(
-            "fuel-costs-active",
-            ife=0,
-            itart=0,
-            p_plant_electric_net_mw=1200.0,
-            f_t_plant_available=0.75,
-            t_plant_pulse_burn=31557600.0,
-            t_plant_pulse_total=31559410.0,
-            concost=9676.16,
-            fcap0=1.15,
-            fcr0=0.065,
-            discount_rate=0.06,
-            life_blkt=19.48,
-            fwallcst=280.0,
-            blkcst=530.0,
-            cfind=_CFIND,
-            lsa=2,
-            fcap0cp=1.06,
-            ifueltyp=1,
-            life_blkt_fpy=25.98,
-            life_plant=40.0,
-            life_div=7.86,
-            divcst=22.6,
-            life_div_fpy=10.48,
-            cplife_cal=0.0,
-            cpstcst=0.0,
-            cplife=0.0,
-            cdrlife_cal=19.48,
-            cdcost=100.0,
-            fcdfuel=0.1,
-            ucoam=_UCOAM,
-            ucfuel=3.45,
-            f_plasma_fuel_helium3=0.01,
-            wtgpd=764.38,
-            uche3=1.0e6,
-            ucwst=_UCWST,
-            decomf=0.1,
-            dintrt=0.0,
-            dtlife=0.0,
-        ),
-        legacy_sample(
-            "prorated-replacements-and-centrepost",
-            ife=0,
-            itart=1,
-            p_plant_electric_net_mw=1200.0,
-            f_t_plant_available=0.75,
-            t_plant_pulse_burn=31557600.0,
-            t_plant_pulse_total=31559410.0,
-            concost=9676.16,
-            fcap0=1.15,
-            fcr0=0.065,
-            discount_rate=0.06,
-            life_blkt=19.48,
-            fwallcst=280.0,
-            blkcst=530.0,
-            cfind=_CFIND,
-            lsa=4,
-            fcap0cp=1.06,
-            ifueltyp=2,
-            life_blkt_fpy=25.98,
-            life_plant=40.0,
-            life_div=7.86,
-            divcst=22.6,
-            life_div_fpy=10.48,
-            cplife_cal=3.0,
-            cpstcst=150.0,
-            cplife=4.0,
-            cdrlife_cal=19.48,
-            cdcost=100.0,
-            fcdfuel=0.1,
-            ucoam=_UCOAM,
-            ucfuel=3.45,
-            f_plasma_fuel_helium3=0.01,
-            wtgpd=764.38,
-            uche3=1.0e6,
-            ucwst=_UCWST,
-            decomf=0.1,
-            dintrt=0.01,
-            dtlife=2.0,
-        ),
-        legacy_sample(
-            "negative-net-electric-power-clamps-to-zero",
-            ife=0,
-            itart=0,
-            p_plant_electric_net_mw=-50.0,
-            f_t_plant_available=0.75,
-            t_plant_pulse_burn=31557600.0,
-            t_plant_pulse_total=31559410.0,
-            concost=9676.16,
-            fcap0=1.15,
-            fcr0=0.065,
-            discount_rate=0.06,
-            life_blkt=19.48,
-            fwallcst=0.0,
-            blkcst=0.0,
-            cfind=_CFIND,
-            lsa=2,
-            fcap0cp=1.06,
-            ifueltyp=0,
-            life_blkt_fpy=25.98,
-            life_plant=40.0,
-            life_div=7.86,
-            divcst=0.0,
-            life_div_fpy=10.48,
-            cplife_cal=0.0,
-            cpstcst=0.0,
-            cplife=0.0,
-            cdrlife_cal=19.48,
-            cdcost=0.0,
-            fcdfuel=0.1,
-            ucoam=_UCOAM,
-            ucfuel=3.45,
-            f_plasma_fuel_helium3=0.0,
-            wtgpd=764.38,
-            uche3=1.0e6,
-            ucwst=_UCWST,
-            decomf=0.1,
-            dintrt=0.0,
-            dtlife=0.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {
         "ife": 0,

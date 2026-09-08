@@ -6,7 +6,8 @@ situation `build.md`/several `coils/*.md` units already recorded for their own u
 takes no `self.data` access at all, so no adapter is needed.
 """
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.exhaust import (
     calculate_eu_demo_re_attachment_metric,
     calculate_psep_over_r_metric,
@@ -30,19 +31,7 @@ class TestRadiationFraction(Tier1Contract):
     reference = staticmethod(PlasmaExhaust.calculate_radiation_fraction)
     ported = calculate_radiation_fraction
 
-    samples = [
-        legacy_sample(
-            "typical-operating-point", p_plasma_rad_mw=250.0, p_plasma_heating_mw=450.0
-        ),
-        legacy_sample(
-            "radiation-exceeds-heating-power",
-            p_plasma_rad_mw=500.0,
-            p_plasma_heating_mw=450.0,
-        ),
-        legacy_sample(
-            "zero-heating-power", p_plasma_rad_mw=250.0, p_plasma_heating_mw=0.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -68,27 +57,7 @@ class TestEuDemoReAttachmentMetric(Tier1Contract):
     reference = staticmethod(PlasmaExhaust.calculate_eu_demo_re_attachment_metric)
     ported = calculate_eu_demo_re_attachment_metric
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged-and-violating",
-            p_plasma_separatrix_mw=176.83927443617988,
-            b_plasma_toroidal_on_axis=5.318322174646137,
-            q95=3.7339078191146117,
-            aspect=3.0,
-            rmajor=8.0,
-        ),
-        *fuzz_samples(
-            {
-                "p_plasma_separatrix_mw": (10.0, 500.0),
-                "b_plasma_toroidal_on_axis": (1.0, 15.0),
-                "q95": (2.0, 10.0),
-                "aspect": (1.5, 5.0),
-                "rmajor": (2.0, 20.0),
-            },
-            count=5,
-            seed=68,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "p_plasma_separatrix_mw": (10.0, 500.0),
@@ -126,26 +95,7 @@ class TestPsepOverRMetric(Tier1Contract):
     reference = staticmethod(PlasmaExhaust.calculate_psep_over_r_metric)
     ported = calculate_psep_over_r_metric
 
-    samples = [
-        legacy_sample(
-            "st_regression-converged-and-active",
-            p_plasma_separatrix_mw=179.99999999946084,
-            rmajor=4.5,
-        ),
-        legacy_sample(
-            "spherical_tokamak_eval-converged-and-violating",
-            p_plasma_separatrix_mw=181.2672921059313,
-            rmajor=4.5,
-        ),
-        *fuzz_samples(
-            {
-                "p_plasma_separatrix_mw": (10.0, 500.0),
-                "rmajor": (2.0, 20.0),
-            },
-            count=5,
-            seed=56,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "p_plasma_separatrix_mw": (10.0, 500.0),

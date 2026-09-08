@@ -29,9 +29,12 @@ from functional_process.cottax import indat  # noqa: E402
 from functional_process.cottax.boundary import STATED, boundary  # noqa: E402
 from functional_process.cottax.cold_start import cold_state  # noqa: E402
 from functional_process.cottax.indat import graph_for, machine_from_indat  # noqa: E402
+from functional_process.cottax.native import (  # noqa: E402
+    CONFIGURATIONS,
+    native_state,
+    stem,
+)
 from functional_process.cottax.stated import StatesValues, stated_port  # noqa: E402
-from functional_process.cottax.native import native_state  # noqa: E402
-from functional_process.cottax.native import CONFIGURATIONS, stem  # noqa: E402
 
 
 def _stated_reads(input_file):

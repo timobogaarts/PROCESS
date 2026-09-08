@@ -1,0 +1,293 @@
+{
+ "TestPFCoilChain": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 8.818217164127494,
+    "f_z_cs_tf_internal": 0.9,
+    "dr_cs": 0.546816593988753,
+    "dr_cs_bore": 2.003843190236783,
+    "z_tf_top": 8.784333333333333,
+    "dz_tf_upper_lower_midplane": -1.233883830794161,
+    "rpf2": -1.825,
+    "zref": {
+     "~array": [
+      3.6,
+      1.2,
+      1.0,
+      2.8
+     ],
+     "dtype": "float64"
+    },
+    "r_tf_outboard_out": 15.578406000060053,
+    "dr_pf_tf_outboard_out_offset": 1.5,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "kappa": 1.85,
+    "triang": 0.5,
+    "aspect": 3.0,
+    "plasma_current": 16091095.408042267,
+    "beta_poloidal_vol_avg": 1.3282238170008043,
+    "ind_plasma_internal_norm": 1.2568268843995554,
+    "vs_plasma_ramp_required": 279.0949824023401,
+    "alfapf": 5e-10,
+    "j_cs_flat_top_end": 21443595.371072624,
+    "f_j_cs_start_pulse_end_flat_top": 0.93491189654662,
+    "ind_pf_cs_plasma_mutual_column": {
+     "~array": [
+      0.0007917526382760364,
+      0.000730410150563103,
+      0.001496022850886937,
+      0.001496022850886937,
+      0.000730867760781803,
+      0.000730867760781803
+     ],
+     "dtype": "float64"
+    },
+    "n_pf_coil_turns_previous": {
+     "~array": [
+      463.88982745360926,
+      532.1251000998008,
+      191.84403916641483,
+      191.84403916641483,
+      123.23569673015545,
+      123.23569673015545
+     ],
+     "dtype": "float64"
+    },
+    "j_pf_coil_wp_peak": {
+     "~array": [
+      11000000.0,
+      11000000.0,
+      6000000.0,
+      6000000.0,
+      8000000.0,
+      8000000.0,
+      8000000.0
+     ],
+     "dtype": "float64"
+    },
+    "c_pf_coil_turn_peak_input": {
+     "~array": [
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0
+     ],
+     "dtype": "float64"
+    },
+    "pf_current_safety_factor": 1.0,
+    "f_a_pf_coil_void": {
+     "~array": [
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "sigpfcf": 0.666,
+    "sigpfcalw": 500.0,
+    "den_steel": 7800.0,
+    "den_pf_conductor": 6070.0,
+    "den_cs_conductor": 6080.0,
+    "f_a_cs_turn_steel": 0.4856940627014451,
+    "f_a_cs_void": 0.3
+   }
+  }
+ ],
+ "TestPFCoilChainCsWstNb3Sn": [
+  {
+   "label": "large-tokamak-point-cs-wst-nb3sn",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 8.818217164127494,
+    "f_z_cs_tf_internal": 0.9,
+    "dr_cs": 0.546816593988753,
+    "dr_cs_bore": 2.003843190236783,
+    "z_tf_top": 8.784333333333333,
+    "dz_tf_upper_lower_midplane": -1.233883830794161,
+    "rpf2": -1.825,
+    "zref": {
+     "~array": [
+      3.6,
+      1.2,
+      1.0,
+      2.8
+     ],
+     "dtype": "float64"
+    },
+    "r_tf_outboard_out": 15.578406000060053,
+    "dr_pf_tf_outboard_out_offset": 1.5,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "kappa": 1.85,
+    "triang": 0.5,
+    "aspect": 3.0,
+    "plasma_current": 16091095.408042267,
+    "beta_poloidal_vol_avg": 1.3282238170008043,
+    "ind_plasma_internal_norm": 1.2568268843995554,
+    "vs_plasma_ramp_required": 279.0949824023401,
+    "alfapf": 5e-10,
+    "j_cs_flat_top_end": 21443595.371072624,
+    "f_j_cs_start_pulse_end_flat_top": 0.93491189654662,
+    "ind_pf_cs_plasma_mutual_column": {
+     "~array": [
+      0.0007917526382760364,
+      0.000730410150563103,
+      0.001496022850886937,
+      0.001496022850886937,
+      0.000730867760781803,
+      0.000730867760781803
+     ],
+     "dtype": "float64"
+    },
+    "n_pf_coil_turns_previous": {
+     "~array": [
+      463.88982745360926,
+      532.1251000998008,
+      191.84403916641483,
+      191.84403916641483,
+      123.23569673015545,
+      123.23569673015545
+     ],
+     "dtype": "float64"
+    },
+    "j_pf_coil_wp_peak": {
+     "~array": [
+      11000000.0,
+      11000000.0,
+      6000000.0,
+      6000000.0,
+      8000000.0,
+      8000000.0,
+      8000000.0
+     ],
+     "dtype": "float64"
+    },
+    "c_pf_coil_turn_peak_input": {
+     "~array": [
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0
+     ],
+     "dtype": "float64"
+    },
+    "pf_current_safety_factor": 1.0,
+    "f_a_pf_coil_void": {
+     "~array": [
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "sigpfcf": 0.666,
+    "sigpfcalw": 500.0,
+    "den_steel": 7800.0,
+    "den_pf_conductor": 6070.0,
+    "den_cs_conductor": 6080.0,
+    "f_a_cs_turn_steel": 0.4856940627014451,
+    "f_a_cs_void": 0.3
+   }
+  }
+ ],
+ "TestPFCoilChainSphericalTokamak": [
+  {
+   "label": "spherical-tokamak-plausible",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_top": 4.0,
+    "dz_tf_upper_lower_midplane": -0.5,
+    "rpf2": -1.63,
+    "zref": {
+     "~array": [
+      3.6,
+      1.2,
+      2.5,
+      5.2
+     ],
+     "dtype": "float64"
+    },
+    "rref": {
+     "~array": [
+      7.0,
+      7.0,
+      7.0,
+      2.0
+     ],
+     "dtype": "float64"
+    },
+    "r_tf_outboard_out": 8.3,
+    "dr_pf_tf_outboard_out_offset": 1.0,
+    "rmajor": 4.5,
+    "rminor": 2.5,
+    "kappa": 2.8,
+    "triang": 0.5,
+    "aspect": 1.8,
+    "plasma_current": 20000000.0,
+    "beta_poloidal_vol_avg": 1.1,
+    "ind_plasma_internal_norm": 1.2,
+    "alfapf": 5e-10,
+    "f_j_cs_start_pulse_end_flat_top": 0.9,
+    "j_pf_coil_wp_peak": {
+     "~array": [
+      11000000.0,
+      11000000.0,
+      11000000.0,
+      11000000.0,
+      11000000.0,
+      11000000.0,
+      11000000.0,
+      11000000.0
+     ],
+     "dtype": "float64"
+    },
+    "c_pf_coil_turn_peak_input": {
+     "~array": [
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0,
+      40000.0
+     ],
+     "dtype": "float64"
+    },
+    "pf_current_safety_factor": 1.0,
+    "f_a_pf_coil_void": {
+     "~array": [
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "sigpfcf": 0.666,
+    "sigpfcalw": 500.0,
+    "den_steel": 7800.0,
+    "den_pf_conductor": 6200.0
+   }
+  }
+ ]
+}

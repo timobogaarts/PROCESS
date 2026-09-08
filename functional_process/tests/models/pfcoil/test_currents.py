@@ -32,7 +32,8 @@ singular value has every right to use more of it.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, Tolerance, legacy_sample
+from functional_process.cottax._harness import Tier1Contract, Tolerance
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import LROW1
 from functional_process.cottax.pfcoil.currents import calculate_efc_currents
 from process.data_structure.pfcoil_variables import (
@@ -141,22 +142,7 @@ class TestCalculateEfcCurrents(Tier1Contract):
 
     # The equilibrium solve on `large_tokamak_eval.IN.DAT`, read off a converged
     # in-process run: `ccls` comes back as `[-7.065e6, -4.845e6, 0, ...]`.
-    samples = [
-        legacy_sample(
-            "large-tokamak-equilibrium",
-            rpts=np.array([8.0]),
-            zpts=np.array([0.0]),
-            brin=np.array([0.0]),
-            bzin=np.array([-0.7310770137585806]),
-            r_fix=_R_FIX,
-            z_fix=_Z_FIX,
-            c_fix=_C_FIX,
-            r_group=_R_GROUP,
-            z_group=_Z_GROUP,
-            alfa=5e-10,
-            n_in_group=(2, 2),
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {"n_in_group": (2, 2)}
     fuzz_bounds = {

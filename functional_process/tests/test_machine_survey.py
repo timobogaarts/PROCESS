@@ -8,14 +8,12 @@ a static kwarg, and which it has never read -- plus the headline counts for
 against a stale number is the failure mode `next_steps.md` §13.11 records twice.
 """
 
-import pytest
 
 from functional_process.cottax import indat
 from functional_process.cottax.machine_survey import (
     NOT_TOPOLOGY,
     ROUTED_AWAY,
     SHAPE,
-    Row,
     assembly_verdict,
     factory_fields,
     pinned_switches,
@@ -72,7 +70,8 @@ def test_no_pinned_switch_contradicts_the_tokamak_any_more():
     `test_the_reference_run_contradicts_nothing` asks the same of the stellarator.
     """
     (row,) = [r for r in survey(TOKAMAK) if r.name == "i_p_coolant_pumping"]
-    assert row.verdict == "factory" and "DISAGREES" not in row.detail
+    assert row.verdict == "factory"
+    assert "DISAGREES" not in row.detail
     assert [r.name for r in survey(TOKAMAK) if "DISAGREES" in r.detail] == []
 
 
@@ -86,7 +85,8 @@ def test_a_switch_the_factory_dispatches_on_cannot_contradict_anything():
     does not move until a model is written.
     """
     (row,) = [r for r in survey(TOKAMAK) if r.name == "i_confinement_time"]
-    assert row.verdict == "factory" and "DISAGREES" not in row.detail
+    assert row.verdict == "factory"
+    assert "DISAGREES" not in row.detail
 
 
 def test_the_reference_run_contradicts_nothing():
@@ -119,12 +119,14 @@ def test_a_count_can_be_new_work_and_a_factory_key_at_once():
     `n_tf_coils` is not one today (`iteration_variables.py` does not list it).
     """
     (row,) = [r for r in survey(TOKAMAK) if r.name == "n_tf_coils"]
-    assert row.verdict == "factory" and row.name in SHAPE
+    assert row.verdict == "factory"
+    assert row.name in SHAPE
     # `n_pf_coil_groups` was the count with no site; it has one now --
     # `_pf_coil_system_arm` refuses any group topology other than the ported
     # `(4, (2,2,3,3), (1,1,2,2))` -- so it is the second count-and-key at once.
     (groups,) = [r for r in survey(TOKAMAK) if r.name == "n_pf_coil_groups"]
-    assert groups.verdict == "factory" and groups.name in SHAPE
+    assert groups.verdict == "factory"
+    assert groups.name in SHAPE
 
 
 def test_the_large_tokamak_is_three_new_decisions():

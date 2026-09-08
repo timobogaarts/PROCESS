@@ -888,7 +888,7 @@ def _configuration(stem):
     return str(_INPUT_FILES / f"{stem}.IN.DAT")
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _initialised(stem):
     """The `DataStructure` as `init_process` left it -- the oracle for everything below.
 
@@ -897,9 +897,8 @@ def _initialised(stem):
     `cold_state` and answers exactly the questions here: sentinels, presence flags and
     the problem statement are all resolved by `init_process` and by nothing after it.
     """
-    from process.main import SingleRun
-
     from functional_process.cottax.cold_start import _scratch_copy
+    from process.main import SingleRun
 
     return SingleRun(_scratch_copy(_configuration(stem)), "vmcon").data
 
@@ -920,13 +919,15 @@ class TestSwitchValuesWithoutProcess:
 
     def test_the_name_set_is_sands_own(self):
         """A switch added to the ported constraint/objective surface with no default
-        here must fail, not fall through to a wrong integer."""
+        here must fail, not fall through to a wrong integer.
+        """
         assert set(SWITCH_VALUE_DEFAULTS) == set(sand.SWITCH_PARAMETER_NAMES)
 
     def test_every_default_equals_process(self):
         """§23.2's rule on the one scalar defaults table this port has: vendored for
         runtime, asserted equal in tests. Compared against a **bare** `DataStructure`,
-        which is where a dataclass default lives before any file is read."""
+        which is where a dataclass default lives before any file is read.
+        """
         from process.core.model import DataStructure
 
         bare = DataStructure()
@@ -937,7 +938,8 @@ class TestSwitchValuesWithoutProcess:
     def test_every_switch_equals_the_initialised_structure(self, stem):
         """All fifteen, against `init_process`'s own answer -- not just the subset this
         run's constraints ask for, because the function answers all fifteen and a wrong
-        one would only surface on the file that first activates a constraint using it."""
+        one would only surface on the file that first activates a constraint using it.
+        """
         data = _initialised(stem)
         ours = switch_values_from_indat(_configuration(stem))
         theirs = {n: int(getattr(_area_holding(data, n), n)) for n in ours}
@@ -947,7 +949,8 @@ class TestSwitchValuesWithoutProcess:
     def test_it_is_a_drop_in_for_switch_values_for(self, stem):
         """`sand._bind` intersects `switch_values` with the signature it binds, so a
         superset is exactly as correct as the subset -- provided every name the subset
-        does carry agrees. That is what this asserts, against the real function."""
+        does carry agrees. That is what this asserts, against the real function.
+        """
         data = _initialised(stem)
         n = int(data.numerics.n_constraints)
         theirs = sand.switch_values_for(
@@ -959,7 +962,8 @@ class TestSwitchValuesWithoutProcess:
 
     def test_the_i_tf_bucking_sentinel_is_resolved_not_passed_through(self):
         """`init.py:891-895`. The raw `-1` is "the file did not choose"; passing it
-        through would hand a constraint a layer count of `-1`."""
+        through would hand a constraint a layer count of `-1`.
+        """
         assert resolve_i_tf_bucking(-1, TFConductorModel.WATER_COOLED_COPPER) == 0
         assert resolve_i_tf_bucking(-1, TFConductorModel.SUPERCONDUCTING) == 1
         assert resolve_i_tf_bucking(-1, TFConductorModel.HELIUM_COOLED_ALUMINIUM) == 1
@@ -972,7 +976,8 @@ class TestSwitchValuesWithoutProcess:
         """Why `_tf_stress_arm`'s inline `-1 -> 1` passed every test it ever ran under,
         and why moving it was a fix rather than a refactor: the rule differs from
         `init.py`'s only for a water-cooled copper machine, and none of the seven is
-        one. A file that were would have silently taken the bucked-case stress arm."""
+        one. A file that were would have silently taken the bucked-case stress arm.
+        """
         conductors = {
             stem: switch_values_from_indat(_configuration(stem))["i_tf_sup"]
             for stem in CONFIGURATIONS
@@ -1001,7 +1006,8 @@ class TestPresenceFlagsFromTheText:
 
     def test_the_flags_are_true_on_four_of_the_seven(self):
         """`init_audit.md` §2a's own count, and the number the defect suppressed: before
-        the fix both flags were `False` on all seven."""
+        the fix both flags were `False` on all seven.
+        """
         true = [
             stem
             for stem in CONFIGURATIONS
@@ -1027,7 +1033,8 @@ class TestPresenceFlagsFromTheText:
     def test_the_sidewall_slot_now_has_an_occupant_on_a_spherical_tokamak(self):
         """The consequence, and the one that was measured as a missing producer:
         `.tfcoil.dx_tf_side_case_min` had no producer on either spherical tokamak
-        because the flag was stuck at `False` (`next_steps.md` §22.6)."""
+        because the flag was stuck at `False` (`next_steps.md` §22.6).
+        """
         machine = machine_from_indat(_configuration("st_regression"))
         assert machine.tokamak.cicc_superconducting_tf_coil.dx_tf_side_case_min
         # And the large tokamak, which *does* name the field, still has none.
@@ -1041,7 +1048,8 @@ class TestProblemStatementFromTheFile:
     @pytest.mark.parametrize("stem", CONFIGURATIONS)
     def test_icc_equals_process_in_order(self, stem):
         """**In order**, not as a set: PROCESS's equality/inequality split is positional
-        (§23.4), so a sorted `icc` would silently restate the problem."""
+        (§23.4), so a sorted `icc` would silently restate the problem.
+        """
         data = _initialised(stem)
         n = int(data.numerics.n_constraints)
         assert list(problem_from_indat(_configuration(stem)).icc) == [
@@ -1067,7 +1075,8 @@ class TestProblemStatementFromTheFile:
         tracked file states the count, so `set_active_constraints` takes its `else`
         branch and derives `n_inequality_constraints` instead -- which §2c already
         lists. The sentinel is real (`numerics.py:166`), it is simply never reached
-        here, and the reader hands `None` on to whoever would resolve it."""
+        here, and the reader hands `None` on to whoever would resolve it.
+        """
         data = _initialised(stem)
         problem = problem_from_indat(_configuration(stem))
         assert problem.n_equality_constraints == int(
@@ -1086,7 +1095,8 @@ class TestProblemStatementFromTheFile:
         `None` rather than transcribing that default -- deliberately, because unlike a
         switch value nothing here consumes it yet, and a caller stating the problem has
         to decide. Pinned so the hole is visible rather than discovered by a `TypeError`
-        in `abs(None)`."""
+        in `abs(None)`.
+        """
         stated = problem_from_indat(_configuration(stem)).i_figure_merit
         assert stated in (None, int(_initialised(stem).numerics.i_figure_merit))
         assert (stated is None) == (

@@ -21,6 +21,7 @@ produces the two critical current densities this unit is about.
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil.superconductor import (
     calculate_cs_critical_current_density_iter_nb3sn,
     calculate_cs_critical_current_density_wst_nb3sn,
@@ -233,28 +234,7 @@ class TestCSCriticalCurrentDensityIterNb3Sn(Tier1Contract):
     reference = _reference_superconpf(SuperconductorModel.ITER_NB3SN)
     ported = calculate_cs_critical_current_density_iter_nb3sn
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged-flat-top-end",
-            b_cs_peak=_B_CS_PEAK_FLAT_TOP_END,
-            f_a_cs_void=_F_A_CS_VOID,
-            fcuohsu=_FCUOHSU,
-            strain=_STR_CS_CON_RES,
-            temp_cs_superconductor_operating=_TEMP_CS_OPERATING,
-            a_cs_cable_space=_A_CS_CABLE_SPACE,
-            a_cs_poloidal=_A_CS_POLOIDAL,
-        ),
-        legacy_sample(
-            "large-tokamak-converged-pulse-start",
-            b_cs_peak=_B_CS_PEAK_PULSE_START,
-            f_a_cs_void=_F_A_CS_VOID,
-            fcuohsu=_FCUOHSU,
-            strain=_STR_CS_CON_RES,
-            temp_cs_superconductor_operating=_TEMP_CS_OPERATING,
-            a_cs_cable_space=_A_CS_CABLE_SPACE,
-            a_cs_poloidal=_A_CS_POLOIDAL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "b_cs_peak": (6.0, 18.0),
@@ -280,18 +260,7 @@ class TestCSCriticalCurrentDensityWstNb3Sn(Tier1Contract):
     reference = _reference_superconpf(SuperconductorModel.WST_NB3SN)
     ported = calculate_cs_critical_current_density_wst_nb3sn
 
-    samples = [
-        legacy_sample(
-            "reference-fields-flat-top-end",
-            b_cs_peak=_B_CS_PEAK_FLAT_TOP_END,
-            f_a_cs_void=_F_A_CS_VOID,
-            fcuohsu=_FCUOHSU,
-            strain=_STR_CS_CON_RES,
-            temp_cs_superconductor_operating=_TEMP_CS_OPERATING,
-            a_cs_cable_space=_A_CS_CABLE_SPACE,
-            a_cs_poloidal=_A_CS_POLOIDAL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "b_cs_peak": (6.0, 18.0),
@@ -311,13 +280,7 @@ class TestCSStrandCriticalCurrentDensity(Tier1Contract):
     reference = _reference_strand_critical_current_density
     ported = calculate_cs_strand_critical_current_density
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            j_cs_conductor_critical_flat_top_end=(_J_CS_CONDUCTOR_CRITICAL_FLAT_TOP_END),
-            fcuohsu=_FCUOHSU,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "j_cs_conductor_critical_flat_top_end": _around(
@@ -391,7 +354,7 @@ class TestCSTemperatureMarginWstNb3Sn(Tier1Contract):
     reference = _reference_cs_temperature_margin(SuperconductorModel.WST_NB3SN)
     ported = calculate_cs_temperature_margin_wst_nb3sn
 
-    samples = TestCSTemperatureMarginIterNb3Sn.samples
+    samples = FROM_FILE
     fuzz_bounds = TestCSTemperatureMarginIterNb3Sn.fuzz_bounds
 
 
@@ -411,15 +374,7 @@ class TestPFStrandCriticalCurrentDensity(Tier1Contract):
     reference = _reference_pf_strand_critical_current_density
     ported = calculate_pf_strand_critical_current_density
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof-last-pf-coil",
-            b_pf_coil_peak=_B_PF_COIL_PEAK_LAST,
-            bpf2=_BPF2_LAST,
-            temp_pf_peak_field=_TEMP_PF_PEAK_FIELD,
-            fcupfsu=_FCUPFSU,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -531,17 +486,6 @@ class TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco(Tier1Contract):
     reference = _reference_pf_strand_critical_current_density_hazelton_zhai_rebco
     ported = calculate_pf_strand_critical_current_density_hazelton_zhai_rebco
 
-    samples = [
-        legacy_sample(
-            "spherical-tokamak-plausible-last-pf-coil",
-            b_pf_coil_peak=_ST_B_PF_COIL_PEAK_LAST,
-            bpf2=_ST_BPF2_LAST,
-            temp_pf_peak_field=_ST_TEMP_PF_PEAK_FIELD,
-            fcupfsu=_ST_FCUPFSU,
-            dr_hts_tape=_ST_DR_HTS_TAPE,
-            dx_hts_tape_rebco=_ST_DX_HTS_TAPE_REBCO,
-            dx_hts_tape_total=_ST_DX_HTS_TAPE_TOTAL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

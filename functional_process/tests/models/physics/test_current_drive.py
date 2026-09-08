@@ -16,7 +16,8 @@ the one the port can reach without also porting `profiles.py` (see
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.current_drive import (
     HcdElectricTotalIgnited,
     HcdElectricTotalNonIgnited,
@@ -137,25 +138,7 @@ class TestCurrentDriveEcrhPrimaryNoSecondary(Tier1Contract):
 
     static_argnames = ("i_plasma_ignited",)
 
-    samples = [
-        legacy_sample("large-tokamak-eval-operating-point", **_point()),
-        legacy_sample("ignited-wall-plug-reset", **_point(i_plasma_ignited=1)),
-        legacy_sample(
-            "secondary-injected-power-nonzero",
-            **_point(p_hcd_secondary_injected_mw=30.0),
-        ),
-        legacy_sample(
-            "small-machine-high-efficiency",
-            **_point(
-                rmajor=3.0,
-                nd_plasma_electrons_vol_avg=2.0e20,
-                plasma_current=6.0e6,
-                eta_cd_norm_ecrh=0.5,
-                eta_ecrh_injector_wall_plug=0.8,
-                p_hcd_primary_extra_heat_mw=10.0,
-            ),
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {"i_plasma_ignited": 0}
     fuzz_bounds = {
@@ -300,25 +283,7 @@ class TestCurrentDriveFreethyEcrhPrimaryNoSecondary(Tier1Contract):
 
     static_argnames = ("i_plasma_ignited", "i_ecrh_wave_mode")
 
-    samples = [
-        legacy_sample("spherical-tokamak-eval-operating-point", **_freethy_point()),
-        legacy_sample("ignited-wall-plug-reset", **_freethy_point(i_plasma_ignited=1)),
-        legacy_sample(
-            "secondary-injected-power-nonzero",
-            **_freethy_point(
-                p_hcd_secondary_injected_mw=30.0, p_hcd_primary_extra_heat_mw=10.0
-            ),
-        ),
-        legacy_sample(
-            "near-cutoff-coupling",
-            **_freethy_point(
-                nd_plasma_electrons_vol_avg=1.5e20, b_plasma_toroidal_on_axis=2.2
-            ),
-        ),
-        legacy_sample(
-            "x-mode-transcription-check", **_freethy_point(i_ecrh_wave_mode=1)
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {"i_plasma_ignited": 0, "i_ecrh_wave_mode": 0}
     fuzz_bounds = {
@@ -559,7 +524,7 @@ def test_the_three_boundary_reads_are_produced():
 
 
 def test_no_node_reads_what_it_owns():
-    """cottax's hard error, checked here because the accumulators invite it.
+    """Cottax's hard error, checked here because the accumulators invite it.
 
     `p_hcd_ecrh_injected_total_mw` is written with `+=` in PROCESS (`:2147`), which is
     the shape that becomes a self-loop if ported literally. It is not one here: the prior

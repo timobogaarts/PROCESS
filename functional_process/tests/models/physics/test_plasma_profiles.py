@@ -19,7 +19,9 @@ import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.cottax.paths import divertor, physics
 from functional_process.cottax.physics.plasma_profiles import (
     PedestalProfileValues,
     calculate_ion_vol_avg_temperature,
@@ -29,7 +31,6 @@ from functional_process.cottax.physics.plasma_profiles import (
     calculate_profile_factors,
     lmode_profile_reset,
 )
-from functional_process.cottax.paths import divertor, physics
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.models.physics.plasma_profiles import PlasmaProfile
@@ -317,20 +318,7 @@ class TestIonVolAvgTemperature(Tier1Contract):
     reference = _reference_ion_vol_avg_temperature
     ported = calculate_ion_vol_avg_temperature
 
-    samples = [
-        legacy_sample(
-            "ratio-active",
-            f_temp_plasma_ion_electron=0.9,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            temp_plasma_ion_vol_avg_kev=1.0,
-        ),
-        legacy_sample(
-            "ratio-zero-passthrough",
-            f_temp_plasma_ion_electron=0.0,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            temp_plasma_ion_vol_avg_kev=11.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -342,16 +330,7 @@ class TestParabolicProfileValues(Tier1Contract):
     reference = _reference_parabolic_profile_values
     ported = calculate_parabolic_profile_values
 
-    samples = [
-        legacy_sample(
-            "parabolic-reference-point",
-            alphan=1.0,
-            alphat=1.45,
-            nd_plasma_electrons_vol_avg=8.0e19,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            temp_plasma_ion_vol_avg_kev=11.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # `alphan`/`alphat` bounds are PROCESS's own (iteration variables 6 and 5); the
     # densities and temperatures are given plausible operating ranges since the
@@ -377,31 +356,7 @@ class TestLModeProfileReset(Tier1Contract):
     reference = _reference_lmode_profile_reset
     ported = lmode_profile_reset
 
-    samples = [
-        legacy_sample(
-            # `tests/regression/input_files/stellarator_helias.IN.DAT` after
-            # `init_process` and before any model has run: four of the seven differ from
-            # their L-mode values, so PROCESS's guard fires.
-            "reset-fires",
-            radius_plasma_pedestal_temp_norm=1.0,
-            radius_plasma_pedestal_density_norm=1.0,
-            temp_plasma_pedestal_kev=1.0,
-            temp_plasma_separatrix_kev=0.1,
-            nd_plasma_pedestal_electron=4.0e19,
-            nd_plasma_separatrix_electron=3.0e19,
-            tbeta=2.0,
-        ),
-        legacy_sample(
-            "already-l-mode",
-            radius_plasma_pedestal_temp_norm=1.0,
-            radius_plasma_pedestal_density_norm=1.0,
-            temp_plasma_pedestal_kev=0.0,
-            temp_plasma_separatrix_kev=0.0,
-            nd_plasma_pedestal_electron=0.0,
-            nd_plasma_separatrix_electron=0.0,
-            tbeta=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # PROCESS's own input ranges for the pedestal fields; the bounds matter only in that
     # they must straddle the L-mode values so both sides of the guard are sampled.
@@ -420,34 +375,7 @@ class TestPedestalProfileValues(Tier1Contract):
     reference = _reference_pedestal_profile_values
     ported = calculate_pedestal_profile_values
 
-    samples = [
-        legacy_sample(
-            "pedestal-reference-point",
-            profile_x=_RHO,
-            ne_profile_y=8.0e19 * (1.0 - 0.8 * _RHO**2),
-            te_profile_y=12.0 * (1.0 - 0.9 * _RHO**2) + 0.5,
-            ne_profile_integ=7.2e19,
-            te_profile_integ=9.4,
-            temp_plasma_ion_vol_avg_kev=11.0,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            nd_plasma_separatrix_electron=2.0e19,
-            nd_plasma_electrons_vol_avg=8.0e19,
-        ),
-        legacy_sample(
-            # `prn1` is floored at 0.01; this point sits below the floor so the
-            # `jnp.maximum` is the branch actually taken.
-            "pedestal-prn1-floored",
-            profile_x=_RHO,
-            ne_profile_y=8.0e19 * (1.0 - 0.8 * _RHO**2),
-            te_profile_y=12.0 * (1.0 - 0.9 * _RHO**2) + 0.5,
-            ne_profile_integ=7.2e19,
-            te_profile_integ=9.4,
-            temp_plasma_ion_vol_avg_kev=11.0,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            nd_plasma_separatrix_electron=1.0e17,
-            nd_plasma_electrons_vol_avg=8.0e19,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def test_pedestal_profile_values_assembles_alone():
@@ -498,28 +426,7 @@ class TestProfileFactors(Tier1Contract):
     reference = _reference_profile_factors
     ported = calculate_profile_factors
 
-    samples = [
-        legacy_sample(
-            "profile-factors-reference-point",
-            ne_profile_y=8.0e19 * (1.0 - 0.8 * _RHO**2),
-            te_profile_y=12.0 * (1.0 - 0.9 * _RHO**2) + 0.5,
-            nd_plasma_electron_on_axis=1.6e20,
-            temp_plasma_electron_on_axis_kev=29.4,
-            nd_plasma_ions_on_axis=1.44e20,
-            temp_plasma_ion_on_axis_kev=27.0,
-            nd_plasma_ions_total_vol_avg=7.2e19,
-            nd_plasma_electrons_vol_avg=8.0e19,
-            nd_plasma_fuel_ions_vol_avg=6.0e19,
-            f_temp_plasma_ion_electron=0.9,
-            temp_plasma_electron_density_weighted_kev=13.5,
-            temp_plasma_ion_density_weighted_kev=12.2,
-            alphan=1.0,
-            alphat=1.45,
-            alphaj=2.0,
-            plasma_current=1.5e7,
-            a_plasma_poloidal=35.0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestParabolicGradientLengths(Tier1Contract):
@@ -539,31 +446,6 @@ class TestParabolicGradientLengths(Tier1Contract):
     ported = calculate_parabolic_gradient_lengths
     reference_domain_errors = (ProcessValueError,)
 
-    samples = [
-        legacy_sample(
-            "both-steep",
-            alphat=1.45,
-            alphan=1.2,
-            temp_plasma_electron_on_axis_kev=29.4,
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-        ),
-        legacy_sample(
-            "both-boxy",
-            alphat=0.6,
-            alphan=0.4,
-            temp_plasma_electron_on_axis_kev=29.4,
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-        ),
-        legacy_sample(
-            "steep-temperature-boxy-density",
-            alphat=2.0,
-            alphan=0.5,
-            temp_plasma_electron_on_axis_kev=29.4,
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

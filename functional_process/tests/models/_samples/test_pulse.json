@@ -1,0 +1,31 @@
+{
+ "TestCalculateBurnTime": [
+  {
+   "label": "unit-test-nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_cs_pf_total_burn": 100.0,
+    "v_plasma_loop_burn": 10.0,
+    "t_plant_pulse_fusion_ramp": 2.0
+   }
+  },
+  {
+   "label": "unit-test-negative-vs",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_cs_pf_total_burn": -100.0,
+    "v_plasma_loop_burn": 10.0,
+    "t_plant_pulse_fusion_ramp": 2.0
+   }
+  },
+  {
+   "label": "unit-test-zero-fusion-ramp",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_cs_pf_total_burn": 50.0,
+    "v_plasma_loop_burn": 5.0,
+    "t_plant_pulse_fusion_ramp": 0.0
+   }
+  }
+ ]
+}

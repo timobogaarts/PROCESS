@@ -1,0 +1,16 @@
+{
+ "TestPulseDurations": [
+  {
+   "label": "st-init-defaults",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_coil_precharge": 0.0,
+    "t_plant_pulse_plasma_current_ramp_up": 0.0,
+    "t_plant_pulse_burn": 31557600.0,
+    "t_plant_pulse_plasma_current_ramp_down": 0.0,
+    "t_plant_pulse_fusion_ramp": 10.0,
+    "t_plant_pulse_dwell": 1800.0
+   }
+  }
+ ]
+}

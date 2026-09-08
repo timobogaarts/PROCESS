@@ -8,7 +8,8 @@ port does internally (see `quench.md`'s "`coilcurrent` eliminated" note) before 
 the real PROCESS function, which still takes `coilcurrent` as an explicit argument.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.coils.quench import (
     calculate_quench_protection,
     calculate_quench_protection_current_density,
@@ -105,37 +106,7 @@ class TestQuenchProtection(Tier1Contract):
     # Realistic helias5b-scale point, hand-assembled (no direct PROCESS unit test
     # exercises the full chain) and confirmed to agree with the real PROCESS function
     # exactly before this file was written (see quench.md's verification note).
-    samples = [
-        legacy_sample(
-            "quench-helias5b-scale",
-            rmajor=22.0,
-            rminor=1.78,
-            dr_fw_plasma_gap_inboard=0.02,
-            dr_fw_inboard=0.018,
-            dr_blkt_inboard=0.83,
-            dr_shld_blkt_gap=0.05,
-            dr_shld_inboard=0.2,
-            dr_fw_plasma_gap_outboard=0.02,
-            dr_fw_outboard=0.018,
-            dr_blkt_outboard=1.08,
-            dr_shld_outboard=0.2,
-            b_plasma_toroidal_on_axis=5.5,
-            c_tf_total=3.2e8,
-            t_tf_superconductor_quench=15.0,
-            dr_vv_inboard=0.3,
-            dr_vv_outboard=0.3,
-            t_tf_quench_detection=3.0,
-            f_a_tf_turn_cable_copper=0.69,
-            f_a_tf_turn_cable_space_extra_void=0.3,
-            tftmp=4.2,
-            a_tf_turn_cable_space_no_void=0.0022,
-            dx_tf_turn_general=0.056,
-            a_tf_wp_conductor=0.5,
-            e_tf_magnetic_stored_total_gj=132.5,
-            n_tf_coils=50,
-            c_tf_turn=65000.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -147,15 +118,7 @@ class TestMaxDumpVoltage(Tier1Contract):
     reference = staticmethod(_process_max_dump_voltage)
     ported = max_dump_voltage
 
-    samples = [
-        # tests/unit/models/stellarator/test_stellarator.py::test_u_max_protect_v
-        legacy_sample(
-            "u_max_protect_v",
-            tf_energy_stored=2651198129.2530489,
-            t_dump=10,
-            current=122620.32643505408,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -167,18 +130,6 @@ class TestQuenchProtectionCurrentDensity(Tier1Contract):
     reference = staticmethod(_process_current_density)
     ported = calculate_quench_protection_current_density
 
-    samples = [
-        # tests/unit/models/stellarator/test_stellarator.py::test_j_max_protect_am2
-        legacy_sample(
-            "j_max_protect_am2",
-            tau_quench=10,
-            t_detect=0,
-            f_cu=0.69000000000000017,
-            f_cond=0.69999999999999996,
-            temp=4.2000000000000002,
-            a_cable=0.0022141440000000008,
-            a_turn=0.0031360000000000008,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

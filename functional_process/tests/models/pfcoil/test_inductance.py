@@ -36,7 +36,8 @@ of Bunet's formula rather than a whole coil's geometry.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_PF_COILS,
@@ -201,15 +202,7 @@ class TestCalculateSolenoidSelfInductance(Tier1Contract):
 
     # The CS as `induct` describes it: mean radius, full height, winding thickness,
     # turns (`pfcoil.py:1895-1908`). PROCESS returns 22.551156118389258 H here.
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            a=_R_CS_MIDDLE,
-            b=2.0 * _Z_UP[6],
-            c=_R_OUT[6] - _R_IN[6],
-            n=_TURNS[6],
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -226,22 +219,7 @@ class TestCalculatePfCsPlasmaInductances(Tier1Contract):
     ported = calculate_pf_cs_plasma_inductances
     static_argnames = ("z_pf_coil_upper", "r_pf_coil_inner", "r_pf_coil_outer")
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            rmajor=_RMAJOR,
-            ind_plasma=_IND_PLASMA,
-            dr_cs=_DR_CS,
-            r_cs_middle=_R_CS_MIDDLE,
-            r_pf_coil_middle=_R_MID,
-            z_pf_coil_middle=_Z_MID,
-            r_pf_coil_inner=_R_IN,
-            r_pf_coil_outer=_R_OUT,
-            z_pf_coil_upper=_Z_UP,
-            z_pf_coil_lower=_Z_LO,
-            n_pf_coil_turns=_TURNS,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_fixed = {
         # Held at the reference values, not merely undifferentiated: together they fix
@@ -435,18 +413,7 @@ class TestCalculatePfPlasmaInductancesNoCentralSolenoid(Tier1Contract):
     reference = _reference_pf_plasma_inductances_no_central_solenoid
     ported = calculate_pf_plasma_inductances_no_central_solenoid
 
-    samples = [
-        legacy_sample(
-            "spherical-tokamak-plausible",
-            rmajor=_ST_RMAJOR,
-            ind_plasma=_ST_IND_PLASMA,
-            r_pf_coil_middle=_ST_R_MID,
-            z_pf_coil_middle=_ST_Z_MID,
-            z_pf_coil_upper=_ST_Z_UP,
-            z_pf_coil_lower=_ST_Z_LO,
-            n_pf_coil_turns=_ST_TURNS,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": _around(_ST_RMAJOR, 0.10),

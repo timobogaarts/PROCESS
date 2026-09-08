@@ -25,6 +25,7 @@ value, because `NeProfile.calculate_profile_y`'s parabolic branch is dead code.
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.profiles import (
     calculate_density_profile,
     calculate_greenwald_density_fractions,
@@ -112,12 +113,7 @@ class TestProfileGrid(Tier1Contract):
     ported = calculate_profile_grid
     static_argnames = ("n_plasma_profile_elements",)
 
-    samples = [
-        legacy_sample("default-201", n_plasma_profile_elements=201),
-        legacy_sample("harness-11", n_plasma_profile_elements=_N_POINTS),
-        # The size PROCESS's own profile unit tests monkeypatch in.
-        legacy_sample("baseline-2018-10", n_plasma_profile_elements=10),
-    ]
+    samples = FROM_FILE
 
 
 # --------------------------------------------------------------------- integral
@@ -152,20 +148,7 @@ class TestIntegrateProfileY(Tier1Contract):
     reference = _reference_integrate_profile_y
     ported = integrate_profile_y
 
-    samples = [
-        legacy_sample(
-            "density-like",
-            profile_y=8.0e19 * (1.0 - 0.8 * _RHO**2),
-            profile_x=_RHO,
-        ),
-        legacy_sample(
-            # Non-uniform grid: the case where the general and the uniform rules
-            # disagree in value as well as in derivative.
-            "non-uniform-grid",
-            profile_y=12.0 * (1.0 - 0.9 * _RHO**2) + 0.5,
-            profile_x=np.sort(_RHO**1.5),
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # --------------------------------------------------------------------- density profile
@@ -234,7 +217,7 @@ class TestDensityProfile(Tier1Contract):
     reference = _density_profile_reference(1)
     ported = calculate_density_profile
 
-    samples = _DENSITY_PEDESTAL_SAMPLES
+    samples = FROM_FILE
 
 
 class TestDensityProfileParabolicSwitch(Tier1Contract):
@@ -255,7 +238,7 @@ class TestDensityProfileParabolicSwitch(Tier1Contract):
     reference = _density_profile_reference(0)
     ported = calculate_density_profile
 
-    samples = _DENSITY_PEDESTAL_SAMPLES
+    samples = FROM_FILE
 
 
 class TestDensityProfileLModeLimit(Tier1Contract):
@@ -278,17 +261,7 @@ class TestDensityProfileLModeLimit(Tier1Contract):
     ported = calculate_density_profile
     static_argnames = ("rho", "radius_plasma_pedestal_density_norm")
 
-    samples = [
-        legacy_sample(
-            "l-mode-reset-values",
-            rho=_RHO,
-            radius_plasma_pedestal_density_norm=1.0,
-            nd_plasma_electron_on_axis=1.6e20,
-            nd_plasma_pedestal_electron=0.0,
-            nd_plasma_separatrix_electron=0.0,
-            alphan=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # --------------------------------------------------------------------- temperature profile
@@ -362,20 +335,7 @@ class TestParabolicTemperatureProfile(Tier1Contract):
     ported = calculate_parabolic_temperature_profile
     static_argnames = ("rho",)
 
-    samples = [
-        legacy_sample(
-            "baseline-2018-parabolic",
-            rho=_RHO,
-            temp_plasma_electron_on_axis_kev=27.370104119511087,
-            alphat=1.45,
-        ),
-        legacy_sample(
-            "flat-profile",
-            rho=_RHO,
-            temp_plasma_electron_on_axis_kev=12.0,
-            alphat=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestParabolicTemperatureProfileInterior(Tier1Contract):
@@ -390,14 +350,7 @@ class TestParabolicTemperatureProfileInterior(Tier1Contract):
     reference = _temperature_profile_reference(0, pedestal_arguments=False)
     ported = calculate_parabolic_temperature_profile
 
-    samples = [
-        legacy_sample(
-            "baseline-2018-parabolic-interior",
-            rho=_RHO_INTERIOR,
-            temp_plasma_electron_on_axis_kev=27.370104119511087,
-            alphat=1.45,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestPedestalTemperatureProfile(Tier1Contract):
@@ -415,32 +368,7 @@ class TestPedestalTemperatureProfile(Tier1Contract):
     ported = calculate_pedestal_temperature_profile
     reference_domain_errors = (ProcessValueError,)
 
-    samples = [
-        legacy_sample(
-            # `TeProfileParam(baseline_2018)`, on that test's 10-point grid, with the
-            # central temperature the corresponding `PlasmaProfilesParam` run reaches.
-            "baseline-2018-pedestal",
-            rho=_LEGACY_RHO_10,
-            radius_plasma_pedestal_temp_norm=0.94,
-            temp_plasma_electron_on_axis_kev=27.370104119511087,
-            temp_plasma_pedestal_kev=5.5,
-            temp_plasma_separatrix_kev=0.1,
-            alphat=1.45,
-            tbeta=2.0,
-        ),
-        legacy_sample(
-            # `tbeta != 2` is the one thing the density profile has no analogue for --
-            # `NeProfile` hard-codes the exponent 2.
-            "tbeta-not-two",
-            rho=_RHO,
-            radius_plasma_pedestal_temp_norm=0.72,
-            temp_plasma_electron_on_axis_kev=22.0,
-            temp_plasma_pedestal_kev=4.0,
-            temp_plasma_separatrix_kev=0.15,
-            alphat=1.1,
-            tbeta=1.5,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # --------------------------------------------------------------------- core values
@@ -500,26 +428,7 @@ class TestNcore(Tier1Contract):
     reference = _reference_ncore
     ported = ncore
 
-    samples = [
-        legacy_sample(
-            # `tests/unit/models/physics/test_plasma_profiles.py::test_ncore`, which
-            # asserts 9.7756974320342041e19.
-            "baseline-2018-ncore",
-            radius_plasma_pedestal_density_norm=0.94,
-            nd_plasma_pedestal_electron=5.8300851381352219e19,
-            nd_plasma_separatrix_electron=3.4294618459618943e19,
-            nd_plasma_electrons_vol_avg=7.4321e19,
-            alphan=1.0,
-        ),
-        legacy_sample(
-            "floored-negative",
-            radius_plasma_pedestal_density_norm=0.94,
-            nd_plasma_pedestal_electron=2.0e20,
-            nd_plasma_separatrix_electron=1.0e20,
-            nd_plasma_electrons_vol_avg=1.0e19,
-            alphan=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     """Bounds chosen to stay clear of the floor.
@@ -542,19 +451,7 @@ class TestTcore(Tier1Contract):
     reference = _reference_tcore
     ported = tcore
 
-    samples = [
-        legacy_sample(
-            # `tests/unit/models/physics/test_plasma_profiles.py::test_tcore`, which
-            # asserts 28.09093632260765.
-            "baseline-2018-tcore",
-            radius_plasma_pedestal_temp_norm=0.94,
-            temp_plasma_pedestal_kev=3.7775374842470044,
-            temp_plasma_separatrix_kev=0.1,
-            temp_plasma_electron_vol_avg_kev=12.33,
-            alphat=1.45,
-            tbeta=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     """`alphat`'s range is PROCESS's own (iteration variable 5); the rest are operating
@@ -624,14 +521,7 @@ class TestParabolicOnAxisDensities(Tier1Contract):
     reference = _on_axis_densities_reference(0, pedestal_arguments=False)
     ported = calculate_parabolic_on_axis_densities
 
-    samples = [
-        legacy_sample(
-            "baseline-2018",
-            nd_plasma_electrons_vol_avg=7.983e19,
-            nd_plasma_ions_total_vol_avg=6.9461125748017857e19,
-            alphan=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -647,17 +537,7 @@ class TestPedestalOnAxisDensities(Tier1Contract):
     reference = _on_axis_densities_reference(1, pedestal_arguments=True)
     ported = calculate_pedestal_on_axis_densities
 
-    samples = [
-        legacy_sample(
-            "baseline-2018",
-            radius_plasma_pedestal_density_norm=0.94,
-            nd_plasma_pedestal_electron=6.1916268627398164e19,
-            nd_plasma_separatrix_electron=3.6421334486704804e19,
-            nd_plasma_electrons_vol_avg=7.983e19,
-            nd_plasma_ions_total_vol_avg=6.9461125748017857e19,
-            alphan=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     """Same clear-of-the-floor reasoning as `TestNcore`."""
@@ -719,14 +599,7 @@ class TestParabolicOnAxisTemperatures(Tier1Contract):
     reference = _on_axis_temperatures_reference(0, pedestal_arguments=False)
     ported = calculate_parabolic_on_axis_temperatures
 
-    samples = [
-        legacy_sample(
-            "baseline-2018",
-            temp_plasma_electron_vol_avg_kev=13.07,
-            temp_plasma_ion_vol_avg_kev=13.07,
-            alphat=1.45,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -742,18 +615,7 @@ class TestPedestalOnAxisTemperatures(Tier1Contract):
     reference = _on_axis_temperatures_reference(1, pedestal_arguments=True)
     ported = calculate_pedestal_on_axis_temperatures
 
-    samples = [
-        legacy_sample(
-            "baseline-2018",
-            radius_plasma_pedestal_temp_norm=0.94,
-            temp_plasma_pedestal_kev=5.5,
-            temp_plasma_separatrix_kev=0.1,
-            temp_plasma_electron_vol_avg_kev=13.07,
-            temp_plasma_ion_vol_avg_kev=13.07,
-            alphat=1.45,
-            tbeta=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -818,15 +680,7 @@ class TestGreenwaldDensityFractions(Tier1Contract):
     reference = _reference_greenwald_density_fractions
     ported = calculate_greenwald_density_fractions
 
-    samples = [
-        legacy_sample(
-            "baseline-2018",
-            nd_plasma_pedestal_electron=6.1916268627398164e19,
-            nd_plasma_separatrix_electron=3.6421334486704804e19,
-            plasma_current=1.5e7,
-            rminor=2.9264516129032256,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -841,14 +695,6 @@ class TestPedestalSeparatrixDensities(Tier1Contract):
     reference = _reference_pedestal_separatrix_densities
     ported = calculate_pedestal_separatrix_densities
 
-    samples = [
-        legacy_sample(
-            "defaults",
-            f_nd_plasma_pedestal_greenwald=0.85,
-            f_nd_plasma_separatrix_greenwald=0.5,
-            plasma_current=1.5e7,
-            rminor=2.9264516129032256,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

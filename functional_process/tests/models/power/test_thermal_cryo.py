@@ -17,7 +17,8 @@ import jax
 import pytest
 from cottax.interfaces.pytree_namespace_module import to_graph
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract, fuzz_samples
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
     CRYO_LOADS,
     CRYO_Q_LOADS,
@@ -130,7 +131,7 @@ class TestPlantThermalEfficiency(Tier1Contract):
     reference = _reference_plant_thermal_efficiency
     ported = calculate_plant_thermal_efficiency
     static_argnames = ("i_thermal_electric_conversion", "i_blanket_type")
-    samples = _plant_thermal_efficiency_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +177,7 @@ class TestPlantThermalEfficiency2(Tier1Contract):
     reference = _reference_plant_thermal_efficiency_2
     ported = calculate_plant_thermal_efficiency_2
     static_argnames = ("secondary_cycle_liq",)
-    samples = _plant_thermal_efficiency_2_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +357,7 @@ class TestComponentThermalPowers(Tier1Contract):
     reference = _reference_component_thermal_powers
     ported = calculate_component_thermal_powers
     static_argnames = _CTP_STATIC_ARGNAMES
-    samples = _component_thermal_powers_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -409,64 +410,7 @@ class TestCryo(Tier1Contract):
     static_argnames = ("i_tf_sup", "inuclear")
 
     # tests/unit/models/test_power.py::test_cryo, both parametrised legacy points.
-    samples = [
-        legacy_sample(
-            "baseline-2018-point-1",
-            i_tf_sup=1,
-            inuclear=1,
-            coldmass=47352637.039762333,
-            c_tf_turn=74026.751437500003,
-            ensxpfm=37429.525515086898,
-            p_tf_nuclear_heat_mw=0.044178296011112193,
-            n_tf_coils=16,
-            tfcryoarea=0.0,
-            t_plant_pulse_plasma_present=10364.426139387357,
-            qnuc=12920.0,
-        ),
-        legacy_sample(
-            "baseline-2018-point-2",
-            i_tf_sup=1,
-            inuclear=1,
-            coldmass=47308985.527808741,
-            c_tf_turn=74026.751437500003,
-            ensxpfm=37427.228965055205,
-            p_tf_nuclear_heat_mw=0.045535131445547841,
-            n_tf_coils=16,
-            tfcryoarea=0.0,
-            t_plant_pulse_plasma_present=364.42613938735633,
-            qnuc=12920.0,
-        ),
-        *fuzz_samples(
-            {
-                "coldmass": (1.0e6, 6.0e7),
-                "c_tf_turn": (1.0e3, 1.0e5),
-                "ensxpfm": (1.0e3, 6.0e4),
-                "p_tf_nuclear_heat_mw": (0.0, 1.0),
-                "n_tf_coils": (10.0, 24.0),
-                "tfcryoarea": (0.0, 5000.0),
-                "t_plant_pulse_plasma_present": (300.0, 12000.0),
-                "qnuc": (0.0, 20000.0),
-            },
-            count=20,
-            seed=50260818,
-            fixed={"i_tf_sup": 1, "inuclear": 0},
-        ),
-        *fuzz_samples(
-            {
-                "coldmass": (1.0e6, 6.0e7),
-                "c_tf_turn": (1.0e3, 1.0e5),
-                "ensxpfm": (1.0e3, 6.0e4),
-                "p_tf_nuclear_heat_mw": (0.0, 1.0),
-                "n_tf_coils": (10.0, 24.0),
-                "tfcryoarea": (0.0, 5000.0),
-                "t_plant_pulse_plasma_present": (300.0, 12000.0),
-                "qnuc": (0.0, 20000.0),
-            },
-            count=15,
-            seed=60260818,
-            fixed={"i_tf_sup": 0, "inuclear": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +529,7 @@ class TestCryoLoads(Tier1Contract):
     reference = _reference_cryo_loads
     ported = calculate_cryo_loads
     static_argnames = ("i_tf_sup", "i_pf_conductor", "inuclear")
-    samples = _cryo_loads_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -939,7 +883,8 @@ def _call_full_ctp(
     """`calculate_component_thermal_powers`, called with `_CTP_FULL_KWARGS` plus
     `overrides`, for cross-checking the five node-level splits below against the
     unmodified pure function -- same role `_component_thermal_powers_call_kwargs`
-    plays for `DeltaEtaStep`'s own test above."""
+    plays for `DeltaEtaStep`'s own test above.
+    """
     kw = {**_CTP_FULL_KWARGS, **overrides}
     return calculate_component_thermal_powers(
         int(i_p_coolant_pumping),
@@ -1095,7 +1040,8 @@ def test_eta_turbine_pass_through_arms_have_no_occupant(
 
 def test_etath_liq_occupant_matches_calculate_component_thermal_powers():
     """`secondary_cycle_liq == 4` computes `etath_liq` from `.fwbs.outlet_temp_liq`
-    alone; `== 2` is a pass-through and has no occupant."""
+    alone; `== 2` is a pass-through and has no occupant.
+    """
     node = ETATH_LIQ[ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE]()
     got = node(outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"])
     full = _call_full_ctp(
@@ -1135,7 +1081,8 @@ def test_temp_turbine_coolant_in_occupant_matches_calculate_component_thermal_po
 ):
     """Whichever stage writes `temp_turbine_coolant_in`, the selected occupant computes
     the same value the whole composite does -- reading only that stage's own source
-    field."""
+    field.
+    """
     arm = _temp_turbine_coolant_in_arm(
         i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq
     )
@@ -1182,7 +1129,8 @@ def test_p_fw_div_heat_deposited_occupant_matches_calculate_component_thermal_po
     i_p_coolant_pumping,
 ):
     """Every `i_p_coolant_pumping` value except `MECHANICAL_WITH_PRESSURE_DROP`
-    recomputes the field, and the occupant reproduces the composite's element."""
+    recomputes the field, and the occupant reproduces the composite's element.
+    """
     node = P_FW_DIV_HEAT_DEPOSITED[_p_fw_div_heat_deposited_arm(i_p_coolant_pumping)]()
     declared = inspect.signature(type(node).__call__).parameters
     got = node(**{k: v for k, v in _CTP_FULL_KWARGS.items() if k in declared})
@@ -1202,7 +1150,8 @@ def test_p_fw_div_heat_deposited_occupant_matches_calculate_component_thermal_po
 def test_p_fw_div_heat_deposited_pass_through_arm_has_no_occupant():
     """`MECHANICAL_WITH_PRESSURE_DROP` passes the entering value through; the only
     other producer in `process/` is `models/ife.py`, out of scope, so the field is a
-    boundary input there."""
+    boundary input there.
+    """
     arm = _p_fw_div_heat_deposited_arm(
         PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP
     )
@@ -1219,7 +1168,8 @@ def test_p_fw_blkt_coolant_pump_occupant_matches_calculate_component_thermal_pow
 ):
     """On the two values where `power` owns
     `.primary_pumping.p_fw_blkt_coolant_pump_mw`, the occupant is the plain sum the
-    composite computes -- and reads neither the field it owns nor the switch."""
+    composite computes -- and reads neither the field it owns nor the switch.
+    """
     node = P_FW_BLKT_COOLANT_PUMP[_p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping)]()
     declared = inspect.signature(type(node).__call__).parameters
     got = node(**{k: v for k, v in _CTP_FULL_KWARGS.items() if k in declared})

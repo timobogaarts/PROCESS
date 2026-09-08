@@ -25,13 +25,13 @@ import json
 import re
 
 import pytest
-from jax.tree_util import GetAttrKey
-
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
 from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
+from jax.tree_util import GetAttrKey
+
 from functional_process.cottax.visualization.grouping import (
     TIP_VARS,
     _matrix_struct,

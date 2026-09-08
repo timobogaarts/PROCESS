@@ -10,10 +10,11 @@ port's own `objective_metric_<id>` functions compute (see `objectives.py`'s modu
 docstring: sign is applied by the caller, not folded into these functions).
 """
 
-from functional_process.cottax._harness.process_reference import data_reference
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import data_reference
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.core.solver.objectives import (
     objective_metric_1,
     objective_metric_3,
@@ -35,7 +36,6 @@ from functional_process.cottax.core.solver.objectives import (
 from process.core.model import DataStructure
 from process.core.solver.objectives import objective_function
 from process.models.availability import AvailabilityModel
-
 
 _reference_1 = data_reference(lambda d: objective_function(1, d))
 
@@ -92,7 +92,7 @@ class TestObjectiveMetric1(Tier1Contract):
     reference = _reference_1
     ported = objective_metric_1
 
-    samples = [legacy_sample("nominal", rmajor=9.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -103,7 +103,7 @@ class TestObjectiveMetric3(Tier1Contract):
     reference = _reference_3
     ported = objective_metric_3
 
-    samples = [legacy_sample("nominal", pflux_fw_neutron_mw=1.5)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -114,7 +114,7 @@ class TestObjectiveMetric4(Tier1Contract):
     reference = _reference_4
     ported = objective_metric_4
 
-    samples = [legacy_sample("nominal", tfcmw=50.0, srcktpm=2000.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -125,7 +125,7 @@ class TestObjectiveMetric5(Tier1Contract):
     reference = _reference_5
     ported = objective_metric_5
 
-    samples = [legacy_sample("nominal", big_q_plasma=15.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -136,7 +136,7 @@ class TestObjectiveMetric6(Tier1Contract):
     reference = _reference_6
     ported = objective_metric_6
 
-    samples = [legacy_sample("nominal", coe=80.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -149,10 +149,7 @@ class TestObjectiveMetric7(Tier1Contract):
 
     static_argnames = ("ireactor",)
 
-    samples = [
-        legacy_sample("direct-cost", cdirt=5000.0, concost=8000.0, ireactor=0),
-        legacy_sample("construction-cost", cdirt=5000.0, concost=8000.0, ireactor=1),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ireactor": 0}
 
@@ -164,7 +161,7 @@ class TestObjectiveMetric8(Tier1Contract):
     reference = _reference_8
     ported = objective_metric_8
 
-    samples = [legacy_sample("nominal", aspect=10.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -175,7 +172,7 @@ class TestObjectiveMetric9(Tier1Contract):
     reference = _reference_9
     ported = objective_metric_9
 
-    samples = [legacy_sample("nominal", pflux_div_heat_load_mw=5.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -186,7 +183,7 @@ class TestObjectiveMetric10(Tier1Contract):
     reference = _reference_10
     ported = objective_metric_10
 
-    samples = [legacy_sample("nominal", b_plasma_toroidal_on_axis=5.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -197,7 +194,7 @@ class TestObjectiveMetric11(Tier1Contract):
     reference = _reference_11
     ported = objective_metric_11
 
-    samples = [legacy_sample("nominal", p_hcd_injected_total_mw=50.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -208,7 +205,7 @@ class TestObjectiveMetric14(Tier1Contract):
     reference = _reference_14
     ported = objective_metric_14
 
-    samples = [legacy_sample("nominal", t_plant_pulse_burn=7200.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -227,18 +224,7 @@ class TestObjectiveMetric15(Tier1Contract):
 
     static_argnames = ("i_plant_availability",)
 
-    samples = [
-        legacy_sample(
-            "ward-taylor",
-            i_plant_availability=int(AvailabilityModel.WARD_TAYLOR),
-            f_t_plant_available=0.8,
-        ),
-        legacy_sample(
-            "morris",
-            i_plant_availability=int(AvailabilityModel.MORRIS),
-            f_t_plant_available=0.85,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"i_plant_availability": int(AvailabilityModel.WARD_TAYLOR)}
 
@@ -266,7 +252,7 @@ class TestObjectiveMetric16(Tier1Contract):
     reference = _reference_16
     ported = objective_metric_16
 
-    samples = [legacy_sample("nominal", rmajor=9.0, t_plant_pulse_burn=7200.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -279,7 +265,7 @@ class TestObjectiveMetric17(Tier1Contract):
     reference = _reference_17
     ported = objective_metric_17
 
-    samples = [legacy_sample("nominal", p_plant_electric_net_mw=500.0)]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -293,7 +279,7 @@ class TestObjectiveMetric18(Tier1Contract):
     reference = _reference_18
     ported = objective_metric_18
 
-    samples = [legacy_sample("nominal")]
+    samples = FROM_FILE
 
 
 class TestObjectiveMetric19(Tier1Contract):
@@ -307,7 +293,7 @@ class TestObjectiveMetric19(Tier1Contract):
     reference = _reference_19
     ported = objective_metric_19
 
-    samples = [legacy_sample("nominal", big_q_plasma=15.0, t_plant_pulse_burn=7200.0)]
+    samples = FROM_FILE
     fuzz = True
 
 

@@ -28,7 +28,8 @@ does, where the CS current reverses.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import NGC2
 from functional_process.cottax.power.pf_coil_power import (
     N_PF_ACTIVE_POINTS,
@@ -190,4 +191,4 @@ class TestPfCoilPowerSupplies(Tier1Contract):
         "t_plant_pulse_burn": (100.0, 1.0e4),
         "t_plant_pulse_plasma_current_ramp_down": (50.0, 600.0),
     }
-    samples = fuzz_samples(fuzz_bounds, count=20, seed=20260830)
+    samples = FROM_FILE

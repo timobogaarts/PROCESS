@@ -1,0 +1,127 @@
+{
+ "TestAsdexDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_perp": 0.13828891074201208,
+    "b_plasma_toroidal_on_axis": 5.184718873568665,
+    "q95": 3.506802978687227,
+    "rmajor": 8.0,
+    "prn1": 0.4614366315228275
+   }
+  }
+ ],
+ "TestAsdexNewDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 79.92876379330903,
+    "c_plasma": 16702766.338258132,
+    "q95": 3.506802978687227,
+    "prn1": 0.4614366315228275
+   }
+  }
+ ],
+ "TestBorrassIterIDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_perp": 0.13828891074201208,
+    "b_plasma_toroidal_on_axis": 5.184718873568665,
+    "q95": 3.506802978687227,
+    "rmajor": 8.0,
+    "prn1": 0.4614366315228275
+   }
+  }
+ ],
+ "TestBorrassIterIIDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_perp": 0.13828891074201208,
+    "b_plasma_toroidal_on_axis": 5.184718873568665,
+    "q95": 3.506802978687227,
+    "rmajor": 8.0,
+    "prn1": 0.4614366315228275
+   }
+  }
+ ],
+ "TestGreenwaldDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "c_plasma": 16702766.338258132,
+    "rminor": 2.6666666666666665
+   }
+  }
+ ],
+ "TestGreenwaldFraction": [
+  {
+   "label": "large-tokamak-nof-derived",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electron_line": 8e+19,
+    "nd_plasma_electron_max_array_7": 7.476547010745092e+19
+   }
+  }
+ ],
+ "TestHugillMurakamiDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.184718873568665,
+    "rmajor": 8.0,
+    "qcyl": 3.876944526420205
+   }
+  }
+ ],
+ "TestJetEdgeRadiationDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "zeff": 2.566875511579147,
+    "p_hcd_injected_total_mw": 79.92876379330903,
+    "prn1": 0.4614366315228275,
+    "qcyl": 3.876944526420205
+   }
+  },
+  {
+   "label": "denominator-non-positive",
+   "provenance": "legacy",
+   "kwargs": {
+    "zeff": 2.566875511579147,
+    "p_hcd_injected_total_mw": 79.92876379330903,
+    "prn1": 0.4614366315228275,
+    "qcyl": 1.0
+   }
+  }
+ ],
+ "TestJetSimpleDensityLimit": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.184718873568665,
+    "p_plasma_separatrix_mw": 162.32943903093374,
+    "rmajor": 8.0,
+    "prn1": 0.4614366315228275
+   }
+  }
+ ],
+ "TestSelectEnforcedDensityLimitGreenwald": [
+  {
+   "label": "large-tokamak-nof",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electron_max_array_7": 7.476547010745092e+19
+   }
+  }
+ ]
+}

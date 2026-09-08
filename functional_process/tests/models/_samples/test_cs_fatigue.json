@@ -1,0 +1,36 @@
+{
+ "TestNCycle": [
+  {
+   "label": "ncycle-baseline_2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "max_hoop_stress": 659999225.2537013,
+    "residual_stress": 240000000.0,
+    "t_crack_vertical": 0.00089,
+    "dz_cs_turn_conduit": 0.006310453838040592,
+    "dr_cs_turn_conduit": 0.006310453838040592,
+    "paris_coefficient": 6.5e-13,
+    "paris_power_law": 3.5,
+    "walker_coefficient": 0.436,
+    "sf_vertical_crack": 2.0,
+    "sf_radial_crack": 2.0,
+    "fracture_toughness": 200.0,
+    "sf_fast_fracture": 1.5
+   }
+  }
+ ],
+ "TestSurfaceStressIntensityFactor": [
+  {
+   "label": "surface_stress_intensity_factor-baseline_2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "hoop_stress": 659.9935186733534,
+    "t": 0.006310453838040592,
+    "w": 0.006310453838040592,
+    "a": 0.00089,
+    "c": 0.0026699999999999996,
+    "phi": 1.5707963267948966
+   }
+  }
+ ]
+}

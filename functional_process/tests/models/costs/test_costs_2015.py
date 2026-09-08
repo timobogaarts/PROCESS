@@ -7,7 +7,8 @@ branch-free, fixed-length -- see `costs_2015.md`. Legacy samples are lifted from
 `calclandcostsparam`), the same free-oracle reuse `test_harness.md` describes.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.costs.costs_2015 import (
     calculate_building_costs,
     calculate_land_costs,
@@ -93,24 +94,7 @@ class TestBuildingCosts(Tier1Contract):
     reference = _reference_building_costs
     ported = calculate_building_costs
 
-    samples = [
-        legacy_sample(
-            "baseline",
-            cost_factor_buildings=1.0,
-            light_build_cost_per_vol=270.0,
-            tok_build_cost_per_vol=1283.0,
-            r_cryostat_inboard=8.4,
-            z_cryostat_half_inside=8.75,
-            pwpnb=125.0,
-            helpow=88000.0,
-            r_pf_coil_outer_max=6.5,
-            c_tf_total=1.6e8,
-            n_tf_coils=16.0,
-            e_tf_magnetic_stored_total_gj=140.0,
-            p_plant_primary_heat_mw=2200.0,
-            p_plant_secondary_heat_mw=300.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"cost_factor_buildings": 1.0}
 
@@ -120,16 +104,6 @@ class TestLandCosts(Tier1Contract):
     reference = _reference_land_costs
     ported = calculate_land_costs
 
-    samples = [
-        legacy_sample(
-            "baseline",
-            cost_factor_land=1.0,
-            r_cryostat_inboard=8.4,
-            costexp=0.8,
-            dh_tf_inner_bore=14.0,
-            dr_tf_inner_bore=14.0,
-            dr_tf_inboard=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"cost_factor_land": 1.0, "costexp": 0.8}

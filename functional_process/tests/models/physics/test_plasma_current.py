@@ -46,9 +46,9 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 """
 
 import functools
-from types import MappingProxyType
 
-from functional_process.cottax._harness import Sample, Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,
@@ -145,15 +145,7 @@ class TestCalculateCyclindricalPlasmaCurrent(Tier1Contract):
     reference = staticmethod(PlasmaCurrent.calculate_cyclindrical_plasma_current)
     ported = calculate_cyclindrical_plasma_current
 
-    samples = [
-        legacy_sample(
-            "calculate_cyclindrical_plasma_current-large_tokamak_nof",
-            rminor=2.6666666666666665,
-            rmajor=8.0,
-            q95=3.5,
-            b_plasma_toroidal_on_axis=5.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -168,14 +160,7 @@ class TestCalculateCurrentCoefficientIpdg89(Tier1Contract):
     reference = staticmethod(PlasmaCurrent.calculate_current_coefficient_ipdg89)
     ported = calculate_current_coefficient_ipdg89
 
-    samples = [
-        legacy_sample(
-            "calculate_current_coefficient_ipdg89-large_tokamak_nof",
-            eps=0.33333333333333331,
-            kappa95=1.6517857142857142,
-            triang95=0.33333333333333331,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -204,18 +189,7 @@ class TestCalculatePlasmaCurrentIpdg89(Tier1Contract):
     reference = staticmethod(_reference_plasma_current_ipdg89)
     ported = calculate_plasma_current_ipdg89
 
-    samples = [
-        legacy_sample(
-            "calculate_plasma_current_ipdg89-large_tokamak_nof",
-            eps=0.33333333333333331,
-            kappa95=1.6517857142857142,
-            triang95=0.33333333333333331,
-            rminor=2.6666666666666665,
-            rmajor=8.0,
-            q95=3.5,
-            b_plasma_toroidal_on_axis=5.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -240,15 +214,7 @@ class TestCalculateCurrentCoefficientFiesta(Tier1Contract):
     reference = staticmethod(PlasmaCurrent.calculate_current_coefficient_fiesta)
     ported = calculate_current_coefficient_fiesta
 
-    samples = [
-        Sample(
-            MappingProxyType(
-                {"eps": 1.0 / 1.8, "kappa": 2.8, "triang": 0.5},
-            ),
-            "input-file",
-            "calculate_current_coefficient_fiesta-spherical_tokamak_eval",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "eps": (0.35, 0.75),
@@ -276,23 +242,7 @@ class TestCalculatePlasmaCurrentFiesta(Tier1Contract):
     reference = staticmethod(_reference_plasma_current_fiesta)
     ported = calculate_plasma_current_fiesta
 
-    samples = [
-        Sample(
-            MappingProxyType(
-                {
-                    "eps": 1.0 / 1.8,
-                    "kappa": 2.8,
-                    "triang": 0.5,
-                    "rminor": 4.5 / 1.8,
-                    "rmajor": 4.5,
-                    "q95": 5.835830999686161,
-                    "b_plasma_toroidal_on_axis": 3.0,
-                },
-            ),
-            "input-file",
-            "calculate_plasma_current_fiesta-spherical_tokamak_eval",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "eps": (0.35, 0.75),
@@ -320,17 +270,7 @@ class TestCalculateCylindricalSafetyFactor(Tier1Contract):
     reference = staticmethod(process_calculate_cylindrical_safety_factor)
     ported = calculate_cylindrical_safety_factor
 
-    samples = [
-        legacy_sample(
-            "calculate_cylindrical_safety_factor-large_tokamak_nof",
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            plasma_current=18398455.678867526,
-            b_plasma_toroidal_on_axis=5.7,
-            kappa95=1.6517857142857142,
-            triang95=0.33333333333333331,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -354,13 +294,7 @@ class TestCalculateCurrentProfileIndexWesson(Tier1Contract):
     reference = staticmethod(Physics.calculate_current_profile_index_wesson)
     ported = calculate_current_profile_index_wesson
 
-    samples = [
-        legacy_sample(
-            "calculate_current_profile_index_wesson-unit_test",
-            qstar=3.5,
-            q0=1.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -385,11 +319,6 @@ class TestCalculateInternalInductanceWesson(Tier1Contract):
     reference = staticmethod(_reference_ind_plasma_internal_norm_wesson)
     ported = calculate_internal_inductance_wesson
 
-    samples = [
-        legacy_sample(
-            "calculate_internal_inductance_wesson-unit_test",
-            alphaj=0.8,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

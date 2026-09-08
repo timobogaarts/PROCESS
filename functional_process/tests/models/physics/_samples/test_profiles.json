@@ -1,0 +1,488 @@
+{
+ "TestDensityProfile": [
+  {
+   "label": "baseline-2018-pedestal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1111111111111111,
+      0.2222222222222222,
+      0.3333333333333333,
+      0.4444444444444444,
+      0.5555555555555556,
+      0.6666666666666666,
+      0.7777777777777778,
+      0.8888888888888888,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_density_norm": 0.94,
+    "nd_plasma_electron_on_axis": 1.125e+20,
+    "nd_plasma_pedestal_electron": 6.1916268627398164e+19,
+    "nd_plasma_separatrix_electron": 3.6421334486704804e+19,
+    "alphan": 1.0
+   }
+  },
+  {
+   "label": "off-grid-pedestal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_density_norm": 0.85,
+    "nd_plasma_electron_on_axis": 1e+20,
+    "nd_plasma_pedestal_electron": 5e+19,
+    "nd_plasma_separatrix_electron": 2e+19,
+    "alphan": 1.3
+   }
+  }
+ ],
+ "TestDensityProfileLModeLimit": [
+  {
+   "label": "l-mode-reset-values",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_density_norm": 1.0,
+    "nd_plasma_electron_on_axis": 1.6e+20,
+    "nd_plasma_pedestal_electron": 0.0,
+    "nd_plasma_separatrix_electron": 0.0,
+    "alphan": 1.0
+   }
+  }
+ ],
+ "TestDensityProfileParabolicSwitch": [
+  {
+   "label": "baseline-2018-pedestal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1111111111111111,
+      0.2222222222222222,
+      0.3333333333333333,
+      0.4444444444444444,
+      0.5555555555555556,
+      0.6666666666666666,
+      0.7777777777777778,
+      0.8888888888888888,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_density_norm": 0.94,
+    "nd_plasma_electron_on_axis": 1.125e+20,
+    "nd_plasma_pedestal_electron": 6.1916268627398164e+19,
+    "nd_plasma_separatrix_electron": 3.6421334486704804e+19,
+    "alphan": 1.0
+   }
+  },
+  {
+   "label": "off-grid-pedestal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_density_norm": 0.85,
+    "nd_plasma_electron_on_axis": 1e+20,
+    "nd_plasma_pedestal_electron": 5e+19,
+    "nd_plasma_separatrix_electron": 2e+19,
+    "alphan": 1.3
+   }
+  }
+ ],
+ "TestGreenwaldDensityFractions": [
+  {
+   "label": "baseline-2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_pedestal_electron": 6.1916268627398164e+19,
+    "nd_plasma_separatrix_electron": 3.6421334486704804e+19,
+    "plasma_current": 15000000.0,
+    "rminor": 2.9264516129032256
+   }
+  }
+ ],
+ "TestIntegrateProfileY": [
+  {
+   "label": "density-like",
+   "provenance": "legacy",
+   "kwargs": {
+    "profile_y": {
+     "~array": [
+      8e+19,
+      7.936e+19,
+      7.744e+19,
+      7.424e+19,
+      6.976e+19,
+      6.4e+19,
+      5.696e+19,
+      4.863999999999999e+19,
+      3.903999999999999e+19,
+      2.8159999999999988e+19,
+      1.5999999999999996e+19
+     ],
+     "dtype": "float64"
+    },
+    "profile_x": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    }
+   }
+  },
+  {
+   "label": "non-uniform-grid",
+   "provenance": "legacy",
+   "kwargs": {
+    "profile_y": {
+     "~array": [
+      12.5,
+      12.392,
+      12.068,
+      11.527999999999999,
+      10.772,
+      9.8,
+      8.611999999999998,
+      7.207999999999999,
+      5.587999999999997,
+      3.751999999999999,
+      1.6999999999999997
+     ],
+     "dtype": "float64"
+    },
+    "profile_x": {
+     "~array": [
+      0.0,
+      0.0316227766016838,
+      0.0894427190999916,
+      0.16431676725154987,
+      0.2529822128134704,
+      0.3535533905932738,
+      0.4647580015448901,
+      0.5856620185738529,
+      0.7155417527999328,
+      0.8538149682454624,
+      1.0
+     ],
+     "dtype": "float64"
+    }
+   }
+  }
+ ],
+ "TestNcore": [
+  {
+   "label": "baseline-2018-ncore",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_density_norm": 0.94,
+    "nd_plasma_pedestal_electron": 5.830085138135222e+19,
+    "nd_plasma_separatrix_electron": 3.4294618459618943e+19,
+    "nd_plasma_electrons_vol_avg": 7.4321e+19,
+    "alphan": 1.0
+   }
+  },
+  {
+   "label": "floored-negative",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_density_norm": 0.94,
+    "nd_plasma_pedestal_electron": 2e+20,
+    "nd_plasma_separatrix_electron": 1e+20,
+    "nd_plasma_electrons_vol_avg": 1e+19,
+    "alphan": 1.0
+   }
+  }
+ ],
+ "TestParabolicOnAxisDensities": [
+  {
+   "label": "baseline-2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 7.983e+19,
+    "nd_plasma_ions_total_vol_avg": 6.946112574801786e+19,
+    "alphan": 1.0
+   }
+  }
+ ],
+ "TestParabolicOnAxisTemperatures": [
+  {
+   "label": "baseline-2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_plasma_electron_vol_avg_kev": 13.07,
+    "temp_plasma_ion_vol_avg_kev": 13.07,
+    "alphat": 1.45
+   }
+  }
+ ],
+ "TestParabolicTemperatureProfile": [
+  {
+   "label": "baseline-2018-parabolic",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "temp_plasma_electron_on_axis_kev": 27.370104119511087,
+    "alphat": 1.45
+   }
+  },
+  {
+   "label": "flat-profile",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "temp_plasma_electron_on_axis_kev": 12.0,
+    "alphat": 0.5
+   }
+  }
+ ],
+ "TestParabolicTemperatureProfileInterior": [
+  {
+   "label": "baseline-2018-parabolic-interior",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.09,
+      0.18,
+      0.27,
+      0.36,
+      0.44999999999999996,
+      0.54,
+      0.63,
+      0.72,
+      0.8099999999999999,
+      0.9
+     ],
+     "dtype": "float64"
+    },
+    "temp_plasma_electron_on_axis_kev": 27.370104119511087,
+    "alphat": 1.45
+   }
+  }
+ ],
+ "TestPedestalOnAxisDensities": [
+  {
+   "label": "baseline-2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_density_norm": 0.94,
+    "nd_plasma_pedestal_electron": 6.1916268627398164e+19,
+    "nd_plasma_separatrix_electron": 3.6421334486704804e+19,
+    "nd_plasma_electrons_vol_avg": 7.983e+19,
+    "nd_plasma_ions_total_vol_avg": 6.946112574801786e+19,
+    "alphan": 1.0
+   }
+  }
+ ],
+ "TestPedestalOnAxisTemperatures": [
+  {
+   "label": "baseline-2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_temp_norm": 0.94,
+    "temp_plasma_pedestal_kev": 5.5,
+    "temp_plasma_separatrix_kev": 0.1,
+    "temp_plasma_electron_vol_avg_kev": 13.07,
+    "temp_plasma_ion_vol_avg_kev": 13.07,
+    "alphat": 1.45,
+    "tbeta": 2.0
+   }
+  }
+ ],
+ "TestPedestalSeparatrixDensities": [
+  {
+   "label": "defaults",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_nd_plasma_pedestal_greenwald": 0.85,
+    "f_nd_plasma_separatrix_greenwald": 0.5,
+    "plasma_current": 15000000.0,
+    "rminor": 2.9264516129032256
+   }
+  }
+ ],
+ "TestPedestalTemperatureProfile": [
+  {
+   "label": "baseline-2018-pedestal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1111111111111111,
+      0.2222222222222222,
+      0.3333333333333333,
+      0.4444444444444444,
+      0.5555555555555556,
+      0.6666666666666666,
+      0.7777777777777778,
+      0.8888888888888888,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_temp_norm": 0.94,
+    "temp_plasma_electron_on_axis_kev": 27.370104119511087,
+    "temp_plasma_pedestal_kev": 5.5,
+    "temp_plasma_separatrix_kev": 0.1,
+    "alphat": 1.45,
+    "tbeta": 2.0
+   }
+  },
+  {
+   "label": "tbeta-not-two",
+   "provenance": "legacy",
+   "kwargs": {
+    "rho": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "radius_plasma_pedestal_temp_norm": 0.72,
+    "temp_plasma_electron_on_axis_kev": 22.0,
+    "temp_plasma_pedestal_kev": 4.0,
+    "temp_plasma_separatrix_kev": 0.15,
+    "alphat": 1.1,
+    "tbeta": 1.5
+   }
+  }
+ ],
+ "TestProfileGrid": [
+  {
+   "label": "default-201",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_plasma_profile_elements": 201
+   }
+  },
+  {
+   "label": "harness-11",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_plasma_profile_elements": 11
+   }
+  },
+  {
+   "label": "baseline-2018-10",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_plasma_profile_elements": 10
+   }
+  }
+ ],
+ "TestTcore": [
+  {
+   "label": "baseline-2018-tcore",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_temp_norm": 0.94,
+    "temp_plasma_pedestal_kev": 3.7775374842470044,
+    "temp_plasma_separatrix_kev": 0.1,
+    "temp_plasma_electron_vol_avg_kev": 12.33,
+    "alphat": 1.45,
+    "tbeta": 2.0
+   }
+  }
+ ]
+}

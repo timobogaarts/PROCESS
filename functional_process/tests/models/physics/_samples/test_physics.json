@@ -1,0 +1,807 @@
+{
+ "TestBetaLimitFromNorm": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.318322174646137,
+    "beta_norm_max": 5.027307537997152,
+    "plasma_current": 16091095.408042267,
+    "rminor": 2.6666666666666665
+   }
+  },
+  {
+   "label": "seed25-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 3.2500972652481095,
+    "beta_norm_max": 1.0021842461970256,
+    "plasma_current": 7281355.469421691,
+    "rminor": 2.156131836455744
+   }
+  },
+  {
+   "label": "seed25-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 1.0283669122002308,
+    "beta_norm_max": 2.351580162573208,
+    "plasma_current": 29735003.188367,
+    "rminor": 4.041204268218823
+   }
+  },
+  {
+   "label": "seed25-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 2.6979357831962685,
+    "beta_norm_max": 2.5803992064709407,
+    "plasma_current": 23237970.004945524,
+    "rminor": 4.625772050145461
+   }
+  },
+  {
+   "label": "seed25-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.953503999429751,
+    "beta_norm_max": 6.4999506704193175,
+    "plasma_current": 5254858.769784446,
+    "rminor": 2.937778506569804
+   }
+  },
+  {
+   "label": "seed25-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 9.356056253041427,
+    "beta_norm_max": 6.529305931884179,
+    "plasma_current": 9080335.979639247,
+    "rminor": 2.3613508010618354
+   }
+  }
+ ],
+ "TestBetaNormMaxWesson": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_plasma_internal_norm": 1.256826884499288
+   }
+  },
+  {
+   "label": "seed24-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "ind_plasma_internal_norm": 0.9954032550039731
+   }
+  },
+  {
+   "label": "seed24-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "ind_plasma_internal_norm": 1.1077659734587157
+   }
+  },
+  {
+   "label": "seed24-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "ind_plasma_internal_norm": 1.362106728990788
+   }
+  },
+  {
+   "label": "seed24-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "ind_plasma_internal_norm": 1.259599650905222
+   }
+  },
+  {
+   "label": "seed24-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "ind_plasma_internal_norm": 1.3463187611453762
+   }
+  }
+ ],
+ "TestContinuousPlantRampTimes": [
+  {
+   "label": "sauter-unit-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 16528278.760008097
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 19471888.932322174
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 8823814.699152239
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 2188232.194149646
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 1479301.4303273438
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 24584836.9368079
+   }
+  }
+ ],
+ "TestCoulombLogarithmIonElectron": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 7.675162157425027e+19,
+    "temp_plasma_electron_vol_avg_kev": 12.430016341290427
+   }
+  },
+  {
+   "label": "seed30-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 1.2554141435814108e+20,
+    "temp_plasma_electron_vol_avg_kev": 17.735172947966635
+   }
+  },
+  {
+   "label": "seed30-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 5.521377811111314e+19,
+    "temp_plasma_electron_vol_avg_kev": 24.1115075212337
+   }
+  },
+  {
+   "label": "seed30-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 3.935223532022974e+20,
+    "temp_plasma_electron_vol_avg_kev": 34.83554188616416
+   }
+  },
+  {
+   "label": "seed30-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 1.699628795392662e+20,
+    "temp_plasma_electron_vol_avg_kev": 5.273634496675323
+   }
+  },
+  {
+   "label": "seed30-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 2.0541664625201506e+20,
+    "temp_plasma_electron_vol_avg_kev": 24.072505063788814
+   }
+  }
+ ],
+ "TestForcePositiveSeparatrixPower": [
+  {
+   "label": "large-tokamak-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 164.6
+   }
+  },
+  {
+   "label": "inside-the-transform",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 0.5
+   }
+  },
+  {
+   "label": "negative-raw-power",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": -5.0
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 247.52390867501083
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 93.31041978082553
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": -2.7911199467982293
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": -13.05839307801778
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 321.57350046411443
+   }
+  }
+ ],
+ "TestPfluxPlasmaSurfaceNeutronAvgMw": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_neutron_total_mw": 1280.8441039331703,
+    "a_plasma_surface": 1173.8427771245592
+   }
+  },
+  {
+   "label": "seed31-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_neutron_total_mw": 2719.198251653095,
+    "a_plasma_surface": 296.266960848736
+   }
+  },
+  {
+   "label": "seed31-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_neutron_total_mw": 2050.9193608910564,
+    "a_plasma_surface": 1470.379647339786
+   }
+  },
+  {
+   "label": "seed31-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_neutron_total_mw": 2064.5405531225592,
+    "a_plasma_surface": 215.0083598033824
+   }
+  },
+  {
+   "label": "seed31-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_neutron_total_mw": 248.5116501654533,
+    "a_plasma_surface": 611.9374037753557
+   }
+  },
+  {
+   "label": "seed31-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "p_neutron_total_mw": 2938.1420096801257,
+    "a_plasma_surface": 976.2594392655375
+   }
+  }
+ ],
+ "TestPlasmaEnergyFromBeta": [
+  {
+   "label": "unit-test-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta": 0.02,
+    "b_field": 5.3,
+    "vol_plasma": 1000.0
+   }
+  },
+  {
+   "label": "large-tokamak-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta": 0.0357,
+    "b_field": 5.79,
+    "vol_plasma": 2077.5
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta": 0.024326899453054423,
+    "b_field": 4.237440565166444,
+    "vol_plasma": 684.3808577128761
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta": 0.0010863396804932524,
+    "b_field": 10.75924287040327,
+    "vol_plasma": 4607.400097749748
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta": 0.02089752286457996,
+    "b_field": 9.75395873180798,
+    "vol_plasma": 2946.312461594403
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta": 0.10834351665834788,
+    "b_field": 10.790242649458385,
+    "vol_plasma": 512.3232507656664
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta": 0.07341587035201254,
+    "b_field": 1.4030269036655723,
+    "vol_plasma": 3783.4495089347483
+   }
+  }
+ ],
+ "TestPlasmaOhmicHeating": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_c_plasma_inductive": 0.5757815563319303,
+    "kappa95": 1.6517857142857142,
+    "plasma_current": 16091095.408042267,
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "temp_plasma_electron_density_weighted_kev": 13.679755913174434,
+    "vol_plasma": 1888.171153995669,
+    "n_charge_plasma_effective_vol_avg": 2.528427557461356,
+    "plasma_res_factor": 0.7
+   }
+  }
+ ],
+ "TestPulsedPlantRampTimes": [
+  {
+   "label": "large-tokamak",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 18398455.678867526
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 19471888.932322174
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 8823814.699152239
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 2188232.194149646
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 1479301.4303273438
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "plasma_current": 24584836.9368079
+   }
+  }
+ ],
+ "TestSeparatrixPower": [
+  {
+   "label": "large-tokamak-non-ignited",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_alpha_total_mw": 396.0,
+    "p_non_alpha_charged_mw": 2.1,
+    "p_hcd_injected_total_mw": 50.0,
+    "p_plasma_ohmic_mw": 0.8,
+    "p_plasma_rad_mw": 234.3
+   }
+  },
+  {
+   "label": "radiation-dominated-negative",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_alpha_total_mw": 100.0,
+    "p_non_alpha_charged_mw": 0.5,
+    "p_hcd_injected_total_mw": 10.0,
+    "p_plasma_ohmic_mw": 0.5,
+    "p_plasma_rad_mw": 250.0
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.8184808436607272,
+    "p_alpha_total_mw": 252.34003532290274,
+    "p_non_alpha_charged_mw": 0.8194704787238938,
+    "p_hcd_injected_total_mw": 3.305527105705819,
+    "p_plasma_ohmic_mw": 4.066351196001362,
+    "p_plasma_rad_mw": 548.5257905938558
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.8033178878835899,
+    "p_alpha_total_mw": 597.1224207379988,
+    "p_non_alpha_charged_mw": 10.872499829308458,
+    "p_hcd_injected_total_mw": 187.01448475755365,
+    "p_plasma_ohmic_mw": 4.079267770607661,
+    "p_plasma_rad_mw": 11.615715100387376
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.9287021382937847,
+    "p_alpha_total_mw": 75.18918147909827,
+    "p_non_alpha_charged_mw": 14.59310892859888,
+    "p_hcd_injected_total_mw": 35.1311241205118,
+    "p_plasma_ohmic_mw": 4.315894611749433,
+    "p_plasma_rad_mw": 329.4621199469641
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.6498559452686924,
+    "p_alpha_total_mw": 367.0154158982438,
+    "p_non_alpha_charged_mw": 0.5663934229092593,
+    "p_hcd_injected_total_mw": 24.856655299912788,
+    "p_plasma_ohmic_mw": 3.3531220734681515,
+    "p_plasma_rad_mw": 391.8418118288076
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "f_p_alpha_plasma_deposited": 0.8076925557406269,
+    "p_alpha_total_mw": 337.75816569641256,
+    "p_non_alpha_charged_mw": 19.94419871578422,
+    "p_hcd_injected_total_mw": 196.16706775524602,
+    "p_plasma_ohmic_mw": 3.4277099224034737,
+    "p_plasma_rad_mw": 393.77097299801164
+   }
+  }
+ ],
+ "TestSurfaceAveragedPoloidalFieldAmperes": [
+  {
+   "label": "large-tokamak-ipdg89",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma": 18398455.678867526,
+    "len_plasma_poloidal": 24.081367139525412
+   }
+  },
+  {
+   "label": "iter-scaling-row",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma": 16000000.0,
+    "len_plasma_poloidal": 24.0
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "cur_plasma": 19471888.932322174,
+    "len_plasma_poloidal": 14.442534981735461
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "cur_plasma": 2188232.194149646,
+    "len_plasma_poloidal": 5.578467243498518
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "cur_plasma": 24584836.9368079,
+    "len_plasma_poloidal": 36.94644520472026
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "cur_plasma": 18592437.497248217,
+    "len_plasma_poloidal": 30.532379634439945
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "cur_plasma": 16765124.752497263,
+    "len_plasma_poloidal": 37.72753483257189
+   }
+  }
+ ],
+ "TestThermalBeta": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_total_vol_avg": 0.03230408815,
+    "beta_fast_alpha": 0.004435226148847,
+    "beta_beam": 0.0
+   }
+  },
+  {
+   "label": "seed27-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.10617175138913386,
+    "beta_fast_alpha": 0.006276285444448633,
+    "beta_beam": 0.002423941977232547
+   }
+  },
+  {
+   "label": "seed27-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.0519207706340485,
+    "beta_fast_alpha": 0.018624237307512673,
+    "beta_beam": 0.015793346265315814
+   }
+  },
+  {
+   "label": "seed27-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.006452772974245935,
+    "beta_fast_alpha": 0.003978664343729503,
+    "beta_beam": 0.005862273868724725
+   }
+  },
+  {
+   "label": "seed27-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.14179527818635748,
+    "beta_fast_alpha": 0.008068741105025519,
+    "beta_beam": 0.003636321931361386
+   }
+  },
+  {
+   "label": "seed27-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.12975624728995422,
+    "beta_fast_alpha": 0.018141402937507246,
+    "beta_beam": 0.006034959508713511
+   }
+  }
+ ],
+ "TestToroidalBeta": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_total_vol_avg": 0.03230408815,
+    "b_plasma_total": 5.384200494234166,
+    "b_plasma_toroidal_on_axis": 5.318322174646137
+   }
+  },
+  {
+   "label": "seed26-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.07628184305271114,
+    "b_plasma_total": 4.2815933352708315,
+    "b_plasma_toroidal_on_axis": 1.9465086146925656
+   }
+  },
+  {
+   "label": "seed26-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.10836443956290649,
+    "b_plasma_total": 12.383612819172164,
+    "b_plasma_toroidal_on_axis": 8.67671358418825
+   }
+  },
+  {
+   "label": "seed26-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.09697477662040542,
+    "b_plasma_total": 3.3687988206463375,
+    "b_plasma_toroidal_on_axis": 8.760644505026365
+   }
+  },
+  {
+   "label": "seed26-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.03049273519998389,
+    "b_plasma_total": 8.091959232136219,
+    "b_plasma_toroidal_on_axis": 5.788080798226111
+   }
+  },
+  {
+   "label": "seed26-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "beta_total_vol_avg": 0.14455061408542658,
+    "b_plasma_total": 8.276987819289829,
+    "b_plasma_toroidal_on_axis": 3.83305651089783
+   }
+  }
+ ],
+ "TestTotalRadiationPower": [
+  {
+   "label": "large-tokamak-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.1128,
+    "vol_plasma": 2077.5
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.081448869730761,
+    "vol_plasma": 1714.0402119374164
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.0013271517125308802,
+    "vol_plasma": 574.3743598783809
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.2753028565072983,
+    "vol_plasma": 4607.400097749748
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.06605524798050313,
+    "vol_plasma": 3782.7345244279927
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_rad_mw": 0.04274398161693902,
+    "vol_plasma": 4707.825907044957
+   }
+  }
+ ],
+ "TestUnclippedRadiationPowers": [
+  {
+   "label": "large-tokamak-scale",
+   "provenance": "legacy",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": 0.057544135593658154,
+    "pden_plasma_outer_rad_mw_unclipped": 0.05525606,
+    "vol_plasma": 2077.5
+   }
+  },
+  {
+   "label": "negative-core-density",
+   "provenance": "legacy",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": -0.004,
+    "pden_plasma_outer_rad_mw_unclipped": -0.001,
+    "vol_plasma": 2077.5
+   }
+  },
+  {
+   "label": "seed0-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": 0.3003289280267999,
+    "pden_plasma_outer_rad_mw_unclipped": 0.09838269257012867,
+    "vol_plasma": 684.3808577128761
+   }
+  },
+  {
+   "label": "seed0-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": -0.040909800459309004,
+    "pden_plasma_outer_rad_mw_unclipped": 0.3972986315601499,
+    "vol_plasma": 4607.400097749748
+   }
+  },
+  {
+   "label": "seed0-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": 0.28364967667194896,
+    "pden_plasma_outer_rad_mw_unclipped": 0.35122310854119915,
+    "vol_plasma": 2946.312461594403
+   }
+  },
+  {
+   "label": "seed0-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": 0.4642898330832726,
+    "pden_plasma_outer_rad_mw_unclipped": 0.39871945476684273,
+    "vol_plasma": 512.3232507656664
+   }
+  },
+  {
+   "label": "seed0-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "pden_plasma_core_rad_mw_unclipped": 0.4215723521231632,
+    "pden_plasma_outer_rad_mw_unclipped": -0.031527933581994606,
+    "vol_plasma": 3783.4495089347483
+   }
+  }
+ ]
+}

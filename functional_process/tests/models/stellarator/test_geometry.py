@@ -104,7 +104,8 @@ def _reference_stellarator_scaling_factors(
     stella_config_min_plasma_coil_distance,
 ):
     """Call PROCESS's `st_new_config` (`1 in ixc` branch -- `aspect` externally supplied)
-    through the port's signature."""
+    through the port's signature.
+    """
     data = _baseline_data()
     data.numerics.ixc = np.array([1])  # aspect IS an active iteration variable
     data.physics.rmajor = rmajor

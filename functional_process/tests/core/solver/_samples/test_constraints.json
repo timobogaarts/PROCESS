@@ -1,0 +1,1818 @@
+{
+ "TestConstraint1": [
+  {
+   "label": "balanced",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_fast_alpha": 0.002,
+    "beta_beam": 0.0005,
+    "nd_plasma_electrons_vol_avg": 7.5e+19,
+    "temp_plasma_electron_density_weighted_kev": 13.0,
+    "nd_plasma_ions_total_vol_avg": 7.2e+19,
+    "temp_plasma_ion_density_weighted_kev": 13.5,
+    "b_plasma_total": 5.0,
+    "beta_total_vol_avg": 0.03
+   }
+  },
+  {
+   "label": "low-field",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_fast_alpha": 0.001,
+    "beta_beam": 0.0,
+    "nd_plasma_electrons_vol_avg": 5e+19,
+    "temp_plasma_electron_density_weighted_kev": 10.0,
+    "nd_plasma_ions_total_vol_avg": 4.8e+19,
+    "temp_plasma_ion_density_weighted_kev": 10.5,
+    "b_plasma_total": 3.0,
+    "beta_total_vol_avg": 0.04
+   }
+  }
+ ],
+ "TestConstraint11": [
+  {
+   "label": "consistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "rbld": 8.0,
+    "rmajor": 8.0
+   }
+  },
+  {
+   "label": "inconsistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "rbld": 8.2,
+    "rmajor": 8.0
+   }
+  }
+ ],
+ "TestConstraint12": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_cs_pf_total_pulse": 120.0,
+    "vs_plasma_total_required": 100.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_cs_pf_total_pulse": 80.0,
+    "vs_plasma_total_required": 100.0
+   }
+  }
+ ],
+ "TestConstraint13": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_burn": 31557600.0,
+    "t_burn_min": 1000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_burn": 500.0,
+    "t_burn_min": 1000.0
+   }
+  }
+ ],
+ "TestConstraint14": [
+  {
+   "label": "consistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_beam_decay_lengths_core": 1.5,
+    "n_beam_decay_lengths_core_required": 1.5
+   }
+  },
+  {
+   "label": "inconsistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_beam_decay_lengths_core": 1.7,
+    "n_beam_decay_lengths_core_required": 1.5
+   }
+  }
+ ],
+ "TestConstraint15": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 50.0,
+    "p_l_h_threshold_mw": 40.0,
+    "f_h_mode_margin": 1.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 30.0,
+    "p_l_h_threshold_mw": 40.0,
+    "f_h_mode_margin": 1.2
+   }
+  }
+ ],
+ "TestConstraint16": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plant_electric_net_mw": 550.0,
+    "p_plant_electric_net_required_mw": 500.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plant_electric_net_mw": 450.0,
+    "p_plant_electric_net_required_mw": 500.0
+   }
+  }
+ ],
+ "TestConstraint17": [
+  {
+   "label": "tokamak",
+   "provenance": "legacy",
+   "kwargs": {
+    "istell": 0,
+    "f_p_plasma_separatrix_rad": 0.5,
+    "f_p_plasma_separatrix_rad_max": 0.85,
+    "psolradmw": 0.0,
+    "p_plasma_heating_total_mw": 300.0
+   }
+  },
+  {
+   "label": "stellarator-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "istell": 1,
+    "f_p_plasma_separatrix_rad": 0.6,
+    "f_p_plasma_separatrix_rad_max": 0.85,
+    "psolradmw": 30.0,
+    "p_plasma_heating_total_mw": 300.0
+   }
+  },
+  {
+   "label": "stellarator-infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "istell": 1,
+    "f_p_plasma_separatrix_rad": 0.95,
+    "f_p_plasma_separatrix_rad_max": 0.85,
+    "psolradmw": 10.0,
+    "p_plasma_heating_total_mw": 300.0
+   }
+  }
+ ],
+ "TestConstraint18": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_div_heat_load_mw": 8.0,
+    "pflux_div_heat_load_max_mw": 10.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_div_heat_load_mw": 12.0,
+    "pflux_div_heat_load_max_mw": 10.0
+   }
+  }
+ ],
+ "TestConstraint19": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_cp_resistive_mw": 10.0,
+    "p_tf_leg_resistive_mw": 5.0,
+    "mvalim": 40.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_cp_resistive_mw": 30.0,
+    "p_tf_leg_resistive_mw": 20.0,
+    "mvalim": 40.0
+   }
+  }
+ ],
+ "TestConstraint2": [
+  {
+   "label": "non-ignited-rad0",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 0,
+    "i_plasma_ignited": 0,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "pden_alpha_total_mw": 0.4,
+    "pden_non_alpha_charged_mw": 0.02,
+    "pden_plasma_ohmic_mw": 0.01,
+    "p_hcd_injected_total_mw": 50.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "non-ignited-rad1",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 1,
+    "i_plasma_ignited": 0,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "pden_alpha_total_mw": 0.4,
+    "pden_non_alpha_charged_mw": 0.02,
+    "pden_plasma_ohmic_mw": 0.01,
+    "p_hcd_injected_total_mw": 50.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "non-ignited-rad2",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 2,
+    "i_plasma_ignited": 0,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "pden_alpha_total_mw": 0.4,
+    "pden_non_alpha_charged_mw": 0.02,
+    "pden_plasma_ohmic_mw": 0.01,
+    "p_hcd_injected_total_mw": 50.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "ignited-rad0",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 0,
+    "i_plasma_ignited": 1,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "pden_alpha_total_mw": 0.4,
+    "pden_non_alpha_charged_mw": 0.02,
+    "pden_plasma_ohmic_mw": 0.01,
+    "p_hcd_injected_total_mw": 50.0,
+    "vol_plasma": 800.0
+   }
+  }
+ ],
+ "TestConstraint20": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_beam_tangency": 6.0,
+    "radius_beam_tangency_max": 8.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_beam_tangency": 9.0,
+    "radius_beam_tangency_max": 8.0
+   }
+  }
+ ],
+ "TestConstraint21": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.8,
+    "rminor_min": 0.25
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 0.1,
+    "rminor_min": 0.25
+   }
+  }
+ ],
+ "TestConstraint22": [
+  {
+   "label": "feasible-no-margin",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_l_h_threshold_mw": 50.0,
+    "f_l_mode_margin": 1.0,
+    "p_plasma_separatrix_mw": 40.0
+   }
+  },
+  {
+   "label": "infeasible-with-margin",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_l_h_threshold_mw": 50.0,
+    "f_l_mode_margin": 1.2,
+    "p_plasma_separatrix_mw": 45.0
+   }
+  }
+ ],
+ "TestConstraint23": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.8,
+    "dr_fw_plasma_gap_outboard": 0.05,
+    "dr_fw_outboard": 0.02,
+    "dr_blkt_outboard": 0.4,
+    "f_r_conducting_wall": 1.35
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.0,
+    "dr_fw_plasma_gap_outboard": 0.5,
+    "dr_fw_outboard": 0.5,
+    "dr_blkt_outboard": 0.9,
+    "f_r_conducting_wall": 1.05
+   }
+  }
+ ],
+ "TestConstraint24": [
+  {
+   "label": "total",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_beta_component": 0,
+    "istell": 0,
+    "beta_total_vol_avg": 0.03,
+    "beta_thermal_vol_avg": 0.025,
+    "beta_beam": 0.002,
+    "beta_toroidal_vol_avg": 0.028,
+    "beta_vol_avg_max": 0.05
+   }
+  },
+  {
+   "label": "thermal",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_beta_component": 1,
+    "istell": 0,
+    "beta_total_vol_avg": 0.03,
+    "beta_thermal_vol_avg": 0.025,
+    "beta_beam": 0.002,
+    "beta_toroidal_vol_avg": 0.028,
+    "beta_vol_avg_max": 0.05
+   }
+  },
+  {
+   "label": "thermal-and-beam",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_beta_component": 2,
+    "istell": 0,
+    "beta_total_vol_avg": 0.03,
+    "beta_thermal_vol_avg": 0.025,
+    "beta_beam": 0.002,
+    "beta_toroidal_vol_avg": 0.028,
+    "beta_vol_avg_max": 0.05
+   }
+  },
+  {
+   "label": "toroidal",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_beta_component": 3,
+    "istell": 0,
+    "beta_total_vol_avg": 0.03,
+    "beta_thermal_vol_avg": 0.025,
+    "beta_beam": 0.002,
+    "beta_toroidal_vol_avg": 0.028,
+    "beta_vol_avg_max": 0.05
+   }
+  },
+  {
+   "label": "stellarator-overrides-to-total",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_beta_component": 3,
+    "istell": 1,
+    "beta_total_vol_avg": 0.03,
+    "beta_thermal_vol_avg": 0.025,
+    "beta_beam": 0.002,
+    "beta_toroidal_vol_avg": 0.028,
+    "beta_vol_avg_max": 0.05
+   }
+  }
+ ],
+ "TestConstraint25": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_tf_inboard_peak_with_ripple": 10.0,
+    "b_tf_inboard_max": 12.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_tf_inboard_peak_with_ripple": 13.0,
+    "b_tf_inboard_max": 12.0
+   }
+  }
+ ],
+ "TestConstraint26": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_cs_flat_top_end": 15000000.0,
+    "j_cs_critical_flat_top_end": 25000000.0,
+    "fjohc": 0.7
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_cs_flat_top_end": 24000000.0,
+    "j_cs_critical_flat_top_end": 25000000.0,
+    "fjohc": 0.7
+   }
+  }
+ ],
+ "TestConstraint27": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_cs_pulse_start": 15000000.0,
+    "j_cs_critical_pulse_start": 25000000.0,
+    "fjohc0": 0.7
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_cs_pulse_start": 24000000.0,
+    "j_cs_critical_pulse_start": 25000000.0,
+    "fjohc0": 0.7
+   }
+  }
+ ],
+ "TestConstraint28": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "big_q_plasma": 15.0,
+    "big_q_plasma_min": 10.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "big_q_plasma": 5.0,
+    "big_q_plasma_min": 10.0
+   }
+  }
+ ],
+ "TestConstraint29": [
+  {
+   "label": "consistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "rinboard": 5.5
+   }
+  },
+  {
+   "label": "inconsistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "rinboard": 5.0
+   }
+  }
+ ],
+ "TestConstraint3": [
+  {
+   "label": "non-ignited",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_ion_electron_equilibration_mw": 0.03,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "f_pden_alpha_ions_mw": 0.15,
+    "p_hcd_injected_ions_mw": 20.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "ignited",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 1,
+    "pden_ion_transport_loss_mw": 0.25,
+    "pden_ion_electron_equilibration_mw": 0.03,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "f_pden_alpha_ions_mw": 0.15,
+    "p_hcd_injected_ions_mw": 20.0,
+    "vol_plasma": 800.0
+   }
+  }
+ ],
+ "TestConstraint30": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 80.0,
+    "p_hcd_injected_max": 150.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 200.0,
+    "p_hcd_injected_max": 150.0
+   }
+  }
+ ],
+ "TestConstraint31": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "sig_tf_case": 300000000.0,
+    "sig_tf_case_max": 600000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "sig_tf_case": 700000000.0,
+    "sig_tf_case_max": 600000000.0
+   }
+  },
+  {
+   "label": "stellarator-default",
+   "provenance": "legacy",
+   "kwargs": {
+    "sig_tf_case": 0.0,
+    "sig_tf_case_max": 600000000.0
+   }
+  }
+ ],
+ "TestConstraint32": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "sig_tf_wp": 300000000.0,
+    "sig_tf_wp_max": 600000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "sig_tf_wp": 700000000.0,
+    "sig_tf_wp_max": 600000000.0
+   }
+  }
+ ],
+ "TestConstraint33": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_tf_wp": 300000000.0,
+    "j_tf_wp_critical": 600000000.0,
+    "f_j_tf_wp_critical_max": 0.8
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_tf_wp": 550000000.0,
+    "j_tf_wp_critical": 600000000.0,
+    "f_j_tf_wp_critical_max": 0.8
+   }
+  }
+ ],
+ "TestConstraint34": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "v_tf_coil_dump_quench_kv": 5.0,
+    "v_tf_coil_dump_quench_max_kv": 10.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "v_tf_coil_dump_quench_kv": 15.0,
+    "v_tf_coil_dump_quench_max_kv": 10.0
+   }
+  }
+ ],
+ "TestConstraint35": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_tf_wp": 300000000.0,
+    "j_tf_wp_quench_heat_max": 600000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_tf_wp": 700000000.0,
+    "j_tf_wp_quench_heat_max": 600000000.0
+   }
+  }
+ ],
+ "TestConstraint36": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_tf_superconductor_margin": 1.5,
+    "temp_tf_superconductor_margin_min": 1.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_tf_superconductor_margin": 0.5,
+    "temp_tf_superconductor_margin_min": 1.0
+   }
+  }
+ ],
+ "TestConstraint37": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_hcd_primary": 0.3,
+    "eta_cd_norm_hcd_primary_max": 0.5
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "eta_cd_norm_hcd_primary": 0.7,
+    "eta_cd_norm_hcd_primary_max": 0.5
+   }
+  }
+ ],
+ "TestConstraint39": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_fw_peak": 550.0,
+    "temp_fw_max": 650.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_fw_peak": 700.0,
+    "temp_fw_max": 650.0
+   }
+  }
+ ],
+ "TestConstraint4": [
+  {
+   "label": "non-ignited-rad0",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 0,
+    "i_plasma_ignited": 0,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "f_pden_alpha_electron_mw": 0.25,
+    "pden_ion_electron_equilibration_mw": 0.03,
+    "p_hcd_injected_electrons_mw": 30.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "non-ignited-rad1",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 1,
+    "i_plasma_ignited": 0,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "f_pden_alpha_electron_mw": 0.25,
+    "pden_ion_electron_equilibration_mw": 0.03,
+    "p_hcd_injected_electrons_mw": 30.0,
+    "vol_plasma": 800.0
+   }
+  },
+  {
+   "label": "ignited-rad2",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_rad_loss": 2,
+    "i_plasma_ignited": 1,
+    "pden_electron_transport_loss_mw": 0.3,
+    "pden_plasma_rad_mw": 0.1,
+    "pden_plasma_core_rad_mw": 0.05,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "f_pden_alpha_electron_mw": 0.25,
+    "pden_ion_electron_equilibration_mw": 0.03,
+    "p_hcd_injected_electrons_mw": 30.0,
+    "vol_plasma": 800.0
+   }
+  }
+ ],
+ "TestConstraint40": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 60.0,
+    "p_hcd_injected_min_mw": 50.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 40.0,
+    "p_hcd_injected_min_mw": 50.0
+   }
+  }
+ ],
+ "TestConstraint41": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_plasma_current_ramp_up": 15.0,
+    "t_current_ramp_up_min": 10.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_plasma_current_ramp_up": 5.0,
+    "t_current_ramp_up_min": 10.0
+   }
+  }
+ ],
+ "TestConstraint42": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_total": 2000.0,
+    "t_cycle_min": 1800.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_total": 1500.0,
+    "t_cycle_min": 1800.0
+   }
+  }
+ ],
+ "TestConstraint43": [
+  {
+   "label": "superconducting-consistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 1,
+    "temp_cp_average": 350.0,
+    "tcpav2": 350.0
+   }
+  },
+  {
+   "label": "water-cooled-copper-consistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 0,
+    "temp_cp_average": 350.0,
+    "tcpav2": 350.0
+   }
+  },
+  {
+   "label": "inconsistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 1,
+    "temp_cp_average": 350.0,
+    "tcpav2": 360.0
+   }
+  }
+ ],
+ "TestConstraint44": [
+  {
+   "label": "superconducting-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 1,
+    "temp_cp_max": 650.0,
+    "temp_cp_peak": 600.0
+   }
+  },
+  {
+   "label": "water-cooled-copper-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 0,
+    "temp_cp_max": 650.0,
+    "temp_cp_peak": 600.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_sup": 1,
+    "temp_cp_max": 650.0,
+    "temp_cp_peak": 700.0
+   }
+  }
+ ],
+ "TestConstraint45": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "itart": 1,
+    "q95": 3.5,
+    "q95_min": 3.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "itart": 1,
+    "q95": 2.5,
+    "q95_min": 3.0
+   }
+  }
+ ],
+ "TestConstraint46": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "itart": 1,
+    "eps": 0.7,
+    "plasma_current": 10000000.0,
+    "c_tf_total": 30000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "itart": 1,
+    "eps": 0.9,
+    "plasma_current": 10000000.0,
+    "c_tf_total": 5000000.0
+   }
+  }
+ ],
+ "TestConstraint48": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_poloidal_vol_avg": 0.5,
+    "beta_poloidal_max": 1.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_poloidal_vol_avg": 1.2,
+    "beta_poloidal_max": 1.0
+   }
+  }
+ ],
+ "TestConstraint5": [
+  {
+   "label": "greenwald",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_density_limit": 7,
+    "nd_plasma_electron_line": 8e+19,
+    "nd_plasma_electrons_vol_avg": 7.5e+19,
+    "nd_plasma_electrons_max": 9e+19,
+    "f_nd_plasma_electron_limit_max": 1.0
+   }
+  },
+  {
+   "label": "asdex",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_density_limit": 1,
+    "nd_plasma_electron_line": 8e+19,
+    "nd_plasma_electrons_vol_avg": 7.5e+19,
+    "nd_plasma_electrons_max": 9e+19,
+    "f_nd_plasma_electron_limit_max": 1.0
+   }
+  }
+ ],
+ "TestConstraint51": [
+  {
+   "label": "matched",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_plasma_ramp_required": -120.0,
+    "vs_cs_pf_total_ramp": 120.0
+   }
+  },
+  {
+   "label": "mismatched",
+   "provenance": "legacy",
+   "kwargs": {
+    "vs_plasma_ramp_required": -100.0,
+    "vs_cs_pf_total_ramp": 120.0
+   }
+  }
+ ],
+ "TestConstraint53": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "flu_tf_neutron_fast_peak": 5e+22,
+    "flu_tf_neutron_fast_max": 1e+23
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "flu_tf_neutron_fast_peak": 1.5e+23,
+    "flu_tf_neutron_fast_max": 1e+23
+   }
+  }
+ ],
+ "TestConstraint54": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "ptfnucpm3": 0.0005,
+    "ptfnucmax": 0.001
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "ptfnucpm3": 0.002,
+    "ptfnucmax": 0.001
+   }
+  }
+ ],
+ "TestConstraint56": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_rmajor_mw": 8.0,
+    "p_plasma_separatrix_rmajor_max_mw": 17.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_rmajor_mw": 20.0,
+    "p_plasma_separatrix_rmajor_max_mw": 17.0
+   }
+  }
+ ],
+ "TestConstraint59": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_p_beam_shine_through": 0.005,
+    "f_p_beam_shine_through_max": 0.01
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_p_beam_shine_through": 0.02,
+    "f_p_beam_shine_through_max": 0.01
+   }
+  }
+ ],
+ "TestConstraint6": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_poloidal_eps": 0.5,
+    "beta_poloidal_eps_max": 1.38
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_poloidal_eps": 1.5,
+    "beta_poloidal_eps_max": 1.38
+   }
+  }
+ ],
+ "TestConstraint60": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_cs_superconductor_margin": 2.0,
+    "temp_cs_superconductor_margin_min": 1.5
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_cs_superconductor_margin": 1.0,
+    "temp_cs_superconductor_margin_min": 1.5
+   }
+  }
+ ],
+ "TestConstraint61": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_t_plant_available": 0.85,
+    "f_t_plant_available_min": 0.75
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_t_plant_available": 0.6,
+    "f_t_plant_available_min": 0.75
+   }
+  }
+ ],
+ "TestConstraint62": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_t_alpha_energy_confinement": 6.0,
+    "f_t_alpha_energy_confinement_min": 5.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_t_alpha_energy_confinement": 4.0,
+    "f_t_alpha_energy_confinement_min": 5.0
+   }
+  }
+ ],
+ "TestConstraint63": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_iter_vacuum_pumps": 30.0,
+    "n_tf_coils": 50.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_iter_vacuum_pumps": 60.0,
+    "n_tf_coils": 50.0
+   }
+  }
+ ],
+ "TestConstraint64": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_charge_plasma_effective_vol_avg": 1.8,
+    "n_charge_plasma_effective_vol_avg_max": 2.5
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_charge_plasma_effective_vol_avg": 3.0,
+    "n_charge_plasma_effective_vol_avg_max": 2.5
+   }
+  }
+ ],
+ "TestConstraint65": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "vv_stress_quench": 150000000.0,
+    "max_vv_stress": 200000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "vv_stress_quench": 250000000.0,
+    "max_vv_stress": 200000000.0
+   }
+  }
+ ],
+ "TestConstraint66": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "peakpoloidalpower": 150.0,
+    "maxpoloidalpower": 300.0
+   }
+  },
+  {
+   "label": "near-limit",
+   "provenance": "legacy",
+   "kwargs": {
+    "peakpoloidalpower": 295.0,
+    "maxpoloidalpower": 300.0
+   }
+  }
+ ],
+ "TestConstraint67": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_fw_rad_max_mw": 0.3,
+    "pflux_fw_rad_max": 0.5
+   }
+  },
+  {
+   "label": "near-limit",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_fw_rad_max_mw": 0.49,
+    "pflux_fw_rad_max": 0.5
+   }
+  }
+ ],
+ "TestConstraint68": [
+  {
+   "label": "fixed-q95",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_q95_fixed": 1,
+    "p_plasma_separatrix_mw": 100.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "q95": 3.5,
+    "q95_fixed": 3.0,
+    "aspect": 3.0,
+    "rmajor": 8.0,
+    "p_div_bt_q_aspect_rmajor_mw": 15.0,
+    "p_div_bt_q_aspect_rmajor_max_mw": 20.0
+   }
+  },
+  {
+   "label": "free-q95",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_q95_fixed": 0,
+    "p_plasma_separatrix_mw": 100.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "q95": 3.5,
+    "q95_fixed": 3.0,
+    "aspect": 3.0,
+    "rmajor": 8.0,
+    "p_div_bt_q_aspect_rmajor_mw": 15.0,
+    "p_div_bt_q_aspect_rmajor_max_mw": 20.0
+   }
+  }
+ ],
+ "TestConstraint7": [
+  {
+   "label": "matched",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "nd_beam_ions_out": 2e+18,
+    "nd_beam_ions": 2e+18
+   }
+  },
+  {
+   "label": "mismatched",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "nd_beam_ions_out": 1.5e+18,
+    "nd_beam_ions": 2e+18
+   }
+  }
+ ],
+ "TestConstraint72": [
+  {
+   "label": "bucked-and-wedged",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_bucking": 2,
+    "i_tf_inside_cs": 0,
+    "stress_shear_cs_peak": 500000000.0,
+    "sig_tf_cs_bucked": 550000000.0,
+    "stress_cs_steel_max": 660000000.0
+   }
+  },
+  {
+   "label": "free-standing",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_tf_bucking": 1,
+    "i_tf_inside_cs": 0,
+    "stress_shear_cs_peak": 500000000.0,
+    "sig_tf_cs_bucked": 550000000.0,
+    "stress_cs_steel_max": 660000000.0
+   }
+  }
+ ],
+ "TestConstraint73": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "p_l_h_threshold_mw": 60.0,
+    "p_hcd_injected_total_mw": 30.0
+   }
+  },
+  {
+   "label": "near-limit",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 91.0,
+    "p_l_h_threshold_mw": 60.0,
+    "p_hcd_injected_total_mw": 30.0
+   }
+  }
+ ],
+ "TestConstraint74": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_croco_quench": 250.0,
+    "temp_croco_quench_max": 300.0
+   }
+  },
+  {
+   "label": "near-limit",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_croco_quench": 298.0,
+    "temp_croco_quench_max": 300.0
+   }
+  }
+ ],
+ "TestConstraint75": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "coppera_m2": 100000000.0,
+    "tf_coppera_m2_max": 200000000.0
+   }
+  },
+  {
+   "label": "near-limit",
+   "provenance": "legacy",
+   "kwargs": {
+    "coppera_m2": 195000000.0,
+    "tf_coppera_m2_max": 200000000.0
+   }
+  }
+ ],
+ "TestConstraint76": [
+  {
+   "label": "typical",
+   "provenance": "legacy",
+   "kwargs": {
+    "kappa": 1.7,
+    "triang": 0.4,
+    "aspect": 3.0,
+    "p_plasma_separatrix_mw": 100.0,
+    "nd_plasma_electron_max_array_7": 1e+20,
+    "nd_plasma_separatrix_electron": 5e+19
+   }
+  },
+  {
+   "label": "high-elongation",
+   "provenance": "legacy",
+   "kwargs": {
+    "kappa": 2.2,
+    "triang": 0.6,
+    "aspect": 2.5,
+    "p_plasma_separatrix_mw": 150.0,
+    "nd_plasma_electron_max_array_7": 8e+19,
+    "nd_plasma_separatrix_electron": 6e+19
+   }
+  }
+ ],
+ "TestConstraint77": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "c_tf_turn": 60000.0,
+    "c_tf_turn_max": 90000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "c_tf_turn": 100000.0,
+    "c_tf_turn_max": 90000.0
+   }
+  }
+ ],
+ "TestConstraint78": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "fzactual": 0.0005,
+    "fzmin": 0.0003
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "fzactual": 0.0001,
+    "fzmin": 0.0003
+   }
+  }
+ ],
+ "TestConstraint79": [
+  {
+   "label": "feasible-flattop-larger",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak_flat_top_end": 12.0,
+    "b_cs_peak_pulse_start": 10.0,
+    "b_cs_limit_max": 13.0
+   }
+  },
+  {
+   "label": "feasible-pulsestart-larger",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak_flat_top_end": 8.0,
+    "b_cs_peak_pulse_start": 11.0,
+    "b_cs_limit_max": 13.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_cs_peak_flat_top_end": 14.0,
+    "b_cs_peak_pulse_start": 10.0,
+    "b_cs_limit_max": 13.0
+   }
+  }
+ ],
+ "TestConstraint8": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_fw_neutron_mw": 0.8,
+    "pflux_fw_neutron_max_mw": 1.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_fw_neutron_mw": 1.2,
+    "pflux_fw_neutron_max_mw": 1.0
+   }
+  }
+ ],
+ "TestConstraint80": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 180.0,
+    "p_plasma_separatrix_min_mw": 150.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "p_plasma_separatrix_min_mw": 150.0
+   }
+  }
+ ],
+ "TestConstraint81": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electron_on_axis": 1.1e+20,
+    "nd_plasma_pedestal_electron": 8e+19
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electron_on_axis": 6e+19,
+    "nd_plasma_pedestal_electron": 8e+19
+   }
+  }
+ ],
+ "TestConstraint82": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "toroidalgap": 0.5,
+    "dx_tf_inboard_out_toroidal": 0.3
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "toroidalgap": 0.2,
+    "dx_tf_inboard_out_toroidal": 0.4
+   }
+  }
+ ],
+ "TestConstraint83": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "available_radial_space": 2.5,
+    "required_radial_space": 2.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "available_radial_space": 1.5,
+    "required_radial_space": 2.0
+   }
+  }
+ ],
+ "TestConstraint84": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_total_vol_avg": 0.03,
+    "beta_vol_avg_min": 0.01
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "beta_total_vol_avg": 0.005,
+    "beta_vol_avg_min": 0.01
+   }
+  }
+ ],
+ "TestConstraint85": [
+  {
+   "label": "user-input",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_cp_lifetime": 0,
+    "cplife": 20.0,
+    "cplife_input": 2.0,
+    "life_div_fpy": 20.0,
+    "life_blkt_fpy": 25.0,
+    "life_plant": 30.0
+   }
+  },
+  {
+   "label": "divertor",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_cp_lifetime": 1,
+    "cplife": 20.0,
+    "cplife_input": 2.0,
+    "life_div_fpy": 20.0,
+    "life_blkt_fpy": 25.0,
+    "life_plant": 30.0
+   }
+  },
+  {
+   "label": "blanket",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_cp_lifetime": 2,
+    "cplife": 20.0,
+    "cplife_input": 2.0,
+    "life_div_fpy": 20.0,
+    "life_blkt_fpy": 25.0,
+    "life_plant": 30.0
+   }
+  },
+  {
+   "label": "plant",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_cp_lifetime": 3,
+    "cplife": 20.0,
+    "cplife_input": 2.0,
+    "life_div_fpy": 20.0,
+    "life_blkt_fpy": 25.0,
+    "life_plant": 30.0
+   }
+  }
+ ],
+ "TestConstraint86": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "dx_tf_turn_general": 0.03,
+    "t_turn_tf_max": 0.05
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "dx_tf_turn_general": 0.07,
+    "t_turn_tf_max": 0.05
+   }
+  }
+ ],
+ "TestConstraint87": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_cryo_plant_electric_mw": 30.0,
+    "p_cryo_plant_electric_max_mw": 50.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_cryo_plant_electric_mw": 60.0,
+    "p_cryo_plant_electric_max_mw": 50.0
+   }
+  }
+ ],
+ "TestConstraint88": [
+  {
+   "label": "feasible-positive",
+   "provenance": "legacy",
+   "kwargs": {
+    "str_wp": 0.003,
+    "str_wp_max": 0.005
+   }
+  },
+  {
+   "label": "feasible-negative",
+   "provenance": "legacy",
+   "kwargs": {
+    "str_wp": -0.004,
+    "str_wp_max": 0.005
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "str_wp": -0.006,
+    "str_wp_max": 0.005
+   }
+  }
+ ],
+ "TestConstraint89": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "copperaoh_m2": 50000000.0,
+    "copperaoh_m2_max": 100000000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "copperaoh_m2": 150000000.0,
+    "copperaoh_m2_max": 100000000.0
+   }
+  }
+ ],
+ "TestConstraint9": [
+  {
+   "label": "feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 2000.0,
+    "p_fusion_total_max_mw": 3000.0
+   }
+  },
+  {
+   "label": "infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 3500.0,
+    "p_fusion_total_max_mw": 3000.0
+   }
+  }
+ ],
+ "TestConstraint90": [
+  {
+   "label": "override-off-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cycle": 30000.0,
+    "n_cycle_min": 20000.0,
+    "ibkt_life": 0,
+    "bkt_life_csf": 0.0,
+    "bktcycles": 1000.0
+   }
+  },
+  {
+   "label": "override-off-infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cycle": 10000.0,
+    "n_cycle_min": 20000.0,
+    "ibkt_life": 0,
+    "bkt_life_csf": 0.0,
+    "bktcycles": 1000.0
+   }
+  },
+  {
+   "label": "override-on-uses-bktcycles",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cycle": 2000.0,
+    "n_cycle_min": 20000.0,
+    "ibkt_life": 1,
+    "bkt_life_csf": 1.0,
+    "bktcycles": 1000.0
+   }
+  },
+  {
+   "label": "override-half-on-no-effect",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_cycle": 2000.0,
+    "n_cycle_min": 20000.0,
+    "ibkt_life": 1,
+    "bkt_life_csf": 0.0,
+    "bktcycles": 1000.0
+   }
+  }
+ ],
+ "TestConstraint91": [
+  {
+   "label": "non-ignited-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "p_hcd_primary_extra_heat_mw": 5.0,
+    "powerht_constraint": 120.0,
+    "powerscaling_constraint": 100.0
+   }
+  },
+  {
+   "label": "ignited-feasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 1,
+    "p_hcd_primary_extra_heat_mw": 5.0,
+    "powerht_constraint": 120.0,
+    "powerscaling_constraint": 100.0
+   }
+  },
+  {
+   "label": "non-ignited-infeasible",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plasma_ignited": 0,
+    "p_hcd_primary_extra_heat_mw": 1.0,
+    "powerht_constraint": 10.0,
+    "powerscaling_constraint": 100.0
+   }
+  }
+ ],
+ "TestConstraint92": [
+  {
+   "label": "dt-only",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_deuterium": 0.5,
+    "f_plasma_fuel_tritium": 0.5,
+    "f_plasma_fuel_helium3": 0.0
+   }
+  },
+  {
+   "label": "dt-plus-he3",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_deuterium": 0.49,
+    "f_plasma_fuel_tritium": 0.49,
+    "f_plasma_fuel_helium3": 0.02
+   }
+  },
+  {
+   "label": "inconsistent",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_plasma_fuel_deuterium": 0.5,
+    "f_plasma_fuel_tritium": 0.4,
+    "f_plasma_fuel_helium3": 0.0
+   }
+  }
+ ]
+}

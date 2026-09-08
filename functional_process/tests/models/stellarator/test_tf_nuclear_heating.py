@@ -5,7 +5,8 @@ reference adapter pins `i_tf_sup` to that value rather than exposing it as a sam
 argument -- consistent with `switches.md`'s `i_tf_sup` split decision.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.tf_nuclear_heating import (
     calculate_sc_tf_coil_nuclear_heating,
 )
@@ -91,24 +92,6 @@ class TestScTfCoilNuclearHeating(Tier1Contract):
     # generated from a modified stellarator_helias.IN.DAT. tfsai/tfsao are both 0 in this
     # sample, which zeroes pheci/pheco/ptfiwp/ptfowp/p_tf_nuclear_heat_mw -- the fuzz
     # bounds below exercise the nonzero regime the legacy point can't.
-    samples = [
-        legacy_sample(
-            "sctfcoil-heating-helias",
-            dr_blkt_inboard=0.83499999999999996,
-            dr_blkt_outboard=1.085,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-            dr_shld_inboard=0.20000000000000001,
-            dr_shld_outboard=0.20000000000000001,
-            f_t_plant_available=0.75000000000000011,
-            life_plant=40,
-            pflux_fw_neutron_mw=0.61095969282042206,
-            dr_tf_plasma_case=0.050000000000000003,
-            tfsai=0,
-            tfsao=0,
-            dr_tf_wp_with_insulation=0.73180646211514355,
-            dx_tf_wp_insulation=0.01,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

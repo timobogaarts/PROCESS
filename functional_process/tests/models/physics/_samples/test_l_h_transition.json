@@ -1,0 +1,249 @@
+{
+ "TestHubbard2012Lower": [
+  {
+   "label": "hubbard2012_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 1000000.0,
+    "dnla20": 1.0
+   }
+  }
+ ],
+ "TestHubbard2012Nominal": [
+  {
+   "label": "hubbard2012_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 1000000.0,
+    "dnla20": 1.0
+   }
+  }
+ ],
+ "TestHubbard2012Upper": [
+  {
+   "label": "hubbard2012_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 1000000.0,
+    "dnla20": 1.0
+   }
+  }
+ ],
+ "TestHubbard2017": [
+  {
+   "label": "hubbard2017-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "a_plasma_surface": 100.0,
+    "b_plasma_toroidal_on_axis": 5.0
+   }
+  }
+ ],
+ "TestIter1996Lower": [
+  {
+   "label": "iter1996_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2
+   }
+  }
+ ],
+ "TestIter1996Nominal": [
+  {
+   "label": "iter1996_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2
+   }
+  }
+ ],
+ "TestIter1996Upper": [
+  {
+   "label": "iter1996_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2
+   }
+  }
+ ],
+ "TestMartin08AspectLower": [
+  {
+   "label": "martin08_aspect_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0,
+    "aspect": 2.5
+   }
+  }
+ ],
+ "TestMartin08AspectNominal": [
+  {
+   "label": "martin08_aspect_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0,
+    "aspect": 2.5
+   }
+  }
+ ],
+ "TestMartin08AspectUpper": [
+  {
+   "label": "martin08_aspect_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0,
+    "aspect": 2.5
+   }
+  }
+ ],
+ "TestMartin08Lower": [
+  {
+   "label": "martin08_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestMartin08Nominal": [
+  {
+   "label": "martin08_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestMartin08Upper": [
+  {
+   "label": "martin08_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "a_plasma_surface": 100.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes1997Iter": [
+  {
+   "label": "snipes1997_iter-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2
+   }
+  }
+ ],
+ "TestSnipes1997Kappa": [
+  {
+   "label": "snipes1997_kappa-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "kappa": 1.8
+   }
+  }
+ ],
+ "TestSnipes2000ClosedDivertorLower": [
+  {
+   "label": "snipes2000_closed_divertor_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes2000ClosedDivertorNominal": [
+  {
+   "label": "snipes2000_closed_divertor_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes2000ClosedDivertorUpper": [
+  {
+   "label": "snipes2000_closed_divertor_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes2000Lower": [
+  {
+   "label": "snipes2000_lower-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "rminor": 2.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes2000Nominal": [
+  {
+   "label": "snipes2000_nominal-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "rminor": 2.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ],
+ "TestSnipes2000Upper": [
+  {
+   "label": "snipes2000_upper-process-test",
+   "provenance": "legacy",
+   "kwargs": {
+    "dnla20": 1.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "rminor": 2.0,
+    "m_ions_total_amu": 2.0
+   }
+  }
+ ]
+}

@@ -32,9 +32,11 @@ guarantee than a poisoned argument, not a weaker one.
 """
 
 import functools
+
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.blankets.blanket_library import (
     apply_coverage_factors_double_null,
     apply_coverage_factors_single_null,
@@ -243,20 +245,7 @@ class TestBlktHalfHeightSingleNull(Tier1Contract):
     reference = _reference_blkt_half_height_single_null
     ported = calculate_blkt_half_height_single_null
 
-    samples = [
-        legacy_sample(
-            "half-height-large-tokamak",
-            z_plasma_xpoint_lower=4.93333333333333333,
-            dz_xpoint_divertor=2.0018838307941582,
-            dz_divertor=0.62000000000000011,
-            dz_blkt_upper=0.85000000000000009,
-            z_plasma_xpoint_upper=4.93333333333333333,
-            dr_fw_plasma_gap_inboard=0.25,
-            dr_fw_plasma_gap_outboard=0.25,
-            dr_fw_inboard=0.018000000000000002,
-            dr_fw_outboard=0.018000000000000002,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -273,15 +262,7 @@ class TestBlktHalfHeightDoubleNull(Tier1Contract):
     reference = _reference_blkt_half_height_double_null
     ported = calculate_blkt_half_height_double_null
 
-    samples = [
-        legacy_sample(
-            "half-height-double-null-large-tokamak",
-            z_plasma_xpoint_lower=4.93333333333333333,
-            dz_xpoint_divertor=2.0018838307941582,
-            dz_divertor=0.62000000000000011,
-            dz_blkt_upper=0.85000000000000009,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -298,22 +279,7 @@ class TestEllipticalBlktAreas(Tier1Contract):
     reference = _reference_elliptical_blkt_areas
     ported = calculate_elliptical_blkt_areas
 
-    samples = [
-        legacy_sample(
-            "areas-large-tokamak-eval",
-            rmajor=8,
-            rminor=2.6666666666666665,
-            triang=0.5,
-            r_shld_inboard_inner=4.0833333333333339,
-            dr_shld_inboard=0.30000000000000004,
-            dr_blkt_inboard=0.70000000000000007,
-            r_shld_outboard_outer=12.716666666666667,
-            dr_shld_outboard=0.80000000000000004,
-            dr_blkt_outboard=1,
-            dz_blkt_half=5.9532752487304119,
-        ),
-        legacy_sample("areas-reference-run", **_RUN_GEOMETRY),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _GEOMETRY_FUZZ
 
@@ -325,23 +291,7 @@ class TestEllipticalBlktVolumes(Tier1Contract):
     reference = _reference_elliptical_blkt_volumes
     ported = calculate_elliptical_blkt_volumes
 
-    samples = [
-        legacy_sample(
-            "volumes-large-tokamak-eval",
-            rmajor=8,
-            rminor=2.6666666666666665,
-            triang=0.5,
-            r_shld_inboard_inner=4.0833333333333339,
-            dr_shld_inboard=0.30000000000000004,
-            dr_blkt_inboard=0.70000000000000007,
-            r_shld_outboard_outer=12.716666666666667,
-            dr_shld_outboard=0.80000000000000004,
-            dr_blkt_outboard=1,
-            dz_blkt_half=5.9532752487304119,
-            dz_blkt_upper=0.85000000000000009,
-        ),
-        legacy_sample("volumes-reference-run", **_RUN_GEOMETRY, dz_blkt_upper=0.85),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {**_GEOMETRY_FUZZ, "dz_blkt_upper": (0.5, 1.2)}
 
@@ -360,26 +310,7 @@ class TestApplyCoverageFactorsSingleNull(Tier1Contract):
     reference = _reference_apply_coverage_factors_single_null
     ported = apply_coverage_factors_single_null
 
-    samples = [
-        legacy_sample(
-            "coverage-large-tokamak-eval",
-            a_blkt_total_surface_full_coverage=1766.3354109399943,
-            a_blkt_inboard_surface_full_coverage=664.9687712975541,
-            f_ster_div_single=0.115,
-            f_a_fw_outboard_hcd=0,
-            vol_blkt_total_full_coverage=1336.207205897842,
-            vol_blkt_inboard_full_coverage=315.83946385183026,
-        ),
-        legacy_sample(
-            "coverage-reference-run",
-            a_blkt_total_surface_full_coverage=1766.3354109399945,
-            a_blkt_inboard_surface_full_coverage=663.622172160947,
-            f_ster_div_single=0.0725040362777958,
-            f_a_fw_outboard_hcd=0.0,
-            vol_blkt_total_full_coverage=1338.8701833977761,
-            vol_blkt_inboard_full_coverage=315.9239262058935,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _COVERAGE_FUZZ
 
@@ -398,26 +329,7 @@ class TestApplyCoverageFactorsDoubleNull(Tier1Contract):
     reference = _reference_apply_coverage_factors_double_null
     ported = apply_coverage_factors_double_null
 
-    samples = [
-        legacy_sample(
-            "coverage-double-null-large-tokamak-eval",
-            a_blkt_total_surface_full_coverage=1766.3354109399943,
-            a_blkt_inboard_surface_full_coverage=664.9687712975541,
-            f_ster_div_single=0.115,
-            f_a_fw_outboard_hcd=0,
-            vol_blkt_total_full_coverage=1336.207205897842,
-            vol_blkt_inboard_full_coverage=315.83946385183026,
-        ),
-        legacy_sample(
-            "coverage-double-null-reference-run",
-            a_blkt_total_surface_full_coverage=1766.3354109399945,
-            a_blkt_inboard_surface_full_coverage=663.622172160947,
-            f_ster_div_single=0.0725040362777958,
-            f_a_fw_outboard_hcd=0.0,
-            vol_blkt_total_full_coverage=1338.8701833977761,
-            vol_blkt_inboard_full_coverage=315.9239262058935,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _COVERAGE_FUZZ
 
@@ -491,13 +403,6 @@ class TestBlktInboardPoloidalPlasmaAngle(Tier1Contract):
     )
     ported = calculate_blkt_inboard_poloidal_plasma_angle
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            rminor=2.6666666666666665,
-            dz_blkt_half=5.953275248730413,
-            dr_fw_plasma_gap_inboard=0.25,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

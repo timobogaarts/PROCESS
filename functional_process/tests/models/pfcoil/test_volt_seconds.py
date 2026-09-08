@@ -23,7 +23,8 @@ circuits' turn currents, whose volt-second totals are the
 import jax.numpy as jnp
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import (
     N_CS_PF_COILS,
     NGC2,
@@ -147,13 +148,7 @@ class TestCalculatePfCsVoltSeconds(Tier1Contract):
     reference = _reference_pf_cs_volt_seconds
     ported = _ported_pf_cs_volt_seconds
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            ind_plasma_row=_IND_PLASMA_ROW,
-            c_pf_coil_turn_rows=_C_TURN_ROWS,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "ind_plasma_row": _around(_IND_PLASMA_ROW, 0.20),
@@ -265,13 +260,7 @@ class TestCalculatePfVoltSecondsNoCentralSolenoid(Tier1Contract):
     reference = _reference_pf_volt_seconds_no_central_solenoid
     ported = _ported_pf_volt_seconds_no_central_solenoid
 
-    samples = [
-        legacy_sample(
-            "spherical-tokamak-plausible",
-            ind_plasma_row=_ST_IND_PLASMA_ROW,
-            c_pf_coil_turn_rows=_ST_C_TURN_ROWS,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "ind_plasma_row": _around(_ST_IND_PLASMA_ROW, 0.20),

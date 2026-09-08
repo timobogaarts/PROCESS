@@ -1,0 +1,45 @@
+{
+ "TestDefaultAspectRatio": [
+  {
+   "label": "default-aspect-helias5b",
+   "provenance": "legacy",
+   "kwargs": {
+    "stella_config_aspect_ref": 12.33
+   }
+  }
+ ],
+ "TestStellaratorPlasmaGeometry": [
+  {
+   "label": "stgeom-helias5b",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_st_rmajor": 0.990990990990991,
+    "f_st_rminor": 0.9912588988014779,
+    "rminor": 1.7842660178426601,
+    "stella_config_vol_plasma": 1422.63,
+    "stella_config_plasma_surface": 1960
+   }
+  }
+ ],
+ "TestStellaratorScalingFactors": [
+  {
+   "label": "scaling-helias5b",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 22.0,
+    "aspect": 12.33,
+    "b_plasma_toroidal_on_axis": 5.6,
+    "f_st_coil_aspect": 1.0,
+    "stella_config_coilspermodule": 10,
+    "stella_config_symmetry": 5,
+    "stella_config_rmajor_ref": 22.2,
+    "stella_config_rminor_ref": 1.8,
+    "stella_config_aspect_ref": 12.33,
+    "stella_config_bt_ref": 5.6,
+    "stella_config_coil_rmajor": 22.44,
+    "stella_config_coil_rminor": 4.76,
+    "stella_config_min_plasma_coil_distance": 1.9
+   }
+  }
+ ]
+}

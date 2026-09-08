@@ -14,10 +14,11 @@ than just checking the port agrees with itself.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.plasma_physics import (
-    calculate_fusion_power_totals_mw,
     calculate_clipped_radiation_powers,
+    calculate_fusion_power_totals_mw,
     calculate_fusion_totals_no_beam,
     calculate_heating_and_radiation_power,
     calculate_neutron_wall_load,
@@ -40,21 +41,7 @@ class TestTotalField(Tier1Contract):
     reference = _reference_total_field
     ported = calculate_total_field
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            b_plasma_toroidal_on_axis=5.5,
-            b_plasma_surface_poloidal_average=0.6,
-        ),
-        *fuzz_samples(
-            {
-                "b_plasma_toroidal_on_axis": (2.0, 12.0),
-                "b_plasma_surface_poloidal_average": (0.05, 2.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_poloidal_field_from_rotational_transform(
@@ -69,25 +56,7 @@ class TestPoloidalFieldFromRotationalTransform(Tier1Contract):
     reference = _reference_poloidal_field_from_rotational_transform
     ported = calculate_poloidal_field_from_rotational_transform
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            rminor=1.7842660178426601,
-            b_plasma_toroidal_on_axis=5.5,
-            rmajor=22.0,
-            iotabar=1.0,
-        ),
-        *fuzz_samples(
-            {
-                "rminor": (0.3, 5.0),
-                "b_plasma_toroidal_on_axis": (2.0, 12.0),
-                "rmajor": (3.0, 30.0),
-                "iotabar": (0.1, 2.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_stellarator_beta_and_rho_star(
@@ -141,43 +110,7 @@ class TestStellaratorBetaAndRhoStar(Tier1Contract):
     reference = _reference_stellarator_beta_and_rho_star
     ported = calculate_stellarator_beta_and_rho_star
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            beta_fast_alpha=0.001,
-            beta_beam=0.0005,
-            nd_plasma_electrons_vol_avg=7.5e19,
-            temp_plasma_electron_density_weighted_kev=13.0,
-            nd_plasma_ions_total_vol_avg=6.6e19,
-            temp_plasma_ion_density_weighted_kev=13.0,
-            b_plasma_total=5.5327,
-            vol_plasma=1400.0,
-            m_ions_total_amu=2.5,
-            nd_plasma_electron_line=2.357822619799476e20,
-            b_plasma_toroidal_on_axis=5.5,
-            eps=0.0811,
-            rmajor=22.0,
-        ),
-        *fuzz_samples(
-            {
-                "beta_fast_alpha": (0.0001, 0.05),
-                "beta_beam": (0.0, 0.02),
-                "nd_plasma_electrons_vol_avg": (2.0e19, 1.0e21),
-                "temp_plasma_electron_density_weighted_kev": (1.0, 30.0),
-                "nd_plasma_ions_total_vol_avg": (1.0e19, 1.0e21),
-                "temp_plasma_ion_density_weighted_kev": (1.0, 30.0),
-                "b_plasma_total": (1.0, 15.0),
-                "vol_plasma": (100.0, 3000.0),
-                "m_ions_total_amu": (1.0, 3.0),
-                "nd_plasma_electron_line": (2.0e19, 1.0e21),
-                "b_plasma_toroidal_on_axis": (2.0, 12.0),
-                "eps": (0.02, 0.3),
-                "rmajor": (3.0, 30.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_fusion_power_totals_mw(
@@ -196,25 +129,7 @@ class TestFusionPowerTotalsMw(Tier1Contract):
     reference = _reference_fusion_power_totals_mw
     ported = calculate_fusion_power_totals_mw
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            dt_power_density_plasma=0.5,
-            dhe3_power_density=0.0,
-            dd_power_density=0.01,
-            vol_plasma=1400.0,
-        ),
-        *fuzz_samples(
-            {
-                "dt_power_density_plasma": (0.0, 2.0),
-                "dhe3_power_density": (0.0, 1.0),
-                "dd_power_density": (0.0, 0.5),
-                "vol_plasma": (100.0, 3000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_fusion_totals_no_beam(fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw):
@@ -227,30 +142,15 @@ class TestFusionTotalsNoBeam(Tier1Contract):
     reference = _reference_fusion_totals_no_beam
     ported = calculate_fusion_totals_no_beam
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            fusden_plasma=1.2e18,
-            fusden_plasma_alpha=1.1e18,
-            p_plasma_dt_mw=700.0,
-        ),
-        *fuzz_samples(
-            {
-                "fusden_plasma": (1.0e16, 1.0e20),
-                "fusden_plasma_alpha": (1.0e16, 1.0e20),
-                "p_plasma_dt_mw": (0.0, 3000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_clipped_radiation_powers(
     pden_plasma_core_rad_mw_unclipped, pden_plasma_outer_rad_mw_unclipped, vol_plasma
 ):
     """`stellarator.py:2152-2166`, transcribed from source: two `max(..., 0.0)` clips
-    and the two products formed from the clipped values."""
+    and the two products formed from the clipped values.
+    """
     core = max(pden_plasma_core_rad_mw_unclipped, 0.0)
     outer = max(pden_plasma_outer_rad_mw_unclipped, 0.0)
     return core, outer, core * vol_plasma, outer * vol_plasma
@@ -261,33 +161,7 @@ class TestClippedRadiationPowers(Tier1Contract):
     reference = _reference_clipped_radiation_powers
     ported = calculate_clipped_radiation_powers
 
-    samples = [
-        legacy_sample(
-            "clip-inactive-helias",
-            pden_plasma_core_rad_mw_unclipped=0.057544135593658154,
-            pden_plasma_outer_rad_mw_unclipped=0.05525606,
-            vol_plasma=2475.6886164316024,
-        ),
-        # The clip's *active* side, which this run never reaches. Kept because the whole
-        # reason this block is its own node is that PROCESS clips here and does not clip
-        # at `calculate_radiation_powers`'s other call site -- an arm that is only ever
-        # exercised by a sample.
-        legacy_sample(
-            "clip-active-negative-core",
-            pden_plasma_core_rad_mw_unclipped=-0.01,
-            pden_plasma_outer_rad_mw_unclipped=-0.002,
-            vol_plasma=1400.0,
-        ),
-        *fuzz_samples(
-            {
-                "pden_plasma_core_rad_mw_unclipped": (-0.05, 0.5),
-                "pden_plasma_outer_rad_mw_unclipped": (-0.05, 0.5),
-                "vol_plasma": (100.0, 3000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_neutron_wall_load(
@@ -332,76 +206,19 @@ class TestNeutronWallLoadDirect(Tier1Contract):
     ported = calculate_neutron_wall_load
     static_argnames = ("i_pflux_fw_neutron", "ipowerflow")
 
-    samples = [
-        legacy_sample(
-            "direct-branch",
-            i_pflux_fw_neutron=1,
-            ipowerflow=1,
-            ffwal=0.9,
-            p_neutron_total_mw=1500.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=1918.87696696527,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.115,
-        ),
-        *fuzz_samples(
-            _NEUTRON_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=0,
-            fixed={"i_pflux_fw_neutron": 1, "ipowerflow": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestNeutronWallLoadSimplePowerflow(TestNeutronWallLoadDirect):
     """`i_pflux_fw_neutron == 0`, `ipowerflow == 0` branch."""
 
-    samples = [
-        legacy_sample(
-            "simple-powerflow-branch",
-            i_pflux_fw_neutron=0,
-            ipowerflow=0,
-            ffwal=0.9,
-            p_neutron_total_mw=1500.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=1918.87696696527,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.115,
-        ),
-        *fuzz_samples(
-            _NEUTRON_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=1,
-            fixed={"i_pflux_fw_neutron": 0, "ipowerflow": 0},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestNeutronWallLoadDetailedPowerflow(TestNeutronWallLoadDirect):
     """`i_pflux_fw_neutron == 0`, `ipowerflow != 0` branch."""
 
-    samples = [
-        legacy_sample(
-            "detailed-powerflow-branch",
-            i_pflux_fw_neutron=0,
-            ipowerflow=1,
-            ffwal=0.9,
-            p_neutron_total_mw=1500.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=2120.685245576686,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.021924555536480182,
-        ),
-        *fuzz_samples(
-            _NEUTRON_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=2,
-            fixed={"i_pflux_fw_neutron": 0, "ipowerflow": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_heating_and_radiation_power(
@@ -461,51 +278,13 @@ class TestHeatingAndRadiationPowerNonIgnited(Tier1Contract):
     ported = calculate_heating_and_radiation_power
     static_argnames = ("i_plasma_ignited",)
 
-    samples = [
-        legacy_sample(
-            "non-ignited",
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=400.0,
-            p_non_alpha_charged_mw=20.0,
-            p_plasma_ohmic_mw=0.0,
-            pden_plasma_rad_mw=0.3,
-            vol_plasma=1400.0,
-            i_plasma_ignited=0,
-            p_hcd_injected_total_mw=50.0,
-            f_rad=0.85,
-        ),
-        *fuzz_samples(
-            _HEATING_AND_RADIATION_POWER_FUZZ_BOUNDS,
-            count=5,
-            seed=0,
-            fixed={"i_plasma_ignited": 0},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestHeatingAndRadiationPowerIgnited(TestHeatingAndRadiationPowerNonIgnited):
     """`i_plasma_ignited == 1` (IGNITED): no auxiliary power added."""
 
-    samples = [
-        legacy_sample(
-            "ignited",
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=400.0,
-            p_non_alpha_charged_mw=20.0,
-            p_plasma_ohmic_mw=0.0,
-            pden_plasma_rad_mw=0.3,
-            vol_plasma=1400.0,
-            i_plasma_ignited=1,
-            p_hcd_injected_total_mw=0.0,
-            f_rad=0.85,
-        ),
-        *fuzz_samples(
-            _HEATING_AND_RADIATION_POWER_FUZZ_BOUNDS,
-            count=5,
-            seed=1,
-            fixed={"i_plasma_ignited": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_radiated_wall_load_and_fraction(
@@ -574,32 +353,7 @@ class TestRadiatedWallLoadAndFractionDirect(Tier1Contract):
     ported = calculate_radiated_wall_load_and_fraction
     static_argnames = ("i_pflux_fw_neutron", "ipowerflow")
 
-    samples = [
-        legacy_sample(
-            "direct-branch",
-            i_pflux_fw_neutron=1,
-            ipowerflow=1,
-            ffwal=0.9,
-            p_plasma_rad_mw=350.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=1918.87696696527,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.115,
-            f_fw_rad_max=3.33,
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=400.0,
-            p_non_alpha_charged_mw=20.0,
-            p_plasma_ohmic_mw=0.0,
-            p_hcd_injected_total_mw=50.0,
-        ),
-        *fuzz_samples(
-            _RADIATED_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=0,
-            fixed={"i_pflux_fw_neutron": 1, "ipowerflow": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestRadiatedWallLoadAndFractionSimplePowerflow(
@@ -607,32 +361,7 @@ class TestRadiatedWallLoadAndFractionSimplePowerflow(
 ):
     """`i_pflux_fw_neutron == 0`, `ipowerflow == 0` branch."""
 
-    samples = [
-        legacy_sample(
-            "simple-powerflow-branch",
-            i_pflux_fw_neutron=0,
-            ipowerflow=0,
-            ffwal=0.9,
-            p_plasma_rad_mw=350.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=1918.87696696527,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.115,
-            f_fw_rad_max=3.33,
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=400.0,
-            p_non_alpha_charged_mw=20.0,
-            p_plasma_ohmic_mw=0.0,
-            p_hcd_injected_total_mw=50.0,
-        ),
-        *fuzz_samples(
-            _RADIATED_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=1,
-            fixed={"i_pflux_fw_neutron": 0, "ipowerflow": 0},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestRadiatedWallLoadAndFractionDetailedPowerflow(
@@ -640,32 +369,7 @@ class TestRadiatedWallLoadAndFractionDetailedPowerflow(
 ):
     """`i_pflux_fw_neutron == 0`, `ipowerflow != 0` branch."""
 
-    samples = [
-        legacy_sample(
-            "detailed-powerflow-branch",
-            i_pflux_fw_neutron=0,
-            ipowerflow=1,
-            ffwal=0.9,
-            p_plasma_rad_mw=350.0,
-            a_plasma_surface=1925.3641313657533,
-            fhole=0.0,
-            a_fw_total=2120.685245576686,
-            f_a_fw_outboard_hcd=0.0,
-            f_ster_div_single=0.021924555536480182,
-            f_fw_rad_max=3.33,
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=400.0,
-            p_non_alpha_charged_mw=20.0,
-            p_plasma_ohmic_mw=0.0,
-            p_hcd_injected_total_mw=50.0,
-        ),
-        *fuzz_samples(
-            _RADIATED_WALL_LOAD_FUZZ_BOUNDS,
-            count=5,
-            seed=2,
-            fixed={"i_pflux_fw_neutron": 0, "ipowerflow": 1},
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_thermal_energy_totals(
@@ -686,22 +390,4 @@ class TestThermalEnergyTotals(Tier1Contract):
     reference = _reference_thermal_energy_totals
     ported = calculate_thermal_energy_totals
 
-    samples = [
-        legacy_sample(
-            "typical-helias",
-            eden_plasma_electrons_thermal_vol_avg=2.34e5,
-            eden_plasma_ions_thermal_vol_avg=2.0e5,
-            e_plasma_electrons_thermal=3.28e8,
-            e_plasma_ions_thermal=2.8e8,
-        ),
-        *fuzz_samples(
-            {
-                "eden_plasma_electrons_thermal_vol_avg": (1.0e4, 1.0e6),
-                "eden_plasma_ions_thermal_vol_avg": (1.0e4, 1.0e6),
-                "e_plasma_electrons_thermal": (1.0e6, 1.0e10),
-                "e_plasma_ions_thermal": (1.0e6, 1.0e10),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE

@@ -1,0 +1,463 @@
+{
+ "TestAvail": [
+  {
+   "label": "avail-user-input-fluence",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 4000.0,
+    "life_fw_fpy": 1e-07,
+    "abktflnc": 4.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 40.0,
+    "life_plant": 30.0,
+    "pflux_div_heat_load_mw": 10.0,
+    "adivflnc": 8.0,
+    "t_plant_pulse_total": 5.0,
+    "t_plant_pulse_burn": 500.0,
+    "f_t_plant_available": 0.8,
+    "cplife": 30.0,
+    "cplife_in": 30.0,
+    "ibkt_life": 0,
+    "itart": 0
+   }
+  },
+  {
+   "label": "avail-user-input-demo",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 4000.0,
+    "life_fw_fpy": 1.0,
+    "abktflnc": 4.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 40.0,
+    "life_plant": 30.0,
+    "pflux_div_heat_load_mw": 10.0,
+    "adivflnc": 8.0,
+    "t_plant_pulse_total": 5.0,
+    "t_plant_pulse_burn": 500.0,
+    "f_t_plant_available": 0.8,
+    "cplife": 30.0,
+    "cplife_in": 30.0,
+    "ibkt_life": 1,
+    "itart": 0
+   }
+  }
+ ],
+ "TestAvail2": [
+  {
+   "label": "avail-2-nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 3500.0,
+    "abktflnc": 5.0,
+    "pflux_fw_neutron_mw": 1.2,
+    "life_dpa": 50.0,
+    "adivflnc": 7.0,
+    "pflux_div_heat_load_mw": 5.0,
+    "life_plant": 30.0,
+    "num_rh_systems": 3.0,
+    "temp_tf_superconductor_margin_min": 1.5,
+    "temp_cs_superconductor_margin_min": 1.5,
+    "conf_mag": 1.0,
+    "temp_margin": 2.0,
+    "div_prob_fail": 0.0002,
+    "div_umain_time": 0.25,
+    "div_nu": 14000.0,
+    "div_nref": 7000.0,
+    "fwbs_prob_fail": 0.0002,
+    "fwbs_umain_time": 0.25,
+    "fwbs_nu": 40000.0,
+    "fwbs_nref": 20000.0,
+    "n_vac_pumps_high": 12,
+    "redun_vac": 3,
+    "t_plant_pulse_burn": 800.0,
+    "t_plant_pulse_total": 500000.0,
+    "cplife": 11.0,
+    "cplife_in": 11.0,
+    "ibkt_life": 0,
+    "itart": 0
+   }
+  }
+ ],
+ "TestAvailSt": [
+  {
+   "label": "avail-st-nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "abktflnc": 10.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 50.0,
+    "p_fusion_total_mw": 0.0,
+    "adivflnc": 15.0,
+    "pflux_div_heat_load_mw": 10.0,
+    "life_plant": 30.0,
+    "tmain": 1.0,
+    "temp_tf_superconductor_margin_min": 1.5,
+    "temp_cs_superconductor_margin_min": 1.5,
+    "conf_mag": 1.0,
+    "temp_margin": 2.0,
+    "div_prob_fail": 0.0002,
+    "div_umain_time": 0.25,
+    "div_nu": 14000.0,
+    "div_nref": 7000.0,
+    "fwbs_prob_fail": 0.0002,
+    "fwbs_umain_time": 0.25,
+    "fwbs_nu": 40000.0,
+    "fwbs_nref": 20000.0,
+    "num_rh_systems": 5.0,
+    "n_vac_pumps_high": 0,
+    "redun_vac": 0,
+    "u_unplanned_cp": 0.05,
+    "t_plant_pulse_burn": 5.0,
+    "t_plant_pulse_total": 500000.0,
+    "cpstflnc": 20.0,
+    "ibkt_life": 0,
+    "itart": 0
+   }
+  }
+ ],
+ "TestBlanketLifetimeFpyAvail": [
+  {
+   "label": "blanket-lifetime-avail-unset-fluence",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_fw_fpy": 1e-07,
+    "abktflnc": 4.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 40.0,
+    "dpa_fpy": 20.0,
+    "life_plant": 30.0,
+    "ibkt_life": 0
+   }
+  },
+  {
+   "label": "blanket-lifetime-avail-unset-demo",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_fw_fpy": 1e-07,
+    "abktflnc": 4.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 40.0,
+    "dpa_fpy": 20.0,
+    "life_plant": 30.0,
+    "ibkt_life": 1
+   }
+  },
+  {
+   "label": "blanket-lifetime-avail-set-fluence",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_fw_fpy": 1.0,
+    "abktflnc": 4.0,
+    "pflux_fw_neutron_mw": 10.0,
+    "life_dpa": 40.0,
+    "dpa_fpy": 20.0,
+    "life_plant": 30.0,
+    "ibkt_life": 0
+   }
+  }
+ ],
+ "TestBlanketLifetimeFpySimple": [
+  {
+   "label": "blanket-lifetime-simple-fluence",
+   "provenance": "legacy",
+   "kwargs": {
+    "abktflnc": 5.0,
+    "pflux_fw_neutron_mw": 1.0,
+    "life_dpa": 50.0,
+    "dpa_fpy": 20.0,
+    "life_plant": 30.0,
+    "ibkt_life": 0
+   }
+  },
+  {
+   "label": "blanket-lifetime-simple-demo",
+   "provenance": "legacy",
+   "kwargs": {
+    "abktflnc": 5.0,
+    "pflux_fw_neutron_mw": 1.0,
+    "life_dpa": 50.0,
+    "dpa_fpy": 20.0,
+    "life_plant": 30.0,
+    "ibkt_life": 1
+   }
+  }
+ ],
+ "TestCpLifetimeResistive": [
+  {
+   "label": "cp-lifetime-resistive",
+   "provenance": "legacy",
+   "kwargs": {
+    "cpstflnc": 20.0,
+    "pflux_fw_neutron_mw": 5.0,
+    "life_plant": 30.0
+   }
+  }
+ ],
+ "TestCpLifetimeSuperconducting": [
+  {
+   "label": "cp-lifetime-sc",
+   "provenance": "legacy",
+   "kwargs": {
+    "neut_flux_cp": 500000000000000.0,
+    "flu_tf_neutron_fast_max": 1e+23,
+    "life_plant": 30.0
+   }
+  }
+ ],
+ "TestCplifeLifetimeAdjustment": [
+  {
+   "label": "cplife-adjustment-below-cap",
+   "provenance": "legacy",
+   "kwargs": {
+    "cplife": 6.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.6
+   }
+  },
+  {
+   "label": "cplife-adjustment-already-at-plant-life",
+   "provenance": "legacy",
+   "kwargs": {
+    "cplife": 35.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.6
+   }
+  }
+ ],
+ "TestCplifeNext": [
+  {
+   "label": "cplife-next-pass-through",
+   "provenance": "legacy",
+   "kwargs": {
+    "cplife": 11.0,
+    "neut_flux_cp": 500000000000000.0,
+    "flu_tf_neutron_fast_max": 1e+23,
+    "cpstflnc": 20.0,
+    "pflux_fw_neutron_mw": 5.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.6,
+    "i_tf_sup": 1,
+    "itart": 0
+   }
+  },
+  {
+   "label": "cplife-next-superconducting",
+   "provenance": "legacy",
+   "kwargs": {
+    "cplife": 11.0,
+    "neut_flux_cp": 500000000000000.0,
+    "flu_tf_neutron_fast_max": 1e+23,
+    "cpstflnc": 20.0,
+    "pflux_fw_neutron_mw": 5.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.6,
+    "i_tf_sup": 1,
+    "itart": 1
+   }
+  },
+  {
+   "label": "cplife-next-resistive",
+   "provenance": "legacy",
+   "kwargs": {
+    "cplife": 11.0,
+    "neut_flux_cp": 500000000000000.0,
+    "flu_tf_neutron_fast_max": 1e+23,
+    "cpstflnc": 20.0,
+    "pflux_fw_neutron_mw": 5.0,
+    "life_plant": 30.0,
+    "f_t_plant_available": 0.6,
+    "i_tf_sup": 0,
+    "itart": 1
+   }
+  }
+ ],
+ "TestDivertorLifetime": [
+  {
+   "label": "divertor-lifetime-below-cap",
+   "provenance": "legacy",
+   "kwargs": {
+    "adivflnc": 100.0,
+    "pflux_div_heat_load_mw": 10.0,
+    "life_plant": 30.0
+   }
+  }
+ ],
+ "TestDpaPerFpy": [
+  {
+   "label": "dpa-per-fpy-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 4000.0
+   }
+  }
+ ],
+ "TestUPlanned": [
+  {
+   "label": "u-planned-nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 4000.0,
+    "abktflnc": 5.0,
+    "pflux_fw_neutron_mw": 1.0,
+    "life_dpa": 40.0,
+    "adivflnc": 10.0,
+    "pflux_div_heat_load_mw": 10.0,
+    "life_plant": 30.0,
+    "num_rh_systems": 5.0,
+    "ibkt_life": 0
+   }
+  },
+  {
+   "label": "u-planned-st-like",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 4000.0,
+    "abktflnc": 20.0,
+    "pflux_fw_neutron_mw": 1.0,
+    "life_dpa": 40.0,
+    "adivflnc": 25.0,
+    "pflux_div_heat_load_mw": 1.0,
+    "life_plant": 30.0,
+    "num_rh_systems": 4.0,
+    "ibkt_life": 0
+   }
+  }
+ ],
+ "TestUUnplannedBop": [
+  {
+   "label": "bop-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_operational_total_yrs": 25.0
+   }
+  }
+ ],
+ "TestUUnplannedDivertor": [
+  {
+   "label": "divertor-below-nref",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_div_fpy": 1.99,
+    "t_plant_pulse_total": 9000.0,
+    "div_prob_fail": 0.0002,
+    "div_umain_time": 0.25,
+    "div_nu": 14000.0,
+    "div_nref": 7000.0
+   }
+  },
+  {
+   "label": "divertor-between",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_div_fpy": 3.0,
+    "t_plant_pulse_total": 9000.0,
+    "div_prob_fail": 0.0002,
+    "div_umain_time": 0.25,
+    "div_nu": 14000.0,
+    "div_nref": 7000.0
+   }
+  }
+ ],
+ "TestUUnplannedFwbs": [
+  {
+   "label": "fwbs-below-nref",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_blkt_fpy": 5.0,
+    "t_plant_pulse_total": 9000.0,
+    "fwbs_prob_fail": 0.0002,
+    "fwbs_umain_time": 0.25,
+    "fwbs_nu": 40000.0,
+    "fwbs_nref": 20000.0
+   }
+  },
+  {
+   "label": "fwbs-between",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_blkt_fpy": 8.5,
+    "t_plant_pulse_total": 9000.0,
+    "fwbs_prob_fail": 0.0002,
+    "fwbs_umain_time": 0.25,
+    "fwbs_nu": 40000.0,
+    "fwbs_nref": 20000.0
+   }
+  }
+ ],
+ "TestUUnplannedHcd": [
+  {
+   "label": "hcd-constant",
+   "provenance": "legacy",
+   "kwargs": {}
+  }
+ ],
+ "TestUUnplannedMagnets": [
+  {
+   "label": "magnets-no-degradation",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_tf_superconductor_margin_min": 1.5,
+    "temp_cs_superconductor_margin_min": 1.5,
+    "t_plant_operational_total_yrs": 30.0,
+    "conf_mag": 1.0,
+    "temp_margin": 2.0
+   }
+  },
+  {
+   "label": "magnets-degradation",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp_tf_superconductor_margin_min": 1.6,
+    "temp_cs_superconductor_margin_min": 1.6,
+    "t_plant_operational_total_yrs": 30.0,
+    "conf_mag": 0.8,
+    "temp_margin": 1.8
+   }
+  }
+ ],
+ "TestUUnplannedVacuum": [
+  {
+   "label": "vacuum-20-pumps",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_operational_total_yrs": 25.0,
+    "life_plant": 30.0,
+    "num_rh_systems": 5,
+    "n_vac_pumps_high": 20,
+    "redun_vac": 5
+   }
+  },
+  {
+   "label": "vacuum-40-pumps-low-redundancy",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_operational_total_yrs": 20.0,
+    "life_plant": 30.0,
+    "num_rh_systems": 3,
+    "n_vac_pumps_high": 40,
+    "redun_vac": 1
+   }
+  }
+ ],
+ "TestWardTaylorAvailability": [
+  {
+   "label": "ward-taylor-tied-lifetimes",
+   "provenance": "legacy",
+   "kwargs": {
+    "life_div_fpy": 30.0,
+    "life_blkt_fpy": 30.0,
+    "t_div_replace_yrs": 0.1,
+    "t_blkt_replace_yrs": 0.2,
+    "tcomrepl": 0.3,
+    "uubop": 0.4,
+    "uucd": 0.5,
+    "uudiv": 0.6,
+    "uufuel": 0.7,
+    "uufw": 0.8,
+    "uumag": 0.9,
+    "uuves": 0.11
+   }
+  }
+ ]
+}

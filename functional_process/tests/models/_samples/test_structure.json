@@ -1,0 +1,25 @@
+{
+ "TestCalculateStructureMasses": [
+  {
+   "label": "large-tokamak-legacy",
+   "provenance": "legacy",
+   "kwargs": {
+    "ai": 17721306.969367817,
+    "r0": 8.8901,
+    "a": 2.867774193548387,
+    "akappa": 1.848,
+    "b0": 5.3292,
+    "tf_h_width": 15.337464674334223,
+    "tfhmax": 9.073090021562033,
+    "shldmass": 2294873.8131476026,
+    "dvrtmass": 43563.275828777645,
+    "pfmass": 5446188.248144018,
+    "tfmass": 21234909.756419446,
+    "m_fw_total": 224802.80270851994,
+    "blmass": 3501027.3252278985,
+    "m_fw_blkt_div_coolant_total": 1199.6389920083477,
+    "dewmass": 16426726.727684354
+   }
+  }
+ ]
+}

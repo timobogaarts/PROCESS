@@ -1,0 +1,465 @@
+{
+ "TestExtendedPlaneStrain": [
+  {
+   "label": "extended-plane-strain-spherical-tokamak-eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "nu_t": {
+     "~array": [
+      0.3,
+      0.3064907778275952,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "nu_zt": {
+     "~array": [
+      0.3,
+      0.3086653348093896,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "ey_t": {
+     "~array": [
+      205000000000.0,
+      70097031864.01279,
+      205000000000.0
+     ],
+     "dtype": "float64"
+    },
+    "ey_z": {
+     "~array": [
+      205000000000.0,
+      146170145629.56116,
+      136363213453.44171
+     ],
+     "dtype": "float64"
+    },
+    "rad": {
+     "~array": [
+      0.30885540192106586,
+      0.4432860345278621,
+      1.1812995718120933,
+      1.2224903207685498
+     ],
+     "dtype": "float64"
+    },
+    "d_curr": {
+     "~array": [
+      0.0,
+      17920369.937168237,
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "v_force": 551215676.8768669,
+    "i_tf_bucking": 1,
+    "n_radial_array": 500
+   }
+  }
+ ],
+ "TestEyoungParallel": [
+  {
+   "label": "eyoung-parallel-baseline2018-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_1": 0.0,
+    "a_1": 0.010000000000000002,
+    "poisson_j_perp_1": 0.30000001192092896,
+    "eyoung_j_2": 0.0,
+    "a_2": 0.0,
+    "poisson_j_perp_2": 0.0
+   }
+  },
+  {
+   "label": "eyoung-parallel-baseline2018-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_1": 0.0,
+    "a_1": 0.020661087836601012,
+    "poisson_j_perp_1": 0.30000001192092896,
+    "eyoung_j_2": 0.0,
+    "a_2": 0.010000000000000002,
+    "poisson_j_perp_2": 0.30000001192092896
+   }
+  }
+ ],
+ "TestEyoungParallelArray": [
+  {
+   "label": "eyoung-parallel-array-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_in": {
+     "~array": [
+      205000000000.0,
+      20000000000.0,
+      117000000000.0,
+      0.0,
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "a_in": {
+     "~array": [
+      0.2937012307620765,
+      0.11646247019991701,
+      0.1337475693807864,
+      0.031609694578447076,
+      0.1297552160314831
+     ],
+     "dtype": "float64"
+    },
+    "poisson_j_perp_in": {
+     "~array": [
+      0.3,
+      0.34,
+      0.35,
+      0.30000001192092896,
+      0.3
+     ],
+     "dtype": "float64"
+    }
+   }
+  }
+ ],
+ "TestEyoungSeries": [
+  {
+   "label": "eyoung-series-baseline2018-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_1": 0.0,
+    "l_1": 0.003949573550844649,
+    "poisson_j_perp_1": 0.30000001192092896,
+    "eyoung_j_2": 117000000000.0,
+    "l_2": 0.016711514285756363,
+    "poisson_j_perp_2": 0.35
+   }
+  },
+  {
+   "label": "eyoung-series-baseline2018-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_1": 0.0,
+    "l_1": 0.020661087836601012,
+    "poisson_j_perp_1": 0.30000001192092896,
+    "eyoung_j_2": 0.0,
+    "l_2": 0.010000000000000002,
+    "poisson_j_perp_2": 0.3
+   }
+  }
+ ],
+ "TestEyoungTNestedSquares": [
+  {
+   "label": "eyoung-t-nested-squares-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "eyoung_j_in": {
+     "~array": [
+      0.0,
+      0.0,
+      205000000000.0,
+      20000000000.0
+     ],
+     "dtype": "float64"
+    },
+    "l_in": {
+     "~array": [
+      0.010000000000000002,
+      0.020661087836601012,
+      0.016,
+      0.00418
+     ],
+     "dtype": "float64"
+    },
+    "poisson_j_perp_in": {
+     "~array": [
+      0.3,
+      0.30000001192092896,
+      0.3,
+      0.34
+     ],
+     "dtype": "float64"
+    }
+   }
+  }
+ ],
+ "TestPlaneStress": [
+  {
+   "label": "plane-stress-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "nu": {
+     "~array": [
+      0.3,
+      0.30904421667064924,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "rad": {
+     "~array": [
+      2.9939411851091102,
+      3.5414797139565706,
+      4.08762029045716,
+      4.1476202904571595
+     ],
+     "dtype": "float64"
+    },
+    "ey": {
+     "~array": [
+      205000000000.0,
+      43126670035.02525,
+      205000000000.0
+     ],
+     "dtype": "float64"
+    },
+    "j": {
+     "~array": [
+      0.0,
+      18097185.78197086,
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "n_radial_array": 100
+   }
+  },
+  {
+   "label": "plane-stress-large-tokamak-nof-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "nu": {
+     "~array": [
+      0.3,
+      0.3034873348689963,
+      0.3
+     ],
+     "dtype": "float64"
+    },
+    "rad": {
+     "~array": [
+      2.776781736333239,
+      2.9977681590072023,
+      3.57243140135522,
+      3.648421902567533
+     ],
+     "dtype": "float64"
+    },
+    "ey": {
+     "~array": [
+      205000000000.0,
+      46455045800.47422,
+      205000000000.0
+     ],
+     "dtype": "float64"
+    },
+    "j": {
+     "~array": [
+      0.0,
+      16713619.898244653,
+      0.0
+     ],
+     "dtype": "float64"
+    },
+    "n_radial_array": 100
+   }
+  }
+ ],
+ "TestTfFieldAndForceClampedJoints": [
+  {
+   "label": "tf-field-and-force-large-tokamak-nof-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_wp_inboard_outer": 3.5493428322288025,
+    "r_tf_wp_inboard_inner": 2.978393629565446,
+    "r_tf_outboard_in": 14.559557920183472,
+    "dx_tf_wp_insulation": 0.008,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "b_tf_inboard_peak_symmetric": 11.228002157011968,
+    "c_tf_total": 198249624.59807792,
+    "n_tf_coils": 16.0,
+    "dr_tf_plasma_case": 0.07599050121231316,
+    "rmajor": 8.000000000138815,
+    "b_plasma_toroidal_on_axis": 4.956240617090718,
+    "f_vforce_inboard": 0.5
+   }
+  }
+ ],
+ "TestTfStressExtendedPlaneStrainBuckedCase": [
+  {
+   "label": "stresscl-extended-spherical-tokamak-eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_in": 0.30885540192106586,
+    "r_tf_wp_inboard_inner": 0.4381694923304086,
+    "r_tf_wp_inboard_outer": 1.1676646529646093,
+    "tan_theta_coil": 0.2679491924311227,
+    "rad_tf_coil_inboard_toroidal_half": 0.2617993877991494,
+    "dr_tf_plasma_case": 0.041190748956456545,
+    "a_tf_coil_inboard_steel": 0.2524170599339434,
+    "a_tf_plasma_case": 0.017242815688178703,
+    "a_tf_coil_nose_case": 0.026470758397272677,
+    "eyoung_steel": 205000000000.0,
+    "poisson_steel": 0.3,
+    "eyoung_cond_axial": 0.0,
+    "poisson_cond_axial": 0.3,
+    "eyoung_cond_trans": 0.0,
+    "poisson_cond_trans": 0.3,
+    "eyoung_ins": 20000000000.0,
+    "poisson_ins": 0.34,
+    "eyoung_copper": 117000000000.0,
+    "poisson_copper": 0.35,
+    "dx_tf_turn_insulation": 0.0008,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "dx_tf_wp_insulation": 0.018,
+    "n_tf_coil_turns": 80.35714282107192,
+    "dx_tf_turn_cable_space_eyoung": 0.025501408508296027,
+    "dia_tf_turn_coolant_channel": 0.005,
+    "f_a_tf_turn_cable_copper": 0.69,
+    "dx_tf_turn_steel": 0.008,
+    "dx_tf_side_case_average": 0.0763146550516272,
+    "dx_tf_wp_toroidal_average": 0.27765265230686775,
+    "a_tf_coil_inboard_insulation": 0.0443988263059861,
+    "a_tf_wp_steel": 0.09736114275723116,
+    "a_tf_wp_conductor": 0.027362227248714482,
+    "a_tf_wp_with_insulation": 0.20254626619511037,
+    "c_tf_total": 67499999.96970041,
+    "vforce_inboard_tot": 551215676.8768669,
+    "n_radial_array": 500
+   }
+  },
+  {
+   "label": "stresscl-extended-spherical-tokamak-eval-converged-100",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_in": 0.30885540192106586,
+    "r_tf_wp_inboard_inner": 0.4381694923304086,
+    "r_tf_wp_inboard_outer": 1.1676646529646093,
+    "tan_theta_coil": 0.2679491924311227,
+    "rad_tf_coil_inboard_toroidal_half": 0.2617993877991494,
+    "dr_tf_plasma_case": 0.041190748956456545,
+    "a_tf_coil_inboard_steel": 0.2524170599339434,
+    "a_tf_plasma_case": 0.017242815688178703,
+    "a_tf_coil_nose_case": 0.026470758397272677,
+    "eyoung_steel": 205000000000.0,
+    "poisson_steel": 0.3,
+    "eyoung_cond_axial": 0.0,
+    "poisson_cond_axial": 0.3,
+    "eyoung_cond_trans": 0.0,
+    "poisson_cond_trans": 0.3,
+    "eyoung_ins": 20000000000.0,
+    "poisson_ins": 0.34,
+    "eyoung_copper": 117000000000.0,
+    "poisson_copper": 0.35,
+    "dx_tf_turn_insulation": 0.0008,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "dx_tf_wp_insulation": 0.018,
+    "n_tf_coil_turns": 80.35714282107192,
+    "dx_tf_turn_cable_space_eyoung": 0.025501408508296027,
+    "dia_tf_turn_coolant_channel": 0.005,
+    "f_a_tf_turn_cable_copper": 0.69,
+    "dx_tf_turn_steel": 0.008,
+    "dx_tf_side_case_average": 0.0763146550516272,
+    "dx_tf_wp_toroidal_average": 0.27765265230686775,
+    "a_tf_coil_inboard_insulation": 0.0443988263059861,
+    "a_tf_wp_steel": 0.09736114275723116,
+    "a_tf_wp_conductor": 0.027362227248714482,
+    "a_tf_wp_with_insulation": 0.20254626619511037,
+    "c_tf_total": 67499999.96970041,
+    "vforce_inboard_tot": 551215676.8768669,
+    "n_radial_array": 100
+   }
+  }
+ ],
+ "TestTfStressPlaneStressBuckedCase": [
+  {
+   "label": "stresscl-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_in": 2.9939411851091102,
+    "r_tf_wp_inboard_inner": 3.51859118510911,
+    "r_tf_wp_inboard_outer": 4.06120206347512,
+    "tan_theta_coil": 0.198912367379658,
+    "rad_tf_coil_inboard_toroidal_half": 0.19634954084936207,
+    "dr_tf_plasma_case": 0.06000000000000001,
+    "a_tf_coil_inboard_steel": 1.2952181546825934,
+    "a_tf_plasma_case": 0.18607458590131154,
+    "a_tf_coil_nose_case": 0.7026161650551161,
+    "eyoung_steel": 205000000000.0,
+    "poisson_steel": 0.3,
+    "eyoung_cond_axial": 0.0,
+    "poisson_cond_axial": 0.30000001192092896,
+    "eyoung_cond_trans": 0.0,
+    "poisson_cond_trans": 0.30000001192092896,
+    "eyoung_ins": 20000000000.0,
+    "poisson_ins": 0.34,
+    "eyoung_copper": 117000000000.0,
+    "poisson_copper": 0.35,
+    "dx_tf_turn_insulation": 0.002,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "dx_tf_wp_insulation": 0.008000000000000002,
+    "n_tf_coil_turns": 200.0,
+    "dx_tf_turn_cable_space_eyoung": 0.030661087836601014,
+    "dia_tf_turn_coolant_channel": 0.010000000000000002,
+    "f_a_tf_turn_cable_copper": 0.80884,
+    "dx_tf_turn_steel": 0.008,
+    "dx_tf_side_case_average": 0.10396600719086938,
+    "dx_tf_wp_toroidal_average": 1.299782604942499,
+    "a_tf_coil_inboard_insulation": 0.11646247019991701,
+    "a_tf_wp_steel": 0.2937012307620765,
+    "a_tf_wp_conductor": 0.1653572639592335,
+    "a_tf_wp_with_insulation": 0.7052761809527102,
+    "c_tf_total": 236885604.60000002,
+    "vforce": 250545611.13801825,
+    "a_tf_coil_inboard_case": 1.0015169239205168,
+    "a_tf_turn_steel": 0.0014685061538103825,
+    "n_radial_array": 100
+   }
+  },
+  {
+   "label": "stresscl-large-tokamak-nof-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_in": 2.776781736333239,
+    "r_tf_wp_inboard_inner": 2.978393629565446,
+    "r_tf_wp_inboard_outer": 3.5493428322288025,
+    "tan_theta_coil": 0.198912367379658,
+    "rad_tf_coil_inboard_toroidal_half": 0.19634954084936207,
+    "dr_tf_plasma_case": 0.07599050121231316,
+    "a_tf_coil_inboard_steel": 0.6772330797567163,
+    "a_tf_plasma_case": 0.07476512623743048,
+    "a_tf_coil_nose_case": 0.25056108436158886,
+    "eyoung_steel": 205000000000.0,
+    "poisson_steel": 0.3,
+    "eyoung_cond_axial": 0.0,
+    "poisson_cond_axial": 0.3,
+    "eyoung_cond_trans": 0.0,
+    "poisson_cond_trans": 0.3,
+    "eyoung_ins": 20000000000.0,
+    "poisson_ins": 0.34,
+    "eyoung_copper": 117000000000.0,
+    "poisson_copper": 0.35,
+    "dx_tf_turn_insulation": 0.0008,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "dx_tf_wp_insulation": 0.008,
+    "n_tf_coil_turns": 150.0258353015685,
+    "dx_tf_turn_cable_space_eyoung": 0.04501894028884075,
+    "dia_tf_turn_coolant_channel": 0.01,
+    "f_a_tf_turn_cable_copper": 0.8997880037570971,
+    "dx_tf_turn_steel": 0.008085108218129558,
+    "dx_tf_side_case_average": 0.0783922143888241,
+    "dx_tf_wp_toroidal_average": 1.141663084468358,
+    "a_tf_coil_inboard_insulation": 0.056265716649540734,
+    "a_tf_wp_steel": 0.2623909245570688,
+    "a_tf_wp_conductor": 0.19774291703590527,
+    "a_tf_wp_with_insulation": 0.651831627787397,
+    "c_tf_total": 198249624.59807792,
+    "vforce": 182709032.97324997,
+    "a_tf_coil_inboard_case": 0.4148421551996475,
+    "a_tf_turn_steel": 0.001748971595656402,
+    "n_radial_array": 500
+   }
+  }
+ ]
+}

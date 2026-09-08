@@ -1,0 +1,110 @@
+{
+ "TestCalculateFirstWallOutputs": [
+  {
+   "label": "large-tokamak-plausible",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": -5.5,
+    "dz_xpoint_divertor": 0.5,
+    "dz_divertor": 0.65,
+    "dz_blkt_upper": 0.6,
+    "z_plasma_xpoint_upper": 5.5,
+    "dz_fw_plasma_gap": 0.25,
+    "dr_fw_inboard": 0.03,
+    "dr_fw_outboard": 0.03,
+    "rmajor": 8.8901,
+    "rminor": 2.867774193548387,
+    "triang": 0.5,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "f_ster_div_single": 0.1,
+    "f_a_fw_outboard_hcd": 0.1,
+    "p_alpha_total_mw": 400.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "ffwal": 1.0,
+    "pflux_plasma_surface_neutron_avg_mw": 1.0
+   }
+  }
+ ],
+ "TestCalculateFirstWallOutputsDoubleNull": [
+  {
+   "label": "large-tokamak-plausible-double-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 5.5,
+    "dz_xpoint_divertor": 0.5,
+    "dz_divertor": 0.65,
+    "dz_blkt_upper": 0.6,
+    "dr_fw_inboard": 0.03,
+    "dr_fw_outboard": 0.03,
+    "rmajor": 8.8901,
+    "rminor": 2.867774193548387,
+    "triang": 0.5,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "f_ster_div_single": 0.1,
+    "f_a_fw_outboard_hcd": 0.1,
+    "p_alpha_total_mw": 400.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "ffwal": 1.0,
+    "pflux_plasma_surface_neutron_avg_mw": 1.0
+   }
+  }
+ ],
+ "TestCalculateFirstWallOutputsDshapedDoubleNull": [
+  {
+   "label": "spherical-tokamak-plausible",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 4.0,
+    "dz_xpoint_divertor": 0.5,
+    "dz_divertor": 0.4,
+    "dz_blkt_upper": 0.5,
+    "dr_fw_inboard": 0.03,
+    "dr_fw_outboard": 0.03,
+    "rmajor": 3.6,
+    "rminor": 2.0,
+    "dr_fw_plasma_gap_inboard": 0.1,
+    "dr_fw_plasma_gap_outboard": 0.2,
+    "f_ster_div_single": 0.1,
+    "f_a_fw_outboard_hcd": 0.1,
+    "p_alpha_total_mw": 100.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "ffwal": 1.0,
+    "pflux_plasma_surface_neutron_avg_mw": 1.0
+   }
+  }
+ ],
+ "TestRadiatedWallLoadScaledPlasmaSurface": [
+  {
+   "label": "st_regression-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "ffwal": 0.92,
+    "p_plasma_rad_mw": 319.9999999940988,
+    "a_plasma_surface": 810.4940458049573,
+    "f_fw_rad_max": 1.0
+   }
+  },
+  {
+   "label": "spherical_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "ffwal": 0.92,
+    "p_plasma_rad_mw": 439.57059868288485,
+    "a_plasma_surface": 810.4940458049573,
+    "f_fw_rad_max": 1.0
+   }
+  }
+ ],
+ "TestSetFwGeometry": [
+  {
+   "label": "fwbs-defaults",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_fw_channel": 0.006,
+    "dr_fw_wall": 0.003
+   }
+  }
+ ]
+}

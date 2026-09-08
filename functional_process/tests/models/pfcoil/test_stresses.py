@@ -20,7 +20,8 @@ import numpy as np
 from scipy.special import ellipe as scipy_ellipe
 from scipy.special import ellipk as scipy_ellipk
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil.stresses import (
     _ellipe,
     _ellipk,
@@ -172,13 +173,7 @@ class TestEllipk(Tier1Contract):
     reference = _reference_ellipk
     ported = _ellipk
 
-    samples = [
-        legacy_sample("reference-machine-kb2", m=0.9390581),
-        legacy_sample("near-zero", m=1.0e-8),
-        legacy_sample("half", m=0.5),
-        legacy_sample("near-one", m=0.999),
-        *fuzz_samples({"m": (1.0e-6, 0.998)}, count=8, seed=1),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {"m": (1.0e-6, 0.998)}
 
@@ -190,13 +185,7 @@ class TestEllipe(Tier1Contract):
     reference = _reference_ellipe
     ported = _ellipe
 
-    samples = [
-        legacy_sample("reference-machine-kb2", m=0.9390581),
-        legacy_sample("near-zero", m=1.0e-8),
-        legacy_sample("half", m=0.5),
-        legacy_sample("near-one", m=0.999),
-        *fuzz_samples({"m": (1.0e-6, 0.998)}, count=8, seed=2),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {"m": (1.0e-6, 0.998)}
 
@@ -208,28 +197,7 @@ class TestCalculateCSHoopStress(Tier1Contract):
     reference = staticmethod(CSCoil.calculate_cs_hoop_stress)
     ported = calculate_cs_hoop_stress
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged-inner-radius",
-            r_stress_point=_R_CS_INNER,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            j_cs=_J_CS_PULSE_START,
-            b_cs_inner=_B_CS_PEAK_PULSE_START,
-            f_poisson_cs_structure=_POISSON_STEEL,
-            f_a_cs_turn_steel=_F_A_CS_TURN_STEEL,
-        ),
-        legacy_sample(
-            "off-the-inner-radius",
-            r_stress_point=_R_CS_MIDDLE,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            j_cs=_J_CS_PULSE_START,
-            b_cs_inner=_B_CS_PEAK_PULSE_START,
-            f_poisson_cs_structure=_POISSON_STEEL,
-            f_a_cs_turn_steel=_F_A_CS_TURN_STEEL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_stress_point": _around(_R_CS_MIDDLE, 0.10),
@@ -290,26 +258,7 @@ class TestCalculateCSRadialStress(Tier1Contract):
             return tuple(n for n in names if n not in cls._SNAPPED_ARGS)
         return names
 
-    samples = [
-        legacy_sample(
-            "inner-radius-the-snapped-zero",
-            r_stress_point=_R_CS_INNER,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            j_cs=_J_CS_PULSE_START,
-            b_cs_inner=_B_CS_PEAK_PULSE_START,
-            f_poisson_cs_structure=_POISSON_STEEL,
-        ),
-        legacy_sample(
-            "mean-radius-the-peak",
-            r_stress_point=_R_CS_MIDDLE,
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            j_cs=_J_CS_PULSE_START,
-            b_cs_inner=_B_CS_PEAK_PULSE_START,
-            f_poisson_cs_structure=_POISSON_STEEL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_stress_point": _around(_R_CS_MIDDLE, 0.08),
@@ -333,23 +282,7 @@ class TestCalculateCSSelfPeakMidplaneAxialStress(Tier1Contract):
     reference = staticmethod(CSCoil.calculate_cs_self_peak_midplane_axial_stress)
     ported = calculate_cs_self_peak_midplane_axial_stress
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            r_cs_outer=_R_CS_OUTER,
-            dz_cs_half=_DZ_CS_FULL / 2.0,
-            c_cs_peak=_C_CS_PEAK_MA * 1.0e6,
-            a_cs_toroidal=_A_CS_TOROIDAL,
-        ),
-        # A squat coil, where `kb2` moves far from the reference machine's 0.94.
-        legacy_sample(
-            "squat-cs",
-            r_cs_outer=_R_CS_OUTER,
-            dz_cs_half=0.5,
-            c_cs_peak=_C_CS_PEAK_MA * 1.0e6,
-            a_cs_toroidal=_A_CS_TOROIDAL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_cs_outer": _around(_R_CS_OUTER, 0.20),
@@ -366,23 +299,7 @@ class TestCalculateTrescaStress(Tier1Contract):
     reference = staticmethod(process_tresca)
     ported = calculate_tresca_stress
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            stress_x=_STRESS_HOOP,
-            stress_y=_STRESS_AXIAL,
-            stress_z=_STRESS_RADIAL,
-        ),
-        *fuzz_samples(
-            {
-                "stress_x": (-1.0e9, 1.0e9),
-                "stress_y": (-1.0e9, 1.0e9),
-                "stress_z": (-1.0e9, 1.0e9),
-            },
-            count=6,
-            seed=72,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "stress_x": (-1.0e9, 1.0e9),
@@ -398,29 +315,7 @@ class TestCalculateVonMisesStress(Tier1Contract):
     reference = staticmethod(process_von_mises)
     ported = calculate_von_mises_stress
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged-no-shear",
-            stress_x=_STRESS_HOOP,
-            stress_y=_STRESS_AXIAL,
-            stress_z=_STRESS_RADIAL,
-            stress_shear_xy=0.0,
-            stress_shear_yz=0.0,
-            stress_shear_zx=0.0,
-        ),
-        *fuzz_samples(
-            {
-                "stress_x": (-1.0e9, 1.0e9),
-                "stress_y": (-1.0e9, 1.0e9),
-                "stress_z": (-1.0e9, 1.0e9),
-                "stress_shear_xy": (-1.0e8, 1.0e8),
-                "stress_shear_yz": (-1.0e8, 1.0e8),
-                "stress_shear_zx": (-1.0e8, 1.0e8),
-            },
-            count=6,
-            seed=73,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "stress_x": (-1.0e9, 1.0e9),
@@ -439,21 +334,7 @@ class TestCalculateCSStresses(Tier1Contract):
     reference = _reference_cs_stresses
     ported = calculate_cs_stresses
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-converged",
-            r_cs_inner=_R_CS_INNER,
-            r_cs_outer=_R_CS_OUTER,
-            r_cs_middle=_R_CS_MIDDLE,
-            dz_cs_full=_DZ_CS_FULL,
-            a_cs_toroidal=_A_CS_TOROIDAL,
-            j_cs_pulse_start=_J_CS_PULSE_START,
-            b_cs_peak_pulse_start=_B_CS_PEAK_PULSE_START,
-            c_cs_peak_ma=_C_CS_PEAK_MA,
-            f_poisson_cs_structure=_POISSON_STEEL,
-            f_a_cs_turn_steel=_F_A_CS_TURN_STEEL,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_cs_inner": _around(_R_CS_INNER, 0.08),

@@ -1,0 +1,72 @@
+{
+ "TestBeamCurrent": [
+  {
+   "label": "beam-current-nonzero",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_beam_injected_total_mw": 20.0,
+    "e_beam_kev": 100.0
+   }
+  },
+  {
+   "label": "beam-current-below-guard",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_beam_injected_total_mw": 1e-10,
+    "e_beam_kev": 100.0
+   }
+  }
+ ],
+ "TestEcrhHeating": [
+  {
+   "label": "ecrh-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_primary_extra_heat_mw": 50.0,
+    "eta_ecrh_injector_wall_plug": 0.5
+   }
+  }
+ ],
+ "TestFusionGain": [
+  {
+   "label": "fusion-gain-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 500.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "p_beam_orbit_loss_mw": 0.0,
+    "p_plasma_ohmic_mw": 1.0
+   }
+  },
+  {
+   "label": "fusion-gain-degenerate-denominator",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 500.0,
+    "p_hcd_injected_total_mw": 0.0,
+    "p_beam_orbit_loss_mw": 0.0,
+    "p_plasma_ohmic_mw": 1e-09
+   }
+  }
+ ],
+ "TestInjectedPowerTotal": [
+  {
+   "label": "injected-power-total-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_electrons_mw": 40.0,
+    "p_hcd_injected_ions_mw": 10.0
+   }
+  }
+ ],
+ "TestLowhybHeating": [
+  {
+   "label": "lowhyb-round-numbers",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_primary_extra_heat_mw": 50.0,
+    "eta_lowhyb_injector_wall_plug": 0.6
+   }
+  }
+ ]
+}

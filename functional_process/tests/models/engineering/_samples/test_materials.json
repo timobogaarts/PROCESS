@@ -1,0 +1,12 @@
+{
+ "TestEurofer97ThermalConductivity": [
+  {
+   "label": "eurofer97-tests-unit-test_materials",
+   "provenance": "legacy",
+   "kwargs": {
+    "temp": 1900.0,
+    "fw_th_conductivity": 28.9
+   }
+  }
+ ]
+}

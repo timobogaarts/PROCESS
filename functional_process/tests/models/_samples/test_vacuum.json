@@ -1,0 +1,950 @@
+{
+ "TestCalculateEllipticalVesselVolumes": [
+  {
+   "label": "elliptical-vessel-legacy",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "r_shld_inboard_inner": 4.083333333333334,
+    "r_shld_outboard_outer": 12.716666666666667,
+    "dz_vv_half": 7.5032752487304135,
+    "dr_vv_inboard": 0.30000000000000004,
+    "dr_vv_outboard": 0.30000000000000004,
+    "dz_vv_upper": 0.30000000000000004,
+    "dz_vv_lower": 0.30000000000000004
+   }
+  }
+ ],
+ "TestSolveDuctDiameter": [
+  {
+   "label": "duct-0",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.5007168139037195,
+    "l2": 3.764837234634353,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 0.9662852353623731
+   }
+  },
+  {
+   "label": "duct-1",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.6375915020757807,
+    "l2": 1.6675480746602793,
+    "l3": 2.0,
+    "xmult_i": 1.0,
+    "ceff_i": 0.16930588284819503
+   }
+  },
+  {
+   "label": "duct-2",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.3045896175857727,
+    "l2": 3.2291834777624806,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 290.35266107791136
+   }
+  },
+  {
+   "label": "duct-3",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.5178829628018173,
+    "l2": 3.6093488759795984,
+    "l3": 2.0,
+    "xmult_i": 1.0,
+    "ceff_i": 326.14996776751593
+   }
+  },
+  {
+   "label": "duct-4",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 0.6826265975348507,
+    "l2": 5.889857316786405,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 16.24679167081532
+   }
+  },
+  {
+   "label": "duct-5",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.0900015200967987,
+    "l2": 2.4964527038048243,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 11.647062468528937
+   }
+  },
+  {
+   "label": "duct-6",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.1549519388180793,
+    "l2": 5.624791970208982,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 966.2796038957987
+   }
+  },
+  {
+   "label": "duct-7",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.974953573168012,
+    "l2": 3.0685575552683066,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 27.26593083417716
+   }
+  },
+  {
+   "label": "duct-8",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.6682415941856288,
+    "l2": 1.1750368863027434,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 887.9932708887368
+   }
+  },
+  {
+   "label": "duct-9",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.657644679991784,
+    "l2": 3.525527857193148,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 1.3617440545355983
+   }
+  },
+  {
+   "label": "duct-10",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.4193234454071728,
+    "l2": 2.5916767760730957,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 17.063659013872687
+   }
+  },
+  {
+   "label": "duct-11",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 0.6046717435044792,
+    "l2": 2.404388117631872,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 0.4749730123016674
+   }
+  },
+  {
+   "label": "duct-12",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.057257560637864,
+    "l2": 4.5013722858183804,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 11.611825256804847
+   }
+  },
+  {
+   "label": "duct-13",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 0.5927989643097495,
+    "l2": 1.147151641047036,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 449.8778240361306
+   }
+  },
+  {
+   "label": "duct-14",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 0.9961199647638803,
+    "l2": 1.3261126256475788,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 2.2462718261199113
+   }
+  },
+  {
+   "label": "duct-15",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 0.5707806789586207,
+    "l2": 0.912991554168662,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 20.772722360641424
+   }
+  },
+  {
+   "label": "duct-16",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.0775757874374383,
+    "l2": 5.974229322144733,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 839.9960117646025
+   }
+  },
+  {
+   "label": "duct-17",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.1953923485935283,
+    "l2": 5.027348935205015,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 0.5641782573819933
+   }
+  },
+  {
+   "label": "duct-18",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.1726665354709513,
+    "l2": 4.071187480179696,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 2.373383900054054
+   }
+  },
+  {
+   "label": "duct-19",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.7836389995237307,
+    "l2": 2.3739064032012847,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 510.07465814649174
+   }
+  },
+  {
+   "label": "duct-20",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 2.0683204359464358,
+    "l2": 4.905771461984463,
+    "l3": 2.0,
+    "xmult_i": 1.0,
+    "ceff_i": 0.15107223041276305
+   }
+  },
+  {
+   "label": "duct-21",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.5173524994897596,
+    "l2": 4.834545873380023,
+    "l3": 2.0,
+    "xmult_i": 1.0,
+    "ceff_i": 0.13379223472184887
+   }
+  },
+  {
+   "label": "duct-22",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.6212761832420441,
+    "l2": 2.8945530355969,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 7.247707115325249
+   }
+  },
+  {
+   "label": "duct-23",
+   "provenance": "synthetic",
+   "kwargs": {
+    "l1": 1.0930035696463123,
+    "l2": 1.6505570057274799,
+    "l3": 2.0,
+    "xmult_i": 0.423,
+    "ceff_i": 78.60327910665688
+   }
+  },
+  {
+   "label": "helium-duct-old-model",
+   "provenance": "legacy",
+   "kwargs": {
+    "l1": 1.0381200000000002,
+    "l2": 4.4,
+    "l3": 2.0,
+    "xmult_i": 0.378,
+    "ceff_i": 3.7718486393739226
+   }
+  }
+ ],
+ "TestVacuumPumpingOld": [
+  {
+   "label": "seed1-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 2291.3756864508987,
+    "rmajor": 19.306491748563094,
+    "rminor": 2.004558644518718,
+    "dsol": 0.4768922512117597,
+    "a_plasma_surface": 1054.8460492220195,
+    "vol_plasma": 2135.6384407875603,
+    "dr_shld_outboard": 0.6966215562922651,
+    "dr_shld_inboard": 0.19321969772920644,
+    "dr_tf_inboard": 0.7946343189057534,
+    "ritf": 3.2480320191876153,
+    "n_tf_coils": 33.09836704289458,
+    "t_plant_pulse_dwell": 1014.8436324727729,
+    "n_divertors": 1.3297317164990923,
+    "qtorus": 0.0,
+    "gasld": 4.040077150300007e-06,
+    "pres_vv_chamber_base": 0.000458962910585845,
+    "pres_div_chamber_burn": 0.19382918807301536,
+    "outgrat_fw": 4.090818565826579e-08,
+    "t_plant_pulse_coil_precharge": 20.17276203380748
+   }
+  },
+  {
+   "label": "seed1-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 1418.0966915464733,
+    "rmajor": 16.505105416820737,
+    "rminor": 2.48143065295114,
+    "dsol": 0.26833593849423576,
+    "a_plasma_surface": 2459.548119582601,
+    "vol_plasma": 4342.794494021526,
+    "dr_shld_outboard": 0.6348739644641203,
+    "dr_shld_inboard": 0.23942939944160202,
+    "dr_tf_inboard": 0.5492020836408337,
+    "ritf": 4.445868078976142,
+    "n_tf_coils": 39.15791157005171,
+    "t_plant_pulse_dwell": 977.3165954313938,
+    "n_divertors": 1.1158656124707704,
+    "qtorus": 0.0,
+    "gasld": 3.575742436519428e-05,
+    "pres_vv_chamber_base": 0.00061687326804251,
+    "pres_div_chamber_burn": 0.7421083933536319,
+    "outgrat_fw": 4.919694789756083e-09,
+    "t_plant_pulse_coil_precharge": 36.42946316300108
+   }
+  },
+  {
+   "label": "seed1-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 2107.675590098913,
+    "rmajor": 6.872894108098258,
+    "rminor": 3.7446485919878123,
+    "dsol": 0.4336847773162955,
+    "a_plasma_surface": 1645.1761380189964,
+    "vol_plasma": 1466.3995357226152,
+    "dr_shld_outboard": 0.7039289126188453,
+    "dr_shld_inboard": 0.22832355853252828,
+    "dr_tf_inboard": 0.7597999960198797,
+    "ritf": 9.777271869319602,
+    "n_tf_coils": 16.141817001978783,
+    "t_plant_pulse_dwell": 1493.3654225027708,
+    "n_divertors": 1.6832869060032571,
+    "qtorus": 0.0,
+    "gasld": 2.4167544004889193e-06,
+    "pres_vv_chamber_base": 0.0008043405195231847,
+    "pres_div_chamber_burn": 0.2339267482400402,
+    "outgrat_fw": 9.07370911898776e-09,
+    "t_plant_pulse_coil_precharge": 52.76134871435351
+   }
+  },
+  {
+   "label": "seed1-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 3514.4922366218393,
+    "rmajor": 18.271519349832126,
+    "rminor": 3.1516840177557657,
+    "dsol": 0.17332177487617323,
+    "a_plasma_surface": 414.89284006664917,
+    "vol_plasma": 3047.4556718572862,
+    "dr_shld_outboard": 0.631945630105216,
+    "dr_shld_inboard": 0.34244922577509596,
+    "dr_tf_inboard": 0.5536900446280879,
+    "ritf": 4.936963504466762,
+    "n_tf_coils": 29.901278641864458,
+    "t_plant_pulse_dwell": 1468.5932163465166,
+    "n_divertors": 1.963670872844971,
+    "qtorus": 0.0,
+    "gasld": 9.213502889878499e-06,
+    "pres_vv_chamber_base": 0.0008957687035742118,
+    "pres_div_chamber_burn": 0.3959018348618062,
+    "outgrat_fw": 5.936070414632076e-08,
+    "t_plant_pulse_coil_precharge": 11.22453387466816
+   }
+  },
+  {
+   "label": "seed2-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 1415.6424698726073,
+    "rmajor": 10.178876007797726,
+    "rminor": 4.3497900920799815,
+    "dsol": 0.0913621739607936,
+    "a_plasma_surface": 1660.2111045278734,
+    "vol_plasma": 3387.0981599283577,
+    "dr_shld_outboard": 0.3127406440199621,
+    "dr_shld_inboard": 0.06930131956657387,
+    "dr_tf_inboard": 0.5474724311154342,
+    "ritf": 8.916897133880333,
+    "n_tf_coils": 27.743438557851984,
+    "t_plant_pulse_dwell": 355.10584761907137,
+    "n_divertors": 1.432630790804787,
+    "qtorus": 0.0,
+    "gasld": 7.00760068714272e-06,
+    "pres_vv_chamber_base": 0.0006368525552813753,
+    "pres_div_chamber_burn": 0.7772051667455737,
+    "outgrat_fw": 6.86234174086529e-08,
+    "t_plant_pulse_coil_precharge": 29.581241654001307
+   }
+  },
+  {
+   "label": "seed2-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 1155.3839940203434,
+    "rmajor": 10.843449318004264,
+    "rminor": 3.2887309074935196,
+    "dsol": 0.45104423427526064,
+    "a_plasma_surface": 2028.6842791926479,
+    "vol_plasma": 1704.4010625230349,
+    "dr_shld_outboard": 0.7545301379040945,
+    "dr_shld_inboard": 0.21481845989551512,
+    "dr_tf_inboard": 0.9243829579820069,
+    "ritf": 3.9648657760822923,
+    "n_tf_coils": 14.927219636122363,
+    "t_plant_pulse_dwell": 443.24266080006555,
+    "n_divertors": 1.8844496736882936,
+    "qtorus": 0.0,
+    "gasld": 4.99427724219269e-05,
+    "pres_vv_chamber_base": 0.0006479919065134624,
+    "pres_div_chamber_burn": 0.38457967837287554,
+    "outgrat_fw": 5.214124121837468e-08,
+    "t_plant_pulse_coil_precharge": 39.672175887795305
+   }
+  },
+  {
+   "label": "seed2-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 3517.4129471766987,
+    "rmajor": 12.13460632622775,
+    "rminor": 4.622840384883251,
+    "dsol": 0.3261726222811642,
+    "a_plasma_surface": 2141.647864193821,
+    "vol_plasma": 2442.0298251607164,
+    "dr_shld_outboard": 0.6155108790979842,
+    "dr_shld_inboard": 0.16865888112725852,
+    "dr_tf_inboard": 0.7705456535313875,
+    "ritf": 4.94601051917113,
+    "n_tf_coils": 14.81970085651735,
+    "t_plant_pulse_dwell": 165.62702086564704,
+    "n_divertors": 1.7019494763859895,
+    "qtorus": 0.0,
+    "gasld": 6.244077635192387e-05,
+    "pres_vv_chamber_base": 0.000836831372645357,
+    "pres_div_chamber_burn": 0.36956659413657167,
+    "outgrat_fw": 9.739419820081707e-08,
+    "t_plant_pulse_coil_precharge": 39.60310055391823
+   }
+  },
+  {
+   "label": "seed2-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 3180.5915997535435,
+    "rmajor": 11.700721018714496,
+    "rminor": 2.186594691888952,
+    "dsol": 0.12729965678682553,
+    "a_plasma_surface": 780.5330750850724,
+    "vol_plasma": 2875.6026207759983,
+    "dr_shld_outboard": 0.26757971306679096,
+    "dr_shld_inboard": 0.05696876209309753,
+    "dr_tf_inboard": 1.0496972677695784,
+    "ritf": 3.8947000613937672,
+    "n_tf_coils": 24.61636699544934,
+    "t_plant_pulse_dwell": 930.4475742427479,
+    "n_divertors": 1.6202724083835625,
+    "qtorus": 0.0,
+    "gasld": 7.493527189794712e-05,
+    "pres_vv_chamber_base": 0.0007528926284196429,
+    "pres_div_chamber_burn": 0.502126548518076,
+    "outgrat_fw": 6.210994153382304e-08,
+    "t_plant_pulse_coil_precharge": 35.32757458034901
+   }
+  },
+  {
+   "label": "seed3-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 2,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 799.7720850026853,
+    "rmajor": 9.315347092345396,
+    "rminor": 4.3044606282223885,
+    "dsol": 0.3119729162289655,
+    "a_plasma_surface": 597.6701487048383,
+    "vol_plasma": 2175.820454969543,
+    "dr_shld_outboard": 0.4874307788845005,
+    "dr_shld_inboard": 0.1059086201229775,
+    "dr_tf_inboard": 0.9611194362682931,
+    "ritf": 4.023048179292631,
+    "n_tf_coils": 22.954389333878538,
+    "t_plant_pulse_dwell": 978.4583104563183,
+    "n_divertors": 1.430628020414178,
+    "qtorus": 0.0,
+    "gasld": 2.9900301983650476e-05,
+    "pres_vv_chamber_base": 0.0009567045822877376,
+    "pres_div_chamber_burn": 0.298940814624154,
+    "outgrat_fw": 6.520617350090267e-08,
+    "t_plant_pulse_coil_precharge": 44.81079983350777
+   }
+  },
+  {
+   "label": "seed3-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 2,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 1524.5226215437049,
+    "rmajor": 6.020861169123706,
+    "rminor": 4.907110961682445,
+    "dsol": 0.18428055035759405,
+    "a_plasma_surface": 1059.3706042721074,
+    "vol_plasma": 4056.0153888251443,
+    "dr_shld_outboard": 0.5510977639345449,
+    "dr_shld_inboard": 0.214958382813641,
+    "dr_tf_inboard": 0.9959493086839346,
+    "ritf": 3.273114068962241,
+    "n_tf_coils": 31.79502267835746,
+    "t_plant_pulse_dwell": 736.2145169134003,
+    "n_divertors": 1.0908527135042578,
+    "qtorus": 0.0,
+    "gasld": 7.293360984605614e-05,
+    "pres_vv_chamber_base": 0.00021511925640019122,
+    "pres_div_chamber_burn": 0.5410631398497401,
+    "outgrat_fw": 3.051814597508505e-08,
+    "t_plant_pulse_coil_precharge": 47.08783400346652
+   }
+  },
+  {
+   "label": "seed3-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 2,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 3027.576828497411,
+    "rmajor": 9.062015943963264,
+    "rminor": 4.404604059960093,
+    "dsol": 0.34594349489295945,
+    "a_plasma_surface": 1833.8777065067354,
+    "vol_plasma": 3762.3105756991936,
+    "dr_shld_outboard": 0.4571437425790772,
+    "dr_shld_inboard": 0.31554691140422164,
+    "dr_tf_inboard": 1.0906321661996283,
+    "ritf": 3.9208792972986695,
+    "n_tf_coils": 35.793513449052305,
+    "t_plant_pulse_dwell": 769.6764654749697,
+    "n_divertors": 1.479683923512275,
+    "qtorus": 0.0,
+    "gasld": 2.4937487187337936e-05,
+    "pres_vv_chamber_base": 0.00029905882982797255,
+    "pres_div_chamber_burn": 0.7097974048555123,
+    "outgrat_fw": 2.826206331785963e-08,
+    "t_plant_pulse_coil_precharge": 38.090485936544496
+   }
+  },
+  {
+   "label": "seed3-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 2,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 1898.7967739565845,
+    "rmajor": 14.580732886634149,
+    "rminor": 2.1882373392024332,
+    "dsol": 0.13112939337939283,
+    "a_plasma_surface": 1968.4068098646596,
+    "vol_plasma": 3484.116015314037,
+    "dr_shld_outboard": 0.5401867246717474,
+    "dr_shld_inboard": 0.3723778870490255,
+    "dr_tf_inboard": 0.48519754340611687,
+    "ritf": 10.658110121324864,
+    "n_tf_coils": 16.731644717158414,
+    "t_plant_pulse_dwell": 1739.4081255202755,
+    "n_divertors": 1.6236927281061517,
+    "qtorus": 0.0,
+    "gasld": 8.732076388272621e-05,
+    "pres_vv_chamber_base": 0.0007891623866508833,
+    "pres_div_chamber_burn": 0.6529422332619881,
+    "outgrat_fw": 6.355282029225561e-09,
+    "t_plant_pulse_coil_precharge": 28.464315304720998
+   }
+  },
+  {
+   "label": "old-model-g-l-nb-ti",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 2115.3899563651776,
+    "rmajor": 8.1386,
+    "rminor": 3.266415154920533,
+    "dsol": 0.22500000000000003,
+    "a_plasma_surface": 1468.3151179059994,
+    "vol_plasma": 2907.2299918381777,
+    "dr_shld_outboard": 0.4,
+    "dr_shld_inboard": 0.12000000000000001,
+    "dr_tf_inboard": 0.63812,
+    "ritf": 3.6371848450794664,
+    "n_tf_coils": 18,
+    "t_plant_pulse_dwell": 1800.0,
+    "n_divertors": 1,
+    "qtorus": 0.0,
+    "gasld": 2.7947500651998464e-05,
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 1,
+    "pres_vv_chamber_base": 0.0005,
+    "pres_div_chamber_burn": 0.36,
+    "outgrat_fw": 1.3e-08,
+    "t_plant_pulse_coil_precharge": 30.0
+   }
+  }
+ ],
+ "TestVacuumPumpingOldFromFields": [
+  {
+   "label": "seed11-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 949.9957096921987,
+    "rmajor": 12.98989007416161,
+    "rminor": 3.605244251681751,
+    "dr_fw_plasma_gap_inboard": 0.033770724018533385,
+    "dr_fw_plasma_gap_outboard": 0.09100452059717885,
+    "a_plasma_surface": 2349.243148216776,
+    "vol_plasma": 688.724362232207,
+    "dr_shld_outboard": 0.27786436963957883,
+    "dr_shld_inboard": 0.3819149586521213,
+    "dr_tf_inboard": 0.8596952335167445,
+    "r_shld_inboard_inner": 6.320938113568118,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 19.70864684131162,
+    "t_plant_pulse_dwell": 334.54572387382404,
+    "n_divertors": 1.7880395945039917,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 2.610673336067486e+22,
+    "m_fuel_amu": 2.8167364359696583,
+    "pres_vv_chamber_base": 0.0005535845161813261,
+    "pres_div_chamber_burn": 0.7866395475081138,
+    "outgrat_fw": 2.1246436671674443e-08,
+    "t_plant_pulse_coil_precharge": 37.686518143261395
+   }
+  },
+  {
+   "label": "seed11-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 2192.686439231857,
+    "rmajor": 10.945847970846273,
+    "rminor": 3.570583563821652,
+    "dr_fw_plasma_gap_inboard": 0.13294459120043867,
+    "dr_fw_plasma_gap_outboard": 0.4050572882136721,
+    "a_plasma_surface": 2221.400458869071,
+    "vol_plasma": 927.9146520341892,
+    "dr_shld_outboard": 0.48024392404296273,
+    "dr_shld_inboard": 0.14700071238679652,
+    "dr_tf_inboard": 0.37480529796171813,
+    "r_shld_inboard_inner": 11.063498774253308,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 30.8541460037255,
+    "t_plant_pulse_dwell": 443.76724723966487,
+    "n_divertors": 1.901431078688177,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 2.620659681494006e+21,
+    "m_fuel_amu": 2.2007689541612194,
+    "pres_vv_chamber_base": 0.0003522903950180832,
+    "pres_div_chamber_burn": 0.42823571439573926,
+    "outgrat_fw": 9.070729955066049e-08,
+    "t_plant_pulse_coil_precharge": 44.86805443681489
+   }
+  },
+  {
+   "label": "seed11-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 1687.6223125985584,
+    "rmajor": 6.236281011364969,
+    "rminor": 2.0593829293674335,
+    "dr_fw_plasma_gap_inboard": 0.4982892202590418,
+    "dr_fw_plasma_gap_outboard": 0.24066367034872857,
+    "a_plasma_surface": 1851.1838242693946,
+    "vol_plasma": 624.1390517475359,
+    "dr_shld_outboard": 0.22043016736822257,
+    "dr_shld_inboard": 0.34606153725577016,
+    "dr_tf_inboard": 0.8290937466001744,
+    "r_shld_inboard_inner": 5.778387688841058,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 16.834748831040113,
+    "t_plant_pulse_dwell": 141.7963826908167,
+    "n_divertors": 1.8391248483727818,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 7.232942886867989e+21,
+    "m_fuel_amu": 2.739246874033692,
+    "pres_vv_chamber_base": 0.00020369630164586774,
+    "pres_div_chamber_burn": 0.1433441646039168,
+    "outgrat_fw": 6.024081862507977e-08,
+    "t_plant_pulse_coil_precharge": 54.78788758706408
+   }
+  },
+  {
+   "label": "seed11-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 0,
+    "p_fusion_total_mw": 594.3019398464598,
+    "rmajor": 17.27190385848337,
+    "rminor": 2.1655950585491928,
+    "dr_fw_plasma_gap_inboard": 0.06459268238554262,
+    "dr_fw_plasma_gap_outboard": 0.028621777113226957,
+    "a_plasma_surface": 1015.2476407253805,
+    "vol_plasma": 3381.1581503258644,
+    "dr_shld_outboard": 0.4959073706048702,
+    "dr_shld_inboard": 0.34852199805908474,
+    "dr_tf_inboard": 0.4954901731693413,
+    "r_shld_inboard_inner": 5.836644724290885,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 38.34816785024017,
+    "t_plant_pulse_dwell": 679.1664989560654,
+    "n_divertors": 1.436001503592331,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 3.7578936947965113e+22,
+    "m_fuel_amu": 2.04001310255319,
+    "pres_vv_chamber_base": 7.676454376110583e-05,
+    "pres_div_chamber_burn": 0.38282631122788435,
+    "outgrat_fw": 2.5264311060292335e-08,
+    "t_plant_pulse_coil_precharge": 52.261249085061344
+   }
+  },
+  {
+   "label": "seed12-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 1377.8856033795614,
+    "rmajor": 19.254541200031944,
+    "rminor": 2.1626213458891645,
+    "dr_fw_plasma_gap_inboard": 0.10605987700069164,
+    "dr_fw_plasma_gap_outboard": 0.1879468354860596,
+    "a_plasma_surface": 884.1366178388025,
+    "vol_plasma": 3148.8275453684173,
+    "dr_shld_outboard": 0.2690476292740685,
+    "dr_shld_inboard": 0.3637082807966382,
+    "dr_tf_inboard": 1.072317440175518,
+    "r_shld_inboard_inner": 3.0254432896795804,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 19.222738845307727,
+    "t_plant_pulse_dwell": 808.7232690762746,
+    "n_divertors": 1.4536161218532766,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 4.644831834274399e+22,
+    "m_fuel_amu": 2.2587710894221504,
+    "pres_vv_chamber_base": 0.00019601130867669255,
+    "pres_div_chamber_burn": 0.5693573318381502,
+    "outgrat_fw": 9.47152516318458e-08,
+    "t_plant_pulse_coil_precharge": 56.14054377218757
+   }
+  },
+  {
+   "label": "seed12-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 3580.874999732158,
+    "rmajor": 6.900979742930607,
+    "rminor": 4.778436437251968,
+    "dr_fw_plasma_gap_inboard": 0.33163537714614816,
+    "dr_fw_plasma_gap_outboard": 0.43834680585214225,
+    "a_plasma_surface": 1257.0067829175669,
+    "vol_plasma": 1299.4987314841867,
+    "dr_shld_outboard": 0.675782046136816,
+    "dr_shld_inboard": 0.28157206484712427,
+    "dr_tf_inboard": 1.000956082819865,
+    "r_shld_inboard_inner": 4.812102281115928,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 12.566404263882424,
+    "t_plant_pulse_dwell": 1707.5211582076302,
+    "n_divertors": 1.1350878625092655,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 2.1531345352561936e+22,
+    "m_fuel_amu": 2.323895052134076,
+    "pres_vv_chamber_base": 0.00017854380884796856,
+    "pres_div_chamber_burn": 0.6462679609051734,
+    "outgrat_fw": 9.153793413830361e-08,
+    "t_plant_pulse_coil_precharge": 46.44356909306034
+   }
+  },
+  {
+   "label": "seed12-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 2600.9967564846875,
+    "rmajor": 15.960354184180243,
+    "rminor": 3.3763101227890493,
+    "dr_fw_plasma_gap_inboard": 0.2879673640654227,
+    "dr_fw_plasma_gap_outboard": 0.45492025767179656,
+    "a_plasma_surface": 993.5448621430894,
+    "vol_plasma": 1311.0769829927801,
+    "dr_shld_outboard": 0.7681809228363123,
+    "dr_shld_inboard": 0.3800908367824826,
+    "dr_tf_inboard": 0.728397414581271,
+    "r_shld_inboard_inner": 10.207002009972937,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 14.287692099326987,
+    "t_plant_pulse_dwell": 1626.8672357647545,
+    "n_divertors": 1.500123847667957,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 3.465124558743865e+22,
+    "m_fuel_amu": 2.616476821940209,
+    "pres_vv_chamber_base": 0.0004421709587366068,
+    "pres_div_chamber_burn": 0.3037750039786987,
+    "outgrat_fw": 9.194772869568013e-08,
+    "t_plant_pulse_coil_precharge": 50.940527836748124
+   }
+  },
+  {
+   "label": "seed12-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "i_vac_pump_dwell": 1,
+    "i_vacuum_pump_type": 1,
+    "p_fusion_total_mw": 858.6225351631265,
+    "rmajor": 11.662619720855487,
+    "rminor": 4.171907573230772,
+    "dr_fw_plasma_gap_inboard": 0.44194848630959094,
+    "dr_fw_plasma_gap_outboard": 0.48187012589750305,
+    "a_plasma_surface": 905.5138676018692,
+    "vol_plasma": 4056.121085553617,
+    "dr_shld_outboard": 0.6169223382129607,
+    "dr_shld_inboard": 0.07387111368541689,
+    "dr_tf_inboard": 0.4895659583908466,
+    "r_shld_inboard_inner": 4.6982278764062775,
+    "dr_shld_vv_gap_inboard": 0.0,
+    "dr_vv_inboard": 0.0,
+    "n_tf_coils": 20.683938993844556,
+    "t_plant_pulse_dwell": 1276.0145493308714,
+    "n_divertors": 1.0817085124418402,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 3.5083084041393503e+22,
+    "m_fuel_amu": 2.782163449156505,
+    "pres_vv_chamber_base": 0.0006103834408341692,
+    "pres_div_chamber_burn": 0.42040793038651825,
+    "outgrat_fw": 2.0108701835730532e-08,
+    "t_plant_pulse_coil_precharge": 57.11814080570544
+   }
+  },
+  {
+   "label": "old-model-g-l-nb-ti-from-fields",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_fusion_total_mw": 2115.3899563651776,
+    "rmajor": 8.1386,
+    "rminor": 3.266415154920533,
+    "dr_fw_plasma_gap_inboard": 0.22500000000000003,
+    "dr_fw_plasma_gap_outboard": 0.22500000000000003,
+    "a_plasma_surface": 1468.3151179059994,
+    "vol_plasma": 2907.2299918381777,
+    "dr_shld_outboard": 0.4,
+    "dr_shld_inboard": 0.12000000000000001,
+    "dr_tf_inboard": 0.63812,
+    "r_shld_inboard_inner": 3.8621848450794665,
+    "dr_shld_vv_gap_inboard": 0.155,
+    "dr_vv_inboard": 0.07,
+    "n_tf_coils": 18,
+    "t_plant_pulse_dwell": 1800.0,
+    "n_divertors": 1,
+    "qtorus": 0.0,
+    "molflow_plasma_fuelling_required": 3.3658206e+21,
+    "m_fuel_amu": 2.5,
+    "i_vac_pump_dwell": 0,
+    "i_vacuum_pump_type": 1,
+    "pres_vv_chamber_base": 0.0005,
+    "pres_div_chamber_burn": 0.36,
+    "outgrat_fw": 1.3e-08,
+    "t_plant_pulse_coil_precharge": 30.0
+   }
+  }
+ ],
+ "TestVacuumPumpingSimple": [
+  {
+   "label": "simple-model",
+   "provenance": "legacy",
+   "kwargs": {
+    "molflow_plasma_fuelling_required": 7.574566899769411e+22,
+    "molflow_vac_pumps": 1.2155e+22,
+    "volflow_vac_pumps_max": 27.3,
+    "f_a_vac_pump_port_plasma_surface": 0.0203,
+    "f_volflow_vac_pumps_impedance": 0.4,
+    "a_plasma_surface": 1500.314652770936,
+    "n_tf_coils": 18,
+    "outgasfactor": 0.0235,
+    "pres_vv_chamber_base": 0.0005,
+    "outgasindex": 1.0,
+    "t_plant_pulse_dwell": 500.0
+   }
+  }
+ ]
+}

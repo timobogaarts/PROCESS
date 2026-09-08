@@ -27,7 +27,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
@@ -43,19 +42,20 @@ from cottax.problem import (
     driver_vars,
     unknowns_of,
 )
+from cottax.tools.path import path_map
 
 from functional_process.cottax import mdf, sand
 from functional_process.cottax.core.solver.drivers import SeededNewtonDriver
 from functional_process.cottax.mda import assign_drivers, default_drivers
 from functional_process.cottax.run_mdf_harness import MAX_ITER, _why_it_stopped
 from functional_process.cottax.sand_harness import REFERENCE_INPUT_FILE, _scratch_copy
-from process.main import SingleRun
 from functional_process.tests.test_sand import (
     REFERENCE_FIGURE_OF_MERIT,
     REFERENCE_ICC,
     REFERENCE_IXC,
     REFERENCE_N_EQUALITY,
 )
+from process.main import SingleRun
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 

@@ -15,13 +15,14 @@ are held at the sample's own baseline values, so the slice is a projection and n
 different point.
 """
 
-import functools
 import dataclasses
+import functools
 
 import numpy as np
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
     CICC_SUPERCONDUCTOR_PROPERTIES,
     TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
@@ -57,6 +58,7 @@ from functional_process.cottax.tfcoil.superconducting import (
     vv_stress_on_quench,
     vv_stress_quench_from_build,
 )
+from functional_process.tests.test_machine import TOKAMAK_BASELINE_INDAT
 from process.core.model import DataStructure
 from process.models.tfcoil.superconducting import (
     CICCSuperconductingTFCoil,
@@ -64,7 +66,6 @@ from process.models.tfcoil.superconducting import (
 from process.models.tfcoil.superconducting import (
     vv_stress_on_quench as process_vv_stress_on_quench,
 )
-from functional_process.tests.test_machine import TOKAMAK_BASELINE_INDAT
 
 _RECTANGULAR = 0
 _DOUBLE_RECTANGULAR = 1
@@ -160,7 +161,7 @@ class TestSuperconductingTfWpGeometryRectangular(Tier1Contract):
     reference = _reference_wp_geometry(_RECTANGULAR)
     ported = superconducting_tf_wp_geometry_rectangular
 
-    samples = [legacy_sample("wp-geometry-rectangular", **_WP_GEOMETRY_SAMPLE)]
+    samples = FROM_FILE
     fuzz_bounds = _WP_GEOMETRY_FUZZ
 
 
@@ -171,7 +172,7 @@ class TestSuperconductingTfWpGeometryDoubleRectangular(Tier1Contract):
     reference = _reference_wp_geometry(_DOUBLE_RECTANGULAR)
     ported = superconducting_tf_wp_geometry_double_rectangular
 
-    samples = [legacy_sample("wp-geometry-double-rectangular", **_WP_GEOMETRY_SAMPLE)]
+    samples = FROM_FILE
     fuzz_bounds = _WP_GEOMETRY_FUZZ
 
 
@@ -182,7 +183,7 @@ class TestSuperconductingTfWpGeometryTrapezoidal(Tier1Contract):
     reference = _reference_wp_geometry(_TRAPEZOIDAL)
     ported = superconducting_tf_wp_geometry_trapezoidal
 
-    samples = [legacy_sample("wp-geometry-trapezoidal", **_WP_GEOMETRY_SAMPLE)]
+    samples = FROM_FILE
     fuzz_bounds = _WP_GEOMETRY_FUZZ
 
 
@@ -261,13 +262,7 @@ class TestTfCaseAreasCircularFront(Tier1Contract):
     reference = _reference_case_areas(_CIRCULAR_CASE)
     ported = tf_case_areas_circular_front
 
-    samples = [
-        legacy_sample(
-            "case-areas-circular",
-            r_tf_inboard_out=_R_TF_INBOARD_OUT,
-            **_CASE_BASELINE,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestTfCaseAreasStraightFront(Tier1Contract):
@@ -277,13 +272,7 @@ class TestTfCaseAreasStraightFront(Tier1Contract):
     reference = _reference_case_areas(_STRAIGHT_CASE)
     ported = tf_case_areas_straight_front
 
-    samples = [
-        legacy_sample(
-            "case-areas-straight",
-            dr_tf_plasma_case=_DR_TF_PLASMA_CASE,
-            **_CASE_BASELINE,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestDxTfSideCaseRectangular(Tier1Contract):
@@ -293,14 +282,7 @@ class TestDxTfSideCaseRectangular(Tier1Contract):
     reference = _reference_side_case(_RECTANGULAR)
     ported = dx_tf_side_case_rectangular
 
-    samples = [
-        legacy_sample(
-            "dx-side-case-rectangular",
-            dx_tf_side_case_min=_DX_TF_SIDE_CASE_MIN,
-            tan_theta_coil=0.19891236737965801,
-            dr_tf_wp_with_insulation=_DR_TF_WP_WITH_INSULATION,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -312,14 +294,7 @@ class TestDxTfSideCaseDoubleRectangular(Tier1Contract):
     reference = _reference_side_case(_DOUBLE_RECTANGULAR)
     ported = dx_tf_side_case_double_rectangular
 
-    samples = [
-        legacy_sample(
-            "dx-side-case-double-rectangular",
-            dx_tf_side_case_min=_DX_TF_SIDE_CASE_MIN,
-            tan_theta_coil=0.19891236737965801,
-            dr_tf_wp_with_insulation=_DR_TF_WP_WITH_INSULATION,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -331,11 +306,7 @@ class TestDxTfSideCaseTrapezoidal(Tier1Contract):
     reference = _reference_side_case(_TRAPEZOIDAL)
     ported = dx_tf_side_case_trapezoidal
 
-    samples = [
-        legacy_sample(
-            "dx-side-case-trapezoidal", dx_tf_side_case_min=_DX_TF_SIDE_CASE_MIN
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -369,14 +340,7 @@ class TestTfWpCurrents(Tier1Contract):
     reference = _reference_wp_currents
     ported = tf_wp_currents
 
-    samples = [
-        legacy_sample(
-            "wp-currents-imode",
-            c_tf_total=256500000.00000003,
-            n_tf_coils=16,
-            a_tf_wp_no_insulation=0.60510952642236249,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -445,16 +409,7 @@ class TestPeakBTfInboardWithRipple16Coils(Tier1Contract):
     reference = _reference_peak_b_kovari
     ported = _ported_peak_b_16
 
-    samples = [
-        legacy_sample(
-            "peak-b-ripple-16coils",
-            n_tf_coils=16,
-            dx_tf_wp_primary_toroidal=1.299782604942499,
-            dr_tf_wp_no_insulation=0.50661087836601015,
-            r_tf_wp_inboard_centre=3.789896624292115,
-            b_tf_inboard_peak_symmetric=11.717722779177526,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestPeakBTfInboardWithRippleFlatAllowance(Tier1Contract):
@@ -464,9 +419,7 @@ class TestPeakBTfInboardWithRippleFlatAllowance(Tier1Contract):
     reference = _reference_peak_b_flat
     ported = peak_b_tf_inboard_with_ripple_flat
 
-    samples = [
-        legacy_sample("peak-b-ripple-flat", b_tf_inboard_peak_symmetric=11.7),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -538,19 +491,7 @@ class TestCiccAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
     reference = _reference_cicc_averaged_turn_geometry
     ported = cicc_averaged_turn_geometry_from_current_per_turn
 
-    samples = [
-        legacy_sample(
-            "cicc-averaged-turn-imode",
-            j_tf_wp=26493137.688284047,
-            c_tf_turn=65000.0,
-            dx_tf_turn_steel=0.0080000000000000019,
-            dx_tf_turn_insulation=0.00080000000000000004,
-            layer_ins=0.0,
-            a_tf_wp_no_insulation=0.60510952642236249,
-            dia_tf_turn_coolant_channel=0.004,
-            f_a_tf_turn_cable_space_extra_void=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -637,22 +578,7 @@ class TestCiccIntegerTurnGeometry(Tier1Contract):
     reference = _reference_cicc_integer_turn_geometry
     ported = cicc_integer_turn_geometry
 
-    samples = [
-        legacy_sample(
-            "cicc-integer-turn-baseline2018",
-            dr_tf_wp_with_insulation=0.54261087836601019,
-            dx_tf_wp_insulation=0.0080000000000000019,
-            dx_tf_wp_insertion_gap=0.01,
-            n_tf_wp_layers=10.0,
-            dx_tf_wp_toroidal_min=1.299782604942499,
-            n_tf_wp_pancakes=20.0,
-            c_tf_coil=14805350.287500001,
-            dx_tf_turn_steel=0.0080000000000000002,
-            dx_tf_turn_insulation=0.002,
-            dia_tf_turn_coolant_channel=0.005,
-            f_a_tf_turn_cable_space_extra_void=0.4,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # a value or finiteness disagreement at the wider range
@@ -715,21 +641,7 @@ class TestTfCiccInboardAreasAndFractions(Tier1Contract):
     reference = _reference_cicc_inboard_areas
     ported = tf_cicc_inboard_areas_and_fractions
 
-    samples = [
-        legacy_sample(
-            "cicc-inboard-areas-baseline2018",
-            n_tf_coil_turns=200.0,
-            dia_tf_turn_coolant_channel=0.005,
-            a_tf_turn_cable_space_no_void=0.001293323051622732,
-            f_a_tf_turn_cable_space_extra_void=0.30000000000000004,
-            a_tf_turn_insulation=0.00043940087233490438,
-            a_tf_turn_steel=0.0014685061538103825,
-            n_tf_coils=16.0,
-            a_tf_inboard_total=27.308689677971632,
-            a_tf_coil_inboard_case=1.0015169239205168,
-            a_tf_wp_ground_insulation=0.028582295732936136,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -755,15 +667,7 @@ class TestTfTurnArea(Tier1Contract):
     reference = _reference_a_tf_turn
     ported = calculate_a_tf_turn
 
-    samples = [
-        legacy_sample(
-            "a_tf_turn-baseline2018",
-            c_tf_total=256500000.00000003,
-            j_tf_wp=26493137.688284047,
-            n_tf_coils=16.0,
-            n_tf_coil_turns=200.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1138,12 +1042,7 @@ class TestSuperconductingTfCoilAreasAndMassesConventionalWstNb3sn(Tier1Contract)
     reference = _reference_sc_areas_and_masses_wst_nb3sn
     ported = superconducting_tf_coil_areas_and_masses_conventional
 
-    samples = [
-        legacy_sample(
-            "sc-masses-baseline2018-wst-nb3sn",
-            **TestSuperconductingTfCoilAreasAndMassesConventional.samples[0].kwargs,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1183,12 +1082,7 @@ class TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco(Tier1Contract):
     reference = _reference_sc_areas_and_masses_st_hazelton_zhai_rebco
     ported = superconducting_tf_coil_areas_and_masses_spherical_tokamak
 
-    samples = [
-        legacy_sample(
-            "sc-masses-st-shortleg-hazelton-zhai",
-            **_ST_SHORTLEG,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1310,7 +1204,7 @@ class TestVvStressOnQuenchCore(Tier1Contract):
     reference = _reference_vv_stress_core
     ported = vv_stress_on_quench
 
-    samples = [legacy_sample("vv-stress-large-tokamak", **_VV_CORE_POINT)]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         # The box keeps `ro > rm > ri` and `H` positive for both structures, which is
@@ -1351,40 +1245,7 @@ class TestVvStressQuenchFromBuild(Tier1Contract):
     reference = _reference_vv_stress_from_build
     ported = vv_stress_quench_from_build
 
-    samples = [
-        legacy_sample(
-            "vv-stress-build-large-tokamak",
-            z_tf_inside_half=8.5,
-            dr_tf_inboard=1.2,
-            r_tf_inboard_mid=3.0,
-            r_tf_outboard_mid=13.0,
-            r_tf_inboard_out=3.6,
-            tfa_first_arc=1.5,
-            z_plasma_xpoint_upper=5.6,
-            dz_xpoint_divertor=0.6,
-            dz_divertor=0.62,
-            dz_shld_upper=0.6,
-            dz_vv_upper=0.3,
-            r_vv_inboard_out=4.2,
-            dr_vv_outboard=0.3,
-            dr_tf_outboard=1.2,
-            dr_tf_shld_gap=0.05,
-            dr_shld_thermal_outboard=0.05,
-            dr_shld_vv_gap_outboard=0.163,
-            len_tf_coil=50.0,
-            theta1_coil=45.0,
-            theta1_vv=1.0,
-            n_tf_coils=16.0,
-            n_tf_coil_turns=200.0,
-            a_tf_coil_inboard_steel=0.5,
-            a_tf_plasma_case=0.2,
-            a_tf_coil_nose_case=0.35,
-            dx_tf_side_case_average=0.03,
-            t_tf_superconductor_quench=17.9728,
-            c_tf_coil=1.4e7,
-            dr_vv_shells=0.12,
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1544,11 +1405,7 @@ class TestCiccSuperconductorPropertiesIterNb3sn(Tier1Contract):
     reference = _reference_sc_properties_iter_nb3sn
     ported = _ported_sc_properties_iter_nb3sn
 
-    samples = [
-        legacy_sample(
-            "cicc-sc-properties-iter-nb3sn", strain=-0.003, **_SC_PROPERTIES_POINT
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _SC_PROPERTIES_BOUNDS
 
@@ -1560,11 +1417,7 @@ class TestCiccSuperconductorPropertiesWstNb3sn(Tier1Contract):
     reference = _reference_sc_properties_wst_nb3sn
     ported = cicc_superconductor_properties_wst_nb3sn
 
-    samples = [
-        legacy_sample(
-            "cicc-sc-properties-wst-nb3sn", strain=-0.003, **_SC_PROPERTIES_POINT
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _SC_PROPERTIES_BOUNDS
 
@@ -1580,15 +1433,7 @@ class TestCiccSuperconductorPropertiesUserDefinedNb3sn(Tier1Contract):
     reference = _reference_sc_properties_user_defined_nb3sn
     ported = _ported_sc_properties_user_defined_nb3sn
 
-    samples = [
-        legacy_sample(
-            "cicc-sc-properties-user-defined-nb3sn",
-            strain=-0.003,
-            bcritsc=24.0,
-            tcritsc=16.0,
-            **_SC_PROPERTIES_POINT,
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **_SC_PROPERTIES_BOUNDS,
@@ -1608,7 +1453,7 @@ class TestCiccSuperconductorPropertiesOldLubellNbti(Tier1Contract):
     reference = _reference_sc_properties_lubell_nbti
     ported = cicc_superconductor_properties_lubell_nbti
 
-    samples = [legacy_sample("cicc-sc-properties-lubell-nbti", **_SC_PROPERTIES_POINT)]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         name: bounds
@@ -1630,15 +1475,7 @@ class TestCiccSuperconductorPropertiesDurhamNbti(Tier1Contract):
     reference = _reference_sc_properties_durham_nbti
     ported = cicc_superconductor_properties_durham_nbti
 
-    samples = [
-        legacy_sample(
-            "cicc-sc-properties-durham-nbti",
-            strain=-0.003,
-            b_crit_upper_nbti=14.86,
-            t_crit_nbti=9.04,
-            **_SC_PROPERTIES_POINT,
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **_SC_PROPERTIES_BOUNDS,
@@ -1749,15 +1586,7 @@ class TestTemperatureMarginIterNb3sn(Tier1Contract):
     reference = _reference_margin_iter_nb3sn
     ported = _ported_margin_pair(temperature_margin_itersc)
 
-    samples = [
-        legacy_sample(
-            "temp-margin-iter-nb3sn",
-            strain=-0.003,
-            b_c20max=32.97,
-            temp_c0max=16.06,
-            **_MARGIN_POINT,
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         # The box keeps the current-sharing temperature strictly between `tftmp` and
@@ -1780,15 +1609,7 @@ class TestTemperatureMarginWstNb3sn(Tier1Contract):
     reference = _reference_margin_wst_nb3sn
     ported = _ported_margin_pair(temperature_margin_wst_nb3sn)
 
-    samples = [
-        legacy_sample(
-            "temp-margin-wst-nb3sn",
-            strain=-0.003,
-            b_c20max=32.97,
-            temp_c0max=16.06,
-            **_MARGIN_POINT,
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = TestTemperatureMarginIterNb3sn.fuzz_bounds
 
@@ -1800,14 +1621,7 @@ class TestTemperatureMarginOldLubellNbti(Tier1Contract):
     reference = _reference_margin_lubell_nbti
     ported = _ported_margin_pair(temperature_margin_lubell_nbti)
 
-    samples = [
-        legacy_sample(
-            "temp-margin-lubell-nbti",
-            b_c20max=15.0,
-            temp_c0max=9.3,
-            **{**_MARGIN_POINT, "j_superconductor": 1.2e9},
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "j_superconductor": (6.0e8, 2.0e9),

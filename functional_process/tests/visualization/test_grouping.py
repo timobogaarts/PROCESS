@@ -13,14 +13,14 @@ import json
 import re
 
 import pytest
-from jax.tree_util import DictKey, GetAttrKey
-
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
 from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey
 from cottax.tools.path import path_map
+from jax.tree_util import DictKey, GetAttrKey
+
 from functional_process.cottax.visualization.grouping import (
     PALETTE,
     TIER_OVERLAY,
@@ -30,8 +30,8 @@ from functional_process.cottax.visualization.grouping import (
     dependency_group_sequence,
     group_label,
     group_of,
-    group_sequence,
     group_palette,
+    group_sequence,
     group_style,
     grouping_report,
     hierarchical,
@@ -99,7 +99,8 @@ def test_a_name_shallower_than_the_depth_gives_what_it_has():
 
 def test_a_minted_name_inherits_the_group_of_what_it_was_minted_over():
     """At the tree's grain that is the node's own namespace, not its subsystem: a
-    problem drawn beside `stellarator.coils.Intersect` belongs in `stellarator.coils`."""
+    problem drawn beside `stellarator.coils.Intersect` belongs in `stellarator.coils`.
+    """
     minted = M("problem", "stellarator", "coils", "Intersect")
     assert group_of(minted) == ("stellarator", "coils")
     assert group_of(minted, depth=1) == ("stellarator",)
@@ -382,7 +383,8 @@ def test_the_report_finds_the_crossing_block_and_the_scattered_group(coupled):
     report = grouping_report(Blocking.scc(coupled))
     (block,) = report.coupled
     assert set(block.members) == {N("a", "p"), N("b", "q"), N("a", "r")}
-    assert block.real == 3 and block.crosses
+    assert block.real == 3
+    assert block.crosses
     assert report.crossing == (block,)
     # not one group of the three is a contiguous stretch of the run order: `a` and `b` are
     # interleaved inside the block that couples them, and `c` straddles `b.u` after it.
@@ -404,7 +406,8 @@ def test_a_minted_problem_beside_its_node_is_not_coupling():
         })
     )
     (block,) = grouping_report(Blocking.scc(graph)).blocks
-    assert len(block.members) == 2 and block.real == 1
+    assert len(block.members) == 2
+    assert block.real == 1
     assert grouping_report(Blocking.scc(graph)).coupled == ()
 
 
@@ -418,20 +421,24 @@ def test_an_ungrouped_member_does_not_make_a_block_cross():
     )
     (block,) = grouping_report(Blocking.scc(graph)).coupled
     assert block.real == 3
-    assert not block.crosses and UNGROUPED in block.groups
+    assert not block.crosses
+    assert UNGROUPED in block.groups
 
 
 # ============================================================== the drawing
 def test_colours_recycle_under_a_texture_rather_than_silently(coupled):
     """More groups than colours must not make two of them look the same."""
     first, later = group_style(0), group_style(len(PALETTE))
-    assert first[0] == later[0] and first[1] is None and later[1] == TIER_OVERLAY[1]
+    assert first[0] == later[0]
+    assert first[1] is None
+    assert later[1] == TIER_OVERLAY[1]
 
 
 def test_the_struct_puts_a_read_in_its_producer_s_row(coupled):
     """Outputs in rows (`IC_FBD`): `c.s` reads `p` from `a.p`, so the mark is
     (row a.p, col c.s) -- and feedback therefore falls *below* the diagonal, the same way
-    round as the plotly `dsm.html` and as everyone else's DSM."""
+    round as the plotly `dsm.html` and as everyone else's DSM.
+    """
     blocking = Blocking.scc(coupled)
     order = structure_order(blocking)
     struct = _matrix_struct(blocking, order, depth=1, formatter=xDSMFormatterFlat())
@@ -446,7 +453,8 @@ def test_the_struct_puts_a_read_in_its_producer_s_row(coupled):
 
 def test_backward_is_the_lower_triangle(coupled):
     """The flip is only real if the count agrees with it: what runs backwards in this
-    ordering is what sits below the diagonal, not above."""
+    ordering is what sits below the diagonal, not above.
+    """
     blocking = Blocking.scc(coupled)
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=1, formatter=xDSMFormatterFlat()
@@ -474,8 +482,9 @@ def test_the_page_is_self_contained_and_carries_its_own_data(coupled, tmp_path):
     page = str(doc)
     assert doc.path == str(tmp_path / "g.html")
     assert "//" not in re.sub(r"https?://", "", page)  # no protocol-relative asset
-    assert "src=" not in page and "<link" not in page
-    data = json.loads(re.search(r"const D = (\{.*?\});\n", page, re.S).group(1))
+    assert "src=" not in page
+    assert "<link" not in page
+    data = json.loads(re.search(r"const D = (\{.*?\});\n", page, re.DOTALL).group(1))
     assert len(data["rows"]) == len(coupled.nodes)
     assert data["backward"] >= 1  # the cycle has to run backwards
 
@@ -508,7 +517,8 @@ def test_containing_is_the_longest_common_prefix():
 def test_containing_ignores_ungrouped_members():
     """A flat name says nothing about containment, so it must not drag it to the root --
     the same reading `named_groups` takes, and what keeps
-    `test_an_ungrouped_member_does_not_make_a_block_cross` true."""
+    `test_an_ungrouped_member_does_not_make_a_block_cross` true.
+    """
     assert containing([("a", "b"), UNGROUPED]) == ("a", "b")
 
 
@@ -540,7 +550,9 @@ def nested():
 def test_a_block_inside_one_subtree_does_not_cross(nested):
     (block,) = grouping_report(Blocking.scc(nested)).coupled
     assert block.real == 3
-    assert block.spans and block.nests and not block.crosses
+    assert block.spans
+    assert block.nests
+    assert not block.crosses
     assert block.container == ("p",)
     assert grouping_report(Blocking.scc(nested)).crossing == ()
     assert grouping_report(Blocking.scc(nested)).nesting == (block,)
@@ -548,13 +560,16 @@ def test_a_block_inside_one_subtree_does_not_cross(nested):
 
 def test_a_block_across_subsystems_still_crosses(coupled):
     (block,) = grouping_report(Blocking.scc(coupled)).coupled
-    assert block.spans and block.crosses and not block.nests
+    assert block.spans
+    assert block.crosses
+    assert not block.nests
     assert block.container == UNGROUPED
 
 
 def test_edges_are_counted_twice_over_group_and_over_subsystem(nested):
     """`p.x -> p.q.y` is a cross-group edge and is not two subsystems talking. Both
-    figures are reported because at the tree's grain the first alone misleads."""
+    figures are reported because at the tree's grain the first alone misleads.
+    """
     report = grouping_report(Blocking.scc(nested))
     assert report.cross_group_edges > report.cross_subsystem_edges
     assert report.cross_subsystem_edges == 1  # only `p.x -> t.w`
@@ -584,7 +599,8 @@ def test_the_ribbon_has_one_lane_per_level(nested):
 
 def test_a_shallow_name_simply_has_no_inner_lane(nested):
     """How a ragged tree draws: `t` has a lane 0 and no lane 1, rather than a padded
-    one or a special case."""
+    one or a special case.
+    """
     blocking = Blocking.scc(nested)
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
@@ -600,7 +616,8 @@ def test_a_shallow_name_simply_has_no_inner_lane(nested):
 
 def test_hue_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
     """One hue per subsystem, and depth spent as a *tint* of it: the three namespaces of
-    `p` are three shades of one colour, and `t` is a different colour entirely."""
+    `p` are three shades of one colour, and `t` is a different colour entirely.
+    """
     blocking = Blocking.scc(nested)
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
@@ -615,11 +632,12 @@ def test_hue_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
 def test_a_subsystem_keeps_the_undiluted_hue_and_its_children_are_shaded(nested):
     """The namespace itself is the palette colour; what is inside it is shaded away from
     it. A child that came out the same colour as its parent would make the ribbon's inner
-    lane invisible."""
+    lane invisible.
+    """
     palette = group_palette([("p",), ("p", "q"), ("p", "q", "r"), ("t",)])
-    assert palette[("p",)].colour == palette[("p",)].base
-    assert palette[("p", "q")].colour != palette[("p",)].colour
-    assert palette[("p", "q")].base == palette[("p",)].base
+    assert palette["p",].colour == palette["p",].base
+    assert palette["p", "q"].colour != palette["p",].colour
+    assert palette["p", "q"].base == palette["p",].base
 
 
 def test_shade_goes_to_white_and_to_black():
@@ -630,7 +648,8 @@ def test_shade_goes_to_white_and_to_black():
 
 def test_an_intermediate_namespace_is_coloured_even_with_no_node_of_its_own():
     """The ribbon draws a lane per level, so a namespace nothing lives directly in still
-    needs a colour -- otherwise a subsystem has a hole in the middle of it."""
+    needs a colour -- otherwise a subsystem has a hole in the middle of it.
+    """
     palette = group_palette([("p", "q", "r")])
     assert set(palette) >= {("p",), ("p", "q"), ("p", "q", "r")}
 

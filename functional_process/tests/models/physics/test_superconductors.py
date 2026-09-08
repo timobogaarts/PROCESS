@@ -7,7 +7,8 @@ module-level function called directly through the port's (unchanged) signature -
 lifted from `tests/unit/models/test_superconductors.py`'s own parametrised cases.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.physics.superconductors import (
     bi2212,
     bottura_scaling,
@@ -36,9 +37,7 @@ class TestJcritRebco(Tier1Contract):
     reference = staticmethod(ref.jcrit_rebco)
     ported = jcrit_rebco
 
-    samples = [
-        legacy_sample("jcrit-rebco-reference", temp_conductor=4.75, b_conductor=7.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -60,22 +59,7 @@ class TestBotturaScaling(Tier1Contract):
 
     static_argnames = ("csc", "p", "q", "c_a1", "c_a2", "epsilon_0a")
 
-    samples = [
-        legacy_sample(
-            "bottura-scaling-iter-constants",
-            csc=19922.0,
-            p=0.63,
-            q=2.1,
-            c_a1=44.48,
-            c_a2=0.0,
-            epsilon_0a=0.00256,
-            temp_conductor=4.75,
-            b_conductor=13.008974843466492,
-            epsilon=0.001601605753441172,
-            b_c20max=32.97,
-            temp_c0max=16.06,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {
@@ -99,24 +83,7 @@ class TestItersc(Tier1Contract):
     reference = staticmethod(ref.itersc)
     ported = itersc
 
-    samples = [
-        legacy_sample(
-            "itersc-large-tokamak-1",
-            temp_conductor=4.75,
-            b_conductor=13.008974843466492,
-            strain=0.001601605753441172,
-            b_c20max=32.969999999999999,
-            temp_c0max=16.059999999999999,
-        ),
-        legacy_sample(
-            "itersc-large-tokamak-2",
-            temp_conductor=6.2510000000000003,
-            b_conductor=13.008974843466492,
-            strain=0.001601605753441172,
-            b_c20max=32.969999999999999,
-            temp_c0max=16.059999999999999,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # a disagreement or non-finite value at the wider range
@@ -140,24 +107,7 @@ class TestJcritNbti(Tier1Contract):
     reference = staticmethod(ref.jcrit_nbti)
     ported = jcrit_nbti
 
-    samples = [
-        legacy_sample(
-            "jcrit-nbti-large-tokamak-1",
-            temp_conductor=4.75,
-            b_conductor=8.0517923638507547,
-            c0=10000000000,
-            b_c20max=15,
-            temp_c0max=9.3000000000000007,
-        ),
-        legacy_sample(
-            "jcrit-nbti-large-tokamak-2",
-            temp_conductor=6,
-            b_conductor=8.0517923638507547,
-            c0=10000000000,
-            b_c20max=15,
-            temp_c0max=9.3000000000000007,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -179,24 +129,7 @@ class TestBi2212(Tier1Contract):
 
     reference_domain_errors = (ProcessValueError,)
 
-    samples = [
-        legacy_sample(
-            "bi2212-reference",
-            b_conductor=7.0,
-            jstrand=2.0e7,
-            temp_conductor=4.75,
-            f_strain=0.2,
-        ),
-        # Constructed to land outside the validity range (temp_conductor > 20.0),
-        # exercising the `reference_domain_errors` path -- no PROCESS unit test does.
-        legacy_sample(
-            "bi2212-out-of-range",
-            b_conductor=3.0,
-            jstrand=2.0e7,
-            temp_conductor=25.0,
-            f_strain=0.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -215,16 +148,7 @@ class TestGlNbti(Tier1Contract):
     reference = staticmethod(ref.gl_nbti)
     ported = gl_nbti
 
-    samples = [
-        legacy_sample(
-            "gl-nbti-reference",
-            temp_conductor=4.75,
-            b_conductor=7.0,
-            strain=2,
-            b_c20max=9.5,
-            t_c0=13.75,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference TypeError: float() argument must be a string or a real number, not 'complex'
@@ -252,16 +176,7 @@ class TestGlRebco(Tier1Contract):
     reference = staticmethod(ref.gl_rebco)
     ported = gl_rebco
 
-    samples = [
-        legacy_sample(
-            "gl-rebco-reference",
-            temp_conductor=4.75,
-            b_conductor=7.0,
-            strain=2,
-            b_c20max=30.0,
-            t_c0=25.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference TypeError: float() argument must be a string or a real number, not 'complex'
@@ -284,16 +199,7 @@ class TestWesternSuperconductingNb3Sn(Tier1Contract):
     reference = staticmethod(ref.western_superconducting_nb3sn)
     ported = western_superconducting_nb3sn
 
-    samples = [
-        legacy_sample(
-            "western-nb3sn-reference",
-            temp_conductor=4.75,
-            b_conductor=27.0,
-            strain=0.001,
-            b_c20max=30.0,
-            temp_c0max=25.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # a value or finiteness disagreement at the wider range
@@ -327,28 +233,7 @@ class TestHijcRebco(Tier1Contract):
     reference = staticmethod(ref.hijc_rebco)
     ported = hijc_rebco
 
-    samples = [
-        legacy_sample(
-            "hijc-rebco-reference",
-            temp_conductor=4.75,
-            b_conductor=7.0,
-            b_c20max=30.0,
-            t_c0=25.0,
-            dr_hts_tape=4.0e-3,
-            dx_hts_tape_rebco=1.0e-6,
-            dx_hts_tape_total=6.5e-5,
-        ),
-        legacy_sample(
-            "hijc-rebco-croco-tape",
-            temp_conductor=4.75,
-            b_conductor=11.7,
-            b_c20max=138.0,
-            t_c0=92.0,
-            dr_hts_tape=6.28e-3,
-            dx_hts_tape_rebco=1.0e-6,
-            dx_hts_tape_total=2.11e-4,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference TypeError: '>' not supported between instances of 'complex' and 'float'

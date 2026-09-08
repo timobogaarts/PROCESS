@@ -1,0 +1,63 @@
+{
+ "TestCalculateCsGeometry": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 8.818217164127494,
+    "f_z_cs_tf_internal": 0.9,
+    "dr_cs": 0.546816593988753,
+    "dr_cs_bore": 2.003843190236783
+   }
+  }
+ ],
+ "TestCalculateCsTurnGeometryEuDemo": [
+  {
+   "label": "low-aspect-ratio-demo-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_cs_poloidal": 11.351304958597812,
+    "n_pf_coil_turns_cs": 4315.865009938639,
+    "f_dr_dz_cs_turn": 3.1818181818181817,
+    "radius_cs_turn_corners": 0.003,
+    "f_a_cs_turn_steel": 0.7597743217586591
+   }
+  }
+ ],
+ "TestCalculatePFCoilGroupPositions": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "rpf2": -1.825,
+    "z_tf_top": 8.784333333333333,
+    "dz_tf_upper_lower_midplane": -1.233883830794161,
+    "zref": {
+     "~array": [
+      3.6,
+      1.2,
+      1.0,
+      2.8
+     ],
+     "dtype": "float64"
+    },
+    "r_pf_outside_tf_midplane": 17.078406000060053
+   }
+  }
+ ],
+ "TestPlaceCsFilaments": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_cs_middle": 2.2772514872311596,
+    "z_cs_inside_half": 7.936395447714745,
+    "c_cs_flat_top_end": -186119802.9880544,
+    "f_j_cs_start_pulse_end_flat_top": 0.93491189654662
+   }
+  }
+ ]
+}

@@ -22,7 +22,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
     CROCO_SUPERCONDUCTOR_PROPERTIES,
     CROCO_TEMPERATURE_MARGIN,
@@ -116,17 +117,7 @@ class TestCrocoAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
     reference = _reference_croco_averaged_turn_geometry
     ported = croco_averaged_turn_geometry_from_current_per_turn
 
-    samples = [
-        legacy_sample(
-            "croco-averaged-turn-geometry",
-            j_tf_wp=26493137.688284047,
-            c_tf_turn=85462.674970907982,
-            dx_tf_turn_steel=8.0e-3,
-            dx_tf_turn_insulation=8.0e-4,
-            layer_ins=0.0,
-            a_tf_wp_no_insulation=0.60510952642236249,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -162,13 +153,7 @@ class TestCrocoCableSpaceProperties(Tier1Contract):
     reference = _reference_croco_cable_space_properties
     ported = croco_cable_space_properties
 
-    samples = [
-        legacy_sample(
-            "croco-cable-space",
-            dx_tf_turn_conduit_full_average=0.055166861225577248,
-            dx_tf_turn_steel=8.0e-3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -247,34 +232,7 @@ class TestCrocoCableGeometry(Tier1Contract):
         "dx_hts_tape_hastelloy",
     )
 
-    samples = [
-        legacy_sample(
-            "croco-cable-10mm",
-            dia_croco_strand=0.010,
-            dx_croco_strand_copper=0.001,
-            dx_hts_tape_rebco=1e-6,
-            dx_hts_tape_copper=2e-6,
-            dx_hts_tape_hastelloy=3e-6,
-        ),
-        legacy_sample(
-            "croco-cable-baseline",
-            dia_croco_strand=0.0054,
-            dx_croco_strand_copper=0.0005,
-            dx_hts_tape_rebco=1e-6,
-            dx_hts_tape_copper=2e-6,
-            dx_hts_tape_hastelloy=3e-6,
-        ),
-        legacy_sample(
-            # `spherical_tokamak_eval.IN.DAT:73-76`'s tape and tube, on the strand
-            # diameter the sampled turn above produces.
-            "croco-cable-spherical-tokamak",
-            dia_croco_strand=0.013055620408525749,
-            dx_croco_strand_copper=2.0e-3,
-            dx_hts_tape_rebco=1.0e-6,
-            dx_hts_tape_copper=2.0e-4,
-            dx_hts_tape_hastelloy=1e-5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -344,22 +302,7 @@ class TestCrocoInboardAreasAndFractions(Tier1Contract):
     reference = _reference_croco_inboard_areas_and_fractions
     ported = croco_inboard_areas_and_fractions
 
-    samples = [
-        legacy_sample(
-            "croco-inboard-areas",
-            a_tf_turn_cable_space_no_void=1.2044932391216682e-3,
-            n_tf_coil_turns=187.6247107030811,
-            # PROCESS sets this to exactly zero three statements earlier.
-            f_a_tf_turn_cable_space_extra_void=0.0,
-            a_tf_turn_insulation=1.9235290952697042e-4,
-            a_tf_turn_steel=1.8384107608783318e-3,
-            a_tf_coil_inboard_case=1.0015,
-            n_tf_coils=12.0,
-            a_tf_inboard_total=27.308,
-            a_tf_wp_ground_insulation=0.028,
-            a_tf_croco_strand=1.3387e-4,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -391,13 +334,7 @@ class TestCrocoTurnCableSpaceCoolingFraction(Tier1Contract):
     reference = _reference_croco_cooling_fraction
     ported = croco_turn_cable_space_cooling_fraction
 
-    samples = [
-        legacy_sample(
-            "croco-cooling-fraction",
-            a_tf_turn_cable_space_no_void=1.2044932391216682e-3,
-            a_tf_croco_strand=1.3387e-4,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -469,19 +406,7 @@ class TestHazeltonZhaiRebcoCrocoSuperconductorProperties(Tier1Contract):
     reference = _reference_croco_superconductor_properties
     ported = croco_superconductor_properties_hijc_rebco
 
-    samples = [
-        legacy_sample(
-            "croco-sc-properties-rebco9",
-            a_tf_turn=3.2258669147172787e-3,
-            b_tf_inboard_peak=11.717722779177526,
-            cur_tf_turn=85462.674970907982,
-            temp_tf_peak=4.75,
-            dr_tf_hts_tape=6.2886208094437651e-3,
-            dx_tf_hts_tape_rebco=1.0e-6,
-            dx_tf_hts_tape_total=2.11e-4,
-            a_tf_croco_strand=1.3387e-4,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -539,19 +464,7 @@ class TestHazeltonZhaiRebcoCrocoTemperatureMargin(Tier1Contract):
     reference = _reference_temperature_margin_hijc_rebco
     ported = temperature_margin_hijc_rebco
 
-    samples = [
-        legacy_sample(
-            "croco-temp-margin-rebco9",
-            j_superconductor=1.0e8,
-            b_tf_inboard_peak=11.717722779177526,
-            b_c20max=138.0,
-            temp_c0max=92.0,
-            dr_hts_tape=6.2886208094437651e-3,
-            dx_hts_tape_rebco=1.0e-6,
-            dx_hts_tape_total=2.11e-4,
-            temp_tf_coolant_peak_field=4.75,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference RuntimeError: Failed to converge after 50 iterations, value is nan.

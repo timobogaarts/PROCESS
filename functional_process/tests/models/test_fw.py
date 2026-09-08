@@ -31,9 +31,11 @@ select). The composite's adapter poisons a *third* field, `.physics.triang`, whi
 """
 
 import functools
+
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.fw import (
     apply_first_wall_coverage_factors,
     apply_first_wall_coverage_factors_double_null,
@@ -49,7 +51,6 @@ from functional_process.cottax.fw import (
 )
 from process.core.model import DataStructure
 from process.models.fw import FirstWall
-
 
 _reference_first_wall_half_height = functools.partial(
     FirstWall.calculate_first_wall_half_height,
@@ -268,30 +269,7 @@ class TestCalculateFirstWallOutputs(Tier1Contract):
     reference = _reference_first_wall_outputs
     ported = calculate_first_wall_outputs
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-plausible",
-            z_plasma_xpoint_lower=-5.5,
-            dz_xpoint_divertor=0.5,
-            dz_divertor=0.65,
-            dz_blkt_upper=0.6,
-            z_plasma_xpoint_upper=5.5,
-            dz_fw_plasma_gap=0.25,
-            dr_fw_inboard=0.03,
-            dr_fw_outboard=0.03,
-            rmajor=8.8901,
-            rminor=2.8677741935483869,
-            triang=0.5,
-            dr_fw_plasma_gap_inboard=0.25,
-            dr_fw_plasma_gap_outboard=0.25,
-            f_ster_div_single=0.1,
-            f_a_fw_outboard_hcd=0.1,
-            p_alpha_total_mw=400.0,
-            f_p_alpha_plasma_deposited=0.95,
-            ffwal=1.0,
-            pflux_plasma_surface_neutron_avg_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
@@ -404,28 +382,7 @@ class TestCalculateFirstWallOutputsDoubleNull(Tier1Contract):
     reference = _reference_first_wall_outputs_double_null
     ported = calculate_first_wall_outputs_double_null
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-plausible-double-null",
-            z_plasma_xpoint_lower=5.5,
-            dz_xpoint_divertor=0.5,
-            dz_divertor=0.65,
-            dz_blkt_upper=0.6,
-            dr_fw_inboard=0.03,
-            dr_fw_outboard=0.03,
-            rmajor=8.8901,
-            rminor=2.8677741935483869,
-            triang=0.5,
-            dr_fw_plasma_gap_inboard=0.25,
-            dr_fw_plasma_gap_outboard=0.25,
-            f_ster_div_single=0.1,
-            f_a_fw_outboard_hcd=0.1,
-            p_alpha_total_mw=400.0,
-            f_p_alpha_plasma_deposited=0.95,
-            ffwal=1.0,
-            pflux_plasma_surface_neutron_avg_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
@@ -475,13 +432,7 @@ class TestSetFwGeometry(Tier1Contract):
     reference = _reference_set_fw_geometry
     ported = set_fw_geometry
 
-    samples = [
-        legacy_sample(
-            "fwbs-defaults",
-            radius_fw_channel=0.006,
-            dr_fw_wall=0.003,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -597,27 +548,7 @@ class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
     reference = _reference_first_wall_outputs_dshaped_double_null
     ported = calculate_first_wall_outputs_dshaped_double_null
 
-    samples = [
-        legacy_sample(
-            "spherical-tokamak-plausible",
-            z_plasma_xpoint_lower=4.0,
-            dz_xpoint_divertor=0.5,
-            dz_divertor=0.4,
-            dz_blkt_upper=0.5,
-            dr_fw_inboard=0.03,
-            dr_fw_outboard=0.03,
-            rmajor=3.6,
-            rminor=2.0,
-            dr_fw_plasma_gap_inboard=0.1,
-            dr_fw_plasma_gap_outboard=0.2,
-            f_ster_div_single=0.1,
-            f_a_fw_outboard_hcd=0.1,
-            p_alpha_total_mw=100.0,
-            f_p_alpha_plasma_deposited=0.95,
-            ffwal=1.0,
-            pflux_plasma_surface_neutron_avg_mw=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
@@ -716,21 +647,6 @@ class TestRadiatedWallLoadScaledPlasmaSurface(Tier1Contract):
     reference = _reference_radiated_wall_load_scaled_plasma_surface
     ported = calculate_radiated_wall_load_scaled_plasma_surface
 
-    samples = [
-        legacy_sample(
-            "st_regression-converged",
-            ffwal=0.92,
-            p_plasma_rad_mw=319.9999999940988,
-            a_plasma_surface=810.4940458049573,
-            f_fw_rad_max=1.0,
-        ),
-        legacy_sample(
-            "spherical_tokamak_eval-converged",
-            ffwal=0.92,
-            p_plasma_rad_mw=439.57059868288485,
-            a_plasma_surface=810.4940458049573,
-            f_fw_rad_max=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

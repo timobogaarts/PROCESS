@@ -21,10 +21,12 @@ is right to carry one read; the adapter makes them agree here too. Recorded as d
 """
 
 import functools
-from functional_process.cottax._harness.process_reference import process_reference
+
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.tfcoil.base import (
     calculate_r_b_tf_inboard_peak,
     calculate_tf_global_geometry_circular_case,
@@ -81,14 +83,7 @@ class TestCircumference(Tier1Contract):
     reference = staticmethod(TFCoil.circumference)
     ported = circumference
 
-    samples = [
-        legacy_sample("circumference-johndcook", aaa=2.667950e9, bbb=6.782819e8),
-        legacy_sample(
-            "circumference-baseline2018",
-            aaa=4.7186039761812131,
-            bbb=3.6192586838709673,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -153,16 +148,7 @@ class TestTfGlobalGeometryCircularCase(Tier1Contract):
     reference = _reference_global_geometry(_CIRCULAR_CASE)
     ported = calculate_tf_global_geometry_circular_case
 
-    samples = [
-        legacy_sample(
-            "tf_global_geometry-circular",
-            n_tf_coils=16,
-            r_tf_inboard_out=2.0,
-            r_tf_inboard_in=1.5,
-            r_tf_outboard_mid=5.0,
-            dr_tf_outboard=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -174,16 +160,7 @@ class TestTfGlobalGeometryStraightCase(Tier1Contract):
     reference = _reference_global_geometry(_STRAIGHT_CASE)
     ported = calculate_tf_global_geometry_straight_case
 
-    samples = [
-        legacy_sample(
-            "tf_global_geometry-straight",
-            n_tf_coils=12,
-            r_tf_inboard_out=1.8,
-            r_tf_inboard_in=1.4,
-            r_tf_outboard_mid=4.5,
-            dr_tf_outboard=0.25,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -276,22 +253,7 @@ class TestDrTfPlasmaCaseFromInput(Tier1Contract):
     reference = _reference_dr_tf_plasma_case_from_input
     ported = dr_tf_plasma_case_from_input
 
-    samples = [
-        legacy_sample(
-            "dr_tf_plasma_case-clamp-binds",
-            dr_tf_plasma_case=0.0,
-            r_tf_inboard_in=1.5,
-            dr_tf_inboard=0.5,
-            n_tf_coils=16,
-        ),
-        legacy_sample(
-            "dr_tf_plasma_case-input-wins",
-            dr_tf_plasma_case=0.2,
-            r_tf_inboard_in=1.5,
-            dr_tf_inboard=0.5,
-            n_tf_coils=16,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -306,15 +268,7 @@ class TestDrTfPlasmaCaseFromFraction(Tier1Contract):
     reference = _reference_dr_tf_plasma_case_from_fraction
     ported = dr_tf_plasma_case_from_fraction
 
-    samples = [
-        legacy_sample(
-            "dr_tf_plasma_case-fraction",
-            f_dr_tf_plasma_case=0.1,
-            dr_tf_inboard=0.4,
-            r_tf_inboard_in=1.4,
-            n_tf_coils=12,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -329,15 +283,7 @@ class TestDxTfSideCaseMinFromFraction(Tier1Contract):
     reference = _reference_dx_tf_side_case_min_from_fraction
     ported = dx_tf_side_case_min_from_fraction
 
-    samples = [
-        legacy_sample(
-            "dx_tf_side_case_min-fraction",
-            casths_fraction=0.05,
-            r_tf_inboard_in=1.4,
-            dr_tf_nose_case=0.05,
-            n_tf_coils=12,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -373,15 +319,7 @@ class TestRBTfInboardPeak(Tier1Contract):
     reference = _reference_r_b_tf_inboard_peak
     ported = calculate_r_b_tf_inboard_peak
 
-    samples = [
-        legacy_sample(
-            "r_b_tf_inboard_peak-baseline2018",
-            r_tf_inboard_out=4.20194118510911,
-            dr_tf_plasma_case=0.060000000000000012,
-            dx_tf_wp_insulation=0.0080000000000000019,
-            dx_tf_wp_insertion_gap=0.01,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -402,24 +340,7 @@ class TestTfCurrent(Tier1Contract):
     reference = staticmethod(TFCoil.tf_current)
     ported = tf_current
 
-    samples = [
-        legacy_sample(
-            "tf_current-16coils",
-            n_tf_coils=16,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            r_b_tf_inboard_peak=2.5,
-            a_tf_inboard_total=0.8,
-        ),
-        legacy_sample(
-            "tf_current-12coils",
-            n_tf_coils=12,
-            b_plasma_toroidal_on_axis=3.0,
-            rmajor=5.0,
-            r_b_tf_inboard_peak=1.8,
-            a_tf_inboard_total=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -484,13 +405,7 @@ class TestTfCoilShapeDShapeSingleNull(Tier1Contract):
     reference = _reference_shape_inner_single_null
     ported = tf_coil_shape_inner_d_shape_single_null
 
-    samples = [
-        legacy_sample(
-            "tf_coil_shape-d-single-null",
-            z_tf_top=8.7641467096774191,
-            **_SHAPE_SAMPLE,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestTfCoilShapeDShapeDoubleNull(Tier1Contract):
@@ -500,7 +415,7 @@ class TestTfCoilShapeDShapeDoubleNull(Tier1Contract):
     reference = _reference_shape_inner_double_null
     ported = tf_coil_shape_inner_d_shape_double_null
 
-    samples = [legacy_sample("tf_coil_shape-d-double-null", **_SHAPE_SAMPLE)]
+    samples = FROM_FILE
 
 
 _reference_shape_inner_picture_frame_tart = functools.partial(
@@ -542,17 +457,7 @@ class TestTfCoilShapePictureFrameTart(Tier1Contract):
     reference = _reference_shape_inner_picture_frame_tart
     ported = tf_coil_shape_inner_picture_frame_tart
 
-    samples = [
-        legacy_sample(
-            "spherical_tokamak_eval-first-pass",
-            r_cp_top=1.333916508197074,
-            r_tf_outboard_in=9.824594873354488,
-            z_tf_inside_half=11.735,
-            z_tf_top=12.635,
-            dr_tf_inboard=0.9,
-            r_tf_outboard_mid=10.274594873354488,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # port ValueError: setting an array element with a sequence. The requested array has an i
@@ -617,26 +522,7 @@ class TestTfCoilSelfInductanceDShape(Tier1Contract):
     reference = _reference_self_inductance_d_shape
     ported = tf_coil_self_inductance_d_shape
 
-    samples = [
-        legacy_sample(
-            "tf_coil_self_inductance-baseline2018",
-            dr_tf_inboard=1.208,
-            r_tf_arc=np.array([
-                4.20194118510911,
-                8.316545161290323,
-                15.915405859443332,
-                8.316545161290323,
-                4.20194118510911,
-            ]),
-            z_tf_arc=np.array([
-                4.5336880258064509,
-                7.5561467096774191,
-                0.0,
-                -9.0730900215620327,
-                -5.4438540129372193,
-            ]),
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestTfCoilSelfInductancePictureFrame(Tier1Contract):
@@ -646,15 +532,7 @@ class TestTfCoilSelfInductancePictureFrame(Tier1Contract):
     reference = _reference_self_inductance_picture_frame
     ported = tf_coil_self_inductance_picture_frame
 
-    samples = [
-        legacy_sample(
-            "tf_coil_self_inductance-picture-frame",
-            z_tf_inside_half=9.0730900215620327,
-            dr_tf_outboard=1.208,
-            r_tf_outboard_mid=16.519405859443332,
-            r_tf_inboard_mid=3.5979411851091103,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -677,13 +555,7 @@ class TestTfStoredMagneticEnergy(Tier1Contract):
     reference = staticmethod(TFCoil.tf_stored_magnetic_energy)
     ported = tf_stored_magnetic_energy
 
-    samples = [
-        legacy_sample("stored-energy-1", ind_tf_coil=1.0, c_tf_total=2.0, n_tf_coils=3),
-        legacy_sample("stored-energy-2", ind_tf_coil=0.5, c_tf_total=4.0, n_tf_coils=2),
-        legacy_sample("stored-energy-3", ind_tf_coil=2.0, c_tf_total=5.0, n_tf_coils=4),
-        legacy_sample("stored-energy-4", ind_tf_coil=0.0, c_tf_total=5.0, n_tf_coils=1),
-        legacy_sample("stored-energy-5", ind_tf_coil=1.0, c_tf_total=0.0, n_tf_coils=10),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -713,17 +585,6 @@ class TestGenericTfCoilAreaAndMasses(Tier1Contract):
     reference = _reference_generic_area_and_masses
     ported = generic_tf_coil_area_and_masses
 
-    samples = [
-        legacy_sample(
-            "generic-areas-baseline2018",
-            r_tf_inboard_out=4.20194118510911,
-            r_tf_inboard_in=2.9939411851091102,
-            rad_tf_coil_inboard_toroidal_half=0.19634954084936207,
-            tan_theta_coil=0.19891236737965801,
-            len_tf_coil=50.483843027201402,
-            r_tf_inboard_mid=3.5979411851091103,
-            r_tf_outboard_mid=16.519405859443332,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

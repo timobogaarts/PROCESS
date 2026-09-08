@@ -57,6 +57,8 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.cottax.paths import physics
 from functional_process.cottax.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
@@ -76,7 +78,6 @@ from functional_process.cottax.physics.bootstrap_current import (
     enforce_bootstrap_current_fraction_max,
     ps_fraction_scene,
 )
-from functional_process.cottax.paths import physics
 from process.core.model import DataStructure
 from process.models.physics.bootstrap_current import SauterBootstrapCurrent
 from process.models.physics.physics import ps_fraction_scene as process_ps_fraction_scene
@@ -489,13 +490,7 @@ class TestTrappedParticleFractionSauter(Tier1Contract):
     ported = _trapped_particle_fraction_sauter
     static_argnames = ("radial_elements",)
 
-    samples = [
-        legacy_sample(
-            "trapped_particle_fraction_sauter-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            sqeps=_SQEPS,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {"sqeps": _band(np.maximum(_SQEPS, 0.02), 0.8, 1.2)}
     fuzz_fixed = {"radial_elements": _RADIAL_ELEMENTS}
@@ -514,18 +509,7 @@ class TestElectronCollisionalitySauter(Tier1Contract):
     ported = _electron_collisionality_sauter
     static_argnames = ("radial_elements",)
 
-    samples = [
-        legacy_sample(
-            "electron_collisionality_sauter-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            rmajor=_LEGACY_PHYSICS["rmajor"],
-            zeff=_ZEFF,
-            inverse_q=_INVERSE_Q,
-            sqeps=_SQEPS,
-            tempe=_TEMPE,
-            ne=_NE_19,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (6.0, 10.0),
@@ -552,19 +536,7 @@ class TestIonCollisionalitySauter(Tier1Contract):
     ported = _ion_collisionality_sauter
     static_argnames = ("radial_elements",)
 
-    samples = [
-        legacy_sample(
-            "ion_collisionality_sauter-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            rmajor=_LEGACY_PHYSICS["rmajor"],
-            inverse_q=_INVERSE_Q,
-            sqeps=_SQEPS,
-            tempi=_TEMPI,
-            amain=_AMAIN,
-            zeff=_ZMAIN,
-            ni=_NI_19,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (6.0, 10.0),
@@ -591,19 +563,7 @@ class TestBetaPoloidalSauter(Tier1Contract):
     ported = _beta_poloidal_sauter
     static_argnames = ("radial_elements", "nr")
 
-    samples = [
-        legacy_sample(
-            "beta_poloidal_sauter-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            nr=_N_POINTS,
-            rmajor=_LEGACY_PHYSICS["rmajor"],
-            b_plasma_toroidal_on_axis=_LEGACY_PHYSICS["b_plasma_toroidal_on_axis"],
-            ne=_NE_19,
-            tempe=_TEMPE,
-            inverse_q=_INVERSE_Q,
-            rho=_RHO,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (6.0, 10.0),
@@ -627,21 +587,7 @@ class TestBetaPoloidalTotalSauter(Tier1Contract):
     ported = _beta_poloidal_total_sauter
     static_argnames = ("radial_elements", "nr")
 
-    samples = [
-        legacy_sample(
-            "beta_poloidal_total_sauter-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            nr=_N_POINTS,
-            rmajor=_LEGACY_PHYSICS["rmajor"],
-            b_plasma_toroidal_on_axis=_LEGACY_PHYSICS["b_plasma_toroidal_on_axis"],
-            ne=_NE_19,
-            ni=_NI_19,
-            tempe=_TEMPE,
-            tempi=_TEMPI,
-            inverse_q=_INVERSE_Q,
-            rho=_RHO,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (6.0, 10.0),
@@ -711,11 +657,7 @@ class TestCalculateL31Coefficient(Tier1Contract):
     ported = _calculate_l31_coefficient
     static_argnames = ("radial_elements", "number_of_elements")
 
-    samples = [
-        legacy_sample(
-            "calculate_l31_coefficient-large_tokamak_nof", **_L_COEFFICIENT_SAMPLE
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _L_COEFFICIENT_FUZZ
     fuzz_fixed = _L_COEFFICIENT_FIXED
@@ -737,11 +679,7 @@ class TestCalculateL3132Coefficient(Tier1Contract):
     ported = _calculate_l31_32_coefficient
     static_argnames = ("radial_elements", "number_of_elements")
 
-    samples = [
-        legacy_sample(
-            "calculate_l31_32_coefficient-large_tokamak_nof", **_L_COEFFICIENT_SAMPLE
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = _L_COEFFICIENT_FUZZ
     fuzz_fixed = _L_COEFFICIENT_FIXED
@@ -762,25 +700,7 @@ class TestCalculateL34Alpha31Coefficient(Tier1Contract):
     ported = _calculate_l34_alpha_31_coefficient
     static_argnames = ("radial_elements", "number_of_elements")
 
-    samples = [
-        legacy_sample(
-            "calculate_l34_alpha_31_coefficient-large_tokamak_nof",
-            radial_elements=_RADIAL_ELEMENTS,
-            number_of_elements=_N_POINTS,
-            rmajor=_LEGACY_PHYSICS["rmajor"],
-            b_plasma_toroidal_on_axis=_LEGACY_PHYSICS["b_plasma_toroidal_on_axis"],
-            inverse_q=_INVERSE_Q,
-            sqeps=_SQEPS,
-            tempi=_TEMPI,
-            tempe=_TEMPE,
-            amain=_AMAIN,
-            zmain=_ZMAIN,
-            ni=_NI_19,
-            ne=_NE_19,
-            rho=_RHO,
-            zeff=_ZEFF,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "rmajor": (6.0, 10.0),
@@ -906,18 +826,7 @@ class TestEnforceBootstrapCurrentFractionMax(Tier1Contract):
     reference = _reference_enforce_bootstrap_current_fraction_max
     ported = enforce_bootstrap_current_fraction_max
 
-    samples = [
-        legacy_sample(
-            "enforce_bootstrap_current_fraction_max-large_tokamak_eval",
-            f_c_plasma_bootstrap=0.405562281204731256,
-            f_c_plasma_bootstrap_max=0.95,
-        ),
-        legacy_sample(
-            "enforce_bootstrap_current_fraction_max-capped",
-            f_c_plasma_bootstrap=0.97,
-            f_c_plasma_bootstrap_max=0.9,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -944,14 +853,7 @@ class TestDiamagneticFractionScene(Tier1Contract):
     reference = staticmethod(PlasmaDiamagneticCurrent.diamagnetic_fraction_scene)
     ported = diamagnetic_fraction_scene
 
-    samples = [
-        legacy_sample(
-            "diamagnetic_fraction_scene-unit_test",
-            beta=0.15,
-            q95=3.0,
-            q0=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -972,9 +874,7 @@ class TestPsFractionScene(Tier1Contract):
     reference = staticmethod(process_ps_fraction_scene)
     ported = ps_fraction_scene
 
-    samples = [
-        legacy_sample("ps_fraction_scene-unit_test", beta=0.15),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -996,15 +896,7 @@ class TestCalculatePlasmaCurrentFractions(Tier1Contract):
     reference = _reference_calculate_plasma_current_fractions
     ported = calculate_plasma_current_fractions
 
-    samples = [
-        legacy_sample(
-            "calculate_plasma_current_fractions-large_tokamak_eval",
-            f_c_plasma_bootstrap=0.405562281204731256,
-            f_c_plasma_diamagnetic=0.0,
-            f_c_plasma_pfirsch_schluter=0.0,
-            f_c_plasma_non_inductive=0.4242184436680697,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 

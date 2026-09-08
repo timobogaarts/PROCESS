@@ -21,7 +21,8 @@ says each arm reads (in particular, that only the aspect-corrected trio reads
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.l_h_transition import (
     Martin08AspectLowerLHThresholdPower,
     Martin08AspectNominalLHThresholdPower,
@@ -63,14 +64,7 @@ class TestIter1996Nominal(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_iter1996_nominal)
     ported = calculate_iter1996_nominal
 
-    samples = [
-        legacy_sample(
-            "iter1996_nominal-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -82,14 +76,7 @@ class TestIter1996Upper(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_iter1996_upper)
     ported = calculate_iter1996_upper
 
-    samples = [
-        legacy_sample(
-            "iter1996_upper-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -101,14 +88,7 @@ class TestIter1996Lower(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_iter1996_lower)
     ported = calculate_iter1996_lower
 
-    samples = [
-        legacy_sample(
-            "iter1996_lower-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -120,14 +100,7 @@ class TestSnipes1997Iter(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_snipes1997_iter)
     ported = calculate_snipes1997_iter
 
-    samples = [
-        legacy_sample(
-            "snipes1997_iter-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -139,15 +112,7 @@ class TestSnipes1997Kappa(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_snipes1997_kappa)
     ported = calculate_snipes1997_kappa
 
-    samples = [
-        legacy_sample(
-            "snipes1997_kappa-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            kappa=1.8,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -159,15 +124,7 @@ class TestMartin08Nominal(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_martin08_nominal)
     ported = calculate_martin08_nominal
 
-    samples = [
-        legacy_sample(
-            "martin08_nominal-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -179,15 +136,7 @@ class TestMartin08Upper(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_martin08_upper)
     ported = calculate_martin08_upper
 
-    samples = [
-        legacy_sample(
-            "martin08_upper-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -199,15 +148,7 @@ class TestMartin08Lower(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_martin08_lower)
     ported = calculate_martin08_lower
 
-    samples = [
-        legacy_sample(
-            "martin08_lower-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -219,16 +160,7 @@ class TestSnipes2000Nominal(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_snipes2000_nominal)
     ported = calculate_snipes2000_nominal
 
-    samples = [
-        legacy_sample(
-            "snipes2000_nominal-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            rminor=2.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -240,16 +172,7 @@ class TestSnipes2000Upper(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_snipes2000_upper)
     ported = calculate_snipes2000_upper
 
-    samples = [
-        legacy_sample(
-            "snipes2000_upper-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            rminor=2.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -261,16 +184,7 @@ class TestSnipes2000Lower(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_snipes2000_lower)
     ported = calculate_snipes2000_lower
 
-    samples = [
-        legacy_sample(
-            "snipes2000_lower-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            rminor=2.0,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -284,15 +198,7 @@ class TestSnipes2000ClosedDivertorNominal(Tier1Contract):
     )
     ported = calculate_snipes2000_closed_divertor_nominal
 
-    samples = [
-        legacy_sample(
-            "snipes2000_closed_divertor_nominal-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -306,15 +212,7 @@ class TestSnipes2000ClosedDivertorUpper(Tier1Contract):
     )
     ported = calculate_snipes2000_closed_divertor_upper
 
-    samples = [
-        legacy_sample(
-            "snipes2000_closed_divertor_upper-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -328,15 +226,7 @@ class TestSnipes2000ClosedDivertorLower(Tier1Contract):
     )
     ported = calculate_snipes2000_closed_divertor_lower
 
-    samples = [
-        legacy_sample(
-            "snipes2000_closed_divertor_lower-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            rmajor=6.2,
-            m_ions_total_amu=2.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -348,11 +238,7 @@ class TestHubbard2012Nominal(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_hubbard2012_nominal)
     ported = calculate_hubbard2012_nominal
 
-    samples = [
-        legacy_sample(
-            "hubbard2012_nominal-process-test", plasma_current=1.0e6, dnla20=1.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -364,11 +250,7 @@ class TestHubbard2012Upper(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_hubbard2012_upper)
     ported = calculate_hubbard2012_upper
 
-    samples = [
-        legacy_sample(
-            "hubbard2012_upper-process-test", plasma_current=1.0e6, dnla20=1.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -380,11 +262,7 @@ class TestHubbard2012Lower(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_hubbard2012_lower)
     ported = calculate_hubbard2012_lower
 
-    samples = [
-        legacy_sample(
-            "hubbard2012_lower-process-test", plasma_current=1.0e6, dnla20=1.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -396,14 +274,7 @@ class TestHubbard2017(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_hubbard2017)
     ported = calculate_hubbard2017
 
-    samples = [
-        legacy_sample(
-            "hubbard2017-process-test",
-            dnla20=1.0,
-            a_plasma_surface=100.0,
-            b_plasma_toroidal_on_axis=5.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -421,16 +292,7 @@ class TestMartin08AspectNominal(Tier1Contract):
     )
     ported = calculate_martin08_aspect_nominal
 
-    samples = [
-        legacy_sample(
-            "martin08_aspect_nominal-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-            aspect=2.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -442,16 +304,7 @@ class TestMartin08AspectUpper(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_martin08_aspect_upper)
     ported = calculate_martin08_aspect_upper
 
-    samples = [
-        legacy_sample(
-            "martin08_aspect_upper-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-            aspect=2.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -463,16 +316,7 @@ class TestMartin08AspectLower(Tier1Contract):
     reference = staticmethod(PlasmaConfinementTransition.calculate_martin08_aspect_lower)
     ported = calculate_martin08_aspect_lower
 
-    samples = [
-        legacy_sample(
-            "martin08_aspect_lower-process-test",
-            dnla20=1.0,
-            b_plasma_toroidal_on_axis=5.0,
-            a_plasma_surface=100.0,
-            m_ions_total_amu=2.0,
-            aspect=2.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 

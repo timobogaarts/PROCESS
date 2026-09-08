@@ -1,0 +1,179 @@
+{
+ "TestCalculateEich2013SolPowerDecayLength": [
+  {
+   "label": "exact",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "rmajor": 3.0,
+    "b_plasma_surface_poloidal_average": 0.5,
+    "aspect": 3.0
+   }
+  },
+  {
+   "label": "low-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 10.0,
+    "rmajor": 3.0,
+    "b_plasma_surface_poloidal_average": 0.5,
+    "aspect": 3.0
+   }
+  },
+  {
+   "label": "high-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 500.0,
+    "rmajor": 3.0,
+    "b_plasma_surface_poloidal_average": 0.5,
+    "aspect": 3.0
+   }
+  },
+  {
+   "label": "large-rmajor",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "rmajor": 10.0,
+    "b_plasma_surface_poloidal_average": 0.5,
+    "aspect": 3.0
+   }
+  },
+  {
+   "label": "small-rmajor",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "rmajor": 1.0,
+    "b_plasma_surface_poloidal_average": 0.5,
+    "aspect": 3.0
+   }
+  }
+ ],
+ "TestCalculateMast2014SolPowerDecayLength1": [
+  {
+   "label": "exact",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "b_plasma_surface_poloidal_average": 0.5
+   }
+  },
+  {
+   "label": "low-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 10.0,
+    "b_plasma_surface_poloidal_average": 0.5
+   }
+  },
+  {
+   "label": "high-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 500.0,
+    "b_plasma_surface_poloidal_average": 0.5
+   }
+  },
+  {
+   "label": "high-bpol",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "b_plasma_surface_poloidal_average": 2.0
+   }
+  }
+ ],
+ "TestCalculateMast2014SolPowerDecayLength2": [
+  {
+   "label": "exact",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "cur_plasma_ma": 1.0
+   }
+  },
+  {
+   "label": "low-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 10.0,
+    "cur_plasma_ma": 1.0
+   }
+  },
+  {
+   "label": "high-psep",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 500.0,
+    "cur_plasma_ma": 1.0
+   }
+  },
+  {
+   "label": "high-current",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw": 100.0,
+    "cur_plasma_ma": 3.0
+   }
+  }
+ ],
+ "TestCalculateUpstreamSolOutboardParallelArea": [
+  {
+   "label": "exact",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 6.0,
+    "rminor": 2.0,
+    "len_plasma_sol_power_decay": 0.001,
+    "b_plasma_outboard_total": 4.0,
+    "b_plasma_surface_poloidal_average": 0.5
+   }
+  }
+ ],
+ "TestScrapeOffLayer": [
+  {
+   "label": "eich2013-reference-arm",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 150.0,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "b_plasma_surface_poloidal_average": 0.6,
+    "b_plasma_outboard_total": 5.0,
+    "aspect": 3.2,
+    "plasma_current": 15000000.0,
+    "i_len_sol_outboard_power_decay": 1
+   }
+  },
+  {
+   "label": "mast14-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 150.0,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "b_plasma_surface_poloidal_average": 0.6,
+    "b_plasma_outboard_total": 5.0,
+    "aspect": 3.2,
+    "plasma_current": 15000000.0,
+    "i_len_sol_outboard_power_decay": 2
+   }
+  },
+  {
+   "label": "mast14-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plasma_separatrix_mw_raw": 150.0,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "b_plasma_surface_poloidal_average": 0.6,
+    "b_plasma_outboard_total": 5.0,
+    "aspect": 3.2,
+    "plasma_current": 15000000.0,
+    "i_len_sol_outboard_power_decay": 3
+   }
+  }
+ ]
+}

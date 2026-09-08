@@ -11,7 +11,8 @@ module docstring and the audit record's "Not ported" section.
 the reference -- no `DataStructure` adapter needed.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pulse import calculate_burn_time
 from process.models.pulse import Pulse
 
@@ -29,26 +30,7 @@ class TestCalculateBurnTime(Tier1Contract):
     # tests/unit/models/test_pulse.py::test_calculate_burn_time_valid, verbatim --
     # already-validated input points from PROCESS's own unit test, including the
     # negative-vs_cs_pf_total_burn case exercising `abs()`.
-    samples = [
-        legacy_sample(
-            "unit-test-nominal",
-            vs_cs_pf_total_burn=100.0,
-            v_plasma_loop_burn=10.0,
-            t_plant_pulse_fusion_ramp=2.0,
-        ),
-        legacy_sample(
-            "unit-test-negative-vs",
-            vs_cs_pf_total_burn=-100.0,
-            v_plasma_loop_burn=10.0,
-            t_plant_pulse_fusion_ramp=2.0,
-        ),
-        legacy_sample(
-            "unit-test-zero-fusion-ramp",
-            vs_cs_pf_total_burn=50.0,
-            v_plasma_loop_burn=5.0,
-            t_plant_pulse_fusion_ramp=0.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Physically reasonable domains, not PROCESS-declared iteration-variable bounds --
     # none of the three arguments is an iteration variable

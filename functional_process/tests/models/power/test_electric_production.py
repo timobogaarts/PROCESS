@@ -12,6 +12,7 @@ this port (see `electric_production.md`).
 """
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.power.electric_production import (
     calculate_acpow,
     calculate_plant_electric_production,
@@ -119,7 +120,7 @@ class TestAcpow(Tier1Contract):
     reference = _reference_acpow
     ported = calculate_acpow
     static_argnames = ("i_pf_energy_storage_source",)
-    samples = _acpow_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -174,29 +175,7 @@ class TestPowerProfilesOverTime(Tier1Contract):
     audit_record = "models/power/electric_production.md"
     reference = _reference_power_profiles_over_time
     ported = power_profiles_over_time
-    samples = fuzz_samples(
-        {
-            "p_plant_electric_base_total_mw": (0.0, 100.0),
-            "p_cryo_plant_electric_mw": (10.0, 200.0),
-            "p_tritium_plant_electric_mw": (1.0, 30.0),
-            "vachtmw": (0.1, 5.0),
-            "p_tf_electric_supplies_mw": (1.0, 20.0),
-            "p_pf_electric_supplies_mw": (0.01, 5.0),
-            "p_coolant_pump_elec_total_mw": (10.0, 400.0),
-            "p_hcd_electric_total_mw": (50.0, 300.0),
-            "p_fusion_total_mw": (500.0, 3000.0),
-            "p_plant_electric_gross_mw": (0.0, 1500.0),
-            "p_plant_electric_net_mw": (0.0, 1000.0),
-            "t_plant_pulse_coil_precharge": (1.0, 50.0),
-            "t_plant_pulse_plasma_current_ramp_up": (10.0, 500.0),
-            "t_plant_pulse_fusion_ramp": (1.0, 50.0),
-            "t_plant_pulse_burn": (100.0, 10000.0),
-            "t_plant_pulse_plasma_current_ramp_down": (10.0, 100.0),
-            "t_plant_pulse_dwell": (10.0, 2000.0),
-        },
-        count=40,
-        seed=90260818,
-    )
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -457,4 +436,4 @@ class TestPlantElectricProduction(Tier1Contract):
     reference = _reference_plant_electric_production
     ported = calculate_plant_electric_production
     static_argnames = _PEP_STATIC_ARGNAMES
-    samples = _plant_electric_production_samples()
+    samples = FROM_FILE

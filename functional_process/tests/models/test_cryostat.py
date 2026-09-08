@@ -17,7 +17,8 @@ set gets checked against PROCESS's rather than asserted.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.cryostat import (
     calculate_external_cryo_geometry,
     calculate_r_cryostat_inboard,
@@ -72,13 +73,7 @@ class TestCalculateRCryostatInboard(Tier1Contract):
 
     # tests/unit/models/test_cryostat.py::test_external_cryo_geometry, verbatim
     # (generated from large_tokamak_eval.IN.DAT).
-    samples = [
-        legacy_sample(
-            "large-tokamak-legacy",
-            r_pf_coil_outer=R_PF_COIL_OUTER,
-            dr_pf_cryostat=0.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_pf_coil_outer": (np.zeros(22), np.full(22, 25.0)),
@@ -138,30 +133,7 @@ class TestCalculateExternalCryoGeometry(Tier1Contract):
     # tests/unit/models/test_cryostat.py::test_external_cryo_geometry, verbatim
     # (generated from large_tokamak_eval.IN.DAT) -- the same legacy point the
     # first-line contract above uses, with the six further fields it also carries.
-    samples = [
-        legacy_sample(
-            "large-tokamak-legacy",
-            r_pf_coil_outer=R_PF_COIL_OUTER,
-            dr_pf_cryostat=0.5,
-            f_z_cryostat=4.2679999999999998,
-            z_pf_coil_upper=np.array([
-                9.9154920004377978,
-                -11.249338850841614,
-                3.2350365669570316,
-                -3.2350365669570316,
-                7.8723998771612473,
-                -7.8723998771612473,
-                7.9363954477147454,
-                4.9333333333333336,
-                *([0.0] * 14),
-            ]),
-            z_tf_inside_half=8.8182171641274945,
-            dr_tf_inboard=0.92672586247397692,
-            dr_cryostat=0.15000000000000002,
-            vol_vv=1016.2876250857248,
-            den_steel=7800.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_pf_coil_outer": (np.zeros(22), np.full(22, 25.0)),

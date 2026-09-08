@@ -9,20 +9,20 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.problem import Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
+from cottax.tools.path import path_map
 
 from functional_process.cottax.core.solver.drivers import (
     PicardDriver,
     _refuse_inert_objective,
 )
-from functional_process.cottax.power.thermal_cryo import CryoQNucStep
 from functional_process.cottax.paths import fwbs
+from functional_process.cottax.power.thermal_cryo import CryoQNucStep
 from functional_process.models.switch_enums import CoilNuclearHeatingModel
 from process.models.tfcoil.base import TFConductorModel
 
@@ -175,7 +175,8 @@ def test_a_start_below_processes_own_floor_is_left_unscaled(value, scaled):
 
 def test_scaling_leaves_a_workable_problem_when_a_coordinate_is_unscalable():
     """The floor degrades to the unscaled problem in that coordinate, not to a
-    divide-by-zero and not to an error: every factor stays finite and non-zero."""
+    divide-by-zero and not to an error: every factor stays finite and non-zero.
+    """
     import numpy as np
 
     from functional_process.cottax.core.solver.drivers import design_scale

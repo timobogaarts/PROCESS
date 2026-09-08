@@ -9,7 +9,8 @@ instance with `.data` attached -- the twelve injected sub-models in its construc
 never touched by either method, so `None` stands in for all of them.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.structure import (
     calculate_intercoil_mass_scaling_reference,
     calculate_structure_masses,
@@ -82,36 +83,7 @@ class TestStructureMasses(Tier1Contract):
     # than corrected, since this sample exists to match a known-good PROCESS run.
     # `b_plasma_toroidal_on_axis` isn't overridden by that test either; its default
     # (`process/data_structure/physics_variables.py`, 5.68) is used here explicitly.
-    samples = [
-        legacy_sample(
-            "ststrc-helias5b-dewmkg0",
-            stella_config_coilsurface=4817.6999999999998,
-            f_st_rmajor=0.99099099099099097,
-            r_coil_minor=0.99099099099099097,
-            stella_config_coil_rminor=1.0,
-            dx_tf_inboard_out_toroidal=0.67648706726464258,
-            len_tf_coil=1664.8648648648648,
-            n_tf_coils=1,
-            b_plasma_toroidal_on_axis=5.68,
-            den_steel=7800,
-            m_tf_coils_total=5204872.8206625767,
-            dewmkg=0,
-        ),
-        legacy_sample(
-            "ststrc-helias5b-dewmkg-nonzero",
-            stella_config_coilsurface=4817.6999999999998,
-            f_st_rmajor=0.99099099099099097,
-            r_coil_minor=0.99099099099099097,
-            stella_config_coil_rminor=1.0,
-            dx_tf_inboard_out_toroidal=0.67648706726464258,
-            len_tf_coil=1664.8648648648648,
-            n_tf_coils=1,
-            b_plasma_toroidal_on_axis=5.68,
-            den_steel=7800,
-            m_tf_coils_total=5204872.8206625767,
-            dewmkg=22397931.480129492,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -123,13 +95,6 @@ class TestIntercoilMassScalingReference(Tier1Contract):
     reference = _reference_intercoil_mass_scaling_reference
     ported = calculate_intercoil_mass_scaling_reference
 
-    samples = [
-        # Same operating point as TestStructureMasses's legacy samples
-        # (helias_5b.IN.DAT), for `e_tf_magnetic_stored_total_gj`.
-        legacy_sample(
-            "msupstr-helias5b",
-            e_tf_magnetic_stored_total_gj=132.55990646265246,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

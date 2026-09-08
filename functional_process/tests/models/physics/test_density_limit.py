@@ -15,7 +15,8 @@ already-validated oracle from a single case. `p_perp` is computed here exactly a
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,
@@ -68,16 +69,7 @@ class TestAsdexDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_asdex_density_limit)
     ported = calculate_asdex_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            p_perp=_P_PERP,
-            b_plasma_toroidal_on_axis=_B_PLASMA_TOROIDAL_ON_AXIS,
-            q95=_Q95,
-            rmajor=_RMAJOR,
-            prn1=_PRN1,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -90,16 +82,7 @@ class TestBorrassIterIDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_borrass_iter_i_density_limit)
     ported = calculate_borrass_iter_i_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            p_perp=_P_PERP,
-            b_plasma_toroidal_on_axis=_B_PLASMA_TOROIDAL_ON_AXIS,
-            q95=_Q95,
-            rmajor=_RMAJOR,
-            prn1=_PRN1,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -112,16 +95,7 @@ class TestBorrassIterIIDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_borrass_iter_ii_density_limit)
     ported = calculate_borrass_iter_ii_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            p_perp=_P_PERP,
-            b_plasma_toroidal_on_axis=_B_PLASMA_TOROIDAL_ON_AXIS,
-            q95=_Q95,
-            rmajor=_RMAJOR,
-            prn1=_PRN1,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -141,24 +115,7 @@ class TestJetEdgeRadiationDensityLimit(Tier1Contract):
     )
     ported = calculate_jet_edge_radiation_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            zeff=_ZEFF,
-            p_hcd_injected_total_mw=_P_HCD_INJECTED_TOTAL_MW,
-            prn1=_PRN1,
-            qcyl=_QCYL,
-        ),
-        # `(zeff - 1) * (1 - 4 / (3 * qcyl))` with `qcyl = 1.0` gives
-        # `(1 - 4/3) = -1/3 < 0`, so `denom < 0` -- the non-positive branch.
-        legacy_sample(
-            "denominator-non-positive",
-            zeff=_ZEFF,
-            p_hcd_injected_total_mw=_P_HCD_INJECTED_TOTAL_MW,
-            prn1=_PRN1,
-            qcyl=1.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -171,15 +128,7 @@ class TestJetSimpleDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_jet_simple_density_limit)
     ported = calculate_jet_simple_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            b_plasma_toroidal_on_axis=_B_PLASMA_TOROIDAL_ON_AXIS,
-            p_plasma_separatrix_mw=_P_PLASMA_SEPARATRIX_MW,
-            rmajor=_RMAJOR,
-            prn1=_PRN1,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -192,14 +141,7 @@ class TestHugillMurakamiDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_hugill_murakami_density_limit)
     ported = calculate_hugill_murakami_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            b_plasma_toroidal_on_axis=_B_PLASMA_TOROIDAL_ON_AXIS,
-            rmajor=_RMAJOR,
-            qcyl=_QCYL,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -213,9 +155,7 @@ class TestGreenwaldDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_greenwald_density_limit)
     ported = calculate_greenwald_density_limit
 
-    samples = [
-        legacy_sample("large-tokamak-nof", c_plasma=_PLASMA_CURRENT, rminor=_RMINOR),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -229,15 +169,7 @@ class TestAsdexNewDensityLimit(Tier1Contract):
     reference = staticmethod(PlasmaDensityLimit.calculate_asdex_new_density_limit)
     ported = calculate_asdex_new_density_limit
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof",
-            p_hcd_injected_total_mw=_P_HCD_INJECTED_TOTAL_MW,
-            c_plasma=_PLASMA_CURRENT,
-            q95=_Q95,
-            prn1=_PRN1,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -302,11 +234,7 @@ class TestSelectEnforcedDensityLimitGreenwald(Tier1Contract):
     reference = _reference_enforced_density_limit_greenwald
     ported = select_enforced_density_limit_greenwald
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof", nd_plasma_electron_max_array_7=_EXPECTED_GREENWALD
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -333,11 +261,5 @@ class TestGreenwaldFraction(Tier1Contract):
     reference = _reference_greenwald_fraction
     ported = calculate_greenwald_fraction
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-nof-derived",
-            nd_plasma_electron_line=8.0e19,
-            nd_plasma_electron_max_array_7=_EXPECTED_GREENWALD,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True

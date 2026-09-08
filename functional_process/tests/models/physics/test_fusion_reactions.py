@@ -16,7 +16,8 @@ even though it has no cottax node yet.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.fusion_reactions import (
     alpha_power_beam,
     beam_fusion_cross_section,
@@ -187,15 +188,7 @@ class TestDeuteriumBranchingTrit(Tier1Contract):
     reference = _reference_deuterium_branching_trit
     ported = calculate_deuterium_branching_trit
 
-    samples = [
-        legacy_sample("branching-mid-temperature", ion_temperature=11.0),
-        # 55.73 keV is the ion temperature `tests/unit/models/physics/
-        # test_fusion_reactions.py::test_bosch_hale` uses for the same species of
-        # calculation (a different function, but a PROCESS-validated temperature value).
-        legacy_sample(
-            "branching-bosch-hale-reference-temperature", ion_temperature=55.73
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -213,35 +206,7 @@ class TestBoschHaleReactivity(Tier1Contract):
 
     static_argnames = ("reaction_constants",)
 
-    samples = [
-        legacy_sample(
-            "bosch-hale-dt",
-            ion_temperature_profile=np.array([55.73]),
-            reaction_constants=reactions.REACTION_CONSTANTS_DT,
-        ),
-        legacy_sample(
-            "bosch-hale-dhe3",
-            ion_temperature_profile=np.array([55.73]),
-            reaction_constants=reactions.REACTION_CONSTANTS_DHE3,
-        ),
-        legacy_sample(
-            "bosch-hale-dd1",
-            ion_temperature_profile=np.array([55.73]),
-            reaction_constants=reactions.REACTION_CONSTANTS_DD1,
-        ),
-        legacy_sample(
-            "bosch-hale-dd2",
-            ion_temperature_profile=np.array([55.73]),
-            reaction_constants=reactions.REACTION_CONSTANTS_DD2,
-        ),
-        # Exercises the `t == 0.0` mask branch (source: `sigmav[t_mask] = 0.0`), which
-        # none of PROCESS's own test points do.
-        legacy_sample(
-            "bosch-hale-dt-zero-temperature",
-            ion_temperature_profile=np.array([55.73, 0.0]),
-            reaction_constants=reactions.REACTION_CONSTANTS_DT,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Array-shaped bounds, not scalar: PROCESS's own `bosch_hale_reactivity` does
     # in-place mask assignment (`sigmav[t_mask] = 0.0`), which raises on a bare scalar --
@@ -270,22 +235,7 @@ class TestFusionRates(Tier1Contract):
     reference = _reference_calculate_fusion_rates
     ported = calculate_fusion_rates
 
-    samples = [
-        legacy_sample(
-            "fusion-rates-reference-point",
-            profile_x=_RHO,
-            te_profile_y=12.0 * (1.0 - 0.9 * _RHO**2) + 0.5,
-            ne_profile_y=8.0e19 * (1.0 - 0.8 * _RHO**2),
-            temp_plasma_ion_vol_avg_kev=11.0,
-            temp_plasma_electron_vol_avg_kev=12.0,
-            f_plasma_fuel_deuterium=0.5,
-            f_plasma_fuel_tritium=0.5,
-            f_plasma_fuel_helium3=0.0,
-            nd_plasma_fuel_ions_vol_avg=7.0e19,
-            nd_plasma_electrons_vol_avg=8.0e19,
-            f_dd_branching_trit=0.478,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         # Array-shaped bounds, matching `profile_x`'s fixed (11,) grid -- a scalar draw
@@ -321,30 +271,7 @@ class TestSetFusionPowers(Tier1Contract):
     reference = _reference_set_fusion_powers
     ported = set_fusion_powers
 
-    samples = [
-        legacy_sample(
-            "set-fusion-powers-no-beam",
-            f_p_alpha_plasma_deposited=0.95,
-            f_alpha_electron=0.68,
-            f_alpha_ion=0.32,
-            p_beam_alpha_mw=0.0,
-            pden_non_alpha_charged_mw=0.00066,
-            vol_plasma=2426.25,
-            pden_plasma_alpha_mw=0.163,
-            pden_plasma_neutron_mw=0.654,
-        ),
-        legacy_sample(
-            "set-fusion-powers-with-beam",
-            f_p_alpha_plasma_deposited=0.95,
-            f_alpha_electron=0.68,
-            f_alpha_ion=0.32,
-            p_beam_alpha_mw=100.5,
-            pden_non_alpha_charged_mw=0.00066,
-            vol_plasma=2426.25,
-            pden_plasma_alpha_mw=0.163,
-            pden_plasma_neutron_mw=0.654,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {
@@ -364,18 +291,7 @@ class TestBeamSlowingDownState(Tier1Contract):
     reference = _reference_beam_slowing_down_state
     ported = beam_slowing_down_state
 
-    samples = [
-        legacy_sample(
-            "beam-slowing-down-reference",
-            e_beam_kev=1000.0,
-            critical_energy_deuterium=276.7,
-            critical_energy_tritium=415.0,
-            t_beam_slow=1.42,
-            f_beam_tritium=1e-06,
-            c_beam_total=130.0,
-            vol_plasma=1888.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -390,11 +306,7 @@ class TestFastIonPressureIntegral(Tier1Contract):
     reference = reactions.fast_ion_pressure_integral
     ported = fast_ion_pressure_integral
 
-    samples = [
-        legacy_sample(
-            "fast-ion-pressure-reference", e_beam_kev=1000.0, critical_energy=276.7
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -409,15 +321,7 @@ class TestBeamTargetReactionRate(Tier1Contract):
     reference = reactions.beam_target_reaction_rate
     ported = beam_target_reaction_rate
 
-    samples = [
-        legacy_sample(
-            "beam-target-rate-reference",
-            nd_beam_ion=3.16e11,
-            nd_target_ion=3.3e19,
-            sigv_beam=7.5e-22,
-            vol_plasma=1888.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -433,11 +337,7 @@ class TestAlphaPowerBeam(Tier1Contract):
     reference = _reference_alpha_power_beam
     ported = alpha_power_beam
 
-    samples = [
-        legacy_sample(
-            "alpha-power-beam-reference", beam_target_reaction_rate_value=1.0e13
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -459,12 +359,7 @@ class TestBeamFusionCrossSection(Tier1Contract):
     reference = staticmethod(reactions._beam_fusion_cross_section)
     ported = beam_fusion_cross_section
 
-    samples = [
-        # e_beam_kev = 0.5 * M_DEUTERON_AMU * vrelsq; M_DEUTERON_AMU ~= 2.0136.
-        legacy_sample("cross-section-low-clamp", vrelsq=1.0),  # e_beam_kev ~ 1.0
-        legacy_sample("cross-section-mid", vrelsq=5000.0),  # e_beam_kev ~ 5034
-        legacy_sample("cross-section-high-clamp", vrelsq=50000.0),  # e_beam_kev ~ 50340
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -481,11 +376,6 @@ class TestHotBeamFusionReactionRateIntegrand(Tier1Contract):
     reference = staticmethod(reactions._hot_beam_fusion_reaction_rate_integrand)
     ported = hot_beam_fusion_reaction_rate_integrand
 
-    samples = [
-        legacy_sample("integrand-mid", velocity_ratio=0.5, critical_velocity=1.2e6),
-        legacy_sample(
-            "integrand-above-one", velocity_ratio=2.0, critical_velocity=1.2e6
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

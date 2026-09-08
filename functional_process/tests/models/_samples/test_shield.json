@@ -1,0 +1,108 @@
+{
+ "TestCalculateDshapedShieldVolumes": [
+  {
+   "label": "dshaped_shield_volumes-synthetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_shld_inboard_inner": 5.0,
+    "dr_shld_inboard": 0.4,
+    "dr_fw_inboard": 0.03,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "rminor": 2.5,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "dr_fw_outboard": 0.03,
+    "dr_blkt_inboard": 0.4,
+    "dr_blkt_outboard": 0.6,
+    "dz_shld_half": 4.7,
+    "dr_shld_outboard": 0.8,
+    "dz_shld_upper": 0.3
+   }
+  }
+ ],
+ "TestCalculateEllipticalShieldVolumes": [
+  {
+   "label": "elliptical_shield_volumes-synthetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_shld_inboard_inner": 5.0,
+    "r_shld_outboard_outer": 13.0,
+    "rmajor": 8.0,
+    "triang": 0.5,
+    "dr_shld_inboard": 0.4,
+    "rminor": 2.5,
+    "dz_shld_half": 4.7,
+    "dr_shld_outboard": 0.8,
+    "dz_shld_upper": 0.3
+   }
+  }
+ ],
+ "TestCalculateShieldHalfHeightDoubleNull": [
+  {
+   "label": "shield_half_height_double_null-synthetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 4.0,
+    "dz_xpoint_divertor": 0.5,
+    "dz_divertor": 0.3
+   }
+  }
+ ],
+ "TestCalculateShieldHalfHeightSingleNull": [
+  {
+   "label": "shield_half_height_single_null-synthetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 4.0,
+    "dz_xpoint_divertor": 0.5,
+    "dz_divertor": 0.3,
+    "z_plasma_xpoint_upper": 4.0,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "dr_fw_inboard": 0.05,
+    "dr_fw_outboard": 0.05,
+    "dz_blkt_upper": 0.3
+   }
+  }
+ ],
+ "TestCalculateShieldVolumesDshaped": [
+  {
+   "label": "shield_volumes_dshaped-synthetic",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_shld_inboard_inner": 5.0,
+    "dr_shld_inboard": 0.4,
+    "dr_fw_inboard": 0.03,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "rminor": 2.5,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "dr_fw_outboard": 0.03,
+    "dr_blkt_inboard": 0.4,
+    "dr_blkt_outboard": 0.6,
+    "dz_shld_half": 4.7,
+    "dr_shld_outboard": 0.8,
+    "dz_shld_upper": 0.3,
+    "fvolsi": 1.0,
+    "fvolso": 0.64
+   }
+  }
+ ],
+ "TestCalculateShieldVolumesElliptical": [
+  {
+   "label": "shield_volumes_elliptical-large_tokamak_eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_shld_inboard_inner": 5.0,
+    "r_shld_outboard_outer": 13.0,
+    "rmajor": 8.0,
+    "triang": 0.5,
+    "dr_shld_inboard": 0.4,
+    "rminor": 2.5,
+    "dz_shld_half": 4.7,
+    "dr_shld_outboard": 0.8,
+    "dz_shld_upper": 0.3,
+    "fvolsi": 1.0,
+    "fvolso": 0.64
+   }
+  }
+ ]
+}

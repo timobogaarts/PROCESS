@@ -10,6 +10,7 @@ those) -- fuzz-only, same situation `build.md` documented for
 """
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,
@@ -116,7 +117,7 @@ class TestTfPowerResistive(Tier1Contract):
         "p_tf_leg_resistive": (0.0, 1.0e7),
         "etatf": (0.6, 1.0),
     }
-    samples = fuzz_samples(fuzz_bounds, count=40, seed=20260818)
+    samples = FROM_FILE
 
 
 def _tf_power_superconducting_samples():
@@ -157,4 +158,4 @@ class TestTfPowerSuperconducting(Tier1Contract):
     audit_record = "models/power/tf_coil_power.md"
     reference = _reference_tf_power_superconducting
     ported = calculate_tf_power_superconducting
-    samples = _tf_power_superconducting_samples()
+    samples = FROM_FILE

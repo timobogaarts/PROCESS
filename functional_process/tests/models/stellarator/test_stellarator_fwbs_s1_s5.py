@@ -13,7 +13,8 @@ on `blktmodel == 1`) never runs -- confirmed by reading S1/S3/S4/S6's bodies for
 `blktmodel = 0`.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.stellarator_fwbs_s1_s5 import (
     calculate_cryostat_and_vv_geometry,
     calculate_fw_blanket_shield_geometry,
@@ -168,58 +169,7 @@ class TestFwBlanketShieldGeometry(Tier1Contract):
     ported = calculate_fw_blanket_shield_geometry
     static_argnames = ("ipowerflow",)
 
-    samples = [
-        legacy_sample(
-            "helias5b-ipowerflow-1",
-            abktflnc=15.0,
-            pflux_fw_neutron_mw=1.8,
-            life_plant=30.0,
-            a_fw_total=1468.3,
-            rminor=3.2664,
-            dr_fw_plasma_gap_inboard=0.3,
-            dr_fw_inboard=0.018,
-            dr_fw_plasma_gap_outboard=0.3,
-            dr_fw_outboard=0.018,
-            ipowerflow=1,
-            a_plasma_surface=1468.3,
-            fhole=0.05,
-            f_ster_div_single=0.115,
-            f_a_fw_outboard_hcd=0.0,
-            dr_blkt_inboard=0.4712,
-            dr_blkt_outboard=0.4712,
-            fvolsi=1.0,
-            fvolso=1.0,
-            dr_shld_inboard=0.4,
-            dr_shld_outboard=0.4,
-            p_neutron_total_mw=1500.0,
-            stella_config_neutron_peakfactor=1.5,
-        ),
-        legacy_sample(
-            "helias5b-ipowerflow-0",
-            abktflnc=15.0,
-            pflux_fw_neutron_mw=1.8,
-            life_plant=30.0,
-            a_fw_total=1468.3,
-            rminor=3.2664,
-            dr_fw_plasma_gap_inboard=0.3,
-            dr_fw_inboard=0.018,
-            dr_fw_plasma_gap_outboard=0.3,
-            dr_fw_outboard=0.018,
-            ipowerflow=0,
-            a_plasma_surface=1468.3,
-            fhole=0.05,
-            f_ster_div_single=0.115,
-            f_a_fw_outboard_hcd=0.0,
-            dr_blkt_inboard=0.4712,
-            dr_blkt_outboard=0.4712,
-            fvolsi=1.0,
-            fvolso=1.0,
-            dr_shld_inboard=0.4,
-            dr_shld_outboard=0.4,
-            p_neutron_total_mw=1500.0,
-            stella_config_neutron_peakfactor=1.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "abktflnc": (5.0, 25.0),
@@ -308,29 +258,6 @@ class TestCryostatAndVvGeometry(Tier1Contract):
     reference = _reference_cryostat_and_vv_geometry
     ported = calculate_cryostat_and_vv_geometry
 
-    samples = [
-        legacy_sample(
-            "helias5b",
-            r_tf_outboard_mid=12.5,
-            dr_tf_outboard=0.6381,
-            dr_pf_cryostat=0.5,
-            rmajor=8.1386,
-            dr_cryostat=0.15,
-            dr_fw_plasma_gap_inboard=0.3,
-            dr_fw_inboard=0.018,
-            dr_blkt_inboard=0.4712,
-            dr_shld_inboard=0.4,
-            dr_fw_plasma_gap_outboard=0.3,
-            dr_fw_outboard=0.018,
-            dr_blkt_outboard=0.4712,
-            dr_shld_outboard=0.4,
-            rminor=3.2664,
-            dr_vv_inboard=0.07,
-            dr_vv_outboard=0.07,
-            a_plasma_surface=1468.3,
-            fvoldw=1.2,
-            den_steel=7800.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

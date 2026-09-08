@@ -1,0 +1,1246 @@
+{
+ "TestTfPowerResistive": [
+  {
+   "label": "seed20260818-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 7431.225576491335,
+    "j_tf_bus": 4604862.348220091,
+    "rho_tf_bus": 2.2873433881372366e-08,
+    "len_tf_bus": 86.4712409910828,
+    "n_tf_coils": 11.022708946195163,
+    "res_tf_leg": 2.9648396914249203e-07,
+    "p_cp_resistive": 6118799.979993472,
+    "c_tf_total": 189660531.7677272,
+    "p_tf_joints_resistive": 467296.6376742516,
+    "p_tf_leg_resistive": 8630578.719967136,
+    "etatf": 0.7470917512651476
+   }
+  },
+  {
+   "label": "seed20260818-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1233.4175012610524,
+    "j_tf_bus": 6266739.940125942,
+    "rho_tf_bus": 1.1484783428955994e-08,
+    "len_tf_bus": 28.617702734626477,
+    "n_tf_coils": 10.396371802168275,
+    "res_tf_leg": 1.8283554470203292e-06,
+    "p_cp_resistive": 6765894.7521457905,
+    "c_tf_total": 4160354.6153414925,
+    "p_tf_joints_resistive": 513455.5998094923,
+    "p_tf_leg_resistive": 6273281.743785744,
+    "etatf": 0.7627763999183615
+   }
+  },
+  {
+   "label": "seed20260818-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 9462.365524724642,
+    "j_tf_bus": 2448294.135799397,
+    "rho_tf_bus": 3.374427079734075e-08,
+    "len_tf_bus": 30.79399434385398,
+    "n_tf_coils": 16.94701248884995,
+    "res_tf_leg": 1.3510527896737876e-06,
+    "p_cp_resistive": 44148971.076162204,
+    "c_tf_total": 6843119.139189871,
+    "p_tf_joints_resistive": 931780.3582198148,
+    "p_tf_leg_resistive": 4670104.645942376,
+    "etatf": 0.6490935917311086
+   }
+  },
+  {
+   "label": "seed20260818-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 15741.968562003696,
+    "j_tf_bus": 3865018.1969315717,
+    "rho_tf_bus": 2.3850095400959072e-08,
+    "len_tf_bus": 472.1179171277261,
+    "n_tf_coils": 11.647295086301545,
+    "res_tf_leg": 1.997121978493695e-07,
+    "p_cp_resistive": 159464.48208181193,
+    "c_tf_total": 195095988.92804775,
+    "p_tf_joints_resistive": 823154.3518554572,
+    "p_tf_leg_resistive": 6493068.145781266,
+    "etatf": 0.7362841020510025
+   }
+  },
+  {
+   "label": "seed20260818-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 55354.95515168437,
+    "j_tf_bus": 7902182.572084041,
+    "rho_tf_bus": 2.7414931167977455e-08,
+    "len_tf_bus": 30.294060445073075,
+    "n_tf_coils": 10.854250699352502,
+    "res_tf_leg": 3.1033941516909214e-07,
+    "p_cp_resistive": 1962483.6777011722,
+    "c_tf_total": 11688979.154534657,
+    "p_tf_joints_resistive": 476953.8868195892,
+    "p_tf_leg_resistive": 5608074.2014377145,
+    "etatf": 0.9423628168036466
+   }
+  },
+  {
+   "label": "seed20260818-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 28361.241690267645,
+    "j_tf_bus": 5352148.255967348,
+    "rho_tf_bus": 3.489990424837253e-08,
+    "len_tf_bus": 17.955622218453165,
+    "n_tf_coils": 21.11370413390724,
+    "res_tf_leg": 3.1085128845838376e-07,
+    "p_cp_resistive": 142657.5463598876,
+    "c_tf_total": 98191533.07999189,
+    "p_tf_joints_resistive": 878354.3349846016,
+    "p_tf_leg_resistive": 5526919.029098222,
+    "etatf": 0.806621640479765
+   }
+  },
+  {
+   "label": "seed20260818-006",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 147226.79203789926,
+    "j_tf_bus": 6128160.313522823,
+    "rho_tf_bus": 4.948409674757247e-08,
+    "len_tf_bus": 44.91557190114852,
+    "n_tf_coils": 17.81225257380524,
+    "res_tf_leg": 2.179387556864697e-07,
+    "p_cp_resistive": 2473296.1542778225,
+    "c_tf_total": 126319400.17850718,
+    "p_tf_joints_resistive": 337865.5775005861,
+    "p_tf_leg_resistive": 5793733.54137718,
+    "etatf": 0.9924277224070528
+   }
+  },
+  {
+   "label": "seed20260818-007",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2563.230340482458,
+    "j_tf_bus": 3504035.7801624257,
+    "rho_tf_bus": 4.707633747172563e-08,
+    "len_tf_bus": 12.678775398928984,
+    "n_tf_coils": 10.442508177253401,
+    "res_tf_leg": 8.513346648248997e-07,
+    "p_cp_resistive": 8988285.84418296,
+    "c_tf_total": 8289273.389200531,
+    "p_tf_joints_resistive": 119938.36517459866,
+    "p_tf_leg_resistive": 8542136.673491651,
+    "etatf": 0.8140865415321391
+   }
+  },
+  {
+   "label": "seed20260818-008",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 72999.1205012458,
+    "j_tf_bus": 6417764.814328207,
+    "rho_tf_bus": 2.502741717369078e-08,
+    "len_tf_bus": 73.43524157554201,
+    "n_tf_coils": 14.475847847616354,
+    "res_tf_leg": 1.3241742583153328e-06,
+    "p_cp_resistive": 136360.1540013776,
+    "c_tf_total": 28258208.276948553,
+    "p_tf_joints_resistive": 70042.75405488524,
+    "p_tf_leg_resistive": 7474100.312949521,
+    "etatf": 0.6283439427009615
+   }
+  },
+  {
+   "label": "seed20260818-009",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 33062.14961128299,
+    "j_tf_bus": 5785264.74050575,
+    "rho_tf_bus": 2.434298695081238e-08,
+    "len_tf_bus": 161.07952739691925,
+    "n_tf_coils": 10.198483080454608,
+    "res_tf_leg": 2.3742996301598355e-06,
+    "p_cp_resistive": 2636934.998864461,
+    "c_tf_total": 1489043.4696593997,
+    "p_tf_joints_resistive": 3151.0206659050023,
+    "p_tf_leg_resistive": 3571415.612436807,
+    "etatf": 0.9773018961948032
+   }
+  },
+  {
+   "label": "seed20260818-010",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 5969.53009085824,
+    "j_tf_bus": 4054125.642351408,
+    "rho_tf_bus": 3.5495915957145356e-08,
+    "len_tf_bus": 58.53496397762573,
+    "n_tf_coils": 15.818125825419802,
+    "res_tf_leg": 1.5417840411434924e-07,
+    "p_cp_resistive": 10332755.879556777,
+    "c_tf_total": 2673608.5726503576,
+    "p_tf_joints_resistive": 523049.2802305363,
+    "p_tf_leg_resistive": 514501.0706955366,
+    "etatf": 0.8151624708151552
+   }
+  },
+  {
+   "label": "seed20260818-011",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 49251.78503128672,
+    "j_tf_bus": 8944773.062328203,
+    "rho_tf_bus": 3.5789621687239043e-08,
+    "len_tf_bus": 52.26275193543928,
+    "n_tf_coils": 15.395779635222464,
+    "res_tf_leg": 9.228668131317313e-06,
+    "p_cp_resistive": 4228878.022691248,
+    "c_tf_total": 7297231.073610249,
+    "p_tf_joints_resistive": 166152.38309053492,
+    "p_tf_leg_resistive": 4399592.856847301,
+    "etatf": 0.7963211708293322
+   }
+  },
+  {
+   "label": "seed20260818-012",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2429.0317636172354,
+    "j_tf_bus": 3442876.684704594,
+    "rho_tf_bus": 1.4859326471498312e-08,
+    "len_tf_bus": 597.9197404455181,
+    "n_tf_coils": 19.41268159826219,
+    "res_tf_leg": 2.687341573458711e-07,
+    "p_cp_resistive": 1929634.3812236649,
+    "c_tf_total": 1709324.0082829713,
+    "p_tf_joints_resistive": 606551.4691263734,
+    "p_tf_leg_resistive": 8183165.878874959,
+    "etatf": 0.8131149590455709
+   }
+  },
+  {
+   "label": "seed20260818-013",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1656.4806748728308,
+    "j_tf_bus": 8865072.069786012,
+    "rho_tf_bus": 2.8204743948586144e-08,
+    "len_tf_bus": 22.502704911144924,
+    "n_tf_coils": 10.279775168784518,
+    "res_tf_leg": 1.529990503132991e-07,
+    "p_cp_resistive": 215702.0375793874,
+    "c_tf_total": 24259126.653452285,
+    "p_tf_joints_resistive": 669129.3023940278,
+    "p_tf_leg_resistive": 1781563.4203935948,
+    "etatf": 0.7154488607415881
+   }
+  },
+  {
+   "label": "seed20260818-014",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 44883.142462724034,
+    "j_tf_bus": 6598648.776945992,
+    "rho_tf_bus": 2.7241914966731593e-08,
+    "len_tf_bus": 919.9227704125211,
+    "n_tf_coils": 14.068058303508828,
+    "res_tf_leg": 1.5403079727041735e-07,
+    "p_cp_resistive": 1968510.092567159,
+    "c_tf_total": 1001788.5865620369,
+    "p_tf_joints_resistive": 595489.7880470485,
+    "p_tf_leg_resistive": 6345545.165180096,
+    "etatf": 0.7358025512946631
+   }
+  },
+  {
+   "label": "seed20260818-015",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1045.494079488616,
+    "j_tf_bus": 2735597.9677697066,
+    "rho_tf_bus": 4.469214539786863e-08,
+    "len_tf_bus": 324.36168361776635,
+    "n_tf_coils": 13.129660568032968,
+    "res_tf_leg": 1.7496779489963706e-06,
+    "p_cp_resistive": 2610142.609065549,
+    "c_tf_total": 31805382.709670875,
+    "p_tf_joints_resistive": 858364.9852429733,
+    "p_tf_leg_resistive": 247885.31673744728,
+    "etatf": 0.9599052719422164
+   }
+  },
+  {
+   "label": "seed20260818-016",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 103280.08844497208,
+    "j_tf_bus": 8015705.800784991,
+    "rho_tf_bus": 2.106375827616503e-08,
+    "len_tf_bus": 118.56961187239227,
+    "n_tf_coils": 15.6692873306975,
+    "res_tf_leg": 2.3280733856950745e-06,
+    "p_cp_resistive": 16148275.281690273,
+    "c_tf_total": 163865208.03416482,
+    "p_tf_joints_resistive": 713165.2150258608,
+    "p_tf_leg_resistive": 7115996.634299041,
+    "etatf": 0.6371189526297443
+   }
+  },
+  {
+   "label": "seed20260818-017",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 53605.76473827889,
+    "j_tf_bus": 6918883.817947379,
+    "rho_tf_bus": 2.177934214432735e-08,
+    "len_tf_bus": 16.27131221965291,
+    "n_tf_coils": 12.524143161139175,
+    "res_tf_leg": 3.251960277032352e-06,
+    "p_cp_resistive": 440332.9936373133,
+    "c_tf_total": 3299742.3860882274,
+    "p_tf_joints_resistive": 423253.57651310833,
+    "p_tf_leg_resistive": 4888995.036211586,
+    "etatf": 0.8278318290961798
+   }
+  },
+  {
+   "label": "seed20260818-018",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 75976.45478427887,
+    "j_tf_bus": 6292501.937487321,
+    "rho_tf_bus": 3.840556988696208e-08,
+    "len_tf_bus": 1133.9891662535215,
+    "n_tf_coils": 10.270081208628667,
+    "res_tf_leg": 9.779999925403475e-07,
+    "p_cp_resistive": 12675634.063514985,
+    "c_tf_total": 66785556.53568733,
+    "p_tf_joints_resistive": 642285.6893132782,
+    "p_tf_leg_resistive": 9548138.200506447,
+    "etatf": 0.7200279724398371
+   }
+  },
+  {
+   "label": "seed20260818-019",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 141936.09213077783,
+    "j_tf_bus": 352908.117280919,
+    "rho_tf_bus": 3.105347108686888e-08,
+    "len_tf_bus": 88.96815317541524,
+    "n_tf_coils": 12.088890606928503,
+    "res_tf_leg": 4.159728594004631e-06,
+    "p_cp_resistive": 1600204.193889695,
+    "c_tf_total": 121898445.74272981,
+    "p_tf_joints_resistive": 535665.7212127899,
+    "p_tf_leg_resistive": 2831027.759295587,
+    "etatf": 0.8032925359738672
+   }
+  },
+  {
+   "label": "seed20260818-020",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 7343.761895182285,
+    "j_tf_bus": 4231583.571086652,
+    "rho_tf_bus": 3.731868741200169e-08,
+    "len_tf_bus": 413.1812387868708,
+    "n_tf_coils": 10.332058877380188,
+    "res_tf_leg": 2.0151477265967679e-07,
+    "p_cp_resistive": 211060.5608447243,
+    "c_tf_total": 6506821.434127446,
+    "p_tf_joints_resistive": 90023.62492677663,
+    "p_tf_leg_resistive": 8494190.67588375,
+    "etatf": 0.8979944252709702
+   }
+  },
+  {
+   "label": "seed20260818-021",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 64800.03181615652,
+    "j_tf_bus": 3147765.622463763,
+    "rho_tf_bus": 1.755431860351116e-08,
+    "len_tf_bus": 226.64121741284433,
+    "n_tf_coils": 18.458359903533783,
+    "res_tf_leg": 2.601496507469979e-06,
+    "p_cp_resistive": 107155.59336996292,
+    "c_tf_total": 1428478.031976877,
+    "p_tf_joints_resistive": 868259.7089500917,
+    "p_tf_leg_resistive": 4869529.5558360005,
+    "etatf": 0.7122245847874555
+   }
+  },
+  {
+   "label": "seed20260818-022",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 62665.51921812258,
+    "j_tf_bus": 7436711.872044804,
+    "rho_tf_bus": 1.6329313117131856e-08,
+    "len_tf_bus": 129.2427844510365,
+    "n_tf_coils": 21.99701665926836,
+    "res_tf_leg": 1.8626406094908608e-07,
+    "p_cp_resistive": 162918.5177963715,
+    "c_tf_total": 2005134.332469659,
+    "p_tf_joints_resistive": 229885.07327563813,
+    "p_tf_leg_resistive": 6582812.3038871875,
+    "etatf": 0.6575806383623748
+   }
+  },
+  {
+   "label": "seed20260818-023",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1997.3061289444918,
+    "j_tf_bus": 4019719.5071791736,
+    "rho_tf_bus": 1.4490640627450679e-08,
+    "len_tf_bus": 29.481949842520464,
+    "n_tf_coils": 23.02982971230174,
+    "res_tf_leg": 2.4056796739238503e-06,
+    "p_cp_resistive": 22708205.021365713,
+    "c_tf_total": 6325213.38315008,
+    "p_tf_joints_resistive": 886800.3320913278,
+    "p_tf_leg_resistive": 5716236.7006450575,
+    "etatf": 0.7335661216851666
+   }
+  },
+  {
+   "label": "seed20260818-024",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1173.1407317752287,
+    "j_tf_bus": 4503022.441654451,
+    "rho_tf_bus": 2.0055909833539684e-08,
+    "len_tf_bus": 16.51282314667966,
+    "n_tf_coils": 20.020173094941775,
+    "res_tf_leg": 4.552167662888369e-07,
+    "p_cp_resistive": 15358144.093847847,
+    "c_tf_total": 9062707.506807718,
+    "p_tf_joints_resistive": 663113.1976129916,
+    "p_tf_leg_resistive": 5319859.452700273,
+    "etatf": 0.6350397488439119
+   }
+  },
+  {
+   "label": "seed20260818-025",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 73341.44163762587,
+    "j_tf_bus": 573477.466601193,
+    "rho_tf_bus": 2.6213301455624102e-08,
+    "len_tf_bus": 772.3811182629629,
+    "n_tf_coils": 15.630204282611455,
+    "res_tf_leg": 1.2393846231425504e-07,
+    "p_cp_resistive": 16120969.507957172,
+    "c_tf_total": 2004444.9315003848,
+    "p_tf_joints_resistive": 443216.10965567594,
+    "p_tf_leg_resistive": 9623841.073249226,
+    "etatf": 0.7271186249364749
+   }
+  },
+  {
+   "label": "seed20260818-026",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 3144.0617730845242,
+    "j_tf_bus": 3027472.0758981323,
+    "rho_tf_bus": 2.909989143062805e-08,
+    "len_tf_bus": 10.066795312134031,
+    "n_tf_coils": 11.118822331318864,
+    "res_tf_leg": 4.789501523113802e-07,
+    "p_cp_resistive": 468609.4827217408,
+    "c_tf_total": 46881227.87808331,
+    "p_tf_joints_resistive": 443069.7511734866,
+    "p_tf_leg_resistive": 7494752.718098005,
+    "etatf": 0.6381657154533535
+   }
+  },
+  {
+   "label": "seed20260818-027",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 10073.687731958635,
+    "j_tf_bus": 5543085.794472892,
+    "rho_tf_bus": 2.706933381228153e-08,
+    "len_tf_bus": 608.5989170067129,
+    "n_tf_coils": 16.188163874677628,
+    "res_tf_leg": 3.976961464255916e-06,
+    "p_cp_resistive": 1533725.7198360432,
+    "c_tf_total": 17601269.268123716,
+    "p_tf_joints_resistive": 720125.9551908382,
+    "p_tf_leg_resistive": 1503153.291542887,
+    "etatf": 0.9691216909684841
+   }
+  },
+  {
+   "label": "seed20260818-028",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 14906.169046212919,
+    "j_tf_bus": 8910343.138626728,
+    "rho_tf_bus": 1.9523738707714403e-08,
+    "len_tf_bus": 341.28711391660755,
+    "n_tf_coils": 22.937272321232633,
+    "res_tf_leg": 7.301940540593344e-07,
+    "p_cp_resistive": 4835997.75582607,
+    "c_tf_total": 98107604.3168886,
+    "p_tf_joints_resistive": 953473.2994045424,
+    "p_tf_leg_resistive": 7750381.21088517,
+    "etatf": 0.9430586632725334
+   }
+  },
+  {
+   "label": "seed20260818-029",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 4716.804256288718,
+    "j_tf_bus": 3825968.872385254,
+    "rho_tf_bus": 1.3349455095749465e-08,
+    "len_tf_bus": 21.707498290522146,
+    "n_tf_coils": 23.330914178882757,
+    "res_tf_leg": 2.5228257354049553e-07,
+    "p_cp_resistive": 654407.6715761264,
+    "c_tf_total": 14808107.659971677,
+    "p_tf_joints_resistive": 623721.912695394,
+    "p_tf_leg_resistive": 7330757.26765365,
+    "etatf": 0.9085665025199894
+   }
+  },
+  {
+   "label": "seed20260818-030",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 39734.36599325417,
+    "j_tf_bus": 1261142.721609825,
+    "rho_tf_bus": 1.9055560501459645e-08,
+    "len_tf_bus": 49.183326073833435,
+    "n_tf_coils": 12.113896196906556,
+    "res_tf_leg": 1.6009382615679772e-07,
+    "p_cp_resistive": 578695.3534539792,
+    "c_tf_total": 79148818.45843406,
+    "p_tf_joints_resistive": 767828.7909876442,
+    "p_tf_leg_resistive": 3487149.882477859,
+    "etatf": 0.6147614258178805
+   }
+  },
+  {
+   "label": "seed20260818-031",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 6743.707255562131,
+    "j_tf_bus": 7719276.030859751,
+    "rho_tf_bus": 3.731723089516856e-08,
+    "len_tf_bus": 341.15872473817836,
+    "n_tf_coils": 23.194547692875283,
+    "res_tf_leg": 6.122106497078628e-07,
+    "p_cp_resistive": 1509042.1214611346,
+    "c_tf_total": 49514822.395791434,
+    "p_tf_joints_resistive": 620705.873405224,
+    "p_tf_leg_resistive": 5093028.695895885,
+    "etatf": 0.7060662090939468
+   }
+  },
+  {
+   "label": "seed20260818-032",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 4089.6537027106747,
+    "j_tf_bus": 1851809.9615535655,
+    "rho_tf_bus": 1.7573850970698534e-08,
+    "len_tf_bus": 40.47496934421437,
+    "n_tf_coils": 14.015523644155568,
+    "res_tf_leg": 2.588824902310801e-07,
+    "p_cp_resistive": 6418842.902968803,
+    "c_tf_total": 63640904.46911792,
+    "p_tf_joints_resistive": 253809.13662051808,
+    "p_tf_leg_resistive": 7074922.498010654,
+    "etatf": 0.6229297694750514
+   }
+  },
+  {
+   "label": "seed20260818-033",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 99222.31460216182,
+    "j_tf_bus": 7980611.708159073,
+    "rho_tf_bus": 3.6466079195812364e-08,
+    "len_tf_bus": 1477.3519695212494,
+    "n_tf_coils": 15.19291514843877,
+    "res_tf_leg": 1.122709296247039e-07,
+    "p_cp_resistive": 287904.5404298551,
+    "c_tf_total": 14089408.992578419,
+    "p_tf_joints_resistive": 169970.37763237345,
+    "p_tf_leg_resistive": 321291.3127361838,
+    "etatf": 0.640002179552142
+   }
+  },
+  {
+   "label": "seed20260818-034",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2948.1163505799336,
+    "j_tf_bus": 4833182.586623667,
+    "rho_tf_bus": 4.29479836709769e-08,
+    "len_tf_bus": 57.29026962399049,
+    "n_tf_coils": 17.88177778028618,
+    "res_tf_leg": 8.491715373745148e-07,
+    "p_cp_resistive": 5663555.533600408,
+    "c_tf_total": 1193411.176404489,
+    "p_tf_joints_resistive": 947704.4433448863,
+    "p_tf_leg_resistive": 8336367.256141726,
+    "etatf": 0.688161016580869
+   }
+  },
+  {
+   "label": "seed20260818-035",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 15625.009490284843,
+    "j_tf_bus": 5836619.129243286,
+    "rho_tf_bus": 4.75649388148108e-08,
+    "len_tf_bus": 81.57509927450002,
+    "n_tf_coils": 14.928748118628457,
+    "res_tf_leg": 1.5594254466101884e-06,
+    "p_cp_resistive": 108943.84248716627,
+    "c_tf_total": 44202662.17655567,
+    "p_tf_joints_resistive": 838016.7260114803,
+    "p_tf_leg_resistive": 4298630.72699682,
+    "etatf": 0.8865820564277365
+   }
+  },
+  {
+   "label": "seed20260818-036",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 11367.739941985526,
+    "j_tf_bus": 8198505.653660715,
+    "rho_tf_bus": 2.7175081182586154e-08,
+    "len_tf_bus": 602.0537366469631,
+    "n_tf_coils": 17.399654816432026,
+    "res_tf_leg": 2.3413347877250854e-07,
+    "p_cp_resistive": 3036882.4777475544,
+    "c_tf_total": 9869165.223850435,
+    "p_tf_joints_resistive": 501995.5134945634,
+    "p_tf_leg_resistive": 340131.60916936735,
+    "etatf": 0.605786161444546
+   }
+  },
+  {
+   "label": "seed20260818-037",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 16660.594406173434,
+    "j_tf_bus": 7822145.02323497,
+    "rho_tf_bus": 3.3843768205527675e-08,
+    "len_tf_bus": 11.67736149538618,
+    "n_tf_coils": 22.665823158443345,
+    "res_tf_leg": 1.8688604720734596e-06,
+    "p_cp_resistive": 4890962.667108582,
+    "c_tf_total": 1562236.275755594,
+    "p_tf_joints_resistive": 830692.5540236518,
+    "p_tf_leg_resistive": 1962488.0520555244,
+    "etatf": 0.6758140371000292
+   }
+  },
+  {
+   "label": "seed20260818-038",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2536.4581153414415,
+    "j_tf_bus": 1263070.6487778584,
+    "rho_tf_bus": 1.2460274453198617e-08,
+    "len_tf_bus": 18.216365406835145,
+    "n_tf_coils": 18.954934196268674,
+    "res_tf_leg": 1.707533141721847e-06,
+    "p_cp_resistive": 589286.4801893713,
+    "c_tf_total": 1226625.931731148,
+    "p_tf_joints_resistive": 36635.592660726245,
+    "p_tf_leg_resistive": 5934824.068735994,
+    "etatf": 0.6805599139088427
+   }
+  },
+  {
+   "label": "seed20260818-039",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 16914.775862146354,
+    "j_tf_bus": 8142219.853215853,
+    "rho_tf_bus": 3.267173129439403e-08,
+    "len_tf_bus": 128.8118743697306,
+    "n_tf_coils": 20.140577081217657,
+    "res_tf_leg": 1.9297671699544556e-07,
+    "p_cp_resistive": 585058.3403541729,
+    "c_tf_total": 78396028.28908573,
+    "p_tf_joints_resistive": 898734.0343804109,
+    "p_tf_leg_resistive": 2114689.264870755,
+    "etatf": 0.7361345281827391
+   }
+  }
+ ],
+ "TestTfPowerSuperconducting": [
+  {
+   "label": "seed20260818-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 7431.225576491335,
+    "e_tf_magnetic_stored_total_gj": 13.923579724494212,
+    "n_tf_coils": 14.505701858480329,
+    "rmajor": 9.921604147052358,
+    "v_tf_coil_dump_quench_kv": 2.387962141264865,
+    "res_tf_leg": 2.9648396914249203e-07,
+    "rho_tf_bus": 3.647923102108928e-08,
+    "etatf": 0.9959925717068819
+   }
+  },
+  {
+   "label": "seed20260818-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 10396.33172880169,
+    "e_tf_magnetic_stored_total_gj": 25.960207223903055,
+    "n_tf_coils": 15.148211294280166,
+    "rmajor": 3.711767855830458,
+    "v_tf_coil_dump_quench_kv": 12.835157460847768,
+    "res_tf_leg": 1.1864219458153439e-07,
+    "rho_tf_bus": 1.7937919436222086e-08,
+    "etatf": 0.6113249086333793
+   }
+  },
+  {
+   "label": "seed20260818-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 23614.54339682289,
+    "e_tf_magnetic_stored_total_gj": 20.505629713403632,
+    "n_tf_coils": 13.766932598637327,
+    "rmajor": 11.72874519676137,
+    "v_tf_coil_dump_quench_kv": 12.919235313192912,
+    "res_tf_leg": 6.51451366779645e-07,
+    "rho_tf_bus": 2.794041893187271e-08,
+    "etatf": 0.69488057114341
+   }
+  },
+  {
+   "label": "seed20260818-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 19576.836032523937,
+    "e_tf_magnetic_stored_total_gj": 6.7623033095414975,
+    "n_tf_coils": 16.94701248884995,
+    "rmajor": 12.610714707573305,
+    "v_tf_coil_dump_quench_kv": 19.619507094353036,
+    "res_tf_leg": 5.320871875170325e-07,
+    "rho_tf_bus": 4.727121432879259e-08,
+    "etatf": 0.7868041858376951
+   }
+  },
+  {
+   "label": "seed20260818-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1849.6107445586422,
+    "e_tf_magnetic_stored_total_gj": 16.727831234035975,
+    "n_tf_coils": 15.32426815727697,
+    "rmajor": 8.886290545407606,
+    "v_tf_coil_dump_quench_kv": 14.82292244191804,
+    "res_tf_leg": 1.7192058072358375e-07,
+    "rho_tf_bus": 1.6008091822891482e-08,
+    "etatf": 0.6300357493940845
+   }
+  },
+  {
+   "label": "seed20260818-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 146519.3604018131,
+    "e_tf_magnetic_stored_total_gj": 24.783053379735986,
+    "n_tf_coils": 19.090295404093773,
+    "rmajor": 8.792074337167607,
+    "v_tf_coil_dump_quench_kv": 16.219937777764507,
+    "res_tf_leg": 3.7687601524825666e-06,
+    "rho_tf_bus": 2.7414931167977455e-08,
+    "etatf": 0.6836768731438168
+   }
+  },
+  {
+   "label": "seed20260818-006",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1357.627211915162,
+    "e_tf_magnetic_stored_total_gj": 7.754594826265162,
+    "n_tf_coils": 16.705996997964515,
+    "rmajor": 10.888728945101757,
+    "v_tf_coil_dump_quench_kv": 10.062123849572194,
+    "res_tf_leg": 1.3231675463320118e-06,
+    "rho_tf_bus": 4.4236281680364657e-08,
+    "etatf": 0.8670338819352056
+   }
+  },
+  {
+   "label": "seed20260818-007",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 14271.183521346586,
+    "e_tf_magnetic_stored_total_gj": 18.863679383174738,
+    "n_tf_coils": 11.54661453266169,
+    "rmajor": 16.495212162601653,
+    "v_tf_coil_dump_quench_kv": 5.679250382387864,
+    "res_tf_leg": 1.3011759406329137e-07,
+    "rho_tf_bus": 4.462925810690186e-08,
+    "etatf": 0.9513417339938406
+   }
+  },
+  {
+   "label": "seed20260818-008",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 15948.065800978791,
+    "e_tf_magnetic_stored_total_gj": 15.738345985382672,
+    "n_tf_coils": 23.94785984411632,
+    "rmajor": 13.351386396958382,
+    "v_tf_coil_dump_quench_kv": 19.75494595509692,
+    "res_tf_leg": 3.690181641241521e-07,
+    "rho_tf_bus": 3.232072163944354e-08,
+    "etatf": 0.6676668933958682
+   }
+  },
+  {
+   "label": "seed20260818-009",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 13284.73750862298,
+    "e_tf_magnetic_stored_total_gj": 27.441572570892404,
+    "n_tf_coils": 14.730118085008206,
+    "rmajor": 12.849347020341208,
+    "v_tf_coil_dump_quench_kv": 19.640316814335005,
+    "res_tf_leg": 2.3752436872497784e-07,
+    "rho_tf_bus": 2.3753679919848183e-08,
+    "etatf": 0.9707633747172562
+   }
+  },
+  {
+   "label": "seed20260818-010",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1251.6431671005134,
+    "e_tf_magnetic_stored_total_gj": 1.4324279449268082,
+    "n_tf_coils": 16.510702222128668,
+    "rmajor": 15.30562282181178,
+    "v_tf_coil_dump_quench_kv": 8.58434824274033,
+    "res_tf_leg": 1.737307643338518e-07,
+    "rho_tf_bus": 4.4168546693966614e-08,
+    "etatf": 0.8140865415321391
+   }
+  },
+  {
+   "label": "seed20260818-011",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 72999.1205012458,
+    "e_tf_magnetic_stored_total_gj": 19.32566283057395,
+    "n_tf_coils": 15.259596010791771,
+    "rmajor": 9.397299036403956,
+    "v_tf_coil_dump_quench_kv": 7.074364936050767,
+    "res_tf_leg": 1.3241742583153328e-06,
+    "rho_tf_bus": 1.1996131603106326e-08,
+    "etatf": 0.8522600095616053
+   }
+  },
+  {
+   "label": "seed20260818-012",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1420.4286546947899,
+    "e_tf_magnetic_stored_total_gj": 22.548595923201088,
+    "n_tf_coils": 10.992037994533655,
+    "rmajor": 14.869276331201133,
+    "v_tf_coil_dump_quench_kv": 11.911114148445378,
+    "res_tf_leg": 5.213739731886194e-07,
+    "rho_tf_bus": 3.0982609509710756e-08,
+    "etatf": 0.605670945155846
+   }
+  },
+  {
+   "label": "seed20260818-013",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 31379.45641741473,
+    "e_tf_magnetic_stored_total_gj": 16.03275247743276,
+    "n_tf_coils": 11.052008566929118,
+    "rmajor": 3.053567351320385,
+    "v_tf_coil_dump_quench_kv": 7.785689663629933,
+    "res_tf_leg": 7.700332545764194e-06,
+    "rho_tf_bus": 2.426300744468606e-08,
+    "etatf": 0.7597626522162185
+   }
+  },
+  {
+   "label": "seed20260818-014",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 24380.128841362653,
+    "e_tf_magnetic_stored_total_gj": 10.338530148553215,
+    "n_tf_coils": 15.818125825419802,
+    "rmajor": 4.598200141156784,
+    "v_tf_coil_dump_quench_kv": 15.179522983962183,
+    "res_tf_leg": 2.3508405341333233e-07,
+    "rho_tf_bus": 3.092197120922146e-08,
+    "etatf": 0.6205800428278214
+   }
+  },
+  {
+   "label": "seed20260818-015",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 14809.24540971844,
+    "e_tf_magnetic_stored_total_gj": 23.44317761808891,
+    "n_tf_coils": 22.50775988612069,
+    "rmajor": 13.960589217076594,
+    "v_tf_coil_dump_quench_kv": 6.930236995468925,
+    "res_tf_leg": 5.899642046701539e-07,
+    "rho_tf_bus": 4.93027805753262e-08,
+    "etatf": 0.8410141877784518
+   }
+  },
+  {
+   "label": "seed20260818-016",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 6550.754320435076,
+    "e_tf_magnetic_stored_total_gj": 5.4014953011707805,
+    "n_tf_coils": 16.159429999586223,
+    "rmajor": 11.343649760246619,
+    "v_tf_coil_dump_quench_kv": 4.365314140578531,
+    "res_tf_leg": 4.735094198797263e-07,
+    "rho_tf_bus": 1.4859326471498312e-08,
+    "etatf": 0.908843065119193
+   }
+  },
+  {
+   "label": "seed20260818-017",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 29044.306472018892,
+    "e_tf_magnetic_stored_total_gj": 6.832512343787505,
+    "n_tf_coils": 16.667969770306517,
+    "rmajor": 4.720105639972957,
+    "v_tf_coil_dump_quench_kv": 12.524477913401094,
+    "res_tf_leg": 4.33144870623412e-06,
+    "rho_tf_bus": 3.131149590455709e-08,
+    "etatf": 0.6402899230797379
+   }
+  },
+  {
+   "label": "seed20260818-018",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 84455.10980570903,
+    "e_tf_magnetic_stored_total_gj": 13.925998662082279,
+    "n_tf_coils": 12.143077735090642,
+    "rmajor": 3.3397269906669145,
+    "v_tf_coil_dump_quench_kv": 2.754542983438756,
+    "res_tf_leg": 1.7676399908360462e-07,
+    "rho_tf_bus": 3.4074004502300906e-08,
+    "etatf": 0.8676517209576111
+   }
+  },
+  {
+   "label": "seed20260818-019",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2441.6558966317693,
+    "e_tf_magnetic_stored_total_gj": 9.014353479692122,
+    "n_tf_coils": 20.62876636712218,
+    "rmajor": 14.15929587960423,
+    "v_tf_coil_dump_quench_kv": 9.189909609197507,
+    "res_tf_leg": 5.091497316979641e-06,
+    "rho_tf_bus": 2.1623023724310935e-08,
+    "etatf": 0.6375215126703944
+   }
+  },
+  {
+   "label": "seed20260818-020",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 11051.490785055012,
+    "e_tf_magnetic_stored_total_gj": 0.509949606687149,
+    "n_tf_coils": 18.336857032658678,
+    "rmajor": 13.787426780806165,
+    "v_tf_coil_dump_quench_kv": 7.450621186496497,
+    "res_tf_leg": 1.0417369252543549e-07,
+    "rho_tf_bus": 2.0648880677857403e-08,
+    "etatf": 0.9469214539786863
+   }
+  },
+  {
+   "label": "seed20260818-021",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 26852.539527506204,
+    "e_tf_magnetic_stored_total_gj": 7.094641911212325,
+    "n_tf_coils": 18.70070682942421,
+    "rmajor": 11.923141783244319,
+    "v_tf_coil_dump_quench_kv": 13.406405802187496,
+    "res_tf_leg": 5.20870750713081e-06,
+    "rho_tf_bus": 1.099154126694979e-08,
+    "etatf": 0.9599052719422164
+   }
+  },
+  {
+   "label": "seed20260818-022",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 103280.08844497208,
+    "e_tf_magnetic_stored_total_gj": 24.087204153854266,
+    "n_tf_coils": 13.87231539665776,
+    "rmajor": 10.934510981834173,
+    "v_tf_coil_dump_quench_kv": 8.694032805946609,
+    "res_tf_leg": 2.3280733856950745e-06,
+    "rho_tf_bus": 4.272546402111715e-08,
+    "etatf": 0.9849557385777217
+   }
+  },
+  {
+   "label": "seed20260818-023",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 35637.93986538406,
+    "e_tf_magnetic_stored_total_gj": 21.492190071182172,
+    "n_tf_coils": 11.29916334204105,
+    "rmajor": 16.508898264303426,
+    "v_tf_coil_dump_quench_kv": 14.086746721313151,
+    "res_tf_leg": 3.881209692033062e-07,
+    "rho_tf_bus": 1.3675268535418667e-08,
+    "etatf": 0.6721183760325479
+   }
+  },
+  {
+   "label": "seed20260818-024",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 44185.8293463861,
+    "e_tf_magnetic_stored_total_gj": 7.536590325673311,
+    "n_tf_coils": 13.154552748005347,
+    "rmajor": 10.195310800722842,
+    "v_tf_coil_dump_quench_kv": 10.289090568802012,
+    "res_tf_leg": 1.3777142342904064e-06,
+    "rho_tf_bus": 4.456985577792084e-08,
+    "etatf": 0.8502020984843361
+   }
+  },
+  {
+   "label": "seed20260818-025",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 35101.67238430432,
+    "e_tf_magnetic_stored_total_gj": 26.840796437129704,
+    "n_tf_coils": 10.270081208628667,
+    "rmajor": 11.417880237537837,
+    "v_tf_coil_dump_quench_kv": 15.80432316826278,
+    "res_tf_leg": 3.854519453433982e-06,
+    "rho_tf_bus": 3.569142757253113e-08,
+    "etatf": 0.9819255280202579
+   }
+  },
+  {
+   "label": "seed20260818-026",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 4497.586805385584,
+    "e_tf_magnetic_stored_total_gj": 29.67466748142025,
+    "n_tf_coils": 10.357647842619482,
+    "rmajor": 11.947725211919273,
+    "v_tf_coil_dump_quench_kv": 8.83799297173603,
+    "res_tf_leg": 1.9879842706563888e-07,
+    "rho_tf_bus": 4.238129991074956e-08,
+    "etatf": 0.7784644367828701
+   }
+  },
+  {
+   "label": "seed20260818-027",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 93915.00538155888,
+    "e_tf_magnetic_stored_total_gj": 16.3021387757773,
+    "n_tf_coils": 13.96343886301382,
+    "rmajor": 11.639932778889355,
+    "v_tf_coil_dump_quench_kv": 8.560552937424006,
+    "res_tf_leg": 6.833817045172223e-07,
+    "rho_tf_bus": 3.731868741200169e-08,
+    "etatf": 0.8809421166076115
+   }
+  },
+  {
+   "label": "seed20260818-028",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1126.1950171376598,
+    "e_tf_magnetic_stored_total_gj": 4.988526611802452,
+    "n_tf_coils": 11.682752762163876,
+    "rmajor": 9.009165952817694,
+    "v_tf_coil_dump_quench_kv": 2.710448873608756,
+    "res_tf_leg": 4.998482030667949e-06,
+    "rho_tf_bus": 3.979944252709701e-08,
+    "etatf": 0.9329961850756123
+   }
+  },
+  {
+   "label": "seed20260818-029",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 4676.498735840531,
+    "e_tf_magnetic_stored_total_gj": 6.071309970089479,
+    "n_tf_coils": 18.246196075953858,
+    "rmajor": 13.270865597148166,
+    "v_tf_coil_dump_quench_kv": 14.444620848291759,
+    "res_tf_leg": 1.0525474990696155e-07,
+    "rho_tf_bus": 1.2692247666678948e-08,
+    "etatf": 0.9473038835800367
+   }
+  },
+  {
+   "label": "seed20260818-030",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 11472.39443656167,
+    "e_tf_magnetic_stored_total_gj": 8.776563128074843,
+    "n_tf_coils": 21.56128029499297,
+    "rmajor": 15.5983941237133,
+    "v_tf_coil_dump_quench_kv": 4.006423730637632,
+    "res_tf_leg": 9.24714493322109e-07,
+    "rho_tf_bus": 4.427719045505246e-08,
+    "etatf": 0.6540258134514232
+   }
+  },
+  {
+   "label": "seed20260818-031",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1482.1932895192456,
+    "e_tf_magnetic_stored_total_gj": 4.373583775581084,
+    "n_tf_coils": 13.218391025858933,
+    "rmajor": 14.190780916608219,
+    "v_tf_coil_dump_quench_kv": 3.735080322212805,
+    "res_tf_leg": 1.8885669489982987e-07,
+    "rho_tf_bus": 2.583725053405727e-08,
+    "etatf": 0.6449064062745068
+   }
+  },
+  {
+   "label": "seed20260818-032",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 2780.102247458863,
+    "e_tf_magnetic_stored_total_gj": 27.95571260806438,
+    "n_tf_coils": 19.66866459138358,
+    "rmajor": 17.840886578190492,
+    "v_tf_coil_dump_quench_kv": 7.614615398650842,
+    "res_tf_leg": 5.937459553392083e-06,
+    "rho_tf_bus": 3.2864946802580234e-08,
+    "etatf": 0.7335661216851666
+   }
+  },
+  {
+   "label": "seed20260818-033",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1173.1407317752287,
+    "e_tf_magnetic_stored_total_gj": 13.620117376647102,
+    "n_tf_coils": 13.519568441738889,
+    "rmajor": 4.609263073607144,
+    "v_tf_coil_dump_quench_kv": 14.598806343135264,
+    "res_tf_leg": 4.552167662888369e-07,
+    "rho_tf_bus": 4.2402564451123176e-08,
+    "etatf": 0.7664051256074632
+   }
+  },
+  {
+   "label": "seed20260818-034",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 27732.87109966256,
+    "e_tf_magnetic_stored_total_gj": 16.193585385465806,
+    "n_tf_coils": 11.226391209536917,
+    "rmajor": 17.572431367159382,
+    "v_tf_coil_dump_quench_kv": 1.9086941278204714,
+    "res_tf_leg": 6.466437327786086e-07,
+    "rho_tf_bus": 4.281715843723491e-08,
+    "etatf": 0.7608629795031844
+   }
+  },
+  {
+   "label": "seed20260818-035",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1263.0265900248637,
+    "e_tf_magnetic_stored_total_gj": 24.626996229331773,
+    "n_tf_coils": 11.837402301619735,
+    "rmajor": 10.534673864146491,
+    "v_tf_coil_dump_quench_kv": 19.28529803917353,
+    "res_tf_leg": 4.3210881369984737e-07,
+    "rho_tf_bus": 1.914467292122646e-08,
+    "etatf": 0.7182817000362882
+   }
+  },
+  {
+   "label": "seed20260818-036",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 10941.520283158254,
+    "e_tf_magnetic_stored_total_gj": 0.5370666732589853,
+    "n_tf_coils": 11.118822331318864,
+    "rmajor": 8.782467683497067,
+    "v_tf_coil_dump_quench_kv": 5.722323834795787,
+    "res_tf_leg": 2.8339499312546537e-06,
+    "rho_tf_bus": 2.7722790046939464e-08,
+    "etatf": 0.8997901087239202
+   }
+  },
+  {
+   "label": "seed20260818-037",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 1612.9845201849762,
+    "e_tf_magnetic_stored_total_gj": 14.09964117487729,
+    "n_tf_coils": 17.69729304268894,
+    "rmajor": 10.25446687021965,
+    "v_tf_coil_dump_quench_kv": 15.733529068599806,
+    "res_tf_leg": 7.656378775513256e-07,
+    "rho_tf_bus": 4.199102765606814e-08,
+    "etatf": 0.7757333647485937
+   }
+  },
+  {
+   "label": "seed20260818-038",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 15063.116726814802,
+    "e_tf_magnetic_stored_total_gj": 21.74371567812973,
+    "n_tf_coils": 12.104414608160042,
+    "rmajor": 18.68767186616057,
+    "v_tf_coil_dump_quench_kv": 11.244953977693923,
+    "res_tf_leg": 6.023755013015926e-06,
+    "rho_tf_bus": 1.9523738707714403e-08,
+    "etatf": 0.8665101965095205
+   }
+  },
+  {
+   "label": "seed20260818-039",
+   "provenance": "fuzz",
+   "kwargs": {
+    "c_tf_turn": 102543.01598837094,
+    "e_tf_magnetic_stored_total_gj": 13.235714809739022,
+    "n_tf_coils": 18.737705580735778,
+    "rmajor": 17.7146910157565,
+    "v_tf_coil_dump_quench_kv": 19.115992688686305,
+    "res_tf_leg": 3.5487568364675503e-06,
+    "rho_tf_bus": 4.430586632725334e-08,
+    "etatf": 0.723827132880167
+   }
+  }
+ ]
+}

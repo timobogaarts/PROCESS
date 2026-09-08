@@ -1,0 +1,167 @@
+{
+ "TestObjectiveMetric1": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 9.0
+   }
+  }
+ ],
+ "TestObjectiveMetric10": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 5.0
+   }
+  }
+ ],
+ "TestObjectiveMetric11": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_hcd_injected_total_mw": 50.0
+   }
+  }
+ ],
+ "TestObjectiveMetric14": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "t_plant_pulse_burn": 7200.0
+   }
+  }
+ ],
+ "TestObjectiveMetric15": [
+  {
+   "label": "ward-taylor",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plant_availability": 1,
+    "f_t_plant_available": 0.8
+   }
+  },
+  {
+   "label": "morris",
+   "provenance": "legacy",
+   "kwargs": {
+    "i_plant_availability": 2,
+    "f_t_plant_available": 0.85
+   }
+  }
+ ],
+ "TestObjectiveMetric16": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 9.0,
+    "t_plant_pulse_burn": 7200.0
+   }
+  }
+ ],
+ "TestObjectiveMetric17": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "p_plant_electric_net_mw": 500.0
+   }
+  }
+ ],
+ "TestObjectiveMetric18": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {}
+  }
+ ],
+ "TestObjectiveMetric19": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "big_q_plasma": 15.0,
+    "t_plant_pulse_burn": 7200.0
+   }
+  }
+ ],
+ "TestObjectiveMetric3": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_fw_neutron_mw": 1.5
+   }
+  }
+ ],
+ "TestObjectiveMetric4": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "tfcmw": 50.0,
+    "srcktpm": 2000.0
+   }
+  }
+ ],
+ "TestObjectiveMetric5": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "big_q_plasma": 15.0
+   }
+  }
+ ],
+ "TestObjectiveMetric6": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "coe": 80.0
+   }
+  }
+ ],
+ "TestObjectiveMetric7": [
+  {
+   "label": "direct-cost",
+   "provenance": "legacy",
+   "kwargs": {
+    "cdirt": 5000.0,
+    "concost": 8000.0,
+    "ireactor": 0
+   }
+  },
+  {
+   "label": "construction-cost",
+   "provenance": "legacy",
+   "kwargs": {
+    "cdirt": 5000.0,
+    "concost": 8000.0,
+    "ireactor": 1
+   }
+  }
+ ],
+ "TestObjectiveMetric8": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "aspect": 10.0
+   }
+  }
+ ],
+ "TestObjectiveMetric9": [
+  {
+   "label": "nominal",
+   "provenance": "legacy",
+   "kwargs": {
+    "pflux_div_heat_load_mw": 5.0
+   }
+  }
+ ]
+}

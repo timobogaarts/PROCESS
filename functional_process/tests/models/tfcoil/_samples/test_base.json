@@ -1,0 +1,274 @@
+{
+ "TestCircumference": [
+  {
+   "label": "circumference-johndcook",
+   "provenance": "legacy",
+   "kwargs": {
+    "aaa": 2667950000.0,
+    "bbb": 678281900.0
+   }
+  },
+  {
+   "label": "circumference-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "aaa": 4.718603976181213,
+    "bbb": 3.6192586838709673
+   }
+  }
+ ],
+ "TestDrTfPlasmaCaseFromFraction": [
+  {
+   "label": "dr_tf_plasma_case-fraction",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_dr_tf_plasma_case": 0.1,
+    "dr_tf_inboard": 0.4,
+    "r_tf_inboard_in": 1.4,
+    "n_tf_coils": 12
+   }
+  }
+ ],
+ "TestDrTfPlasmaCaseFromInput": [
+  {
+   "label": "dr_tf_plasma_case-clamp-binds",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_tf_plasma_case": 0.0,
+    "r_tf_inboard_in": 1.5,
+    "dr_tf_inboard": 0.5,
+    "n_tf_coils": 16
+   }
+  },
+  {
+   "label": "dr_tf_plasma_case-input-wins",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_tf_plasma_case": 0.2,
+    "r_tf_inboard_in": 1.5,
+    "dr_tf_inboard": 0.5,
+    "n_tf_coils": 16
+   }
+  }
+ ],
+ "TestDxTfSideCaseMinFromFraction": [
+  {
+   "label": "dx_tf_side_case_min-fraction",
+   "provenance": "legacy",
+   "kwargs": {
+    "casths_fraction": 0.05,
+    "r_tf_inboard_in": 1.4,
+    "dr_tf_nose_case": 0.05,
+    "n_tf_coils": 12
+   }
+  }
+ ],
+ "TestGenericTfCoilAreaAndMasses": [
+  {
+   "label": "generic-areas-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 4.20194118510911,
+    "r_tf_inboard_in": 2.9939411851091102,
+    "rad_tf_coil_inboard_toroidal_half": 0.19634954084936207,
+    "tan_theta_coil": 0.198912367379658,
+    "len_tf_coil": 50.4838430272014,
+    "r_tf_inboard_mid": 3.5979411851091103,
+    "r_tf_outboard_mid": 16.51940585944333
+   }
+  }
+ ],
+ "TestRBTfInboardPeak": [
+  {
+   "label": "r_b_tf_inboard_peak-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 4.20194118510911,
+    "dr_tf_plasma_case": 0.06000000000000001,
+    "dx_tf_wp_insulation": 0.008000000000000002,
+    "dx_tf_wp_insertion_gap": 0.01
+   }
+  }
+ ],
+ "TestTfCoilSelfInductanceDShape": [
+  {
+   "label": "tf_coil_self_inductance-baseline2018",
+   "provenance": "legacy",
+   "kwargs": {
+    "dr_tf_inboard": 1.208,
+    "r_tf_arc": {
+     "~array": [
+      4.20194118510911,
+      8.316545161290323,
+      15.915405859443332,
+      8.316545161290323,
+      4.20194118510911
+     ],
+     "dtype": "float64"
+    },
+    "z_tf_arc": {
+     "~array": [
+      4.533688025806451,
+      7.556146709677419,
+      0.0,
+      -9.073090021562033,
+      -5.443854012937219
+     ],
+     "dtype": "float64"
+    }
+   }
+  }
+ ],
+ "TestTfCoilSelfInductancePictureFrame": [
+  {
+   "label": "tf_coil_self_inductance-picture-frame",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_inside_half": 9.073090021562033,
+    "dr_tf_outboard": 1.208,
+    "r_tf_outboard_mid": 16.51940585944333,
+    "r_tf_inboard_mid": 3.5979411851091103
+   }
+  }
+ ],
+ "TestTfCoilShapeDShapeDoubleNull": [
+  {
+   "label": "tf_coil_shape-d-double-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_tf_inboard_out": 4.20194118510911,
+    "rmajor": 8.893166451612904,
+    "rminor": 2.8830645161290325,
+    "r_tf_outboard_in": 15.915405859443332,
+    "z_tf_inside_half": 9.073090021562033,
+    "dr_tf_inboard": 1.208
+   }
+  }
+ ],
+ "TestTfCoilShapeDShapeSingleNull": [
+  {
+   "label": "tf_coil_shape-d-single-null",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_tf_top": 8.76414670967742,
+    "r_tf_inboard_out": 4.20194118510911,
+    "rmajor": 8.893166451612904,
+    "rminor": 2.8830645161290325,
+    "r_tf_outboard_in": 15.915405859443332,
+    "z_tf_inside_half": 9.073090021562033,
+    "dr_tf_inboard": 1.208
+   }
+  }
+ ],
+ "TestTfCoilShapePictureFrameTart": [
+  {
+   "label": "spherical_tokamak_eval-first-pass",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_cp_top": 1.333916508197074,
+    "r_tf_outboard_in": 9.824594873354489,
+    "z_tf_inside_half": 11.735,
+    "z_tf_top": 12.635,
+    "dr_tf_inboard": 0.9,
+    "r_tf_outboard_mid": 10.274594873354488
+   }
+  }
+ ],
+ "TestTfCurrent": [
+  {
+   "label": "tf_current-16coils",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_tf_coils": 16,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "rmajor": 6.2,
+    "r_b_tf_inboard_peak": 2.5,
+    "a_tf_inboard_total": 0.8
+   }
+  },
+  {
+   "label": "tf_current-12coils",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_tf_coils": 12,
+    "b_plasma_toroidal_on_axis": 3.0,
+    "rmajor": 5.0,
+    "r_b_tf_inboard_peak": 1.8,
+    "a_tf_inboard_total": 0.5
+   }
+  }
+ ],
+ "TestTfGlobalGeometryCircularCase": [
+  {
+   "label": "tf_global_geometry-circular",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_tf_coils": 16,
+    "r_tf_inboard_out": 2.0,
+    "r_tf_inboard_in": 1.5,
+    "r_tf_outboard_mid": 5.0,
+    "dr_tf_outboard": 0.3
+   }
+  }
+ ],
+ "TestTfGlobalGeometryStraightCase": [
+  {
+   "label": "tf_global_geometry-straight",
+   "provenance": "legacy",
+   "kwargs": {
+    "n_tf_coils": 12,
+    "r_tf_inboard_out": 1.8,
+    "r_tf_inboard_in": 1.4,
+    "r_tf_outboard_mid": 4.5,
+    "dr_tf_outboard": 0.25
+   }
+  }
+ ],
+ "TestTfStoredMagneticEnergy": [
+  {
+   "label": "stored-energy-1",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_tf_coil": 1.0,
+    "c_tf_total": 2.0,
+    "n_tf_coils": 3
+   }
+  },
+  {
+   "label": "stored-energy-2",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_tf_coil": 0.5,
+    "c_tf_total": 4.0,
+    "n_tf_coils": 2
+   }
+  },
+  {
+   "label": "stored-energy-3",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_tf_coil": 2.0,
+    "c_tf_total": 5.0,
+    "n_tf_coils": 4
+   }
+  },
+  {
+   "label": "stored-energy-4",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_tf_coil": 0.0,
+    "c_tf_total": 5.0,
+    "n_tf_coils": 1
+   }
+  },
+  {
+   "label": "stored-energy-5",
+   "provenance": "legacy",
+   "kwargs": {
+    "ind_tf_coil": 1.0,
+    "c_tf_total": 0.0,
+    "n_tf_coils": 10
+   }
+  }
+ ]
+}

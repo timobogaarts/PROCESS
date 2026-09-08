@@ -20,9 +20,11 @@ over.
 """
 
 import functools
+
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
@@ -76,26 +78,7 @@ class TestSurfaceAveragedPoloidalFieldAmperes(Tier1Contract):
     reference = _reference_surface_averaged_poloidal_field_amperes
     ported = calculate_surface_averaged_poloidal_field_amperes
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-ipdg89",
-            cur_plasma=18398455.678867526,
-            len_plasma_poloidal=24.081367139525412,
-        ),
-        legacy_sample(
-            "iter-scaling-row",
-            cur_plasma=1.6e7,
-            len_plasma_poloidal=24.0,
-        ),
-        *fuzz_samples(
-            {
-                "cur_plasma": (1.0e6, 3.0e7),
-                "len_plasma_poloidal": (5.0, 40.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_unclipped_radiation_powers(
@@ -122,31 +105,7 @@ class TestUnclippedRadiationPowers(Tier1Contract):
     reference = _reference_unclipped_radiation_powers
     ported = calculate_unclipped_radiation_powers
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-scale",
-            pden_plasma_core_rad_mw_unclipped=0.057544135593658154,
-            pden_plasma_outer_rad_mw_unclipped=0.05525606,
-            vol_plasma=2077.5,
-        ),
-        # The arm the stellarator's clip exists to suppress and the tokamak does not.
-        # PROCESS carries the negative straight through here; the port must too.
-        legacy_sample(
-            "negative-core-density",
-            pden_plasma_core_rad_mw_unclipped=-0.004,
-            pden_plasma_outer_rad_mw_unclipped=-0.001,
-            vol_plasma=2077.5,
-        ),
-        *fuzz_samples(
-            {
-                "pden_plasma_core_rad_mw_unclipped": (-0.05, 0.5),
-                "pden_plasma_outer_rad_mw_unclipped": (-0.05, 0.5),
-                "vol_plasma": (500.0, 5000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_total_radiation_power(pden_plasma_rad_mw, vol_plasma):
@@ -161,21 +120,7 @@ class TestTotalRadiationPower(Tier1Contract):
     reference = _reference_total_radiation_power
     ported = calculate_total_radiation_power
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-scale",
-            pden_plasma_rad_mw=0.1128,
-            vol_plasma=2077.5,
-        ),
-        *fuzz_samples(
-            {
-                "pden_plasma_rad_mw": (0.001, 1.0),
-                "vol_plasma": (500.0, 5000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestSeparatrixPower(Tier1Contract):
@@ -191,41 +136,7 @@ class TestSeparatrixPower(Tier1Contract):
     reference = staticmethod(PlasmaExhaust.calculate_separatrix_power)
     ported = calculate_separatrix_power
 
-    samples = [
-        legacy_sample(
-            "large-tokamak-non-ignited",
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=396.0,
-            p_non_alpha_charged_mw=2.1,
-            p_hcd_injected_total_mw=50.0,
-            p_plasma_ohmic_mw=0.8,
-            p_plasma_rad_mw=234.3,
-        ),
-        # The configuration the KLUDGE at `physics.py:843-845` exists for: radiated
-        # power exceeds everything crossing the separatrix, so the raw answer is
-        # negative.
-        legacy_sample(
-            "radiation-dominated-negative",
-            f_p_alpha_plasma_deposited=0.95,
-            p_alpha_total_mw=100.0,
-            p_non_alpha_charged_mw=0.5,
-            p_hcd_injected_total_mw=10.0,
-            p_plasma_ohmic_mw=0.5,
-            p_plasma_rad_mw=250.0,
-        ),
-        *fuzz_samples(
-            {
-                "f_p_alpha_plasma_deposited": (0.5, 1.0),
-                "p_alpha_total_mw": (50.0, 800.0),
-                "p_non_alpha_charged_mw": (0.0, 20.0),
-                "p_hcd_injected_total_mw": (0.0, 200.0),
-                "p_plasma_ohmic_mw": (0.0, 5.0),
-                "p_plasma_rad_mw": (10.0, 600.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_force_positive_separatrix_power(p_plasma_separatrix_mw_raw):
@@ -247,16 +158,7 @@ class TestForcePositiveSeparatrixPower(Tier1Contract):
     reference = _reference_force_positive_separatrix_power
     ported = force_positive_separatrix_power
 
-    samples = [
-        legacy_sample("large-tokamak-scale", p_plasma_separatrix_mw_raw=164.6),
-        legacy_sample("inside-the-transform", p_plasma_separatrix_mw_raw=0.5),
-        legacy_sample("negative-raw-power", p_plasma_separatrix_mw_raw=-5.0),
-        *fuzz_samples(
-            {"p_plasma_separatrix_mw_raw": (-20.0, 400.0)},
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_pulsed_plant_ramp_times(plasma_current):
@@ -280,14 +182,7 @@ class TestPulsedPlantRampTimes(Tier1Contract):
     reference = _reference_pulsed_plant_ramp_times
     ported = calculate_pulsed_plant_ramp_times
 
-    samples = [
-        legacy_sample("large-tokamak", plasma_current=18398455.678867526),
-        *fuzz_samples(
-            {"plasma_current": (1.0e6, 3.0e7)},
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_continuous_plant_ramp_times(plasma_current):
@@ -315,14 +210,7 @@ class TestContinuousPlantRampTimes(Tier1Contract):
     reference = _reference_continuous_plant_ramp_times
     ported = calculate_continuous_plant_ramp_times
 
-    samples = [
-        legacy_sample("sauter-unit-test", plasma_current=16528278.760008096),
-        *fuzz_samples(
-            {"plasma_current": (1.0e6, 3.0e7)},
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 class TestPlasmaEnergyFromBeta(Tier1Contract):
@@ -336,21 +224,7 @@ class TestPlasmaEnergyFromBeta(Tier1Contract):
     reference = staticmethod(PlasmaBeta.calculate_plasma_energy_from_beta)
     ported = calculate_plasma_energy_from_beta
 
-    samples = [
-        legacy_sample("unit-test-point", beta=0.02, b_field=5.3, vol_plasma=1000.0),
-        legacy_sample(
-            "large-tokamak-scale", beta=0.0357, b_field=5.79, vol_plasma=2077.5
-        ),
-        *fuzz_samples(
-            {
-                "beta": (0.001, 0.15),
-                "b_field": (1.0, 13.0),
-                "vol_plasma": (500.0, 5000.0),
-            },
-            count=5,
-            seed=0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_plasma_ohmic_heating(
@@ -428,20 +302,7 @@ class TestPlasmaOhmicHeating(Tier1Contract):
     reference = _reference_plasma_ohmic_heating
     ported = _ported_plasma_ohmic_heating
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            f_c_plasma_inductive=0.5757815563319303,
-            kappa95=1.6517857142857142,
-            plasma_current=16091095.408042267,
-            rmajor=8.0,
-            rminor=2.6666666666666665,
-            temp_plasma_electron_density_weighted_kev=13.679755913174434,
-            vol_plasma=1888.171153995669,
-            n_charge_plasma_effective_vol_avg=2.528427557461356,
-            plasma_res_factor=0.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -498,16 +359,7 @@ class TestBetaNormMaxWesson(Tier1Contract):
     reference = staticmethod(PlasmaBeta.calculate_beta_norm_max_wesson)
     ported = calculate_beta_norm_max_wesson
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged", ind_plasma_internal_norm=1.256826884499288
-        ),
-        *fuzz_samples(
-            {"ind_plasma_internal_norm": (0.5, 2.0)},
-            count=5,
-            seed=24,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {"ind_plasma_internal_norm": (0.5, 2.0)}
 
@@ -523,25 +375,7 @@ class TestBetaLimitFromNorm(Tier1Contract):
     reference = staticmethod(PlasmaBeta.calculate_beta_limit_from_norm)
     ported = calculate_beta_limit_from_norm
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            b_plasma_toroidal_on_axis=5.318322174646137,
-            beta_norm_max=5.027307537997152,
-            plasma_current=16091095.408042267,
-            rminor=2.6666666666666665,
-        ),
-        *fuzz_samples(
-            {
-                "b_plasma_toroidal_on_axis": (1.0, 15.0),
-                "beta_norm_max": (1.0, 8.0),
-                "plasma_current": (1.0e6, 3.0e7),
-                "rminor": (0.5, 5.0),
-            },
-            count=5,
-            seed=25,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "b_plasma_toroidal_on_axis": (1.0, 15.0),
@@ -558,23 +392,7 @@ class TestToroidalBeta(Tier1Contract):
     reference = _reference_toroidal_beta
     ported = calculate_toroidal_beta
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            beta_total_vol_avg=0.03230408815,
-            b_plasma_total=5.384200494234166,
-            b_plasma_toroidal_on_axis=5.318322174646137,
-        ),
-        *fuzz_samples(
-            {
-                "beta_total_vol_avg": (0.005, 0.15),
-                "b_plasma_total": (1.0, 15.0),
-                "b_plasma_toroidal_on_axis": (1.0, 15.0),
-            },
-            count=5,
-            seed=26,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "beta_total_vol_avg": (0.005, 0.15),
@@ -596,23 +414,7 @@ class TestThermalBeta(Tier1Contract):
     reference = _reference_thermal_beta
     ported = calculate_thermal_beta
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            beta_total_vol_avg=0.03230408815,
-            beta_fast_alpha=0.004435226148847,
-            beta_beam=0.0,
-        ),
-        *fuzz_samples(
-            {
-                "beta_total_vol_avg": (0.005, 0.15),
-                "beta_fast_alpha": (0.0, 0.02),
-                "beta_beam": (0.0, 0.02),
-            },
-            count=5,
-            seed=27,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "beta_total_vol_avg": (0.005, 0.15),
@@ -637,21 +439,7 @@ class TestCoulombLogarithmIonElectron(Tier1Contract):
     reference = _reference_coulomb_logarithm_ion_electron
     ported = calculate_coulomb_logarithm_ion_electron
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            nd_plasma_electrons_vol_avg=7.675162157425027e19,
-            temp_plasma_electron_vol_avg_kev=12.430016341290427,
-        ),
-        *fuzz_samples(
-            {
-                "nd_plasma_electrons_vol_avg": (1.0e19, 5.0e20),
-                "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
-            },
-            count=5,
-            seed=30,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "nd_plasma_electrons_vol_avg": (1.0e19, 5.0e20),
@@ -674,21 +462,7 @@ class TestPfluxPlasmaSurfaceNeutronAvgMw(Tier1Contract):
     reference = _reference_pflux_plasma_surface_neutron_avg_mw
     ported = calculate_pflux_plasma_surface_neutron_avg_mw
 
-    samples = [
-        legacy_sample(
-            "large_tokamak_eval-converged",
-            p_neutron_total_mw=1280.8441039331703,
-            a_plasma_surface=1173.8427771245592,
-        ),
-        *fuzz_samples(
-            {
-                "p_neutron_total_mw": (100.0, 3000.0),
-                "a_plasma_surface": (100.0, 3000.0),
-            },
-            count=5,
-            seed=31,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "p_neutron_total_mw": (100.0, 3000.0),

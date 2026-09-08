@@ -25,15 +25,23 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import AbstractDriver, Schedule
-from cottax.rewrites import Assign
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start
+from cottax.rewrites import Assign
 from cottax.spec import VarPath
+from cottax.tools.path import path_map
 
 from functional_process.cottax._harness import Sample, Tier1Contract, Tier2Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.cottax.paths import (
+    build,
+    constraints,
+    stellarator,
+    stellarator_config,
+    tfcoil,
+)
 from functional_process.cottax.stellarator.coils.calculate import (
     Bi2212WindingPackIntersectInputs,
     CrocoRebcoWindingPackIntersectInputs,
@@ -70,13 +78,6 @@ from functional_process.cottax.stellarator.coils.calculate import (
 from functional_process.cottax.stellarator.coils.coils import (
     Intersect,
     intersect_residual,
-)
-from functional_process.cottax.paths import (
-    build,
-    constraints,
-    stellarator,
-    stellarator_config,
-    tfcoil,
 )
 from process.core.model import DataStructure
 from process.models.stellarator.coils import calculate as process_calculate
@@ -784,20 +785,7 @@ class TestWindingPackTotalSize(Tier2Contract):
 
     _base = _helias5b_winding_pack_base()
 
-    samples = [
-        Sample(MappingProxyType(_base), "synthetic", "helias5b-like-mat1"),
-        Sample(
-            MappingProxyType({**_base, "i_tf_sc_mat": 5}),
-            "synthetic",
-            "helias5b-like-mat5",
-        ),
-        Sample(
-            MappingProxyType({**_base, "i_tf_sc_mat": 7}),
-            "synthetic",
-            "helias5b-like-mat7",
-        ),
-        *_winding_pack_geometry_samples(_base),
-    ]
+    samples = FROM_FILE
     """`i_tf_sc_mat` in {1, 5, 7}: material branches verified (while writing this port)
     to converge to a genuine crossing at this geometry, away from both the turn-size
     clamp and the domain edge. `i_tf_sc_mat == 3` (NbTi) was checked too and dropped: at

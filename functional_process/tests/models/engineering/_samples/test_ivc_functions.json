@@ -1,0 +1,29 @@
+{
+ "TestEshellarea": [
+  {
+   "label": "eshellarea-plausible-geometry",
+   "provenance": "legacy",
+   "kwargs": {
+    "rshell": 8.0,
+    "rmini": 3.9166666666666665,
+    "rmino": 4.616666666666667,
+    "zminor": 7.503275248730414
+   }
+  }
+ ],
+ "TestEshellvol": [
+  {
+   "label": "eshellvol-elliptical-vessel-legacy",
+   "provenance": "legacy",
+   "kwargs": {
+    "rshell": 6.666666666666667,
+    "rmini": 2.583333333333333,
+    "rmino": 6.05,
+    "zminor": 7.5032752487304135,
+    "drin": 0.30000000000000004,
+    "drout": 0.30000000000000004,
+    "dz": 0.30000000000000004
+   }
+  }
+ ]
+}

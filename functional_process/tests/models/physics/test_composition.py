@@ -18,14 +18,15 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import PLASMA_COMPOSITION
+from functional_process.cottax.paths import impurity_radiation
 from functional_process.cottax.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
     PlasmaCompositionNonIgnited,
     calculate_effective_charge_ionisation_profiles,
     plasma_composition,
 )
-from functional_process.cottax.paths import impurity_radiation
 from process.core.model import DataStructure
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 from process.models.physics import impurity_radiation as impurity
@@ -398,30 +399,7 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
     ported = calculate_effective_charge_ionisation_profiles
     static_argnames = ("temp_impurity_keV_array", "impurity_arr_zav")
 
-    samples = _fill_tables([
-        legacy_sample(
-            "large_tokamak_nof-profile",
-            temp_electron_profile_kev=_TE_PROFILE,
-            f_nd_impurity_electron_array=np.array([
-                0.78128900936605694,
-                0.10000000000000001,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.00038000000000000008,
-                5.0000000000000021e-06,
-            ]),
-            temp_impurity_keV_array=None,
-            impurity_arr_zav=None,
-        ),
-    ])
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------- the Shape B split

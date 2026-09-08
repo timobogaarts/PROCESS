@@ -1,0 +1,164 @@
+{
+ "TestApplyCoverageFactorsDoubleNull": [
+  {
+   "label": "coverage-double-null-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_blkt_total_surface_full_coverage": 1766.3354109399943,
+    "a_blkt_inboard_surface_full_coverage": 664.9687712975541,
+    "f_ster_div_single": 0.115,
+    "f_a_fw_outboard_hcd": 0,
+    "vol_blkt_total_full_coverage": 1336.207205897842,
+    "vol_blkt_inboard_full_coverage": 315.83946385183026
+   }
+  },
+  {
+   "label": "coverage-double-null-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_blkt_total_surface_full_coverage": 1766.3354109399945,
+    "a_blkt_inboard_surface_full_coverage": 663.622172160947,
+    "f_ster_div_single": 0.0725040362777958,
+    "f_a_fw_outboard_hcd": 0.0,
+    "vol_blkt_total_full_coverage": 1338.8701833977761,
+    "vol_blkt_inboard_full_coverage": 315.9239262058935
+   }
+  }
+ ],
+ "TestApplyCoverageFactorsSingleNull": [
+  {
+   "label": "coverage-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_blkt_total_surface_full_coverage": 1766.3354109399943,
+    "a_blkt_inboard_surface_full_coverage": 664.9687712975541,
+    "f_ster_div_single": 0.115,
+    "f_a_fw_outboard_hcd": 0,
+    "vol_blkt_total_full_coverage": 1336.207205897842,
+    "vol_blkt_inboard_full_coverage": 315.83946385183026
+   }
+  },
+  {
+   "label": "coverage-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_blkt_total_surface_full_coverage": 1766.3354109399945,
+    "a_blkt_inboard_surface_full_coverage": 663.622172160947,
+    "f_ster_div_single": 0.0725040362777958,
+    "f_a_fw_outboard_hcd": 0.0,
+    "vol_blkt_total_full_coverage": 1338.8701833977761,
+    "vol_blkt_inboard_full_coverage": 315.9239262058935
+   }
+  }
+ ],
+ "TestBlktHalfHeightDoubleNull": [
+  {
+   "label": "half-height-double-null-large-tokamak",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 4.933333333333334,
+    "dz_xpoint_divertor": 2.001883830794158,
+    "dz_divertor": 0.6200000000000001,
+    "dz_blkt_upper": 0.8500000000000001
+   }
+  }
+ ],
+ "TestBlktHalfHeightSingleNull": [
+  {
+   "label": "half-height-large-tokamak",
+   "provenance": "legacy",
+   "kwargs": {
+    "z_plasma_xpoint_lower": 4.933333333333334,
+    "dz_xpoint_divertor": 2.001883830794158,
+    "dz_divertor": 0.6200000000000001,
+    "dz_blkt_upper": 0.8500000000000001,
+    "z_plasma_xpoint_upper": 4.933333333333334,
+    "dr_fw_plasma_gap_inboard": 0.25,
+    "dr_fw_plasma_gap_outboard": 0.25,
+    "dr_fw_inboard": 0.018000000000000002,
+    "dr_fw_outboard": 0.018000000000000002
+   }
+  }
+ ],
+ "TestBlktInboardPoloidalPlasmaAngle": [
+  {
+   "label": "large_tokamak_eval-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 2.6666666666666665,
+    "dz_blkt_half": 5.953275248730413,
+    "dr_fw_plasma_gap_inboard": 0.25
+   }
+  }
+ ],
+ "TestEllipticalBlktAreas": [
+  {
+   "label": "areas-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "r_shld_inboard_inner": 4.083333333333334,
+    "dr_shld_inboard": 0.30000000000000004,
+    "dr_blkt_inboard": 0.7000000000000001,
+    "r_shld_outboard_outer": 12.716666666666667,
+    "dr_shld_outboard": 0.8,
+    "dr_blkt_outboard": 1,
+    "dz_blkt_half": 5.953275248730412
+   }
+  },
+  {
+   "label": "areas-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "r_shld_inboard_inner": 4.065333333333334,
+    "dr_shld_inboard": 0.3,
+    "dr_blkt_inboard": 0.7,
+    "r_shld_outboard_outer": 12.734666666666667,
+    "dr_shld_outboard": 0.8,
+    "dr_blkt_outboard": 1.0,
+    "dz_blkt_half": 5.953275248730413
+   }
+  }
+ ],
+ "TestEllipticalBlktVolumes": [
+  {
+   "label": "volumes-large-tokamak-eval",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "r_shld_inboard_inner": 4.083333333333334,
+    "dr_shld_inboard": 0.30000000000000004,
+    "dr_blkt_inboard": 0.7000000000000001,
+    "r_shld_outboard_outer": 12.716666666666667,
+    "dr_shld_outboard": 0.8,
+    "dr_blkt_outboard": 1,
+    "dz_blkt_half": 5.953275248730412,
+    "dz_blkt_upper": 0.8500000000000001
+   }
+  },
+  {
+   "label": "volumes-reference-run",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 8.0,
+    "rminor": 2.6666666666666665,
+    "triang": 0.5,
+    "r_shld_inboard_inner": 4.065333333333334,
+    "dr_shld_inboard": 0.3,
+    "dr_blkt_inboard": 0.7,
+    "r_shld_outboard_outer": 12.734666666666667,
+    "dr_shld_outboard": 0.8,
+    "dr_blkt_outboard": 1.0,
+    "dz_blkt_half": 5.953275248730413,
+    "dz_blkt_upper": 0.85
+   }
+  }
+ ]
+}

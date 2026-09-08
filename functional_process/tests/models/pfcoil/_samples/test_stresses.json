@@ -1,0 +1,419 @@
+{
+ "TestCalculateCSHoopStress": [
+  {
+   "label": "large-tokamak-converged-inner-radius",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_stress_point": 2.003843190236783,
+    "r_cs_inner": 2.003843190236783,
+    "r_cs_outer": 2.550659784225536,
+    "j_cs": 20047872.417147826,
+    "b_cs_inner": 13.978498492871925,
+    "f_poisson_cs_structure": 0.3,
+    "f_a_cs_turn_steel": 0.4856940627
+   }
+  },
+  {
+   "label": "off-the-inner-radius",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_stress_point": 2.2772514872311596,
+    "r_cs_inner": 2.003843190236783,
+    "r_cs_outer": 2.550659784225536,
+    "j_cs": 20047872.417147826,
+    "b_cs_inner": 13.978498492871925,
+    "f_poisson_cs_structure": 0.3,
+    "f_a_cs_turn_steel": 0.4856940627
+   }
+  }
+ ],
+ "TestCalculateCSRadialStress": [
+  {
+   "label": "inner-radius-the-snapped-zero",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_stress_point": 2.003843190236783,
+    "r_cs_inner": 2.003843190236783,
+    "r_cs_outer": 2.550659784225536,
+    "j_cs": 20047872.417147826,
+    "b_cs_inner": 13.978498492871925,
+    "f_poisson_cs_structure": 0.3
+   }
+  },
+  {
+   "label": "mean-radius-the-peak",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_stress_point": 2.2772514872311596,
+    "r_cs_inner": 2.003843190236783,
+    "r_cs_outer": 2.550659784225536,
+    "j_cs": 20047872.417147826,
+    "b_cs_inner": 13.978498492871925,
+    "f_poisson_cs_structure": 0.3
+   }
+  }
+ ],
+ "TestCalculateCSSelfPeakMidplaneAxialStress": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_cs_outer": 2.550659784225536,
+    "dz_cs_half": 7.936395447714745,
+    "c_cs_peak": -186119802.98805436,
+    "a_cs_toroidal": 7.824066771971542
+   }
+  },
+  {
+   "label": "squat-cs",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_cs_outer": 2.550659784225536,
+    "dz_cs_half": 0.5,
+    "c_cs_peak": -186119802.98805436,
+    "a_cs_toroidal": 7.824066771971542
+   }
+  }
+ ],
+ "TestCalculateCSStresses": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "r_cs_inner": 2.003843190236783,
+    "r_cs_outer": 2.550659784225536,
+    "r_cs_middle": 2.2772514872311596,
+    "dz_cs_full": 15.87279089542949,
+    "a_cs_toroidal": 7.824066771971542,
+    "j_cs_pulse_start": 20047872.417147826,
+    "b_cs_peak_pulse_start": 13.978498492871925,
+    "c_cs_peak_ma": -186.11980298805437,
+    "f_poisson_cs_structure": 0.3,
+    "f_a_cs_turn_steel": 0.4856940627
+   }
+  }
+ ],
+ "TestCalculateTrescaStress": [
+  {
+   "label": "large-tokamak-converged",
+   "provenance": "legacy",
+   "kwargs": {
+    "stress_x": 748367494.3,
+    "stress_y": -416318065.4,
+    "stress_z": -13874803.95
+   }
+  },
+  {
+   "label": "seed72-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 675673468.9476001,
+    "stress_y": -986649754.6431814,
+    "stress_z": -537103488.8605675
+   }
+  },
+  {
+   "label": "seed72-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": -771528910.809366,
+    "stress_y": 431166604.3747792,
+    "stress_z": -379090041.5699625
+   }
+  },
+  {
+   "label": "seed72-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 146615675.3762679,
+    "stress_y": -896218314.8546059,
+    "stress_z": -417366161.6806954
+   }
+  },
+  {
+   "label": "seed72-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 907180994.8723633,
+    "stress_y": 815143151.601368,
+    "stress_z": -303472539.75819016
+   }
+  },
+  {
+   "label": "seed72-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 366912789.20879626,
+    "stress_y": -94476313.7619704,
+    "stress_z": 17244730.330584288
+   }
+  },
+  {
+   "label": "seed72-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 126454518.24467278,
+    "stress_y": 544500981.8622384,
+    "stress_z": 37370084.24171996
+   }
+  }
+ ],
+ "TestCalculateVonMisesStress": [
+  {
+   "label": "large-tokamak-converged-no-shear",
+   "provenance": "legacy",
+   "kwargs": {
+    "stress_x": 748367494.3,
+    "stress_y": -416318065.4,
+    "stress_z": -13874803.95,
+    "stress_shear_xy": 0.0,
+    "stress_shear_yz": 0.0,
+    "stress_shear_zx": 0.0
+   }
+  },
+  {
+   "label": "seed73-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": -14727621.423614264,
+    "stress_y": -393264924.27713954,
+    "stress_z": -462864437.5924083,
+    "stress_shear_xy": 97031429.26844054,
+    "stress_shear_yz": -56021750.26673835,
+    "stress_shear_zx": -93598330.13702276
+   }
+  },
+  {
+   "label": "seed73-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 709394219.4151914,
+    "stress_y": -658350801.7043285,
+    "stress_z": 686725827.7923999,
+    "stress_shear_xy": 44647666.35545629,
+    "stress_shear_yz": -84158820.5100025,
+    "stress_shear_zx": -79270845.22297223
+   }
+  },
+  {
+   "label": "seed73-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": -94182818.74214113,
+    "stress_y": 485852054.5388968,
+    "stress_z": -767993007.0555867,
+    "stress_shear_xy": -64279818.981252015,
+    "stress_shear_yz": 54448295.931011826,
+    "stress_shear_zx": -35079871.97545421
+   }
+  },
+  {
+   "label": "seed73-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 612062428.2954965,
+    "stress_y": -770276367.924891,
+    "stress_z": 884387457.8336244,
+    "stress_shear_xy": -96900934.45613681,
+    "stress_shear_yz": -69862078.93564038,
+    "stress_shear_zx": -85166262.23948118
+   }
+  },
+  {
+   "label": "seed73-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": 353114329.3001759,
+    "stress_y": 782838321.8273757,
+    "stress_z": -837024973.1372838,
+    "stress_shear_xy": -20736061.810931638,
+    "stress_shear_yz": 74354689.49941885,
+    "stress_shear_zx": -87957027.23143838
+   }
+  },
+  {
+   "label": "seed73-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "stress_x": -310397221.22070515,
+    "stress_y": -205545583.90294743,
+    "stress_z": -202608372.9098369,
+    "stress_shear_xy": 85345270.868052,
+    "stress_shear_yz": 64898437.85048944,
+    "stress_shear_zx": 98134221.37909389
+   }
+  }
+ ],
+ "TestEllipe": [
+  {
+   "label": "reference-machine-kb2",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.9390581
+   }
+  },
+  {
+   "label": "near-zero",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 1e-08
+   }
+  },
+  {
+   "label": "half",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.5
+   }
+  },
+  {
+   "label": "near-one",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.999
+   }
+  },
+  {
+   "label": "seed2-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 3.710610289570646e-05
+   }
+  },
+  {
+   "label": "seed2-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 6.175716265723267e-05
+   }
+  },
+  {
+   "label": "seed2-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.07667371529483127
+   }
+  },
+  {
+   "label": "seed2-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 3.5597191562243363e-06
+   }
+  },
+  {
+   "label": "seed2-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.0039818178867518615
+   }
+  },
+  {
+   "label": "seed2-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.023481709317505484
+   }
+  },
+  {
+   "label": "seed2-006",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 1.3404266938269553e-05
+   }
+  },
+  {
+   "label": "seed2-007",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 2.1420609117106123e-06
+   }
+  }
+ ],
+ "TestEllipk": [
+  {
+   "label": "reference-machine-kb2",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.9390581
+   }
+  },
+  {
+   "label": "near-zero",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 1e-08
+   }
+  },
+  {
+   "label": "half",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.5
+   }
+  },
+  {
+   "label": "near-one",
+   "provenance": "legacy",
+   "kwargs": {
+    "m": 0.999
+   }
+  },
+  {
+   "label": "seed1-000",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.0011762096561187111
+   }
+  },
+  {
+   "label": "seed1-001",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.5034493552574347
+   }
+  },
+  {
+   "label": "seed1-002",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 7.325416721781052e-06
+   }
+  },
+  {
+   "label": "seed1-003",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.4909891231095254
+   }
+  },
+  {
+   "label": "seed1-004",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 7.42536125340477e-05
+   }
+  },
+  {
+   "label": "seed1-005",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.0003464101662535819
+   }
+  },
+  {
+   "label": "seed1-006",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.09236254894109813
+   }
+  },
+  {
+   "label": "seed1-007",
+   "provenance": "fuzz",
+   "kwargs": {
+    "m": 0.00028499617839949324
+   }
+  }
+ ]
+}

@@ -8,7 +8,8 @@ transcribed.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.physics.impurity_radiation import (
     calculate_average_charge_at_temp,
     element2index,
@@ -82,40 +83,7 @@ class TestCalculateAverageChargeAtTemp(Tier1Contract):
     ported = calculate_average_charge_at_temp
     static_argnames = ("temp_impurity_kev", "impurity_arr_zav")
 
-    samples = [
-        legacy_sample(
-            # `tests/unit/models/physics/test_impurity_radiation.py::test_zav_of_te`'s
-            # point verbatim, on hydrogen (index 0). Hydrogen is fully ionised at every
-            # tabulated temperature, so <Z> == 1 throughout -- a real oracle, but a weak
-            # exercise of the interpolation itself; `argon-varying` below covers that.
-            "test_zav_of_te-hydrogen",
-            temp_electron_kev=np.array([
-                27.73451868,
-                27.25167194,
-                25.82164396,
-                23.50149071,
-                20.39190536,
-                16.64794796,
-                12.50116941,
-                8.31182764,
-                4.74643357,
-                0.1,
-            ]),
-            temp_impurity_kev=_TEMP_TABLE[_HYDROGEN],
-            impurity_arr_zav=_ZAV_TABLE[_HYDROGEN],
-        ),
-        legacy_sample(
-            # Argon: partially ionised across most of the table, so <Z> varies by more
-            # than an order of magnitude over this range -- the interpolation is doing
-            # real work, and this is also the sample that would show a mismatch if the
-            # dropped boundary clamps were not actually redundant (0.0005 keV and 45 keV
-            # sit outside the table on both sides).
-            "argon-varying",
-            temp_electron_kev=np.array([0.0005, 0.05, 0.5, 2.0, 8.0, 20.0, 45.0]),
-            temp_impurity_kev=_TEMP_TABLE[_ARGON],
-            impurity_arr_zav=_ZAV_TABLE[_ARGON],
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "temp_electron_kev": (
@@ -143,9 +111,4 @@ class TestElement2Index(Tier1Contract):
     ported = element2index
     static_argnames = ("element", "impurity_arr_label")
 
-    samples = [
-        legacy_sample(
-            f"species-{label.strip()}", element=label, impurity_arr_label=_LABELS
-        )
-        for label in _LABELS
-    ]
+    samples = FROM_FILE

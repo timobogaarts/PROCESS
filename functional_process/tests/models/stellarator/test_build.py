@@ -183,7 +183,8 @@ def _reference_build(
 def _reference_a_fw_total_no_powerflow(a_fw_total_unadjusted, fhole):
     """`(1 - fhole) * a_fw_total_unadjusted` -- PROCESS's `ipowerflow == 0` branch,
     reproduced directly (there is no PROCESS entry point taking the unadjusted value
-    as an argument -- see build.py's module docstring for why it is invented)."""
+    as an argument -- see build.py's module docstring for why it is invented).
+    """
     return (1.0 - fhole) * a_fw_total_unadjusted
 
 

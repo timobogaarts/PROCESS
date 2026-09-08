@@ -10,6 +10,7 @@ from functional_process.cottax._harness.boundary import (
     DIVISION_BY_ZERO_AT_BOUNDARY,
     registered_reason,
 )
+from functional_process.cottax._harness import sample_store
 from functional_process.cottax._harness.finite_difference import (
     PROCESS_EPSFCN,
     ZeroPerturbationError,
@@ -56,12 +57,18 @@ class PortContract:
     static_argnames = ()
 
     def __init_subclass__(cls, **kwargs):
-        """Wrap bare functions assigned to `reference`/`ported` in `staticmethod`."""
+        """Wrap bare functions assigned to `reference`/`ported` in `staticmethod`, and
+        resolve `samples = FROM_FILE` against the module's sample store."""
         super().__init_subclass__(**kwargs)
         for attr in ("reference", "ported"):
             value = cls.__dict__.get(attr)
             if callable(value) and not isinstance(value, staticmethod):
                 setattr(cls, attr, staticmethod(value))
+        # Resolved here rather than lazily so that `SomeContract.samples` is an ordinary
+        # list for every reader -- conftest's parametrisation, `signoff`, and the cases
+        # that build one point out of another's.
+        if cls.__dict__.get("samples") is sample_store.FROM_FILE:
+            cls.samples = sample_store.load(cls.__module__, cls.__name__)
 
     @classmethod
     def diff_argnames(cls, sample):

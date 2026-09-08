@@ -9,14 +9,14 @@ constraint function through `ConstraintManager` -- the same closure that's actua
 wired into the solver, not a re-implementation of it.
 """
 
-from functional_process.cottax._harness.process_reference import data_reference
 import pytest
 
 from functional_process.cottax._harness import (
     Tier1Contract,
     bounds_from_iteration_variables,
-    legacy_sample,
 )
+from functional_process.cottax._harness.process_reference import data_reference
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.core.solver.constraints import (
     constraint_1,
     constraint_2,
@@ -102,7 +102,6 @@ from functional_process.cottax.core.solver.constraints import (
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.core.solver.constraints import ConstraintManager
-from process.data_structure.build_variables import TFCSRadialConfiguration
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 from process.models.physics.density_limit import DensityLimitModel
 from process.models.physics.physics import BetaComponentLimits
@@ -140,30 +139,7 @@ class TestConstraint1(Tier1Contract):
 
     static_argnames = ()
 
-    samples = [
-        legacy_sample(
-            "balanced",
-            beta_fast_alpha=0.002,
-            beta_beam=0.0005,
-            nd_plasma_electrons_vol_avg=7.5e19,
-            temp_plasma_electron_density_weighted_kev=13.0,
-            nd_plasma_ions_total_vol_avg=7.2e19,
-            temp_plasma_ion_density_weighted_kev=13.5,
-            b_plasma_total=5.0,
-            beta_total_vol_avg=0.03,
-        ),
-        legacy_sample(
-            "low-field",
-            beta_fast_alpha=0.001,
-            beta_beam=0.0,
-            nd_plasma_electrons_vol_avg=5.0e19,
-            temp_plasma_electron_density_weighted_kev=10.0,
-            nd_plasma_ions_total_vol_avg=4.8e19,
-            temp_plasma_ion_density_weighted_kev=10.5,
-            b_plasma_total=3.0,
-            beta_total_vol_avg=0.04,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "beta_fast_alpha": (0.0, 0.01),
@@ -202,12 +178,7 @@ class TestConstraint2(Tier1Contract):
         "vol_plasma": 800.0,
     }
 
-    samples = [
-        legacy_sample("non-ignited-rad0", i_rad_loss=0, i_plasma_ignited=0, **_common),
-        legacy_sample("non-ignited-rad1", i_rad_loss=1, i_plasma_ignited=0, **_common),
-        legacy_sample("non-ignited-rad2", i_rad_loss=2, i_plasma_ignited=0, **_common),
-        legacy_sample("ignited-rad0", i_rad_loss=0, i_plasma_ignited=1, **_common),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "pden_electron_transport_loss_mw": (0.01, 2.0),
@@ -245,10 +216,7 @@ class TestConstraint3(Tier1Contract):
         "vol_plasma": 800.0,
     }
 
-    samples = [
-        legacy_sample("non-ignited", i_plasma_ignited=0, **_common),
-        legacy_sample("ignited", i_plasma_ignited=1, **_common),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "pden_ion_transport_loss_mw": (0.01, 2.0),
@@ -284,11 +252,7 @@ class TestConstraint4(Tier1Contract):
         "vol_plasma": 800.0,
     }
 
-    samples = [
-        legacy_sample("non-ignited-rad0", i_rad_loss=0, i_plasma_ignited=0, **_common),
-        legacy_sample("non-ignited-rad1", i_rad_loss=1, i_plasma_ignited=0, **_common),
-        legacy_sample("ignited-rad2", i_rad_loss=2, i_plasma_ignited=1, **_common),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "pden_electron_transport_loss_mw": (0.01, 2.0),
@@ -322,12 +286,7 @@ class TestConstraint5(Tier1Contract):
         "f_nd_plasma_electron_limit_max": 1.0,
     }
 
-    samples = [
-        legacy_sample(
-            "greenwald", i_density_limit=int(DensityLimitModel.GREENWALD), **_common
-        ),
-        legacy_sample("asdex", i_density_limit=int(DensityLimitModel.ASDEX), **_common),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "nd_plasma_electron_line": (1.0e19, 2.0e20),
@@ -350,10 +309,7 @@ class TestConstraint6(Tier1Contract):
 
     static_argnames = ()
 
-    samples = [
-        legacy_sample("feasible", beta_poloidal_eps=0.5, beta_poloidal_eps_max=1.38),
-        legacy_sample("infeasible", beta_poloidal_eps=1.5, beta_poloidal_eps_max=1.38),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -376,20 +332,7 @@ class TestConstraint7(Tier1Contract):
 
     static_argnames = ("i_plasma_ignited",)
 
-    samples = [
-        legacy_sample(
-            "matched",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            nd_beam_ions_out=2.0e18,
-            nd_beam_ions=2.0e18,
-        ),
-        legacy_sample(
-            "mismatched",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            nd_beam_ions_out=1.5e18,
-            nd_beam_ions=2.0e18,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
@@ -424,12 +367,7 @@ class TestConstraint8(Tier1Contract):
 
     static_argnames = ()
 
-    samples = [
-        legacy_sample("feasible", pflux_fw_neutron_mw=0.8, pflux_fw_neutron_max_mw=1.0),
-        legacy_sample(
-            "infeasible", pflux_fw_neutron_mw=1.2, pflux_fw_neutron_max_mw=1.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -444,14 +382,7 @@ class TestConstraint9(Tier1Contract):
     reference = _reference_constraint_9
     ported = constraint_9
 
-    samples = [
-        legacy_sample(
-            "feasible", p_fusion_total_mw=2000.0, p_fusion_total_max_mw=3000.0
-        ),
-        legacy_sample(
-            "infeasible", p_fusion_total_mw=3500.0, p_fusion_total_max_mw=3000.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -466,10 +397,7 @@ class TestConstraint11(Tier1Contract):
     reference = _reference_constraint_11
     ported = constraint_11
 
-    samples = [
-        legacy_sample("consistent", rbld=8.0, rmajor=8.0),
-        legacy_sample("inconsistent", rbld=8.2, rmajor=8.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -492,14 +420,7 @@ class TestConstraint12(Tier1Contract):
     reference = _reference_constraint_12
     ported = constraint_12
 
-    samples = [
-        legacy_sample(
-            "feasible", vs_cs_pf_total_pulse=120.0, vs_plasma_total_required=100.0
-        ),
-        legacy_sample(
-            "infeasible", vs_cs_pf_total_pulse=80.0, vs_plasma_total_required=100.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -514,10 +435,7 @@ class TestConstraint13(Tier1Contract):
     reference = _reference_constraint_13
     ported = constraint_13
 
-    samples = [
-        legacy_sample("feasible", t_plant_pulse_burn=3.15576e7, t_burn_min=1000.0),
-        legacy_sample("infeasible", t_plant_pulse_burn=500.0, t_burn_min=1000.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -532,18 +450,7 @@ class TestConstraint14(Tier1Contract):
     reference = _reference_constraint_14
     ported = constraint_14
 
-    samples = [
-        legacy_sample(
-            "consistent",
-            n_beam_decay_lengths_core=1.5,
-            n_beam_decay_lengths_core_required=1.5,
-        ),
-        legacy_sample(
-            "inconsistent",
-            n_beam_decay_lengths_core=1.7,
-            n_beam_decay_lengths_core_required=1.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -558,20 +465,7 @@ class TestConstraint15(Tier1Contract):
     reference = _reference_constraint_15
     ported = constraint_15
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            p_plasma_separatrix_mw=50.0,
-            p_l_h_threshold_mw=40.0,
-            f_h_mode_margin=1.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            p_plasma_separatrix_mw=30.0,
-            p_l_h_threshold_mw=40.0,
-            f_h_mode_margin=1.2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -586,18 +480,7 @@ class TestConstraint16(Tier1Contract):
     reference = _reference_constraint_16
     ported = constraint_16
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            p_plant_electric_net_mw=550.0,
-            p_plant_electric_net_required_mw=500.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            p_plant_electric_net_mw=450.0,
-            p_plant_electric_net_required_mw=500.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -614,33 +497,7 @@ class TestConstraint17(Tier1Contract):
 
     static_argnames = ("istell",)
 
-    samples = [
-        legacy_sample(
-            "tokamak",
-            istell=0,
-            f_p_plasma_separatrix_rad=0.5,
-            f_p_plasma_separatrix_rad_max=0.85,
-            # Unused on this branch -- present because the signature is unconditional.
-            psolradmw=0.0,
-            p_plasma_heating_total_mw=300.0,
-        ),
-        legacy_sample(
-            "stellarator-feasible",
-            istell=1,
-            f_p_plasma_separatrix_rad=0.6,
-            f_p_plasma_separatrix_rad_max=0.85,
-            psolradmw=30.0,
-            p_plasma_heating_total_mw=300.0,
-        ),
-        legacy_sample(
-            "stellarator-infeasible",
-            istell=1,
-            f_p_plasma_separatrix_rad=0.95,
-            f_p_plasma_separatrix_rad_max=0.85,
-            psolradmw=10.0,
-            p_plasma_heating_total_mw=300.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"istell": 1}
@@ -656,14 +513,7 @@ class TestConstraint18(Tier1Contract):
     reference = _reference_constraint_18
     ported = constraint_18
 
-    samples = [
-        legacy_sample(
-            "feasible", pflux_div_heat_load_mw=8.0, pflux_div_heat_load_max_mw=10.0
-        ),
-        legacy_sample(
-            "infeasible", pflux_div_heat_load_mw=12.0, pflux_div_heat_load_max_mw=10.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -678,14 +528,7 @@ class TestConstraint19(Tier1Contract):
     reference = _reference_constraint_19
     ported = constraint_19
 
-    samples = [
-        legacy_sample(
-            "feasible", p_cp_resistive_mw=10.0, p_tf_leg_resistive_mw=5.0, mvalim=40.0
-        ),
-        legacy_sample(
-            "infeasible", p_cp_resistive_mw=30.0, p_tf_leg_resistive_mw=20.0, mvalim=40.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -700,14 +543,7 @@ class TestConstraint20(Tier1Contract):
     reference = _reference_constraint_20
     ported = constraint_20
 
-    samples = [
-        legacy_sample(
-            "feasible", radius_beam_tangency=6.0, radius_beam_tangency_max=8.0
-        ),
-        legacy_sample(
-            "infeasible", radius_beam_tangency=9.0, radius_beam_tangency_max=8.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -722,10 +558,7 @@ class TestConstraint21(Tier1Contract):
     reference = _reference_constraint_21
     ported = constraint_21
 
-    samples = [
-        legacy_sample("feasible", rminor=1.8, rminor_min=0.25),
-        legacy_sample("infeasible", rminor=0.1, rminor_min=0.25),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -740,20 +573,7 @@ class TestConstraint22(Tier1Contract):
     reference = _reference_constraint_22
     ported = constraint_22
 
-    samples = [
-        legacy_sample(
-            "feasible-no-margin",
-            p_l_h_threshold_mw=50.0,
-            f_l_mode_margin=1.0,
-            p_plasma_separatrix_mw=40.0,
-        ),
-        legacy_sample(
-            "infeasible-with-margin",
-            p_l_h_threshold_mw=50.0,
-            f_l_mode_margin=1.2,
-            p_plasma_separatrix_mw=45.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -768,24 +588,7 @@ class TestConstraint23(Tier1Contract):
     reference = _reference_constraint_23
     ported = constraint_23
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            rminor=1.8,
-            dr_fw_plasma_gap_outboard=0.05,
-            dr_fw_outboard=0.02,
-            dr_blkt_outboard=0.4,
-            f_r_conducting_wall=1.35,
-        ),
-        legacy_sample(
-            "infeasible",
-            rminor=1.0,
-            dr_fw_plasma_gap_outboard=0.5,
-            dr_fw_outboard=0.5,
-            dr_blkt_outboard=0.9,
-            f_r_conducting_wall=1.05,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -810,42 +613,7 @@ class TestConstraint24(Tier1Contract):
         "beta_vol_avg_max": 0.05,
     }
 
-    samples = [
-        legacy_sample(
-            "total",
-            i_beta_component=int(BetaComponentLimits.TOTAL),
-            istell=0,
-            **_common,
-        ),
-        legacy_sample(
-            "thermal",
-            i_beta_component=int(BetaComponentLimits.THERMAL),
-            istell=0,
-            **_common,
-        ),
-        legacy_sample(
-            "thermal-and-beam",
-            i_beta_component=int(BetaComponentLimits.THERMAL_AND_BEAM),
-            istell=0,
-            **_common,
-        ),
-        legacy_sample(
-            "toroidal",
-            i_beta_component=int(BetaComponentLimits.TOROIDAL),
-            istell=0,
-            **_common,
-        ),
-        # istell != 0 overrides i_beta_component and always uses the TOTAL branch --
-        # see the audit record's "real PROCESS finding" note. TOROIDAL is chosen here
-        # deliberately (not TOTAL) so this sample would fail if the port ever stopped
-        # honouring that override.
-        legacy_sample(
-            "stellarator-overrides-to-total",
-            i_beta_component=int(BetaComponentLimits.TOROIDAL),
-            istell=1,
-            **_common,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **bounds_from_iteration_variables("beta_total_vol_avg"),
@@ -867,14 +635,7 @@ class TestConstraint25(Tier1Contract):
     reference = _reference_constraint_25
     ported = constraint_25
 
-    samples = [
-        legacy_sample(
-            "feasible", b_tf_inboard_peak_with_ripple=10.0, b_tf_inboard_max=12.0
-        ),
-        legacy_sample(
-            "infeasible", b_tf_inboard_peak_with_ripple=13.0, b_tf_inboard_max=12.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -889,20 +650,7 @@ class TestConstraint26(Tier1Contract):
     reference = _reference_constraint_26
     ported = constraint_26
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            j_cs_flat_top_end=1.5e7,
-            j_cs_critical_flat_top_end=2.5e7,
-            fjohc=0.7,
-        ),
-        legacy_sample(
-            "infeasible",
-            j_cs_flat_top_end=2.4e7,
-            j_cs_critical_flat_top_end=2.5e7,
-            fjohc=0.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -917,20 +665,7 @@ class TestConstraint27(Tier1Contract):
     reference = _reference_constraint_27
     ported = constraint_27
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            j_cs_pulse_start=1.5e7,
-            j_cs_critical_pulse_start=2.5e7,
-            fjohc0=0.7,
-        ),
-        legacy_sample(
-            "infeasible",
-            j_cs_pulse_start=2.4e7,
-            j_cs_critical_pulse_start=2.5e7,
-            fjohc0=0.7,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -947,20 +682,7 @@ class TestConstraint28(Tier1Contract):
 
     static_argnames = ("i_plasma_ignited",)
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            big_q_plasma=15.0,
-            big_q_plasma_min=10.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            big_q_plasma=5.0,
-            big_q_plasma_min=10.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
@@ -992,10 +714,7 @@ class TestConstraint29(Tier1Contract):
     reference = _reference_constraint_29
     ported = constraint_29
 
-    samples = [
-        legacy_sample("consistent", rmajor=8.0, rminor=2.5, rinboard=5.5),
-        legacy_sample("inconsistent", rmajor=8.0, rminor=2.5, rinboard=5.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1010,14 +729,7 @@ class TestConstraint30(Tier1Contract):
     reference = _reference_constraint_30
     ported = constraint_30
 
-    samples = [
-        legacy_sample(
-            "feasible", p_hcd_injected_total_mw=80.0, p_hcd_injected_max=150.0
-        ),
-        legacy_sample(
-            "infeasible", p_hcd_injected_total_mw=200.0, p_hcd_injected_max=150.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1039,13 +751,7 @@ class TestConstraint31(Tier1Contract):
     reference = _reference_constraint_31
     ported = constraint_31
 
-    samples = [
-        legacy_sample("feasible", sig_tf_case=3.0e8, sig_tf_case_max=6.0e8),
-        legacy_sample("infeasible", sig_tf_case=7.0e8, sig_tf_case_max=6.0e8),
-        # The value every real stellarator run actually has: sig_tf_case stuck at its
-        # DataStructure default (0.0), always trivially feasible.
-        legacy_sample("stellarator-default", sig_tf_case=0.0, sig_tf_case_max=6.0e8),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1060,10 +766,7 @@ class TestConstraint32(Tier1Contract):
     reference = _reference_constraint_32
     ported = constraint_32
 
-    samples = [
-        legacy_sample("feasible", sig_tf_wp=3.0e8, sig_tf_wp_max=6.0e8),
-        legacy_sample("infeasible", sig_tf_wp=7.0e8, sig_tf_wp_max=6.0e8),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1087,20 +790,7 @@ class TestConstraint33(Tier1Contract):
     reference = _reference_constraint_33
     ported = constraint_33
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            j_tf_wp=3.0e8,
-            j_tf_wp_critical=6.0e8,
-            f_j_tf_wp_critical_max=0.8,
-        ),
-        legacy_sample(
-            "infeasible",
-            j_tf_wp=5.5e8,
-            j_tf_wp_critical=6.0e8,
-            f_j_tf_wp_critical_max=0.8,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1115,18 +805,7 @@ class TestConstraint34(Tier1Contract):
     reference = _reference_constraint_34
     ported = constraint_34
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            v_tf_coil_dump_quench_kv=5.0,
-            v_tf_coil_dump_quench_max_kv=10.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            v_tf_coil_dump_quench_kv=15.0,
-            v_tf_coil_dump_quench_max_kv=10.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1141,10 +820,7 @@ class TestConstraint35(Tier1Contract):
     reference = _reference_constraint_35
     ported = constraint_35
 
-    samples = [
-        legacy_sample("feasible", j_tf_wp=3.0e8, j_tf_wp_quench_heat_max=6.0e8),
-        legacy_sample("infeasible", j_tf_wp=7.0e8, j_tf_wp_quench_heat_max=6.0e8),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1159,18 +835,7 @@ class TestConstraint36(Tier1Contract):
     reference = _reference_constraint_36
     ported = constraint_36
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            temp_tf_superconductor_margin=1.5,
-            temp_tf_superconductor_margin_min=1.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            temp_tf_superconductor_margin=0.5,
-            temp_tf_superconductor_margin_min=1.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1185,14 +850,7 @@ class TestConstraint37(Tier1Contract):
     reference = _reference_constraint_37
     ported = constraint_37
 
-    samples = [
-        legacy_sample(
-            "feasible", eta_cd_norm_hcd_primary=0.3, eta_cd_norm_hcd_primary_max=0.5
-        ),
-        legacy_sample(
-            "infeasible", eta_cd_norm_hcd_primary=0.7, eta_cd_norm_hcd_primary_max=0.5
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1207,10 +865,7 @@ class TestConstraint39(Tier1Contract):
     reference = _reference_constraint_39
     ported = constraint_39
 
-    samples = [
-        legacy_sample("feasible", temp_fw_peak=550.0, temp_fw_max=650.0),
-        legacy_sample("infeasible", temp_fw_peak=700.0, temp_fw_max=650.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1225,14 +880,7 @@ class TestConstraint40(Tier1Contract):
     reference = _reference_constraint_40
     ported = constraint_40
 
-    samples = [
-        legacy_sample(
-            "feasible", p_hcd_injected_total_mw=60.0, p_hcd_injected_min_mw=50.0
-        ),
-        legacy_sample(
-            "infeasible", p_hcd_injected_total_mw=40.0, p_hcd_injected_min_mw=50.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1247,18 +895,7 @@ class TestConstraint41(Tier1Contract):
     reference = _reference_constraint_41
     ported = constraint_41
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            t_plant_pulse_plasma_current_ramp_up=15.0,
-            t_current_ramp_up_min=10.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            t_plant_pulse_plasma_current_ramp_up=5.0,
-            t_current_ramp_up_min=10.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         **bounds_from_iteration_variables("t_plant_pulse_plasma_current_ramp_up"),
@@ -1276,10 +913,7 @@ class TestConstraint42(Tier1Contract):
     reference = _reference_constraint_42
     ported = constraint_42
 
-    samples = [
-        legacy_sample("feasible", t_plant_pulse_total=2000.0, t_cycle_min=1800.0),
-        legacy_sample("infeasible", t_plant_pulse_total=1500.0, t_cycle_min=1800.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1302,26 +936,7 @@ class TestConstraint43(Tier1Contract):
 
     static_argnames = ("i_tf_sup",)
 
-    samples = [
-        legacy_sample(
-            "superconducting-consistent",
-            i_tf_sup=int(TFConductorModel.SUPERCONDUCTING),
-            temp_cp_average=350.0,
-            tcpav2=350.0,
-        ),
-        legacy_sample(
-            "water-cooled-copper-consistent",
-            i_tf_sup=int(TFConductorModel.WATER_COOLED_COPPER),
-            temp_cp_average=350.0,
-            tcpav2=350.0,
-        ),
-        legacy_sample(
-            "inconsistent",
-            i_tf_sup=int(TFConductorModel.SUPERCONDUCTING),
-            temp_cp_average=350.0,
-            tcpav2=360.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
@@ -1345,26 +960,7 @@ class TestConstraint44(Tier1Contract):
 
     static_argnames = ("i_tf_sup",)
 
-    samples = [
-        legacy_sample(
-            "superconducting-feasible",
-            i_tf_sup=int(TFConductorModel.SUPERCONDUCTING),
-            temp_cp_max=650.0,
-            temp_cp_peak=600.0,
-        ),
-        legacy_sample(
-            "water-cooled-copper-feasible",
-            i_tf_sup=int(TFConductorModel.WATER_COOLED_COPPER),
-            temp_cp_max=650.0,
-            temp_cp_peak=600.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            i_tf_sup=int(TFConductorModel.SUPERCONDUCTING),
-            temp_cp_max=650.0,
-            temp_cp_peak=700.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
@@ -1382,10 +978,7 @@ class TestConstraint45(Tier1Contract):
 
     static_argnames = ("itart",)
 
-    samples = [
-        legacy_sample("feasible", itart=1, q95=3.5, q95_min=3.0),
-        legacy_sample("infeasible", itart=1, q95=2.5, q95_min=3.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"itart": 1}
@@ -1403,14 +996,7 @@ class TestConstraint46(Tier1Contract):
 
     static_argnames = ("itart",)
 
-    samples = [
-        legacy_sample(
-            "feasible", itart=1, eps=0.7, plasma_current=1.0e7, c_tf_total=3.0e7
-        ),
-        legacy_sample(
-            "infeasible", itart=1, eps=0.9, plasma_current=1.0e7, c_tf_total=5.0e6
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"itart": 1}
@@ -1426,10 +1012,7 @@ class TestConstraint48(Tier1Contract):
     reference = _reference_constraint_48
     ported = constraint_48
 
-    samples = [
-        legacy_sample("feasible", beta_poloidal_vol_avg=0.5, beta_poloidal_max=1.0),
-        legacy_sample("infeasible", beta_poloidal_vol_avg=1.2, beta_poloidal_max=1.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1444,14 +1027,7 @@ class TestConstraint51(Tier1Contract):
     reference = _reference_constraint_51
     ported = constraint_51
 
-    samples = [
-        legacy_sample(
-            "matched", vs_plasma_ramp_required=-120.0, vs_cs_pf_total_ramp=120.0
-        ),
-        legacy_sample(
-            "mismatched", vs_plasma_ramp_required=-100.0, vs_cs_pf_total_ramp=120.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1466,18 +1042,7 @@ class TestConstraint53(Tier1Contract):
     reference = _reference_constraint_53
     ported = constraint_53
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            flu_tf_neutron_fast_peak=5.0e22,
-            flu_tf_neutron_fast_max=1.0e23,
-        ),
-        legacy_sample(
-            "infeasible",
-            flu_tf_neutron_fast_peak=1.5e23,
-            flu_tf_neutron_fast_max=1.0e23,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1492,10 +1057,7 @@ class TestConstraint54(Tier1Contract):
     reference = _reference_constraint_54
     ported = constraint_54
 
-    samples = [
-        legacy_sample("feasible", ptfnucpm3=5.0e-4, ptfnucmax=1.0e-3),
-        legacy_sample("infeasible", ptfnucpm3=2.0e-3, ptfnucmax=1.0e-3),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1510,18 +1072,7 @@ class TestConstraint56(Tier1Contract):
     reference = _reference_constraint_56
     ported = constraint_56
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            p_plasma_separatrix_rmajor_mw=8.0,
-            p_plasma_separatrix_rmajor_max_mw=17.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            p_plasma_separatrix_rmajor_mw=20.0,
-            p_plasma_separatrix_rmajor_max_mw=17.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1536,14 +1087,7 @@ class TestConstraint59(Tier1Contract):
     reference = _reference_constraint_59
     ported = constraint_59
 
-    samples = [
-        legacy_sample(
-            "feasible", f_p_beam_shine_through=0.005, f_p_beam_shine_through_max=0.01
-        ),
-        legacy_sample(
-            "infeasible", f_p_beam_shine_through=0.02, f_p_beam_shine_through_max=0.01
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1558,18 +1102,7 @@ class TestConstraint60(Tier1Contract):
     reference = _reference_constraint_60
     ported = constraint_60
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            temp_cs_superconductor_margin=2.0,
-            temp_cs_superconductor_margin_min=1.5,
-        ),
-        legacy_sample(
-            "infeasible",
-            temp_cs_superconductor_margin=1.0,
-            temp_cs_superconductor_margin_min=1.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1584,14 +1117,7 @@ class TestConstraint61(Tier1Contract):
     reference = _reference_constraint_61
     ported = constraint_61
 
-    samples = [
-        legacy_sample(
-            "feasible", f_t_plant_available=0.85, f_t_plant_available_min=0.75
-        ),
-        legacy_sample(
-            "infeasible", f_t_plant_available=0.6, f_t_plant_available_min=0.75
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1606,18 +1132,7 @@ class TestConstraint62(Tier1Contract):
     reference = _reference_constraint_62
     ported = constraint_62
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            f_t_alpha_energy_confinement=6.0,
-            f_t_alpha_energy_confinement_min=5.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            f_t_alpha_energy_confinement=4.0,
-            f_t_alpha_energy_confinement_min=5.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1632,10 +1147,7 @@ class TestConstraint63(Tier1Contract):
     reference = _reference_constraint_63
     ported = constraint_63
 
-    samples = [
-        legacy_sample("feasible", n_iter_vacuum_pumps=30.0, n_tf_coils=50.0),
-        legacy_sample("infeasible", n_iter_vacuum_pumps=60.0, n_tf_coils=50.0),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1650,18 +1162,7 @@ class TestConstraint64(Tier1Contract):
     reference = _reference_constraint_64
     ported = constraint_64
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            n_charge_plasma_effective_vol_avg=1.8,
-            n_charge_plasma_effective_vol_avg_max=2.5,
-        ),
-        legacy_sample(
-            "infeasible",
-            n_charge_plasma_effective_vol_avg=3.0,
-            n_charge_plasma_effective_vol_avg_max=2.5,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1676,10 +1177,7 @@ class TestConstraint65(Tier1Contract):
     reference = _reference_constraint_65
     ported = constraint_65
 
-    samples = [
-        legacy_sample("feasible", vv_stress_quench=1.5e8, max_vv_stress=2.0e8),
-        legacy_sample("infeasible", vv_stress_quench=2.5e8, max_vv_stress=2.0e8),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1693,10 +1191,7 @@ class TestConstraint66(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_66
     ported = constraint_66
-    samples = [
-        legacy_sample("typical", peakpoloidalpower=150.0, maxpoloidalpower=300.0),
-        legacy_sample("near-limit", peakpoloidalpower=295.0, maxpoloidalpower=300.0),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_67 = data_reference(lambda d: _evaluate(67, d))
@@ -1708,10 +1203,7 @@ class TestConstraint67(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_67
     ported = constraint_67
-    samples = [
-        legacy_sample("typical", pflux_fw_rad_max_mw=0.3, pflux_fw_rad_max=0.5),
-        legacy_sample("near-limit", pflux_fw_rad_max_mw=0.49, pflux_fw_rad_max=0.5),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_68 = data_reference(lambda d: _evaluate(68, d))
@@ -1724,32 +1216,7 @@ class TestConstraint68(Tier1Contract):
     reference = _reference_constraint_68
     ported = constraint_68
     static_argnames = ("i_q95_fixed",)
-    samples = [
-        legacy_sample(
-            "fixed-q95",
-            i_q95_fixed=1,
-            p_plasma_separatrix_mw=100.0,
-            b_plasma_toroidal_on_axis=5.0,
-            q95=3.5,
-            q95_fixed=3.0,
-            aspect=3.0,
-            rmajor=8.0,
-            p_div_bt_q_aspect_rmajor_mw=15.0,
-            p_div_bt_q_aspect_rmajor_max_mw=20.0,
-        ),
-        legacy_sample(
-            "free-q95",
-            i_q95_fixed=0,
-            p_plasma_separatrix_mw=100.0,
-            b_plasma_toroidal_on_axis=5.0,
-            q95=3.5,
-            q95_fixed=3.0,
-            aspect=3.0,
-            rmajor=8.0,
-            p_div_bt_q_aspect_rmajor_mw=15.0,
-            p_div_bt_q_aspect_rmajor_max_mw=20.0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_72 = data_reference(lambda d: _evaluate(72, d))
@@ -1762,24 +1229,7 @@ class TestConstraint72(Tier1Contract):
     reference = _reference_constraint_72
     ported = constraint_72
     static_argnames = ("i_tf_bucking", "i_tf_inside_cs")
-    samples = [
-        legacy_sample(
-            "bucked-and-wedged",
-            i_tf_bucking=2,
-            i_tf_inside_cs=int(TFCSRadialConfiguration.TF_OUTSIDE_CS),
-            stress_shear_cs_peak=500e6,
-            sig_tf_cs_bucked=550e6,
-            stress_cs_steel_max=660e6,
-        ),
-        legacy_sample(
-            "free-standing",
-            i_tf_bucking=1,
-            i_tf_inside_cs=int(TFCSRadialConfiguration.TF_OUTSIDE_CS),
-            stress_shear_cs_peak=500e6,
-            sig_tf_cs_bucked=550e6,
-            stress_cs_steel_max=660e6,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_73 = data_reference(lambda d: _evaluate(73, d))
@@ -1791,20 +1241,7 @@ class TestConstraint73(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_73
     ported = constraint_73
-    samples = [
-        legacy_sample(
-            "typical",
-            p_plasma_separatrix_mw=100.0,
-            p_l_h_threshold_mw=60.0,
-            p_hcd_injected_total_mw=30.0,
-        ),
-        legacy_sample(
-            "near-limit",
-            p_plasma_separatrix_mw=91.0,
-            p_l_h_threshold_mw=60.0,
-            p_hcd_injected_total_mw=30.0,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_74 = data_reference(lambda d: _evaluate(74, d))
@@ -1816,12 +1253,7 @@ class TestConstraint74(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_74
     ported = constraint_74
-    samples = [
-        legacy_sample("typical", temp_croco_quench=250.0, temp_croco_quench_max=300.0),
-        legacy_sample(
-            "near-limit", temp_croco_quench=298.0, temp_croco_quench_max=300.0
-        ),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_75 = data_reference(lambda d: _evaluate(75, d))
@@ -1833,10 +1265,7 @@ class TestConstraint75(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_75
     ported = constraint_75
-    samples = [
-        legacy_sample("typical", coppera_m2=1.0e8, tf_coppera_m2_max=2.0e8),
-        legacy_sample("near-limit", coppera_m2=1.95e8, tf_coppera_m2_max=2.0e8),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_constraint_76(
@@ -1866,26 +1295,7 @@ class TestConstraint76(Tier1Contract):
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_76
     ported = constraint_76
-    samples = [
-        legacy_sample(
-            "typical",
-            kappa=1.7,
-            triang=0.4,
-            aspect=3.0,
-            p_plasma_separatrix_mw=100.0,
-            nd_plasma_electron_max_array_7=1.0e20,
-            nd_plasma_separatrix_electron=5.0e19,
-        ),
-        legacy_sample(
-            "high-elongation",
-            kappa=2.2,
-            triang=0.6,
-            aspect=2.5,
-            p_plasma_separatrix_mw=150.0,
-            nd_plasma_electron_max_array_7=8.0e19,
-            nd_plasma_separatrix_electron=6.0e19,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 _reference_constraint_77 = data_reference(lambda d: _evaluate(77, d))
@@ -1898,10 +1308,7 @@ class TestConstraint77(Tier1Contract):
     reference = _reference_constraint_77
     ported = constraint_77
 
-    samples = [
-        legacy_sample("feasible", c_tf_turn=6.0e4, c_tf_turn_max=9.0e4),
-        legacy_sample("infeasible", c_tf_turn=1.0e5, c_tf_turn_max=9.0e4),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1916,10 +1323,7 @@ class TestConstraint78(Tier1Contract):
     reference = _reference_constraint_78
     ported = constraint_78
 
-    samples = [
-        legacy_sample("feasible", fzactual=5.0e-4, fzmin=3.0e-4),
-        legacy_sample("infeasible", fzactual=1.0e-4, fzmin=3.0e-4),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1934,26 +1338,7 @@ class TestConstraint79(Tier1Contract):
     reference = _reference_constraint_79
     ported = constraint_79
 
-    samples = [
-        legacy_sample(
-            "feasible-flattop-larger",
-            b_cs_peak_flat_top_end=12.0,
-            b_cs_peak_pulse_start=10.0,
-            b_cs_limit_max=13.0,
-        ),
-        legacy_sample(
-            "feasible-pulsestart-larger",
-            b_cs_peak_flat_top_end=8.0,
-            b_cs_peak_pulse_start=11.0,
-            b_cs_limit_max=13.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            b_cs_peak_flat_top_end=14.0,
-            b_cs_peak_pulse_start=10.0,
-            b_cs_limit_max=13.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1968,18 +1353,7 @@ class TestConstraint80(Tier1Contract):
     reference = _reference_constraint_80
     ported = constraint_80
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            p_plasma_separatrix_mw=180.0,
-            p_plasma_separatrix_min_mw=150.0,
-        ),
-        legacy_sample(
-            "infeasible",
-            p_plasma_separatrix_mw=100.0,
-            p_plasma_separatrix_min_mw=150.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -1994,18 +1368,7 @@ class TestConstraint81(Tier1Contract):
     reference = _reference_constraint_81
     ported = constraint_81
 
-    samples = [
-        legacy_sample(
-            "feasible",
-            nd_plasma_electron_on_axis=1.1e20,
-            nd_plasma_pedestal_electron=8.0e19,
-        ),
-        legacy_sample(
-            "infeasible",
-            nd_plasma_electron_on_axis=6.0e19,
-            nd_plasma_pedestal_electron=8.0e19,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -2020,10 +1383,7 @@ class TestConstraint82(Tier1Contract):
     reference = _reference_constraint_82
     ported = constraint_82
 
-    samples = [
-        legacy_sample("feasible", toroidalgap=0.5, dx_tf_inboard_out_toroidal=0.3),
-        legacy_sample("infeasible", toroidalgap=0.2, dx_tf_inboard_out_toroidal=0.4),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -2038,12 +1398,7 @@ class TestConstraint83(Tier1Contract):
     reference = _reference_constraint_83
     ported = constraint_83
 
-    samples = [
-        legacy_sample("feasible", available_radial_space=2.5, required_radial_space=2.0),
-        legacy_sample(
-            "infeasible", available_radial_space=1.5, required_radial_space=2.0
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -2058,10 +1413,7 @@ class TestConstraint84(Tier1Contract):
     reference = _reference_constraint_84
     ported = constraint_84
 
-    samples = [
-        legacy_sample("feasible", beta_total_vol_avg=0.03, beta_vol_avg_min=0.01),
-        legacy_sample("infeasible", beta_total_vol_avg=0.005, beta_vol_avg_min=0.01),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -2086,12 +1438,7 @@ class TestConstraint85(Tier1Contract):
         "life_plant": 30.0,
     }
 
-    samples = [
-        legacy_sample("user-input", i_cp_lifetime=0, **_common),
-        legacy_sample("divertor", i_cp_lifetime=1, **_common),
-        legacy_sample("blanket", i_cp_lifetime=2, **_common),
-        legacy_sample("plant", i_cp_lifetime=3, **_common),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "cplife": (1.0, 60.0),
@@ -2113,10 +1460,7 @@ class TestConstraint86(Tier1Contract):
     reference = _reference_constraint_86
     ported = constraint_86
 
-    samples = [
-        legacy_sample("feasible", dx_tf_turn_general=0.03, t_turn_tf_max=0.05),
-        legacy_sample("infeasible", dx_tf_turn_general=0.07, t_turn_tf_max=0.05),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -2131,16 +1475,7 @@ class TestConstraint87(Tier1Contract):
     reference = _reference_constraint_87
     ported = constraint_87
 
-    samples = [
-        legacy_sample(
-            "feasible", p_cryo_plant_electric_mw=30.0, p_cryo_plant_electric_max_mw=50.0
-        ),
-        legacy_sample(
-            "infeasible",
-            p_cryo_plant_electric_mw=60.0,
-            p_cryo_plant_electric_max_mw=50.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -2154,11 +1489,7 @@ class TestConstraint88(Tier1Contract):
     reference = _reference_constraint_88
     ported = constraint_88
 
-    samples = [
-        legacy_sample("feasible-positive", str_wp=0.003, str_wp_max=0.005),
-        legacy_sample("feasible-negative", str_wp=-0.004, str_wp_max=0.005),
-        legacy_sample("infeasible", str_wp=-0.006, str_wp_max=0.005),
-    ]
+    samples = FROM_FILE
     # `abs(str_wp)` is non-differentiable at str_wp == 0 -- keep fuzz bounds off zero,
     # same discipline as any other |.|-based constraint would need.
     fuzz = True
@@ -2174,10 +1505,7 @@ class TestConstraint89(Tier1Contract):
     reference = _reference_constraint_89
     ported = constraint_89
 
-    samples = [
-        legacy_sample("feasible", copperaoh_m2=5.0e7, copperaoh_m2_max=1.0e8),
-        legacy_sample("infeasible", copperaoh_m2=1.5e8, copperaoh_m2_max=1.0e8),
-    ]
+    samples = FROM_FILE
     fuzz = True
 
 
@@ -2193,45 +1521,7 @@ class TestConstraint90(Tier1Contract):
 
     static_argnames = ("ibkt_life", "bkt_life_csf")
 
-    samples = [
-        legacy_sample(
-            "override-off-feasible",
-            n_cycle=3.0e4,
-            n_cycle_min=2.0e4,
-            ibkt_life=0,
-            bkt_life_csf=0.0,
-            bktcycles=1.0e3,
-        ),
-        legacy_sample(
-            "override-off-infeasible",
-            n_cycle=1.0e4,
-            n_cycle_min=2.0e4,
-            ibkt_life=0,
-            bkt_life_csf=0.0,
-            bktcycles=1.0e3,
-        ),
-        # Override branch: n_cycle_min is replaced by bktcycles (1.0e3, much smaller
-        # than the passed-in n_cycle_min of 2.0e4) -- this sample would fail if the
-        # port ever stopped honouring the override, same discipline as constraint 24's
-        # `stellarator-overrides-to-total` sample.
-        legacy_sample(
-            "override-on-uses-bktcycles",
-            n_cycle=2.0e3,
-            n_cycle_min=2.0e4,
-            ibkt_life=1,
-            bkt_life_csf=1.0,
-            bktcycles=1.0e3,
-        ),
-        # Only one of the two switches on -- override must NOT fire.
-        legacy_sample(
-            "override-half-on-no-effect",
-            n_cycle=2.0e3,
-            n_cycle_min=2.0e4,
-            ibkt_life=1,
-            bkt_life_csf=0.0,
-            bktcycles=1.0e3,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True
     fuzz_fixed = {"ibkt_life": 0, "bkt_life_csf": 0.0}
 
@@ -2248,29 +1538,7 @@ class TestConstraint91(Tier1Contract):
 
     static_argnames = ("i_plasma_ignited",)
 
-    samples = [
-        legacy_sample(
-            "non-ignited-feasible",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            p_hcd_primary_extra_heat_mw=5.0,
-            powerht_constraint=120.0,
-            powerscaling_constraint=100.0,
-        ),
-        legacy_sample(
-            "ignited-feasible",
-            i_plasma_ignited=int(PlasmaIgnitionModel.IGNITED),
-            p_hcd_primary_extra_heat_mw=5.0,
-            powerht_constraint=120.0,
-            powerscaling_constraint=100.0,
-        ),
-        legacy_sample(
-            "non-ignited-infeasible",
-            i_plasma_ignited=int(PlasmaIgnitionModel.NON_IGNITED),
-            p_hcd_primary_extra_heat_mw=1.0,
-            powerht_constraint=10.0,
-            powerscaling_constraint=100.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
@@ -2286,24 +1554,5 @@ class TestConstraint92(Tier1Contract):
     reference = _reference_constraint_92
     ported = constraint_92
 
-    samples = [
-        legacy_sample(
-            "dt-only",
-            f_plasma_fuel_deuterium=0.5,
-            f_plasma_fuel_tritium=0.5,
-            f_plasma_fuel_helium3=0.0,
-        ),
-        legacy_sample(
-            "dt-plus-he3",
-            f_plasma_fuel_deuterium=0.49,
-            f_plasma_fuel_tritium=0.49,
-            f_plasma_fuel_helium3=0.02,
-        ),
-        legacy_sample(
-            "inconsistent",
-            f_plasma_fuel_deuterium=0.5,
-            f_plasma_fuel_tritium=0.4,
-            f_plasma_fuel_helium3=0.0,
-        ),
-    ]
+    samples = FROM_FILE
     fuzz = True

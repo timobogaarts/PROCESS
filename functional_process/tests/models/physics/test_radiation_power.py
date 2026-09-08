@@ -24,6 +24,8 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.cottax.paths import impurity_radiation
 from functional_process.cottax.physics.radiation_power import (
     ImpurityRadiationTotals,
     PlasmaRadiationPowers,
@@ -33,7 +35,6 @@ from functional_process.cottax.physics.radiation_power import (
     calculate_radiation_powers,
     psync_albajar_fidone,
 )
-from functional_process.cottax.paths import impurity_radiation
 from process.core.model import DataStructure
 from process.models.physics import impurity_radiation as impurity
 from process.models.physics import radiation_power as reference_module
@@ -288,60 +289,7 @@ class TestSynchrotronRadiationPower(Tier1Contract):
     reference = reference_module.psync_albajar_fidone
     ported = psync_albajar_fidone
 
-    samples = [
-        legacy_sample(
-            # Large-tokamak-shaped point; `pden_plasma_sync_mw` in
-            # `tests/unit/data/large_tokamak_MFILE.DAT` is 7.6e-3 MW/m^3, the order this
-            # lands on.
-            "large-tokamak-shaped",
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=2.9,
-            b_plasma_toroidal_on_axis=5.7,
-            aspect=3.1,
-            alphan=1.0,
-            alphat=1.45,
-            tbeta=2.0,
-            temp_plasma_electron_on_axis_kev=29.4,
-            f_sync_reflect=0.6,
-            rmajor=9.0,
-            kappa=1.85,
-            vol_plasma=2500.0,
-        ),
-        legacy_sample(
-            # Compact, high field, low reflectivity: `dum` and the two
-            # `(1 - f_sync_reflect)` powers are all far from the point above.
-            "compact-high-field",
-            nd_plasma_electron_on_axis=4.0e20,
-            rminor=0.6,
-            b_plasma_toroidal_on_axis=12.0,
-            aspect=3.4,
-            alphan=0.6,
-            alphat=2.0,
-            tbeta=2.0,
-            temp_plasma_electron_on_axis_kev=15.0,
-            f_sync_reflect=0.1,
-            rmajor=2.0,
-            kappa=1.6,
-            vol_plasma=20.0,
-        ),
-        legacy_sample(
-            # Stellarator-shaped: high aspect ratio, so `g_function`'s
-            # `exp(-0.82 aspect)` term is essentially off.
-            "high-aspect-stellarator",
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-            b_plasma_toroidal_on_axis=5.0,
-            aspect=10.0,
-            alphan=1.0,
-            alphat=1.45,
-            tbeta=2.0,
-            temp_plasma_electron_on_axis_kev=29.4,
-            f_sync_reflect=0.6,
-            rmajor=18.0,
-            kappa=1.0,
-            vol_plasma=900.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # PROCESS's own iteration-variable bounds where they exist (`b_plasma_toroidal_on_axis`
     # is 2, `rmajor` 3, `alphat` 5, `alphan` 6, `kappa` 70, `f_sync_reflect` 108);
@@ -368,50 +316,7 @@ class TestImpurityRadiationPowerDensity(Tier1Contract):
     ported = calculate_impurity_radiation_power_density
     static_argnames = ("temp_impurity_kev", "pden_impurity_lz_nd_temp")
 
-    samples = [
-        legacy_sample(
-            # `tests/unit/models/physics/test_impurity_radiation.py::test_pimpden`'s
-            # point verbatim, on hydrogen (the species that test uses, index 0).
-            "test_pimpden-hydrogen",
-            nd_electron_profile=np.array([
-                9.42593370e19,
-                9.37237672e19,
-                9.21170577e19,
-                8.94392086e19,
-                8.56902197e19,
-                8.08700913e19,
-                7.49788231e19,
-                6.80164153e19,
-                5.99828678e19,
-                3.28986749e19,
-            ]),
-            temp_electron_profile_kev=np.array([
-                27.73451868,
-                27.25167194,
-                25.82164396,
-                23.50149071,
-                20.39190536,
-                16.64794796,
-                12.50116941,
-                8.31182764,
-                4.74643357,
-                0.1,
-            ]),
-            f_nd_impurity_electron=1.0,
-            temp_impurity_kev=_TEMP_TABLE[_HYDROGEN],
-            pden_impurity_lz_nd_temp=_LZ_TABLE[_HYDROGEN],
-        ),
-        legacy_sample(
-            # Argon, whose L(Z, Te) varies by four decades across the profile -- the
-            # log-log interpolation is doing real work here, unlike for hydrogen.
-            "argon-seeded",
-            nd_electron_profile=_NE,
-            temp_electron_profile_kev=_TE,
-            f_nd_impurity_electron=1.8e-3,
-            temp_impurity_kev=_TEMP_TABLE[_ARGON],
-            pden_impurity_lz_nd_temp=_LZ_TABLE[_ARGON],
-        ),
-    ]
+    samples = FROM_FILE
 
     # Temperatures are drawn strictly inside the table's 0.001-40 keV span so no draw
     # lands on a clamp, where the reference is discontinuous.
@@ -527,56 +432,7 @@ class TestRadiationPowers(Tier1Contract):
     ported = calculate_radiation_powers
     static_argnames = ("temp_impurity_kev_array", "pden_impurity_lz_nd_temp_array")
 
-    samples = [
-        legacy_sample(
-            "st_phys-shaped-operating-point",
-            profile_x=_RHO,
-            nd_electron_profile=_NE,
-            temp_electron_profile_kev=_TE,
-            f_nd_impurity_electron_array=_SPECIES_FRACTIONS,
-            temp_impurity_kev_array=_SPECIES_TEMP_TABLE,
-            pden_impurity_lz_nd_temp_array=_SPECIES_LZ_TABLE,
-            radius_plasma_core_norm=_CORE_RADIUS,
-            f_p_plasma_core_rad_reduction=1.0,
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-            b_plasma_toroidal_on_axis=5.0,
-            aspect=10.0,
-            alphan=1.0,
-            alphat=1.45,
-            tbeta=2.0,
-            temp_plasma_electron_on_axis_kev=29.4,
-            f_sync_reflect=0.6,
-            rmajor=18.0,
-            kappa=1.0,
-            vol_plasma=900.0,
-        ),
-        legacy_sample(
-            # Core/outer split moved without moving the total: `pden_plasma_core_rad_mw`
-            # and `pden_plasma_outer_rad_mw` are the two the three additions could swap.
-            "shifted-core-outer-split",
-            profile_x=_RHO,
-            nd_electron_profile=_NE,
-            temp_electron_profile_kev=_TE,
-            f_nd_impurity_electron_array=_SPECIES_FRACTIONS,
-            temp_impurity_kev_array=_SPECIES_TEMP_TABLE,
-            pden_impurity_lz_nd_temp_array=_SPECIES_LZ_TABLE,
-            radius_plasma_core_norm=0.35,
-            f_p_plasma_core_rad_reduction=0.6,
-            nd_plasma_electron_on_axis=1.6e20,
-            rminor=1.8,
-            b_plasma_toroidal_on_axis=5.0,
-            aspect=10.0,
-            alphan=1.0,
-            alphat=1.45,
-            tbeta=2.0,
-            temp_plasma_electron_on_axis_kev=29.4,
-            f_sync_reflect=0.6,
-            rmajor=18.0,
-            kappa=1.0,
-            vol_plasma=900.0,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Not fuzzed. Its two halves are fuzzed separately above and their composition is
     # three additions; fuzzing the whole thing would re-pay for 21 differentiable

@@ -1,0 +1,275 @@
+{
+ "TestIonVolAvgTemperature": [
+  {
+   "label": "ratio-active",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_temp_plasma_ion_electron": 0.9,
+    "temp_plasma_electron_vol_avg_kev": 12.0,
+    "temp_plasma_ion_vol_avg_kev": 1.0
+   }
+  },
+  {
+   "label": "ratio-zero-passthrough",
+   "provenance": "legacy",
+   "kwargs": {
+    "f_temp_plasma_ion_electron": 0.0,
+    "temp_plasma_electron_vol_avg_kev": 12.0,
+    "temp_plasma_ion_vol_avg_kev": 11.5
+   }
+  }
+ ],
+ "TestLModeProfileReset": [
+  {
+   "label": "reset-fires",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_temp_norm": 1.0,
+    "radius_plasma_pedestal_density_norm": 1.0,
+    "temp_plasma_pedestal_kev": 1.0,
+    "temp_plasma_separatrix_kev": 0.1,
+    "nd_plasma_pedestal_electron": 4e+19,
+    "nd_plasma_separatrix_electron": 3e+19,
+    "tbeta": 2.0
+   }
+  },
+  {
+   "label": "already-l-mode",
+   "provenance": "legacy",
+   "kwargs": {
+    "radius_plasma_pedestal_temp_norm": 1.0,
+    "radius_plasma_pedestal_density_norm": 1.0,
+    "temp_plasma_pedestal_kev": 0.0,
+    "temp_plasma_separatrix_kev": 0.0,
+    "nd_plasma_pedestal_electron": 0.0,
+    "nd_plasma_separatrix_electron": 0.0,
+    "tbeta": 2.0
+   }
+  }
+ ],
+ "TestParabolicGradientLengths": [
+  {
+   "label": "both-steep",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphat": 1.45,
+    "alphan": 1.2,
+    "temp_plasma_electron_on_axis_kev": 29.4,
+    "nd_plasma_electron_on_axis": 1.6e+20,
+    "rminor": 1.8
+   }
+  },
+  {
+   "label": "both-boxy",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphat": 0.6,
+    "alphan": 0.4,
+    "temp_plasma_electron_on_axis_kev": 29.4,
+    "nd_plasma_electron_on_axis": 1.6e+20,
+    "rminor": 1.8
+   }
+  },
+  {
+   "label": "steep-temperature-boxy-density",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphat": 2.0,
+    "alphan": 0.5,
+    "temp_plasma_electron_on_axis_kev": 29.4,
+    "nd_plasma_electron_on_axis": 1.6e+20,
+    "rminor": 1.8
+   }
+  }
+ ],
+ "TestParabolicProfileValues": [
+  {
+   "label": "parabolic-reference-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "alphan": 1.0,
+    "alphat": 1.45,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "temp_plasma_electron_vol_avg_kev": 12.0,
+    "temp_plasma_ion_vol_avg_kev": 11.0
+   }
+  }
+ ],
+ "TestPedestalProfileValues": [
+  {
+   "label": "pedestal-reference-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "profile_x": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "ne_profile_y": {
+     "~array": [
+      8e+19,
+      7.936e+19,
+      7.744e+19,
+      7.424e+19,
+      6.976e+19,
+      6.4e+19,
+      5.696e+19,
+      4.863999999999999e+19,
+      3.903999999999999e+19,
+      2.8159999999999988e+19,
+      1.5999999999999996e+19
+     ],
+     "dtype": "float64"
+    },
+    "te_profile_y": {
+     "~array": [
+      12.5,
+      12.392,
+      12.068,
+      11.527999999999999,
+      10.772,
+      9.8,
+      8.611999999999998,
+      7.207999999999999,
+      5.587999999999997,
+      3.751999999999999,
+      1.6999999999999997
+     ],
+     "dtype": "float64"
+    },
+    "ne_profile_integ": 7.2e+19,
+    "te_profile_integ": 9.4,
+    "temp_plasma_ion_vol_avg_kev": 11.0,
+    "temp_plasma_electron_vol_avg_kev": 12.0,
+    "nd_plasma_separatrix_electron": 2e+19,
+    "nd_plasma_electrons_vol_avg": 8e+19
+   }
+  },
+  {
+   "label": "pedestal-prn1-floored",
+   "provenance": "legacy",
+   "kwargs": {
+    "profile_x": {
+     "~array": [
+      0.0,
+      0.1,
+      0.2,
+      0.30000000000000004,
+      0.4,
+      0.5,
+      0.6000000000000001,
+      0.7000000000000001,
+      0.8,
+      0.9,
+      1.0
+     ],
+     "dtype": "float64"
+    },
+    "ne_profile_y": {
+     "~array": [
+      8e+19,
+      7.936e+19,
+      7.744e+19,
+      7.424e+19,
+      6.976e+19,
+      6.4e+19,
+      5.696e+19,
+      4.863999999999999e+19,
+      3.903999999999999e+19,
+      2.8159999999999988e+19,
+      1.5999999999999996e+19
+     ],
+     "dtype": "float64"
+    },
+    "te_profile_y": {
+     "~array": [
+      12.5,
+      12.392,
+      12.068,
+      11.527999999999999,
+      10.772,
+      9.8,
+      8.611999999999998,
+      7.207999999999999,
+      5.587999999999997,
+      3.751999999999999,
+      1.6999999999999997
+     ],
+     "dtype": "float64"
+    },
+    "ne_profile_integ": 7.2e+19,
+    "te_profile_integ": 9.4,
+    "temp_plasma_ion_vol_avg_kev": 11.0,
+    "temp_plasma_electron_vol_avg_kev": 12.0,
+    "nd_plasma_separatrix_electron": 1e+17,
+    "nd_plasma_electrons_vol_avg": 8e+19
+   }
+  }
+ ],
+ "TestProfileFactors": [
+  {
+   "label": "profile-factors-reference-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "ne_profile_y": {
+     "~array": [
+      8e+19,
+      7.936e+19,
+      7.744e+19,
+      7.424e+19,
+      6.976e+19,
+      6.4e+19,
+      5.696e+19,
+      4.863999999999999e+19,
+      3.903999999999999e+19,
+      2.8159999999999988e+19,
+      1.5999999999999996e+19
+     ],
+     "dtype": "float64"
+    },
+    "te_profile_y": {
+     "~array": [
+      12.5,
+      12.392,
+      12.068,
+      11.527999999999999,
+      10.772,
+      9.8,
+      8.611999999999998,
+      7.207999999999999,
+      5.587999999999997,
+      3.751999999999999,
+      1.6999999999999997
+     ],
+     "dtype": "float64"
+    },
+    "nd_plasma_electron_on_axis": 1.6e+20,
+    "temp_plasma_electron_on_axis_kev": 29.4,
+    "nd_plasma_ions_on_axis": 1.44e+20,
+    "temp_plasma_ion_on_axis_kev": 27.0,
+    "nd_plasma_ions_total_vol_avg": 7.2e+19,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_fuel_ions_vol_avg": 6e+19,
+    "f_temp_plasma_ion_electron": 0.9,
+    "temp_plasma_electron_density_weighted_kev": 13.5,
+    "temp_plasma_ion_density_weighted_kev": 12.2,
+    "alphan": 1.0,
+    "alphat": 1.45,
+    "alphaj": 2.0,
+    "plasma_current": 15000000.0,
+    "a_plasma_poloidal": 35.0
+   }
+  }
+ ]
+}

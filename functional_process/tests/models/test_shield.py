@@ -36,9 +36,11 @@ alongside it, and a `nan` executes that claim rather than asserting it.
 """
 
 import functools
+
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.shield import (
     calculate_dshaped_shield_volumes,
     calculate_elliptical_shield_volumes,
@@ -50,7 +52,6 @@ from functional_process.cottax.shield import (
 from process.core.model import DataStructure
 from process.models.build import FwBlktVVShape
 from process.models.shield import Shield
-
 
 _reference_half_height_double_null = functools.partial(
     Shield.calculate_shield_half_height,
@@ -188,14 +189,7 @@ class TestCalculateShieldHalfHeightDoubleNull(Tier1Contract):
     reference = staticmethod(_reference_half_height_double_null)
     ported = calculate_shield_half_height_double_null
 
-    samples = [
-        legacy_sample(
-            "shield_half_height_double_null-synthetic",
-            z_plasma_xpoint_lower=4.0,
-            dz_xpoint_divertor=0.5,
-            dz_divertor=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -209,20 +203,7 @@ class TestCalculateShieldHalfHeightSingleNull(Tier1Contract):
     reference = staticmethod(_reference_half_height_single_null)
     ported = calculate_shield_half_height_single_null
 
-    samples = [
-        legacy_sample(
-            "shield_half_height_single_null-synthetic",
-            z_plasma_xpoint_lower=4.0,
-            dz_xpoint_divertor=0.5,
-            dz_divertor=0.3,
-            z_plasma_xpoint_upper=4.0,
-            dr_fw_plasma_gap_inboard=0.25,
-            dr_fw_plasma_gap_outboard=0.25,
-            dr_fw_inboard=0.05,
-            dr_fw_outboard=0.05,
-            dz_blkt_upper=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -234,20 +215,7 @@ class TestCalculateEllipticalShieldVolumes(Tier1Contract):
     reference = staticmethod(Shield.calculate_elliptical_shield_volumes)
     ported = calculate_elliptical_shield_volumes
 
-    samples = [
-        legacy_sample(
-            "elliptical_shield_volumes-synthetic",
-            r_shld_inboard_inner=5.0,
-            r_shld_outboard_outer=13.0,
-            rmajor=8.0,
-            triang=0.5,
-            dr_shld_inboard=0.4,
-            rminor=2.5,
-            dz_shld_half=4.7,
-            dr_shld_outboard=0.8,
-            dz_shld_upper=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -265,23 +233,7 @@ class TestCalculateDshapedShieldVolumes(Tier1Contract):
     reference = staticmethod(Shield.calculate_dshaped_shield_volumes)
     ported = calculate_dshaped_shield_volumes
 
-    samples = [
-        legacy_sample(
-            "dshaped_shield_volumes-synthetic",
-            r_shld_inboard_inner=5.0,
-            dr_shld_inboard=0.4,
-            dr_fw_inboard=0.03,
-            dr_fw_plasma_gap_inboard=0.25,
-            rminor=2.5,
-            dr_fw_plasma_gap_outboard=0.25,
-            dr_fw_outboard=0.03,
-            dr_blkt_inboard=0.4,
-            dr_blkt_outboard=0.6,
-            dz_shld_half=4.7,
-            dr_shld_outboard=0.8,
-            dz_shld_upper=0.3,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -306,22 +258,7 @@ class TestCalculateShieldVolumesElliptical(Tier1Contract):
     volumes` staticmethod, `dz_shld_half` included as an ordinary differentiable
     argument."""
 
-    samples = [
-        legacy_sample(
-            "shield_volumes_elliptical-large_tokamak_eval",
-            r_shld_inboard_inner=5.0,
-            r_shld_outboard_outer=13.0,
-            rmajor=8.0,
-            triang=0.5,
-            dr_shld_inboard=0.4,
-            rminor=2.5,
-            dz_shld_half=4.7,
-            dr_shld_outboard=0.8,
-            dz_shld_upper=0.3,
-            fvolsi=1.0,
-            fvolso=0.64,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference AssertionError: the fixed half-height inputs in this adapter must reproduce th
@@ -451,25 +388,7 @@ class TestCalculateShieldVolumesDshaped(Tier1Contract):
     `d(output)/d(dz_shld_half)` is covered by `TestCalculateDshapedShieldVolumes` above,
     which diffs the staticmethod directly with it differentiable."""
 
-    samples = [
-        legacy_sample(
-            "shield_volumes_dshaped-synthetic",
-            r_shld_inboard_inner=5.0,
-            dr_shld_inboard=0.4,
-            dr_fw_inboard=0.03,
-            dr_fw_plasma_gap_inboard=0.25,
-            rminor=2.5,
-            dr_fw_plasma_gap_outboard=0.25,
-            dr_fw_outboard=0.03,
-            dr_blkt_inboard=0.4,
-            dr_blkt_outboard=0.6,
-            dz_shld_half=4.7,
-            dr_shld_outboard=0.8,
-            dz_shld_upper=0.3,
-            fvolsi=1.0,
-            fvolso=0.64,
-        ),
-    ]
+    samples = FROM_FILE
 
     # Narrower than the shared DOMAIN: widening gives
     # reference AssertionError: the fixed half-height inputs in this adapter must reproduce th

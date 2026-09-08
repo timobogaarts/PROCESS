@@ -1,0 +1,1104 @@
+{
+ "TestCalculateDoubleAndTripleProduct": [
+  {
+   "label": "double-triple-product-reference",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electrons_vol_avg": 7.5e+19,
+    "temp_plasma_electrons_vol_avg_kev": 3.402116961408892,
+    "t_energy_confinement": 12.569
+   }
+  }
+ ],
+ "TestChristiansenConfinementTime": [
+  {
+   "label": "christiansen-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestConfinementTime": [
+  {
+   "label": "sudo-et-al-no-radiation",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 2,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 21
+   }
+  },
+  {
+   "label": "neo-alcator-full-radiation",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 0,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 1
+   }
+  },
+  {
+   "label": "mirnov-core-only-radiation-ignited",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 1,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 1,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 2
+   }
+  },
+  {
+   "label": "minimum-iter-89p-89o-no-radiation",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 2,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 14
+   }
+  },
+  {
+   "label": "ipb98y2-core-only-radiation",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 1,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 34
+   }
+  },
+  {
+   "label": "iss04-stellarator-full-radiation",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 3.2,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.3125,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 0,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 38
+   }
+  },
+  {
+   "label": "menard-nstx-petty08-hybrid-blend-region",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 2.0,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.5,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 2,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 47
+   }
+  },
+  {
+   "label": "menard-nstx-petty08-hybrid-nstx-only",
+   "provenance": "legacy",
+   "kwargs": {
+    "m_fuel_amu": 2.5,
+    "p_alpha_total_mw": 400.0,
+    "aspect": 1.5,
+    "b_plasma_toroidal_on_axis": 5.0,
+    "nd_plasma_electrons_vol_avg": 8e+19,
+    "nd_plasma_electron_line": 9e+19,
+    "eps": 0.6666666666666666,
+    "hfact": 1.0,
+    "i_plasma_ignited": 0,
+    "kappa": 1.7,
+    "kappa95": 1.6,
+    "p_non_alpha_charged_mw": 20.0,
+    "p_hcd_injected_total_mw": 50.0,
+    "plasma_current": 15000000.0,
+    "pden_plasma_core_rad_mw": 0.02,
+    "rmajor": 8.0,
+    "rminor": 2.5,
+    "temp_plasma_electron_density_weighted_kev": 12.0,
+    "q95": 3.0,
+    "qstar": 3.5,
+    "vol_plasma": 2426.25,
+    "zeff": 1.8,
+    "eden_plasma_electrons_thermal_vol_avg": 150000.0,
+    "eden_plasma_ions_thermal_vol_avg": 150000.0,
+    "f_p_alpha_plasma_deposited": 0.95,
+    "p_plasma_ohmic_mw": 0.5,
+    "i_rad_loss": 2,
+    "pden_plasma_rad_mw": 0.05,
+    "pden_plasma_sync_mw": 0.02,
+    "p_plasma_inner_rad_mw": 5.0,
+    "triang": 0.4,
+    "m_ions_total_amu": 2.5,
+    "e_plasma_beta": 500000000.0,
+    "tauee_in": 3.0,
+    "i_confinement_time": 47
+   }
+  }
+ ],
+ "TestDs03ConfinementTime": [
+  {
+   "label": "ds03-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa95": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestGoldstonConfinementTime": [
+  {
+   "label": "goldston-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestGyroReducedBohmConfinementTime": [
+  {
+   "label": "gyro_reduced_bohm-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rminor": 1.0,
+    "rmajor": 1.0
+   }
+  }
+ ],
+ "TestHubbardLowerConfinementTime": [
+  {
+   "label": "hubbard_lower-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestHubbardNominalConfinementTime": [
+  {
+   "label": "hubbard_nominal-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestHubbardUpperConfinementTime": [
+  {
+   "label": "hubbard_upper-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestIss04StellaratorConfinementTime": [
+  {
+   "label": "iss04_stellarator-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.0,
+    "rmajor": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "iotabar": 1.0
+   }
+  }
+ ],
+ "TestIss95StellaratorConfinementTime": [
+  {
+   "label": "iss95_stellarator-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.0,
+    "rmajor": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "iotabar": 1.0
+   }
+  }
+ ],
+ "TestIter890ConfinementTime": [
+  {
+   "label": "iter_89_0-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestIter89pConfinementTime": [
+  {
+   "label": "iter_89p-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestIter93hConfinementTime": [
+  {
+   "label": "iter_93h-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "afuel": 1.0,
+    "rmajor": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "aspect": 1.0,
+    "kappa": 1.0
+   }
+  }
+ ],
+ "TestIter96pConfinementTime": [
+  {
+   "label": "iter_96p-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "kappa95": 1.0,
+    "rmajor": 1.0,
+    "aspect": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestIterH90PAmendedConfinementTime": [
+  {
+   "label": "iter_h90_p_amended-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "afuel": 1.0,
+    "rmajor": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "kappa": 1.0
+   }
+  }
+ ],
+ "TestIterH90PConfinementTime": [
+  {
+   "label": "iter_h90_p-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestIterH97pConfinementTime": [
+  {
+   "label": "iter_h97p-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "rmajor": 1.0,
+    "aspect": 1.0,
+    "kappa": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterH97pElmyConfinementTime": [
+  {
+   "label": "iter_h97p_elmy-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "rmajor": 1.0,
+    "aspect": 1.0,
+    "kappa": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterIpb98y1ConfinementTime": [
+  {
+   "label": "iter_ipb98y1-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterIpb98y2ConfinementTime": [
+  {
+   "label": "iter_ipb98y2-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterIpb98y3ConfinementTime": [
+  {
+   "label": "iter_ipb98y3-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterIpb98y4ConfinementTime": [
+  {
+   "label": "iter_ipb98y4-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterIpb98yConfinementTime": [
+  {
+   "label": "iter_ipb98y-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterPb98pyConfinementTime": [
+  {
+   "label": "iter_pb98py-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestIterPhysicsBasisElongation": [
+  {
+   "label": "reference-point",
+   "provenance": "legacy",
+   "kwargs": {
+    "vol_plasma": 2426.25,
+    "rmajor": 8.0,
+    "rminor": 2.5
+   }
+  }
+ ],
+ "TestItpa20ConfinementTime": [
+  {
+   "label": "itpa20-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "triang": 1.0,
+    "kappa_ipb": 1.0,
+    "eps": 1.0,
+    "aion": 1.0
+   }
+  }
+ ],
+ "TestItpa20IlConfinementTime": [
+  {
+   "label": "itpa20_il-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "aion": 1.0,
+    "rmajor": 1.0,
+    "triang": 1.0,
+    "kappa_ipb": 1.0
+   }
+  }
+ ],
+ "TestJaeriConfinementTime": [
+  {
+   "label": "jaeri-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "kappa95": 1.0,
+    "rminor": 1.0,
+    "afuel": 1.0,
+    "n20": 1.0,
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "rmajor": 1.0,
+    "qstar": 1.0,
+    "zeff": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestKayeBigConfinementTime": [
+  {
+   "label": "kaye_big-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "kappa95": 1.0,
+    "cur_plasma_ma": 1.0,
+    "n20": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestKayeConfinementTime": [
+  {
+   "label": "kaye-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "kappa": 1.0,
+    "rmajor": 1.0,
+    "aspect": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestKayeGoldstonConfinementTime": [
+  {
+   "label": "kaye_goldston-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "kappa95": 1.0,
+    "cur_plasma_ma": 1.0,
+    "n20": 1.0,
+    "rmajor": 1.0,
+    "afuel": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "rminor": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestLacknerGottardiConfinementTime": [
+  {
+   "label": "lackner_gottardi-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestLacknerGottardiStellaratorConfinementTime": [
+  {
+   "label": "lackner_gottardi_stellarator-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "q": 1.0
+   }
+  }
+ ],
+ "TestLangHighDensityConfinementTime": [
+  {
+   "label": "lang_high_density-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "plasma_current": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "q": 1.0,
+    "qstar": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0,
+    "kappa_ipb": 1.0
+   }
+  }
+ ],
+ "TestMenardNstxConfinementTime": [
+  {
+   "label": "menard_nstx-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestMenardNstxPetty08HybridConfinementTime": [
+  {
+   "label": "menard_nstx_petty08_hybrid-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestMerezhkinMuhkovatovConfinementTime": [
+  {
+   "label": "merezhkin_muhkovatov-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "qstar": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "afuel": 1.0,
+    "ten": 1.0
+   }
+  }
+ ],
+ "TestMirnovConfinementTime": [
+  {
+   "label": "mirnov-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "cur_plasma_ma": 1.0
+   }
+  }
+ ],
+ "TestMurariConfinementTime": [
+  {
+   "label": "murari-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestNcstConfinementTime": [
+  {
+   "label": "ncst-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "nd_plasma_electron_line_19": 1.0
+   }
+  }
+ ],
+ "TestNeoAlcatorConfinementTime": [
+  {
+   "label": "neo_alcator-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "dene20": 1.0,
+    "rminor": 1.0,
+    "rmajor": 1.0,
+    "qstar": 1.0
+   }
+  }
+ ],
+ "TestNeoKayeConfinementTime": [
+  {
+   "label": "neo_kaye-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestNstxGyroBohmConfinementTime": [
+  {
+   "label": "nstx_gyro_bohm-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "nd_plasma_electron_line_20": 1.0
+   }
+  }
+ ],
+ "TestPazSoldanNtConfinementTime": [
+  {
+   "label": "paz_soldan_nt-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "nd_plasma_electron_line_19": 1.0
+   }
+  }
+ ],
+ "TestPetty08ConfinementTime": [
+  {
+   "label": "petty08-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "rmajor": 1.0,
+    "kappa_ipb": 1.0,
+    "aspect": 1.0
+   }
+  }
+ ],
+ "TestRebutLalliaConfinementTime": [
+  {
+   "label": "rebut_lallia-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rminor": 1.0,
+    "rmajor": 1.0,
+    "kappa": 1.0,
+    "afuel": 1.0,
+    "cur_plasma_ma": 1.0,
+    "zeff": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestRiedelHConfinementTime": [
+  {
+   "label": "riedel_h-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "afuel": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestRiedelLConfinementTime": [
+  {
+   "label": "riedel_l-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestShimomuraConfinementTime": [
+  {
+   "label": "shimomura-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "kappa95": 1.0,
+    "afuel": 1.0
+   }
+  }
+ ],
+ "TestSudoEtAlConfinementTime": [
+  {
+   "label": "sudo_et_al-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "nd_plasma_electron_line_20": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ],
+ "TestT10ConfinementTime": [
+  {
+   "label": "t10-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "nd_plasma_electron_line_20": 1.0,
+    "rmajor": 1.0,
+    "qstar": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "rminor": 1.0,
+    "kappa95": 1.0,
+    "p_plasma_loss_mw": 1.0,
+    "zeff": 1.0,
+    "cur_plasma_ma": 1.0
+   }
+  }
+ ],
+ "TestValovicElmyConfinementTime": [
+  {
+   "label": "valovic_elmy-all-ones",
+   "provenance": "legacy",
+   "kwargs": {
+    "cur_plasma_ma": 1.0,
+    "b_plasma_toroidal_on_axis": 1.0,
+    "nd_plasma_electron_line_19": 1.0,
+    "afuel": 1.0,
+    "rmajor": 1.0,
+    "rminor": 1.0,
+    "kappa": 1.0,
+    "p_plasma_loss_mw": 1.0
+   }
+  }
+ ]
+}

@@ -9,7 +9,8 @@ covered by those units' cases. Porting them a second time here would give one fo
 two homes.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.engineering.materials import (
     eurofer97_thermal_conductivity,
 )
@@ -38,12 +39,6 @@ class TestEurofer97ThermalConductivity(Tier1Contract):
     reference = staticmethod(_reference_eurofer97_thermal_conductivity)
     ported = eurofer97_thermal_conductivity
 
-    samples = [
-        legacy_sample(
-            "eurofer97-tests-unit-test_materials",
-            temp=1900.0,
-            fw_th_conductivity=28.9,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True

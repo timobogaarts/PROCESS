@@ -5,13 +5,13 @@ from types import MappingProxyType
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
+from cottax.tools.path import path_map
 
 from functional_process.cottax._harness import (
     Sample,
@@ -19,6 +19,8 @@ from functional_process.cottax._harness import (
     Tier2Contract,
     legacy_sample,
 )
+from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.cottax.paths import stellarator
 from functional_process.cottax.stellarator.coils.coils import (
     Intersect,
     IntersectBisectionNewtonPolish,
@@ -35,7 +37,6 @@ from functional_process.cottax.stellarator.coils.coils import (
     jcrit_from_material_rebco,
     jcrit_from_material_wst_nb3sn,
 )
-from functional_process.cottax.paths import stellarator
 from process.core.model import DataStructure
 from process.models import superconductors as _process_superconductors
 from process.models.stellarator.coils.coils import (
@@ -174,18 +175,7 @@ class TestJcritFromMaterialIterNb3sn(Tier1Contract):
     reference = staticmethod(_reference_jcrit_iter_nb3sn)
     ported = jcrit_from_material_iter_nb3sn
 
-    samples = [
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 10.0}),
-            "synthetic",
-            "below-bc20m",
-        ),
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 40.0}),
-            "synthetic",
-            "above-bc20m",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 15.5),
@@ -200,20 +190,7 @@ class TestJcritFromMaterialBi2212(Tier1Contract):
     reference = staticmethod(_reference_jcrit_bi2212)
     ported = jcrit_from_material_bi2212
 
-    samples = [
-        Sample(
-            MappingProxyType({
-                "t_helium": 4.75,
-                "b_max": 8.0,
-                "j_tf_wp": 5.0e5,
-                "f_a_tf_turn_cable_space_extra_void": 0.3,
-                "fhts": 0.5,
-                "f_a_tf_turn_cable_copper": 0.4,
-            }),
-            "synthetic",
-            "in-range",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 10.0),
@@ -232,18 +209,7 @@ class TestJcritFromMaterialNbtiLubell(Tier1Contract):
     reference = staticmethod(_reference_jcrit_nbti_lubell)
     ported = jcrit_from_material_nbti_lubell
 
-    samples = [
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 8.0}),
-            "synthetic",
-            "below-bc20m",
-        ),
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 20.0}),
-            "synthetic",
-            "above-bc20m",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 9.0),
@@ -258,18 +224,7 @@ class TestJcritFromMaterialIterNb3snUserDefined(Tier1Contract):
     reference = staticmethod(_reference_jcrit_iter_nb3sn_user_defined)
     ported = jcrit_from_material_iter_nb3sn_user_defined
 
-    samples = [
-        Sample(
-            MappingProxyType({
-                "t_helium": 4.75,
-                "b_max": 15.0,
-                "bcritsc": 22.0,
-                "tcritsc": 12.0,
-            }),
-            "synthetic",
-            "user-defined",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 15.5),
@@ -286,13 +241,7 @@ class TestJcritFromMaterialWstNb3sn(Tier1Contract):
     reference = staticmethod(_reference_jcrit_wst_nb3sn)
     ported = jcrit_from_material_wst_nb3sn
 
-    samples = [
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 20.0}),
-            "synthetic",
-            "in-range",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 15.0),
@@ -313,13 +262,7 @@ class TestJcritFromMaterialRebco(Tier1Contract):
     reference = staticmethod(_reference_jcrit_rebco)
     ported = jcrit_from_material_rebco
 
-    samples = [
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 10.0}),
-            "synthetic",
-            "in-range",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 60.0),
@@ -334,18 +277,7 @@ class TestJcritFromMaterialGlNbti(Tier1Contract):
     reference = staticmethod(_reference_jcrit_gl_nbti)
     ported = jcrit_from_material_gl_nbti
 
-    samples = [
-        Sample(
-            MappingProxyType({
-                "t_helium": 4.75,
-                "b_max": 6.0,
-                "b_crit_upper_nbti": 14.0,
-                "t_crit_nbti": 8.5,
-            }),
-            "synthetic",
-            "in-range",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 9.0),
@@ -362,13 +294,7 @@ class TestJcritFromMaterialGlRebco(Tier1Contract):
     reference = staticmethod(_reference_jcrit_gl_rebco)
     ported = jcrit_from_material_gl_rebco
 
-    samples = [
-        Sample(
-            MappingProxyType({"t_helium": 4.75, "b_max": 15.0}),
-            "synthetic",
-            "in-range",
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "t_helium": (1.0, 9.0),
@@ -398,18 +324,7 @@ class TestBmaxFromAwp(Tier1Contract):
     ported = bmax_from_awp
 
     # tests/unit/models/stellarator/test_stellarator.py::test_bmax_from_awp.
-    samples = [
-        legacy_sample(
-            "bmax-from-awp-helias",
-            wp_width_radial=0.11792792792792792,
-            current=12.711229086229087,
-            n_tf_coils=50,
-            r_coil_major=22.237837837837837,
-            r_coil_minor=4.7171171171171169,
-            stella_config_a1=0.688,
-            stella_config_a2=0.025,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -529,7 +444,7 @@ class TestIntersect(Tier2Contract):
     ported = intersect
     residual = staticmethod(eqx.filter_jit(_intersect_residual_for_contract))
 
-    samples = _intersect_samples()
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------

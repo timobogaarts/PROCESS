@@ -1,0 +1,121 @@
+{
+ "TestCrocoAveragedTurnGeometryFromCurrentPerTurn": [
+  {
+   "label": "croco-averaged-turn-geometry",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_tf_wp": 26493137.688284047,
+    "c_tf_turn": 85462.67497090799,
+    "dx_tf_turn_steel": 0.008,
+    "dx_tf_turn_insulation": 0.0008,
+    "layer_ins": 0.0,
+    "a_tf_wp_no_insulation": 0.6051095264223625
+   }
+  }
+ ],
+ "TestCrocoCableGeometry": [
+  {
+   "label": "croco-cable-10mm",
+   "provenance": "legacy",
+   "kwargs": {
+    "dia_croco_strand": 0.01,
+    "dx_croco_strand_copper": 0.001,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_copper": 2e-06,
+    "dx_hts_tape_hastelloy": 3e-06
+   }
+  },
+  {
+   "label": "croco-cable-baseline",
+   "provenance": "legacy",
+   "kwargs": {
+    "dia_croco_strand": 0.0054,
+    "dx_croco_strand_copper": 0.0005,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_copper": 2e-06,
+    "dx_hts_tape_hastelloy": 3e-06
+   }
+  },
+  {
+   "label": "croco-cable-spherical-tokamak",
+   "provenance": "legacy",
+   "kwargs": {
+    "dia_croco_strand": 0.013055620408525748,
+    "dx_croco_strand_copper": 0.002,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_copper": 0.0002,
+    "dx_hts_tape_hastelloy": 1e-05
+   }
+  }
+ ],
+ "TestCrocoCableSpaceProperties": [
+  {
+   "label": "croco-cable-space",
+   "provenance": "legacy",
+   "kwargs": {
+    "dx_tf_turn_conduit_full_average": 0.05516686122557725,
+    "dx_tf_turn_steel": 0.008
+   }
+  }
+ ],
+ "TestCrocoInboardAreasAndFractions": [
+  {
+   "label": "croco-inboard-areas",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_tf_turn_cable_space_no_void": 0.0012044932391216683,
+    "n_tf_coil_turns": 187.6247107030811,
+    "f_a_tf_turn_cable_space_extra_void": 0.0,
+    "a_tf_turn_insulation": 0.0001923529095269704,
+    "a_tf_turn_steel": 0.0018384107608783319,
+    "a_tf_coil_inboard_case": 1.0015,
+    "n_tf_coils": 12.0,
+    "a_tf_inboard_total": 27.308,
+    "a_tf_wp_ground_insulation": 0.028,
+    "a_tf_croco_strand": 0.00013387
+   }
+  }
+ ],
+ "TestCrocoTurnCableSpaceCoolingFraction": [
+  {
+   "label": "croco-cooling-fraction",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_tf_turn_cable_space_no_void": 0.0012044932391216683,
+    "a_tf_croco_strand": 0.00013387
+   }
+  }
+ ],
+ "TestHazeltonZhaiRebcoCrocoSuperconductorProperties": [
+  {
+   "label": "croco-sc-properties-rebco9",
+   "provenance": "legacy",
+   "kwargs": {
+    "a_tf_turn": 0.003225866914717279,
+    "b_tf_inboard_peak": 11.717722779177526,
+    "cur_tf_turn": 85462.67497090799,
+    "temp_tf_peak": 4.75,
+    "dr_tf_hts_tape": 0.0062886208094437655,
+    "dx_tf_hts_tape_rebco": 1e-06,
+    "dx_tf_hts_tape_total": 0.000211,
+    "a_tf_croco_strand": 0.00013387
+   }
+  }
+ ],
+ "TestHazeltonZhaiRebcoCrocoTemperatureMargin": [
+  {
+   "label": "croco-temp-margin-rebco9",
+   "provenance": "legacy",
+   "kwargs": {
+    "j_superconductor": 100000000.0,
+    "b_tf_inboard_peak": 11.717722779177526,
+    "b_c20max": 138.0,
+    "temp_c0max": 92.0,
+    "dr_hts_tape": 0.0062886208094437655,
+    "dx_hts_tape_rebco": 1e-06,
+    "dx_hts_tape_total": 0.000211,
+    "temp_tf_coolant_peak_field": 4.75
+   }
+  }
+ ]
+}

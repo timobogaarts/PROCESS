@@ -9,7 +9,8 @@ directly with no `DataStructure` adapter needed.
 two spherical-tokamak input files select on the D-shaped arm.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.models.engineering.ivc_functions import (
     dshellarea,
     dshellvol,
@@ -29,15 +30,7 @@ class TestEshellarea(Tier1Contract):
     reference = staticmethod(_reference_eshellarea)
     ported = eshellarea
 
-    samples = [
-        legacy_sample(
-            "eshellarea-plausible-geometry",
-            rshell=8.0,
-            rmini=3.9166666666666665,
-            rmino=4.616666666666667,
-            zminor=7.503275248730414,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -56,18 +49,7 @@ class TestEshellvol(Tier1Contract):
     reference = staticmethod(_reference_eshellvol)
     ported = eshellvol
 
-    samples = [
-        legacy_sample(
-            "eshellvol-elliptical-vessel-legacy",
-            rshell=8.0 - 2.6666666666666665 * 0.5,
-            rmini=(8.0 - 2.6666666666666665 * 0.5) - 4.083333333333334,
-            rmino=12.716666666666667 - (8.0 - 2.6666666666666665 * 0.5),
-            zminor=7.5032752487304135,
-            drin=0.30000000000000004,
-            drout=0.30000000000000004,
-            dz=(0.30000000000000004 + 0.30000000000000004) / 2,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 

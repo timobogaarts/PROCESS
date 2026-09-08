@@ -19,7 +19,8 @@ classification rather than asserting it.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.neoclassics import (
     calculate_collision_frequency,
     calculate_drift_velocity,
@@ -297,21 +298,7 @@ class TestProfileValues(Tier1Contract):
     # tests/unit/models/stellarator/test_neoclassics.py::test_init_neoclassics,
     # generated from helias5b.IN.DAT. `rho` is the `r_effin` field there (0.6) -- not
     # the separately-monkeypatched `r_eff` field, which that test leaves stale.
-    samples = [
-        legacy_sample(
-            "init-profile-values-helias5b",
-            rho=0.59999999999999998,
-            temp_plasma_electron_on_axis_kev=13.241800000000001,
-            temp_plasma_ion_on_axis_kev=12.579710000000002,
-            alphat=1.2,
-            nd_plasma_electron_on_axis=2.7956610000000002e20,
-            f_plasma_fuel_deuterium=0.5,
-            nd_plasma_ions_on_axis=2.3930858160000005e20,
-            nd_plasma_alphas_thermal_vol_avg=2.9820384000000004e19,
-            alphan=0.35000000000000003,
-            rminor=1.7993820274145451,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -325,40 +312,7 @@ class TestEffectiveThermalDiffusivity(Tier1Contract):
 
     # tests/unit/models/stellarator/test_stellarator.py::test_st_calc_eff_chi, generated
     # from stellarator_helias.IN.DAT (two operating points).
-    samples = [
-        legacy_sample(
-            "st-calc-eff-chi-helias-0",
-            temp_plasma_electron_on_axis_kev=19.108573496973477,
-            nd_plasma_electron_on_axis=3.4479000000000007e20,
-            f_p_alpha_plasma_deposited=0.95000000000000007,
-            pden_alpha_total_mw=1.2629524018077414,
-            pden_plasma_core_rad_mw=0.10762698429338043,
-            alphan=0.35000000000000003,
-            alphat=1.2,
-            vol_plasma=1385.8142655379029,
-            a_plasma_surface=1926.0551116585129,
-            rminor=1.7863900994187722,
-            radius_plasma_core_norm=0.60000000000000009,
-            stella_config_rminor_ref=1.80206932,
-            f_st_rmajor=0.99129932482229,
-        ),
-        legacy_sample(
-            "st-calc-eff-chi-helias-1",
-            temp_plasma_electron_on_axis_kev=17.5,
-            nd_plasma_electron_on_axis=3.4479000000000007e20,
-            f_p_alpha_plasma_deposited=0.95000000000000007,
-            pden_alpha_total_mw=1.0570658694225301,
-            pden_plasma_core_rad_mw=0.1002475669217598,
-            alphan=0.35000000000000003,
-            alphat=1.2,
-            vol_plasma=1385.8142655379029,
-            a_plasma_surface=1926.0551116585129,
-            rminor=1.7863900994187722,
-            radius_plasma_core_norm=0.60000000000000009,
-            stella_config_rminor_ref=1.80206932,
-            f_st_rmajor=0.99129932482229,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 

@@ -29,7 +29,8 @@ in `stress.md` rather than hidden here.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.tfcoil.stress import (
     extended_plane_strain,
     eyoung_parallel,
@@ -123,26 +124,7 @@ class TestEyoungParallel(Tier1Contract):
     reference = staticmethod(tfcoil_base.eyoung_parallel)
     ported = eyoung_parallel
 
-    samples = [
-        legacy_sample(
-            "eyoung-parallel-baseline2018-1",
-            eyoung_j_1=0.0,
-            a_1=0.010000000000000002,
-            poisson_j_perp_1=0.30000001192092896,
-            eyoung_j_2=0.0,
-            a_2=0.0,
-            poisson_j_perp_2=0.0,
-        ),
-        legacy_sample(
-            "eyoung-parallel-baseline2018-2",
-            eyoung_j_1=0.0,
-            a_1=0.020661087836601012,
-            poisson_j_perp_1=0.30000001192092896,
-            eyoung_j_2=0.0,
-            a_2=0.010000000000000002,
-            poisson_j_perp_2=0.30000001192092896,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -161,26 +143,7 @@ class TestEyoungSeries(Tier1Contract):
     reference = staticmethod(tfcoil_base.eyoung_series)
     ported = eyoung_series
 
-    samples = [
-        legacy_sample(
-            "eyoung-series-baseline2018-1",
-            eyoung_j_1=0.0,
-            l_1=0.003949573550844649,
-            poisson_j_perp_1=0.30000001192092896,
-            eyoung_j_2=117000000000.0,
-            l_2=0.016711514285756363,
-            poisson_j_perp_2=0.34999999999999998,
-        ),
-        legacy_sample(
-            "eyoung-series-baseline2018-2",
-            eyoung_j_1=0.0,
-            l_1=0.020661087836601012,
-            poisson_j_perp_1=0.30000001192092896,
-            eyoung_j_2=0.0,
-            l_2=0.010000000000000002,
-            poisson_j_perp_2=0.29999999999999999,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz = True
 
@@ -207,32 +170,7 @@ class TestEyoungParallelArray(Tier1Contract):
     reference = _reference_eyoung_parallel_array
     ported = eyoung_parallel_array
 
-    samples = [
-        legacy_sample(
-            "eyoung-parallel-array-baseline2018",
-            eyoung_j_in=np.array([
-                205000000000.0,
-                20000000000.0,
-                117000000000.0,
-                0.0,
-                0.0,
-            ]),
-            a_in=np.array([
-                0.29370123076207649,
-                0.11646247019991701,
-                0.13374756938078641,
-                0.031609694578447076,
-                0.1297552160314831,
-            ]),
-            poisson_j_perp_in=np.array([
-                0.29999999999999999,
-                0.34000000000000002,
-                0.34999999999999998,
-                0.30000001192092896,
-                0.29999999999999999,
-            ]),
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def _reference_eyoung_t_nested_squares(eyoung_j_in, l_in, poisson_j_perp_in):
@@ -263,24 +201,7 @@ class TestEyoungTNestedSquares(Tier1Contract):
     reference = _reference_eyoung_t_nested_squares
     ported = eyoung_t_nested_squares
 
-    samples = [
-        legacy_sample(
-            "eyoung-t-nested-squares-baseline2018",
-            eyoung_j_in=np.array([0.0, 0.0, 205000000000.0, 20000000000.0]),
-            l_in=np.array([
-                0.010000000000000002,
-                0.020661087836601012,
-                0.016,
-                0.0041799999999999997,
-            ]),
-            poisson_j_perp_in=np.array([
-                0.29999999999999999,
-                0.30000001192092896,
-                0.29999999999999999,
-                0.34000000000000002,
-            ]),
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -339,36 +260,7 @@ class TestPlaneStress(Tier1Contract):
     (`1.5e-3` against a column scale of `1.9e6` is `8e-10`) and 8 orders below a wrong
     derivative."""
 
-    samples = [
-        legacy_sample(
-            "plane-stress-baseline2018",
-            nu=np.array([0.29999999999999999, 0.30904421667064924, 0.29999999999999999]),
-            rad=np.array([
-                2.9939411851091102,
-                3.5414797139565706,
-                4.0876202904571599,
-                4.1476202904571595,
-            ]),
-            ey=np.array([205000000000.0, 43126670035.025253, 205000000000.0]),
-            j=np.array([0.0, 18097185.781970859, 0.0]),
-            n_radial_array=100,
-        ),
-        legacy_sample(
-            "plane-stress-large-tokamak-nof-converged",
-            # The three layers `tf_stress_plane_stress_bucked_case` assembles at the
-            # reference point: nose casing, winding pack, plasma-side case.
-            nu=np.array([0.29999999999999999, 0.30348733486899632, 0.29999999999999999]),
-            rad=np.array([
-                2.776781736333239,
-                2.9977681590072023,
-                3.5724314013552201,
-                3.6484219025675331,
-            ]),
-            ey=np.array([205000000000.0, 46455045800.47422, 205000000000.0]),
-            j=np.array([0.0, 16713619.898244653, 0.0]),
-            n_radial_array=100,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -437,11 +329,7 @@ class TestTfFieldAndForceClampedJoints(Tier1Contract):
     reference = _reference_tf_field_and_force
     ported = tf_field_and_force_clamped_joints
 
-    samples = [
-        legacy_sample(
-            "tf-field-and-force-large-tokamak-nof-converged", **_CONVERGED_NOF_FORCE
-        )
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "r_tf_wp_inboard_inner": (2.5, 3.1),
@@ -545,54 +433,7 @@ class TestTfStressPlaneStressBuckedCase(Tier1Contract):
     ported = tf_stress_plane_stress_bucked_case
     static_argnames = ("n_radial_array", "n_tf_graded_layers")
 
-    samples = [
-        legacy_sample(
-            "stresscl-baseline2018",
-            r_tf_inboard_in=2.9939411851091102,
-            r_tf_wp_inboard_inner=3.5185911851091101,
-            r_tf_wp_inboard_outer=4.06120206347512,
-            tan_theta_coil=0.19891236737965801,
-            rad_tf_coil_inboard_toroidal_half=0.19634954084936207,
-            dr_tf_plasma_case=0.060000000000000012,
-            a_tf_coil_inboard_steel=1.2952181546825934,
-            a_tf_plasma_case=0.18607458590131154,
-            a_tf_coil_nose_case=0.70261616505511615,
-            eyoung_steel=205000000000.0,
-            poisson_steel=0.29999999999999999,
-            eyoung_cond_axial=0.0,
-            poisson_cond_axial=0.30000001192092896,
-            eyoung_cond_trans=0.0,
-            poisson_cond_trans=0.30000001192092896,
-            eyoung_ins=20000000000.0,
-            poisson_ins=0.34000000000000002,
-            eyoung_copper=117000000000.0,
-            poisson_copper=0.34999999999999998,
-            dx_tf_turn_insulation=0.002,
-            dx_tf_wp_insertion_gap=0.01,
-            dx_tf_wp_insulation=0.0080000000000000019,
-            n_tf_coil_turns=200.0,
-            # PROCESS's sample is `i_tf_turns_integer = INTEGER`, so its cable-space
-            # width for the smearing is the *radial* one.
-            dx_tf_turn_cable_space_eyoung=0.030661087836601014,
-            dia_tf_turn_coolant_channel=0.010000000000000002,
-            f_a_tf_turn_cable_copper=0.80884,
-            dx_tf_turn_steel=0.0080000000000000002,
-            dx_tf_side_case_average=0.10396600719086938,
-            dx_tf_wp_toroidal_average=1.299782604942499,
-            a_tf_coil_inboard_insulation=0.11646247019991701,
-            a_tf_wp_steel=0.29370123076207649,
-            a_tf_wp_conductor=0.1653572639592335,
-            a_tf_wp_with_insulation=0.70527618095271016,
-            c_tf_total=236885604.60000002,
-            vforce=250545611.13801825,
-            a_tf_coil_inboard_case=1.0015169239205168,
-            a_tf_turn_steel=0.0014685061538103825,
-            n_radial_array=100,
-        ),
-        legacy_sample(
-            "stresscl-large-tokamak-nof-converged", **_CONVERGED_NOF, n_radial_array=500
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "eyoung_steel": (1.5e11, 2.5e11),
@@ -812,33 +653,7 @@ class TestExtendedPlaneStrain(Tier1Contract):
     `1e-8` is the same order above the worst of these as it is on `TestPlaneStress`, and
     eight orders below a derivative that is wrong rather than cancelled."""
 
-    samples = [
-        legacy_sample(
-            "extended-plane-strain-spherical-tokamak-eval-converged",
-            # The three layers `tf_stress_extended_plane_strain_bucked_case` assembles
-            # at that point: nose casing, winding pack, plasma-side case. `ey_z[2]` is
-            # already scaled by `f_tf_stress_front_case` (`base.py:2960`), which is
-            # what makes this solver read a modulus its plane-stress sibling ignores.
-            nu_t=np.array([0.3, 0.3064907778275952, 0.3]),
-            nu_zt=np.array([0.3, 0.3086653348093896, 0.3]),
-            ey_t=np.array([205000000000.0, 70097031864.01279, 205000000000.0]),
-            ey_z=np.array([
-                205000000000.0,
-                146170145629.56116,
-                136363213453.44171,
-            ]),
-            rad=np.array([
-                0.30885540192106586,
-                0.4432860345278621,
-                1.1812995718120933,
-                1.2224903207685498,
-            ]),
-            d_curr=np.array([0.0, 17920369.937168237, 0.0]),
-            v_force=551215676.8768669,
-            i_tf_bucking=1,
-            n_radial_array=500,
-        ),
-    ]
+    samples = FROM_FILE
 
 
 def test_extended_plane_strain_matches_process_on_a_slip_stack():
@@ -1028,18 +843,7 @@ class TestTfStressExtendedPlaneStrainBuckedCase(Tier1Contract):
     ported = tf_stress_extended_plane_strain_bucked_case
     static_argnames = ("n_radial_array", "n_tf_graded_layers")
 
-    samples = [
-        legacy_sample(
-            "stresscl-extended-spherical-tokamak-eval-converged",
-            **_CONVERGED_ST,
-            n_radial_array=500,
-        ),
-        legacy_sample(
-            "stresscl-extended-spherical-tokamak-eval-converged-100",
-            **_CONVERGED_ST,
-            n_radial_array=100,
-        ),
-    ]
+    samples = FROM_FILE
 
     fuzz_bounds = {
         "eyoung_steel": (1.5e11, 2.5e11),

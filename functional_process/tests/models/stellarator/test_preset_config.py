@@ -24,18 +24,14 @@ import tempfile
 from pathlib import Path
 
 import functional_process
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.preset_config import (
     STELLA_CONFIG_SCALAR_FIELDS,
     select_stellarator_config_scalars,
 )
 from process.data_structure.stellarator_configuration import StellaratorConfigData
 from process.models.stellarator.preset_config import (
-    HELIAS3,
-    HELIAS4,
-    HELIAS5B,
-    W7X30,
-    W7X50,
     load_stellarator_config,
 )
 
@@ -93,14 +89,4 @@ class TestStellaratorMachineConfig(Tier1Contract):
 
     static_argnames = ("machine_config",)
 
-    samples = [
-        legacy_sample(
-            "stellarator-helias-stella-conf-json",
-            machine_config=json.loads(REFERENCE_STELLA_CONF.read_text()),
-        ),
-        legacy_sample("preset-helias5b", machine_config=HELIAS5B),
-        legacy_sample("preset-helias4", machine_config=HELIAS4),
-        legacy_sample("preset-helias3", machine_config=HELIAS3),
-        legacy_sample("preset-w7x30", machine_config=W7X30),
-        legacy_sample("preset-w7x50", machine_config=W7X50),
-    ]
+    samples = FROM_FILE

@@ -43,7 +43,8 @@ moving every declared input.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, Tolerance, legacy_sample
+from functional_process.cottax._harness import Tier1Contract, Tolerance
+from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
@@ -646,7 +647,7 @@ class TestPFCoilChain(Tier1Contract):
         ),
     )
 
-    samples = [legacy_sample("large-tokamak-converged", **_LEGACY)]
+    samples = FROM_FILE
 
     fuzz_fixed = {
         "zref": _LEGACY["zref"],
@@ -688,7 +689,7 @@ class TestPFCoilChainCsWstNb3Sn(Tier1Contract):
         ),
     )
 
-    samples = [legacy_sample("large-tokamak-point-cs-wst-nb3sn", **_LEGACY)]
+    samples = FROM_FILE
 
     fuzz_fixed = {
         "zref": _LEGACY["zref"],
@@ -1130,7 +1131,7 @@ class TestPFCoilChainSphericalTokamak(Tier1Contract):
         ),
     )
 
-    samples = [legacy_sample("spherical-tokamak-plausible", **_LEGACY_SPHERICAL_TOKAMAK)]
+    samples = FROM_FILE
 
     fuzz_fixed = {"zref": _LEGACY_SPHERICAL_TOKAMAK["zref"]}
     fuzz_bounds = _spherical_tokamak_fuzz_bounds()
