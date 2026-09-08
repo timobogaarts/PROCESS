@@ -1,19 +1,21 @@
 """Every declaration assembles, and owns exactly what it declares -- in one sweep.
 
-**Why one test and not 219.** Most hand-written structural tests in this tree say the
-same thing about one node: build it, `to_graph` it, check the paths it owns are the ones
-its `Output`/`OutputInto` fields name. That assertion is not about the node. It is about
-cottax: that `x = OutputInto(physics)` on a field named `x` produces `.physics.x`. Proved
-once, it is proved for every declaration, and 219 copies of it are 219 chances for one to
-be quietly missing instead.
+**What this is actually for, measured rather than assumed.** It enumerates
+`NodalDeclaration.__subclasses__` transitively after importing the package: 489
+instantiable declarations. Of those, 225 are named by a switch registry in `indat.py`
+and swapped into the reference machine by `test_machine.py`'s two registry sweeps --
+which is a *stronger* test than this one, because it assembles them in context rather
+than alone -- and 307 appear in an assembled graph, which the cold matrix exercises on
+every run. 439 are covered by one or the other.
 
-The sweep is also strictly wider than what it replaces. It enumerates
-`NodalDeclaration.__subclasses__` transitively after importing the whole package, so it
-reaches the declarations **no assembled graph contains** -- the unwired-but-valid arms
-(`unit_registry.md`'s `Jcrit*` family, `WessonInternalInductance`,
-`TfMagnetCostResistive`) and every switch occupant the reference `IN.DAT` does not
-select. A whole-graph assembly test cannot see any of those; that is the gap the
-per-node tests were filling, and it is the part worth keeping.
+**The 50 that are covered by neither are why this exists**: `Avail2`, `AvailSt`,
+`BldgsSizes`, `CpLifetimeResistive`, `CrocoCableGeometry` and the rest -- declarations
+that are valid, wired to no slot, and selected by no reference input file. Nothing else
+in the suite instantiates them, so nothing else would notice one rotting. That is a
+narrow contribution and it is stated narrowly on purpose: an earlier version of this
+docstring claimed to replace 219 hand-written structural tests, and the classifier
+behind that number had regexed test *docstrings* for words like "assembles". The real
+count of tests this subsumes is about five.
 
 What it deliberately does NOT assert is which paths a node *should* own. That is a claim
 about the port's intent, it belongs in the unit's own case, and no sweep can make it.
