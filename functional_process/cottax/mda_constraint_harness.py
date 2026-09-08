@@ -1,42 +1,4 @@
-"""Check every ported constraint/objective against one real, converged PROCESS run.
-
-Different from `test_constraints.py`/`test_objectives.py`: those check each ported
-function in isolation against hand-built sample `DataStructure`s (values chosen to
-exercise a branch, not necessarily values that would ever co-occur in a real run).
-This module instead calls every ported function with one real converged run's own
-simultaneous field values (`functional_process.cottax.mda_harness.converged_data`) and
-compares against PROCESS's own real evaluation for that same run
-(`ConstraintManager.get_constraint(N).constraint_equation`, `objective_function`) --
-the same reference calls `test_constraints.py`/`test_objectives.py` already use, just
-against real data instead of a hand-built sample. A disagreement found here that the
-per-unit tests miss would mean: the ported function is correct in isolation, but
-something about how its arguments are resolved from a real, fully-populated
-`DataStructure` is wrong -- a class of bug the existing sample-based tests cannot
-structurally catch (a hand-built sample only ever sets the fields one test author
-thought to set).
-
-Argument resolution: every `constraint_N`/`objective_metric_N` parameter is named
-after a real `DataStructure` field, but the function signature alone does not say
-*which area* (`data.physics.*`, `data.build.*`, ...) it lives in -- `_resolve_args`
-below searches every area for a matching attribute name and requires the match to be
-unambiguous (a name found in more than one area is reported, not guessed at).
-
-**Known, harmless error category: `ZeroDivisionError` from `leq`/`geq` on a
-genuine `0.0/0.0`.** Several constraints (12, 20, 26, 27, 42, 43, 51, 78) hit this on
-this run -- confirmed by direct check, not assumed: e.g. constraint 12's
-`vs_cs_pf_total_pulse`/`vs_plasma_total_required` really are both `0.0` in this
-converged `DataStructure` (this device is net-current-free, same "PF-coil physics
-genuinely doesn't apply to a stellarator" shape already found for constraints 26/27 in
-`constraints.md`). This is a real `0/0`, not a harness bug -- but it is *this script's
-own* limitation, not a port defect: `leq`/`geq` are called here with plain Python
-floats (`_resolve_args` reads raw `DataStructure` values), where `0.0/0.0` raises. In
-real graph usage these functions are always called with traced `jnp` arrays (once
-wired into an `Optimise`, per `next_steps.md` §6, not done yet), where `/` never
-raises -- it silently produces `nan`/`inf`, matching PROCESS's own numpy-backed
-division exactly (confirmed: PROCESS's real run emits `RuntimeWarning: divide by zero
-encountered` at the equivalent line, not an exception). Reported as `errors`, not
-`disagreements`, for exactly this reason -- nothing here indicates a value mismatch.
-"""
+"""Check every ported constraint/objective against one real, converged PROCESS run."""
 
 import dataclasses
 import inspect
@@ -51,9 +13,9 @@ from process.core.solver.objectives import objective_function
 
 def _close(g, e, rtol, atol) -> bool:
     """`np.isclose`'s own rule, plus an explicit same-signed-infinity case --
-    `math.isclose`/`np.isclose` both already treat `inf == inf` as close, but
-    `abs(inf - inf)` is `nan` and a naive `abs(diff) <= tol` check would wrongly call
-    that a disagreement (`nan <= anything` is always `False`).
+    `math.isclose`/`np.isclose` both already treat `inf == inf` as close, but `abs(inf -
+    inf)` is `nan` and a naive `abs(diff) <= tol` check would wrongly call that a
+    disagreement (`nan <= anything` is always `False`).
     """
     g, e = float(g), float(e)
     if math.isinf(g) or math.isinf(e):
@@ -68,11 +30,6 @@ def _areas(data):
 def _resolve_args(fn, data):
     """`{param name: value}` for every parameter of `fn`, read off `data` by searching
     every area for an unambiguous match.
-
-    Raises
-    ------
-    ValueError
-        Naming the parameter, if it is found in zero or more than one area.
     """
     areas = _areas(data)
     kwargs = {}
@@ -98,11 +55,8 @@ def _all_ported_constraints():
 
 
 def check_constraints(data, rtol=1e-9, atol=1e-9):
-    """Every ported constraint, called with `data`'s own real values, compared
-    against PROCESS's own real evaluation of the same constraint on the same `data`.
-
-    Returns `(agreements, disagreements, errors)` -- `disagreements` and `errors` are
-    lists of `(id, detail)`.
+    """Every ported constraint, called with `data`'s own real values, compared against
+    PROCESS's own real evaluation of the same constraint on the same `data`.
     """
     agreements, disagreements, errors = 0, [], []
     for cid, fn in sorted(_all_ported_constraints().items()):
@@ -147,13 +101,7 @@ def _all_ported_objectives():
 
 def check_objectives(data, rtol=1e-9, atol=1e-9):
     """Every ported objective branch, called with `data`'s own real values, compared
-    against PROCESS's own real `objective_function` for the same `data`. Checked at
-    the *minimising* sign (`+id`) only -- the sign flip (`np.sign(i_figure_merit)`) is
-    `objective_function`'s own dispatch-time arithmetic, not something either port
-    function computes, so there is nothing meaningfully different to check by also
-    trying `-id`.
-
-    Returns `(agreements, disagreements, errors)`, same shape as `check_constraints`.
+    against PROCESS's own real `objective_function` for the same `data`.
     """
     agreements, disagreements, errors = 0, [], []
     for merit, fn in sorted(

@@ -1,27 +1,5 @@
-"""Pure-functional port of `process/models/structure.py`
-(`Structure`, `.tokamak.structure`).
-
-Audit record: `functional_process/_audit/units/models/structure.md`. Entry point is
-`Structure.run()`, which forwards straight-line algebra (no internal iteration, no call
-into another `Model`'s method) into `Structure.structure()`.
-
-`structure()` is not `@staticmethod` but touches `self` only inside its `if output:`
-reporting block (`self.outfile`); called with `output=False` it performs no
-`self.data`/`self` access at all, so the port needed only a signature promotion, not an
-extraction.
-
-Two switches, `i_tf_sup` and `i_pf_conductor`, gate two of `coldmass`'s four additive
-terms (`process/models/structure.py:165-168`). Both take their PROCESS default on
-`tests/regression/input_files/large_tokamak_eval.IN.DAT` (neither is set in that file):
-`i_tf_sup = 1` (superconducting TF, `tfcoil_variables.py:261`) and `i_pf_conductor = 0`
-(`PFConductorModel.SUPERCONDUCTING`, `pfcoil_variables.py:230`) -- both conditions true,
-so *both* terms are live simultaneously on this run. Per the wave-1 binding policy ("no
-switch is a static kwarg" -- a switch read to branch selects an occupant, not a
-parameter), `calculate_structure_masses` below bakes in this one live combination
-(`i_tf_sup == 1 and i_pf_conductor == SUPERCONDUCTING`) rather than accepting either
-switch as an argument: the function is this combination's occupant, not a general
-`coldmass` formula. The other three combinations are UNPORTED -- see `structure.md`
-§ switches touched.
+"""Pure-functional port of `process/models/structure.py` (`Structure`,
+`.tokamak.structure`).
 """
 
 import jax.numpy as jnp  # noqa: F401
@@ -59,10 +37,10 @@ def calculate_structure(
     m_fw_blkt_div_coolant_total,
     dewmkg,
 ):
-    """The two ratios-of-ports `Structure.__call__` computed inline before delegating
-    -- `total_weight_pf` (PF conductor + structure mass) and `tf_h_width` (TF coil
-    horizontal bore width) -- now live here, so the declaration is a name and not a
-    body (`_audit/formulas_split.md` step 1).
+    """The two ratios-of-ports `Structure.__call__` computed inline before delegating --
+    `total_weight_pf` (PF conductor + structure mass) and `tf_h_width` (TF coil
+    horizontal bore width) -- now live here, so the declaration is a name and not a body
+    (`_audit/formulas_split.md` step 1).
     """
     total_weight_pf = m_pf_coil_conductor_total + m_pf_coil_structure_total
     tf_h_width = dr_tf_inner_bore + dr_tf_outboard + dr_tf_inboard
@@ -87,13 +65,7 @@ def calculate_structure(
 
 
 class Structure(ExplicitFunction):
-    """cottax node: `.tokamak.structure`.
-
-    Answers `i_tf_sup == 1` (superconducting TF) and `i_pf_conductor ==
-    PFConductorModel.SUPERCONDUCTING` -- the switch combination live on
-    `large_tokamak_eval.IN.DAT` (neither field is set in that file, so both take their
-    PROCESS default). See module docstring; other combinations UNPORTED.
-    """
+    """cottax node: `.tokamak.structure`."""
 
     fncmass = OutputInto(structure)
     aintmass = OutputInto(structure)

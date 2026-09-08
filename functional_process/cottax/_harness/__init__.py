@@ -1,16 +1,4 @@
-"""Validation harness for the pure-functional port.
-
-Design: `functional_process/_audit/test_harness.md` (the four tiers and their pass
-criteria). This package is the machinery those tiers are built from; the per-unit cases
-live next to their audit records, not here.
-
-Importing this package enables JAX's x64 mode as a side effect. That is deliberate and
-it is why every harness module imports `_harness` (directly or transitively) before it
-touches `jax`: PROCESS is float64 throughout, and a value diff run under JAX's float32
-default shows precision loss that reads exactly like a porting bug. A session fixture
-would be too late — collection imports the port modules first, and any array built
-during import would already be float32.
-"""
+"""Validation harness for the pure-functional port."""
 
 import jax
 

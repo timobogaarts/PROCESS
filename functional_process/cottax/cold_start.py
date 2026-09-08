@@ -1,88 +1,5 @@
 """Does the port's graph compute what PROCESS computes **when nothing hands it the
 answer**?
-
-Every other stage of this harness seeds the port from a run PROCESS has already solved.
-`mda_harness.compare` seeds boundary inputs from the converged `DataStructure` and diffs
-against that same structure; `sand_harness`'s Stage A and Stage C2 do the same through
-`ground_truth`. That is the right seed for the question those stages ask -- *"does the
-graph reproduce an answer PROCESS already found?"* -- and it makes one whole defect class
-**structurally invisible**: a variable no node in the graph owns is a boundary input, so
-the seed hands it PROCESS's own value, the graph reads it back, and the comparison passes
-on a number the port never computed. That is how the harness reported **983 of 1039
-variables agreeing to 1e-9** on `large_tokamak_nof` while twenty-two producers were
-missing outright and every cold tokamak solve was broken by them
-(`_audit/optimise_design.md` §16.3(b), §16.5).
-
-**A check performed where the seed supplies the answer is not a check.** This module is
-the one that does not: it seeds from the `DataStructure` as `init_process` left it --
-before any model has run -- and compares against PROCESS's own state after one pipeline
-evaluation at the same cold `x`. Every genuine `IN.DAT` input is identical in the two
-structures, because PROCESS's pipeline does not write them; that is what makes them
-inputs. The only thing the split changes is that anything PROCESS *computes* is seeded
-with its uninitialised default instead of with the answer, so the port has to produce it
-or disagree.
-
-Three questions, three answers, and the third is the hard one
-------------------------------------------------------------
-**1. Did the port produce it at all?** `boundary.unproduced_but_computed` already answers
-this from the graph's declaration alone and pins the result. This module is its
-value-side twin: the same defect seen as a wrong number rather than as a missing owner.
-
-**2. Is there anything to compare against?** `cold_state` records PROCESS's own write set
-for the pass, so a port output PROCESS's *solve* pass never writes can be told apart from
-one it writes differently. The standing case is `Physics.outplas`, which computes
-`.physics.nu_star`, `.rho_star` and `.beta_mcdonald` and is called only from
-`Physics.output()` (`physics.py:219-223`) -- never from `run()`. In a converged
-`DataStructure` those three are filled by the final report pass, so `mda_harness.compare`
-sees them agree; at the cold point PROCESS holds `0.0` and the port holds its own correct
-answer. Neither side is wrong and the comparison is empty, so these are counted in
-`output_pass_only` and not scored as defects. **The category is derived from PROCESS's
-measured write set, never from a hand-written list** -- the same discipline
-`boundary.computed_by_process` applies to the converse question.
-
-**3. Is a real disagreement the port's fault, or has PROCESS not settled?**
-`Caller.call_models` runs the pipeline at most ten times and stops when the objective and
-the constraints stop moving (`caller.py:96-126`, `check_agreement`, `rtol = 1e-6`), which
-says nothing about whether the *model* loops converged. So PROCESS's cold state may be
-unconverged, and the port -- which drives each declared block to its own tolerance -- may
-be the more consistent side. That is a real possibility, and **arguing it either way is
-what §16.3 records three wrong answers for**, so it is measured instead:
-`ColdState.unsettled` runs PROCESS's own `_call_models_once` `EXTRA_PASSES` further times
-past where `check_agreement` stopped it and reports every field that still moves, and
-`ColdState.drift` is the largest such motion.
-
-The answer is a *size*, not a yes/no, and it has to be read per configuration:
-
-| configuration | passes | fields still moving | worst drift | smallest disagreement |
-|---|---|---|---|---|
-| `stellarator_helias` | 5 | 88 | `7.00e-07` | `1.21e-04` |
-| `large_tokamak_nof` | 6 | 15 | `2.74e-08` | `1.17e-06` |
-| `low_aspect_ratio_DEMO` | 5 | 0 | `0` | `1.04e-06` |
-| `large_tokamak_eval` | 6 | 0 | `0` | `1.10e-06` |
-
-PROCESS's cold state is an *exact* fixed point on two of the four and creeps at `7e-07`
-and `2.7e-08` on the others -- in every case at least 40x below the smallest disagreement
-reported for that same configuration, and six to seven orders below the largest.
-Unconvergedness is therefore ruled out as the explanation for anything in the pin, on a
-measurement re-taken on every run rather than on this paragraph.
-
-Two of the three findings below were then confirmed by substitution rather than by
-argument -- the discipline `_audit/optimise_design.md` §16.3 asks for. See
-`_audit/optimise_design.md` §17, which is this stage's record. (There is no
-`_audit/units/` record: that tree is the per-*model-unit* one and `test_registry_
-coverage.py` requires a `unit_registry.md` row for everything in it, which a harness
-stage has no business having -- `boundary.py` and `mda_harness.py` are documented the
-same way, in `_audit/`'s flat design documents.)
-
-The pin
--------
-`reference_cold_start.txt` holds, per configuration, the agreement count, the error
-count and every disagreeing and output-pass-only `VarPath`. Every pinned disagreement must
-carry a reason in `ACCEPTED` -- a pin without one is refused by `check_reasons`, because a
-silently pinned disagreement is indistinguishable from a defect nobody looked at, which is
-the failure this whole module exists to end. Regenerate (never hand-edit) with::
-
-    $PY -m functional_process.cottax.cold_start --write
 """
 
 from __future__ import annotations
@@ -103,165 +20,55 @@ CONFIGURATIONS = (
     "tests/regression/input_files/spherical_tokamak_eval.IN.DAT",
     "tests/regression/input_files/st_regression.IN.DAT",
 )
-"""The reference configurations this stage is measured on.
-
-**Not "every one that assembles" any more**, and the gap is now three files rather than
-the two switch refusals this used to name. `IFE.IN.DAT` is out of scope entirely
-(`ife == 1`, a whole unported device). The other three assemble and are absent for
-reasons that are *not* assembly:
-
-- `spherical_tokamak_eval` and `st_regression` were refused on
-  `tf_stress_arm == (0, 1, 0)` (`extended_plane_strain`) until the port of it landed on
-  2026-08-31; `machine_survey.assembly_verdict` reports **ASSEMBLES** for both as of that
-  day. They are absent here only because this stage has never been run on them -- adding
-  them is a measurement nobody has taken, not a refusal. **This paragraph has now been
-  wrong twice in two days for the same reason** (it said `i_tf_turn_type == 2` after the
-  CroCo wave closed that, and `tf_stress_arm` after the stress port closed that), which
-  is why it now names `assembly_verdict` as the authority instead of a switch: a refusal
-  is only valid against the tree that was current when it was written.
-- `helias_5b`, below.
-
-`helias_5b` assembles (`_audit/next_steps.md` §20) and is deliberately not here yet,
-and unlike the two above it has been measured and has a reason.
-Measured, on 2026-08-31, rather than assumed either way: its cold report was **74
-disagreements**, and 49 of those are exactly the reference stellarator's own two
-accepted causes (`STELLARATOR_ARM_ORDER_ROWS`, `VACUUM_DUCT_ROWS`) -- a strict subset, so
-those would cost one `_because` row each. The other **25 were one new chain and a
-port defect, not an accepted disagreement**: `helias_5b.IN.DAT:121` sets
-`i_p_coolant_pumping = 0` (`USER_INPUT`) with the pump powers given directly
-(`120 + 56 = 176` MW for FW+blanket, `24` MW for the divertor), while
-`stellarator_helias.IN.DAT:198` sets `1` (`FRACTION_OF_HEAT`) --- and
-`models/stellarator/stellarator_fwbs_s2.py` **always computed as if the value were
-`FRACTION_OF_HEAT`**, a drop its own docstring recorded as *"the absence of the
-computation, not a second formula to port"*, which was true of every machine that
-existed when it was written.
-
-**Fixed the same day**: the `USER_INPUT` arm is ported as a second occupant
-(`DetailedPowerflowBlanketShieldPowerUserInputPumping`), selected by a third integer on
-`indat.py`'s `_blanket_shield_power_arm`, and the four
-`.heat_transport.p_*_coolant_pump_mw` fields are boundary inputs on it -- which is what
-PROCESS does there. At PROCESS's own converged point the machine's MDA report went
-**64 -> 34 disagreements** with none added, `.primary_pumping.p_fw_blkt_coolant_pump_mw`
-`16.8 -> 176.0`, and `c16` `-9.88e-02 -> +1.08e-02` (PROCESS: `-1.91e-06`).
-
-This paragraph's *conclusion* still stands, and the row is still not added: adding it is
-a **cold** measurement (`PIN`'s seed is the pre-model `DataStructure`, not the converged
-one), and that measurement has not been re-taken since the fix. What is no longer true is
-that the blocker is an unported switch arm. Recorded rather than papered over -- and the
-count above is the pre-fix one, kept deliberately so the next reader compares against a
-number that was really measured rather than one this file predicted.
-
-Named as repository-relative paths, resolved by `_resolve`, exactly as
-`boundary.TOKAMAK_INPUT_FILE` is.
-"""
+"""The reference configurations this stage is measured on."""
 
 PIN = os.path.join(os.path.dirname(__file__), "reference_cold_start.txt")
-"""The pinned cold-point agreement -- see `rows` for the four kinds of line it holds.
-
-Generated by `$PY -m functional_process.cottax.cold_start --write`; never hand-edited.
-"""
+"""The pinned cold-point agreement -- see `rows` for the four kinds of line it holds."""
 
 EXTRA_PASSES = 3
 """How many further `Caller._call_models_once` passes `cold_state` runs past the point
 `check_agreement` stopped PROCESS, to decide whether its cold state is actually settled.
-
-Three rather than one because a two-cycle would be invisible to one extra pass, and
-rather than thirty because thirty buys nothing: measured on `large_tokamak_nof`, thirty
-further passes move the burn time, the TF temperature margin, `dlscal` and `.costs.coe` by
-**exactly zero** to eight significant figures, and the first extra pass already says so. A
-pass is ~0.1 s on a tokamak and ~0.8 s on the stellarator, which re-reads its
-`.stella_conf.json` inside every model call, so three is also what keeps the stellarator's
-whole cold evaluation under seven seconds.
 """
 
 SETTLED_RTOL = 1e-9
-"""What counts as "still moving" in `ColdState.unsettled`.
-
-Three orders tighter than `check_agreement`'s own `rtol = 1e-6`, deliberately: the
-question is not whether PROCESS would stop here (it did) but whether the state it stopped
-at is a fixed point of its own map, and a `1e-6` test could not distinguish "settled"
-from "drifting slowly enough to pass its own convergence check". Loose enough to
-ignore the last-bit noise of a `CoolProp` table lookup.
-
-**The list is not empty on two of the four configurations, and that is the point of
-reporting the size of the drift rather than a yes/no.** See the table in this module's
-docstring for the measured numbers; the short of it is `7.00e-07` at worst on the
-stellarator, `2.74e-08` on `large_tokamak_nof`, exactly zero on the other two, against
-smallest reported disagreements of `1.21e-04` and `1.17e-06`. "PROCESS has not converged"
-is therefore ruled out as the explanation for any row in the pin -- not asserted,
-measured, and re-measured on every run.
-"""
+"""What counts as "still moving" in `ColdState.unsettled`."""
 
 BOOKKEEPING = frozenset({("numerics", "n_model_calls")})
-"""Fields excluded from `ColdState.unsettled` that the *measurement itself* moves.
-
-`.numerics.n_model_calls` is a counter `Caller._call_models_once` increments
-(`caller.py`), so the `EXTRA_PASSES` probe raises it by exactly `EXTRA_PASSES` every time
-and it appeared as the one "still moving" field on the two configurations that are
-otherwise exact fixed points. Excluding an observer effect is not the same as excluding
-an inconvenient result, and the distinction is worth keeping narrow: this set holds
-*only* fields whose motion is caused by the probe, and it holds one.
-"""
+"""Fields excluded from `ColdState.unsettled` that the *measurement itself* moves."""
 
 
 @dataclass
 class ColdState:
     """PROCESS's own cold start on one input file: the seed, the answer, and two
     measurements about the answer.
-
-    Held as one object because every part of it comes from the same single pipeline
-    evaluation and re-deriving any of it means paying for that evaluation again.
     """
 
     seed: object
-    """The `DataStructure` after `init_process` and **before any model has run**.
-
-    `SingleRun.__init__` already performs that init, so an un-run instance *is* the input
-    file's own starting state; this is a `deepcopy` of it taken before the evaluation,
-    for the same reason `sand_harness.ReferenceRun.cold` exists -- there is no way to
-    recover it afterwards, because `set_scaled_iteration_variable` overwrites every
-    iteration variable in place on the first model call.
-    """
+    """The `DataStructure` after `init_process` and **before any model has run**."""
 
     process: object
     """The same `DataStructure` after `load_iteration_variables` and one
     `Evaluators.fcnvmc1` at the cold `x` -- PROCESS's own answer at the design the input
-    file starts from, computed by PROCESS's own pipeline and nothing else."""
+    file starts from, computed by PROCESS's own pipeline and nothing else.
+    """
 
     written: frozenset
-    """`{(area, field)}` the pass moved -- PROCESS's measured write set.
-
-    The same measurement `boundary.computed_by_process` returns, and now the same code:
-    that function delegates here rather than running its own `SingleRun`, so the two
-    halves of the missing-producer question (declaration and value) cannot drift apart or
-    be measured at two different points.
-    """
+    """`{(area, field)}` the pass moved -- PROCESS's measured write set."""
 
     passes: int
     """How many times `Caller._call_models_once` ran inside the evaluation -- PROCESS's
-    Gauss-Seidel pass count at the cold `x`, capped at ten by `caller.py:99`."""
+    Gauss-Seidel pass count at the cold `x`, capped at ten by `caller.py:99`.
+    """
 
     unsettled: tuple
     """`(area, field, before, after, rel)` per field that still moves when PROCESS's
     pipeline is run `EXTRA_PASSES` further times, worst-relative-motion first.
-
-    **This is the discriminator, and it is a size rather than a yes/no.** If PROCESS's
-    cold state still moves by `d`, then no disagreement of order `d` can be attributed to
-    the port -- `check_agreement` stopped on the objective and the constraints while the
-    model loops were still going, so PROCESS's number is not an answer yet. A
-    disagreement orders of magnitude *above* `d` cannot be explained that way: it is a
-    difference between two nearly-converged states of two different maps, i.e. a
-    difference in the maps.
-
-    `drift` is that `d`. Measured: `1.30e-08` on the stellarator, `2.59e-09` on
-    `large_tokamak_nof`, exactly zero on the other two -- against a smallest reported
-    disagreement of `1.1e-06`. See this module's docstring, question 3.
     """
 
     @property
     def drift(self) -> float:
         """The largest relative motion in `unsettled` -- how far PROCESS's cold state
-        still is from being a fixed point of its own pipeline. `0.0` when it is one.
+        still is from being a fixed point of its own pipeline.
         """
         return max((row[4] for row in self.unsettled), default=0.0)
 
@@ -280,10 +87,6 @@ def _resolve(name: str) -> str:
 def _scratch_copy(input_file: str) -> str:
     """`input_file` copied into a fresh directory with its `.stella_conf.json`, so the
     `OUT.DAT`/`MFILE.DAT` a `SingleRun` writes do not land in the repository.
-
-    Not a `TemporaryDirectory` context manager, for `sand_harness._scratch_copy`'s
-    reason: PROCESS re-reads the stellarator preset file on every model call, so the
-    directory has to outlive any `with` block.
     """
     import shutil
     import tempfile
@@ -304,13 +107,7 @@ def _scratch_copy(input_file: str) -> str:
 
 
 def _snapshot(data) -> dict:
-    """Every numeric field of every area of `data`, as float arrays.
-
-    Lifted from `boundary.computed_by_process`, which now calls this through
-    `cold_state`. Fields that will not convert (strings, `None`, objects) are skipped
-    rather than reported: they cannot move numerically, so they cannot be part of a write
-    set measured by numeric change.
-    """
+    """Every numeric field of every area of `data`, as float arrays."""
     out = {}
     for area_name in dir(data):
         if area_name.startswith("_"):
@@ -329,12 +126,7 @@ def _snapshot(data) -> dict:
 
 
 def _moved(before: dict, after: dict, rtol: float) -> frozenset:
-    """Keys whose value differs between the two snapshots, shape changes included.
-
-    `nan`/`inf` are mapped to `0.0` on both sides before comparison: a field that is
-    `nan` in both snapshots has not moved, and `np.allclose`'s `equal_nan` would have to
-    be set per call to say so.
-    """
+    """Keys whose value differs between the two snapshots, shape changes included."""
     clean = {"nan": 0.0, "posinf": 0.0, "neginf": 0.0}
     moved = set()
     for key, was in before.items():
@@ -354,33 +146,14 @@ def _moved(before: dict, after: dict, rtol: float) -> frozenset:
 
 CACHE_VERSION = "cold-v2"
 """Bumped when `ColdState`'s *contents* change, so an old pickle can never be read back
-under a key whose meaning has moved -- `mda_harness._CACHE_VERSION`'s discipline, and its
-docstring records what a stale cross-read costs.
-
-`v2` (2026-09-05) is the first bump for a reason other than contents: the split moved
-this module and everything a `ColdState` references from `functional_process.*` to
-`functional_process.cottax.*`, and a pickle names the classes it holds by import path.
-Every `v1` file therefore unpickles to `ModuleNotFoundError`. The contents are unchanged
--- what moved is where they live, which a pickle is equally sensitive to."""
+under a key whose meaning has moved -- `mda_harness._CACHE_VERSION`'s discipline, and
+its docstring records what a stale cross-read costs.
+"""
 
 
 def cold_state(input_file: str, use_cache: bool = True) -> ColdState:
     """Run PROCESS's pipeline **once**, at the input file's own starting design, and
     return everything the cold comparison needs.
-
-    The evaluation is `Evaluators.fcnvmc1` rather than a bare `Caller._call_models_once`
-    on purpose: `fcnvmc1` is what the optimiser itself calls, so this is PROCESS's cold
-    state as PROCESS's own solver sees it on iteration zero -- including
-    `load_iteration_variables`/`set_scaled_iteration_variable`'s write-back of the design
-    vector, and including `call_models`' up-to-ten-pass idempotence loop.
-
-    Cached on disk beside `mda_harness`'s converged runs and keyed the same way (the
-    input files plus the state of `process/`). The saving is real but modest, and worth
-    stating rather than assuming: measured uncached, `stellarator_helias` costs **6.3 s**
-    -- PROCESS re-reads its `.stella_conf.json` on every model call -- and the three
-    tokamaks 0.3-0.6 s each. What the cache actually buys is that
-    `boundary.computed_by_process` and this stage no longer pay separately for the same
-    evaluation. `FP_HARNESS_NO_CACHE=1` forces the run.
     """
     from pathlib import Path
 
@@ -409,9 +182,6 @@ def cold_state(input_file: str, use_cache: bool = True) -> ColdState:
 
 def _measure(input_file: str) -> ColdState:
     """`cold_state`'s uncached body: one `SingleRun`, one `fcnvmc1`, the extra passes.
-
-    Imports are deferred because `process.main` pulls in the whole of PROCESS and this
-    module is imported by tests that never run it.
     """
     import copy
 
@@ -508,12 +278,13 @@ class ColdReport:
     state: ColdState
     comparison: object
     """The `ComparisonReport` from `mda_harness.compare(graph, state.process,
-    seed=state.seed)` -- every bucket that stage defines, unchanged."""
+    seed=state.seed)` -- every bucket that stage defines, unchanged.
+    """
 
     output_pass_only: list = field(default_factory=list)
     """Disagreements on a field PROCESS's **solve** pass never writes, so its "expected"
-    value is `init_process`' default and not an answer. Split out of `disagreements`, not
-    counted as either agreement or defect -- see this module's docstring, question 2."""
+    value is `init_process`' default and not an answer.
+    """
 
     @property
     def real(self) -> list:
@@ -565,10 +336,6 @@ class ColdReport:
 def cold_report(input_file: str, state: ColdState | None = None) -> ColdReport:
     """Assemble the machine `input_file` describes, run its MDA from the cold seed, and
     diff every variable it owns against PROCESS's own cold answer.
-
-    The graph is built by `machine_from_indat` from the file itself, never described
-    here -- `run_mda_harness`'s own docstring records what spelling a machine's switches
-    out in a harness cost the last time it was done.
     """
     from functional_process.cottax.indat import graph_for, machine_from_indat
     from functional_process.cottax.mda_harness import compare
@@ -587,13 +354,7 @@ def cold_report(input_file: str, state: ColdState | None = None) -> ColdReport:
 
 
 def _area_field(var) -> tuple[str, str] | None:
-    """`(area, field)` for a plain `.area.field` `VarPath`, `None` for anything else.
-
-    A minted path (`^hat.*`, `^cond.*`) and a per-element path have no single
-    `DataStructure` field of that shape, so neither can be looked up in a write set
-    measured over `dataclass` fields; returning `None` keeps them in the ordinary
-    disagreement bucket rather than silently exempting them.
-    """
+    """`(area, field)` for a plain `.area.field` `VarPath`, `None` for anything else."""
     keys = var.path_str().lstrip(".").split(".")
     return (keys[0], keys[1]) if len(keys) == 2 and "[" not in keys[1] else None
 
@@ -660,11 +421,7 @@ PF_COIL_SIX_ROWS_DEMO = (
     ".pf_coil.f_c_pf_cs_peak_time_array",
     ".pf_coil.f_j_cs_start_end_flat_top",
 )
-"""The five, on `low_aspect_ratio_DEMO` only.
-
-`large_tokamak_nof`'s fifty-three-row `noh` chain retired **completely** -- that
-configuration now has eight disagreements in total, none of them PF -- and
-`large_tokamak_eval` never had any, being the one file the old pin was right about."""
+"""The five, on `low_aspect_ratio_DEMO` only."""
 
 
 STELLARATOR_ARM_ORDER = (
@@ -738,7 +495,8 @@ STELLARATOR_ARM_ORDER_ROWS = (
     ".power.p_plant_electric_net_profile_mw",
 )
 """The 44 rows `.build.z_tf_inside_half` reaches on the stellarator, worst `5.27e-01` on
-the geometry itself and `1.56e-01` on `.buildings.volrci`."""
+the geometry itself and `1.56e-01` on `.buildings.volrci`.
+"""
 
 PF_TURNS_DEAD_TAIL = (
     "The array's dead tail, exactly as at the converged point -- "
@@ -753,11 +511,10 @@ PF_TURNS_DEAD_TAIL = (
 PF_TURNS_ROWS = (".pf_coil.n_pf_coil_turns", "^hat.pf_coil.n_pf_coil_turns")
 
 PF_TURNS_ROWS_SPHERICAL = (".pf_coil.n_pf_coil_turns",)
-"""The same cause on the two spherical files, **without the `^hat` twin.**
-
-Those machines set `iohcl = 0`, so the PF cycle's minted copy does not carry the dead
-tail the way it does where a CS exists -- the array itself still does. One row, not two,
-and measured rather than assumed: pinning the twin here left it stale."""
+"""The same cause on the two spherical files, **without the `^hat` twin.** Those
+machines set `iohcl = 0`, so the PF cycle's minted copy does not carry the dead tail the
+way it does where a CS exists -- the array itself still does.
+"""
 
 VACUUM_DUCT_SOLVE = (
     "`VacuumOld`'s duct-diameter Newton solve, a deliberate solver-tolerance difference "
@@ -795,11 +552,7 @@ VACUUM_DUCT_ROWS_SPHERICAL = (
     ".costs.concost",
     ".costs.moneyint",
 )
-"""`VACUUM_DUCT_SOLVE`'s rows on the two `i_pulsed_plant = 0` spherical files.
-
-Its own list plus the cost aggregates it reaches on these two machines. Separate from
-`VACUUM_DUCT_ROWS` because on the other configurations those sums are downstream of a
-*different* cause and are pinned there."""
+"""`VACUUM_DUCT_SOLVE`'s rows on the two `i_pulsed_plant = 0` spherical files."""
 
 VACUUM_DUCT_ROWS = (
     ".costs.c224",
@@ -842,9 +595,9 @@ DRIVER_TOLERANCE_ROWS_EVAL = (
 
 
 def _because(reason: str, mapping) -> dict:
-    """`{(configuration, path): reason}` from `{configuration: paths}` -- so one cause is
-    written once and still covers every row it explains, on every machine it explains it
-    on.
+    """`{(configuration, path): reason}` from `{configuration: paths}` -- so one cause
+    is written once and still covers every row it explains, on every machine it explains
+    it on.
     """
     return {
         (configuration, path): reason
@@ -877,9 +630,7 @@ WARD_KINK_SMOOTHED = (
 """Why `.physics.beta_fast_alpha` disagrees cold on the two stellarators."""
 
 WARD_KINK_ROWS = (".physics.beta_fast_alpha",)
-"""`WARD_KINK_SMOOTHED`'s one row. It reaches no cost aggregate at the cold point --
-`beta_fast_alpha` feeds `beta_total_vol_avg` and constraint 24, neither of which is a
-pinned cold-point path."""
+"""`WARD_KINK_SMOOTHED`'s one row."""
 
 
 C1_INTERPOLANT = (
@@ -1101,43 +852,11 @@ ACCEPTED = {
         {STELLARATOR: WARD_KINK_ROWS, HELIAS_5B: WARD_KINK_ROWS},
     ),
 }
-"""`{(configuration, written path): why it is pinned}`. **A pin with no entry is
-refused**, by `check_reasons` and by the test that reads the pin.
-
-The rule this table enforces is the one `_audit/optimise_design.md` §16 exists to
-establish: in a bare list of paths, a disagreement somebody chased and a disagreement
-nobody looked at are indistinguishable, and the twenty-two missing producers lived for
-weeks inside exactly that ambiguity. Every entry names which of the three questions in
-this module's docstring it answers and cites the measurement it rests on -- and two of
-the six were settled by substituting the suspected cause and re-measuring, rather than
-by argument, because §16.3 records three persuasive arguments that were all wrong.
-
-**Keyed on `(configuration, path)`, not on the path alone**, because the *cause* is
-per-machine and merging them would lie about it: `.costs.coe` was off by `3.4e-02` on
-the stellarator through the report-pass geometry and by `2.2e-04` on
-`large_tokamak_nof` through `noh`, and one entry covering both would have been vague
-enough to cover a future third cause too. That is no longer hypothetical: the `noh`
-half of that example is **gone** -- `large_tokamak_nof` has no PF disagreement left at
-all -- while the stellarator half stands, which is exactly the outcome a merged entry
-would have hidden.
-
-**Two entries name a defect rather than excusing one.** `PF_COIL_SIX_RESIDUAL` is an
-undiagnosed `5.7e-05` on one PF coil of one configuration, and `TF_STRESS_UNPORTED` is
-the cost of the one producer still missing. Pinning them is how they stay visible and
-bounded; it is not a claim that they are acceptable.
-
-**`NOH_WRONG` used to be the third**, and its retirement on 2026-09-02 is the case for
-this table's shape: it named a defect precisely enough that fixing it retired eighty of
-its eighty-five rows in one change, and precise enough that the five that stayed were
-visibly *not* what it claimed. A vaguer entry would have absorbed them silently.
-"""
+"""`{(configuration, written path): why it is pinned}`."""
 
 
 def check_reasons(report: ColdReport) -> tuple[str, ...]:
     """Disagreeing paths in `report` with no `ACCEPTED` entry: what a caller refuses on.
-
-    Returned rather than raised so a caller can report every configuration's missing
-    reasons at once instead of stopping at the first.
     """
     name = os.path.basename(report.input_file)
     return tuple(
@@ -1153,35 +872,7 @@ def check_reasons(report: ColdReport) -> tuple[str, ...]:
 
 
 def rows(report: ColdReport) -> tuple[str, ...]:
-    """`report` as pin lines, in a stable order.
-
-    Four kinds, each prefixed by the configuration's file name so one file can hold
-    every machine (unlike `boundary.py`'s two separate pins, which exist because a
-    *boundary* is a property of one graph; a cold-agreement count is a property of one
-    run and the four are read together):
-
-    - `agree <n>`   -- how many owned variables reproduced PROCESS's cold answer.
-    - `errors <n>`  -- how many could not be compared at all.
-    - `off <path>`  -- one per disagreement, sorted by written name so an unrelated
-      node landing elsewhere cannot reorder the file.
-    - `nocompare <path>` -- one per output-pass-only variable.
-
-    **`errors` is pinned as a count and that is the point of including it.** An entry
-    there is a variable that was neither passed nor failed -- a mint with no
-    `DataStructure` field, or a shape mismatch -- so it is the one bucket in which a
-    regression is *silent*, which is the failure mode `ComparisonReport.unaccounted`'s
-    docstring records costing a real wrong answer its visibility. The cold tokamaks sit
-    at 22 against the warm run's 20, and the two extra are the same `Physics.outplas`
-    cause as `nocompare`, seen as a shape rather than a value: PROCESS's solve pass never
-    calls `calculate_effective_charge_ionisation_profiles`, so
-    `.physics.n_charge_plasma_effective_profile` is `(0,)` in the cold structure against
-    the port's `(201,)`, and a shape mismatch is not comparable rather than wrong.
-
-    The relative difference is deliberately **not** pinned. It is reported by `summary`
-    and it moves in the last digits with any upstream change; a pin that held it would
-    have to be regenerated for reasons that are not regressions, and a pin regenerated
-    routinely is a pin nobody reads.
-    """
+    """`report` as pin lines, in a stable order."""
     name = os.path.basename(report.input_file)
     lines = [
         f"{name} agree {report.comparison.agreements}",

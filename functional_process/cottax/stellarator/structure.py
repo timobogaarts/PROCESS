@@ -1,27 +1,4 @@
-"""Pure-functional port of `Stellarator.st_strc` (chunk 1D of unit #1).
-
-Audit record:
-`functional_process/_audit/units/models/stellarator/structure.md`. The
-record proposes splitting the source method in two: the real structural masses (this
-module's `calculate_structure_masses`), and the "previous scaling law, kept for
-comparison, not fully trusted" reporting value
-(`calculate_intercoil_mass_scaling_reference`), which never feeds
-`aintmass`/`clgsmass`/`coldmass` and is only ever printed. Splitting it out drops one
-otherwise-unused argument (`e_tf_magnetic_stored_total_gj`) from the real function's
-signature.
-
-`fncmass` and `gsmass` are not ported: both are unconditional literal `0.0` in the
-source (open question 1 in the record -- whether a constant "producer" should be a graph
-node at all is a policy question, not resolved here, so neither is wrapped in a
-`ImplementedFunction`).
-
-`StructureMasses` below is the `cottax` node -- a thin `ExplicitFunction` declaration
-wrapping `calculate_structure_masses` unchanged. See `_audit/schema.md`'s "cottax node"
-section for why the pytree-namespace surface
-(`cottax.interfaces.pytree_namespace_module`) rather than a hand-built `ImplementedFunction`:
-`Output`/`FromExactly` read like the PROCESS `data.<area>.<field>` path they name, instead of a
-`VarPath` built from a string one node at a time.
-"""
+"""Pure-functional port of `Stellarator.st_strc` (chunk 1D of unit #1)."""
 
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -47,12 +24,7 @@ from functional_process.models.stellarator.structure import (
 
 
 class StructureMasses(ExplicitFunction):
-    """cottax node: `calculate_structure_masses`, unchanged, with its ports declared.
-
-    `calculate_intercoil_mass_scaling_reference` has no node: it feeds nothing else in
-    the graph (reporting-only, per the module docstring), so there is nowhere for it to
-    sit as a node with no reader.
-    """
+    """cottax node: `calculate_structure_masses`, unchanged, with its ports declared."""
 
     aintmass = OutputInto(structure)
     clgsmass = OutputInto(structure)

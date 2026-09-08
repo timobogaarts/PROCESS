@@ -1,47 +1,4 @@
-"""Run the MDF formulation's validation ladder and print the report.
-
-    $PY functional_process/cottax/run_mdf_harness.py                   # the stellarator
-    $PY functional_process/cottax/run_mdf_harness.py --input <IN.DAT>  # any other machine
-    $PY functional_process/cottax/run_mdf_harness.py --machine         # the tokamak
-
-With no argument this is exactly what it always was: the Helias stellarator,
-`tests/regression/input_files/stellarator_helias.IN.DAT`, whose numbers other records
-quote. `--input`/`--machine` are spelled exactly as `run_sand_harness.py`'s and
-`run_mda_harness.py`'s (whose `input_file` this imports rather than restates).
-
-A non-reference machine differs from the stellarator path in exactly two threaded values,
-both derived from its own file and both already parameters of `mdf.assemble`: the graph
-(`graph_for(machine_from_indat(...))`) and the static switch values
-(`sand.switch_values_for`, read off the cold initialised `DataStructure` instead of
-`mdf_graph`'s own default). The reference file keeps `None` for both, which is the
-literal code path it has always run -- its numbers are pinned regression evidence
-(`_audit/next_steps.md` §16.1) and must not move because a second device exists.
-
-Sibling of `run_sand_harness.py`, deliberately stage for stage: **A** the conditions at
-PROCESS's converged point, **B** the Jacobian against PROCESS's own finite differences,
-**C** the solve from two starts. Everything PROCESS-side is reused from
-`sand_harness.py` (`reference_run`, `stage_a`, `process_jacobian_with_error`,
-`to_process_spelling`) so that any difference between the two reports is a difference
-between the two *formulations* and not between two harnesses.
-
-Three things this ladder has that SAND's does not, all of them consequences of the
-formulation rather than extra diligence:
-
-- **No `reduce_jacobian`.** MDF's Jacobian is already `d(conditions)/d(design)` with the
-  MDA converged at every point -- the derivative `Evaluators.fcnvmc2` approximates -- so
-  the Schur complement SAND needs in order to be comparable at all does not arise.
-- **Stage B0, the check that matters most.** `jax.jacfwd` differentiates *through*
-  thirteen driven blocks (`lax.while_loop`s and an `optimistix` root find). Before
-  comparing it with PROCESS, it is compared with a **central difference of the port's own
-  condition map**, which shares every model and every solver with it and differs only in
-  not using autodiff. That isolates "is differentiating through the inner solve correct"
-  from "does the port agree with PROCESS".
-- **Inner convergence is reported.** An MDF answer is only as good as its inner solve,
-  and `PicardDriver` stops at `max_iter` silently. `mdf.inner_residuals` says how far
-  each driven block actually got at the point being reported.
-
-One PROCESS run (~95 s) serves all of it, same as `run_sand_harness.py`.
-"""
+"""Run the MDF formulation's validation ladder and print the report."""
 
 import sys
 import time
@@ -70,39 +27,15 @@ from process.core.solver.evaluators import Evaluators  # noqa: E402
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
 MAX_ITER = 800
-"""`VmconDriver.max_iter`. Higher than `run_sand_harness.py`'s `SAND_MAX_ITER = 500` for
-the same reason that one is higher than the driver's own default of 100: **measured**,
-not rounded. C2 -- the warm solve, from PROCESS's own converged x -- converges at
-**523** SQP iterations (`conv 7.400e-09`, `objf 1.217758052`), and the previous 200
-stopped it two-thirds of the way through, where an unconverged VMCON tail is
-indistinguishable from oscillation (`_audit/optimise_design.md` §14, and §12.2 for the
-identical diagnosis on SAND). 800 is 523 with the same ~1.5x margin SAND's 500 gives its
-326. **C3 is not capped and never was**: it stops at 60 because `pyvmcon` raises
-`QSPSolverException` there -- raising the cap does not move it, and `_measure` below says
-which of the two happened.
-
-**523 and 60 are OSQP numbers.** The driver now passes PROCESS's own CLARABEL
-(`_audit/optimise_design.md` §15): C3 cold converges in 67 at `1e-8` and 58 at
-PROCESS's `epsvmc`, and the `QSPSolverException` at 60 is gone. C2 warm inverts --
-CLARABEL stops at 45 on an `infeasible` QP where OSQP ground through to 523 -- so the
-cap is still needed and still means what this says."""
+"""`VmconDriver.max_iter`."""
 
 TOLERANCE = 1.0e-8
-"""`VmconDriver.tolerance`. **Tighter than PROCESS's own** `epsvmc = 1e-6` on this run,
-and kept there so the two Stage C solves are comparable with `run_sand_harness.py`'s,
-which uses the driver's own default. PROCESS stops at `2.396e-07`, so a solve reported
-here as "not converged" may still be inside PROCESS's own criterion -- the trace's
-convergence column is what to read, not the boolean alone."""
+"""`VmconDriver.tolerance`."""
 
 
 def process_evaluation_cost(reference, repeats=3):
     """Median seconds for one `Caller.call_models` -- PROCESS's own objective-and-
     constraint evaluation, and the thing an MDF condition evaluation is the analogue of.
-
-    This is the like-for-like cost comparison the whole rewrite is about: one call here
-    is up to ten full pipeline passes (`caller.py:96-126`), one call of an
-    `MdfConditionMap` is one compiled program that drives thirteen blocks. Measured, not
-    inferred from the solve's wall clock, which also carries the QP subproblems.
     """
     evaluators = Evaluators(reference.models, reference.data, reference.xcm)
     m = len(reference.icc)
@@ -116,17 +49,7 @@ def process_evaluation_cost(reference, repeats=3):
 
 
 def _why_it_stopped(converged, iterations):
-    """Which of the three ways a `VmconDriver` solve can end actually happened.
-
-    "Not converged" is two entirely different events and the boolean cannot tell them
-    apart: **the cap** (`iterations == MAX_ITER`, a solve stopped part-way, which is what
-    C2's 200 was) and **the driver giving up** (`pyvmcon` raising -- for C3 here, a
-    `QSPSolverException`: the QP subproblem itself became infeasible -- which
-    `VmconDriver.__call__` catches by design, keeping `e.x` and reporting the failure out
-    of band). Raising `MAX_ITER` fixes the first and cannot touch the second, so the
-    report has to say which one it is or the next reader re-runs this investigation
-    (`_audit/optimise_design.md` §14).
-    """
+    """Which of the three ways a `VmconDriver` solve can end actually happened."""
     if converged:
         return "the convergence test passed"
     if iterations >= MAX_ITER:
@@ -190,9 +113,7 @@ def _measure(mdf_problem, data, label, bounds, tolerance):
 
 
 def main(argv=None):
-    """Run the ladder and print each stage's report. `argv` defaults to this process's
-    own, so importing and calling `main([...])` is the same thing as the command line.
-    """
+    """Run the ladder and print each stage's report."""
     argv = sys.argv[1:] if argv is None else argv
     path = input_file(argv)
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)

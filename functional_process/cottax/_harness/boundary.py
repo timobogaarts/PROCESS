@@ -1,45 +1,4 @@
-"""The zero-boundary gradient check, and the register of what it may still find.
-
-**What this closes.** `_audit/next_steps.md` §9 and §10 record a defect class this
-project hit four times: a ported body that is **value-correct everywhere and non-finite
-in derivative at one point**. The canonical shape is `x ** p` with `0 < p < 1` (or
-`jnp.sqrt`) evaluated at exactly `x == 0`: the value is `0`, which is right, while the
-JVP is `p * x ** (p - 1) * dx = inf * dx` -- `+inf` along the direction that perturbs
-`x` and `nan` (`inf * 0`) along every other. Every value test passes. Only a gradient
-sees it, and the last instance was diagnosed by the SQP solver as "the problem seems to
-be non-convex" after hours of looking. `models/safe_math.py` is the fix; this module is
-the check that stops the fifth instance from costing the same.
-
-**The check.** For one point per contract, set each differentiable argument component to
-`0.0` in turn and require: *if the value at that point is finite, the Jacobian there
-must be finite too.* That is exactly the class -- a point PROCESS itself evaluates
-without complaint, where the port answers correctly and differentiates to `nan`. Where
-zeroing the argument makes the value itself non-finite the point is outside the
-function's domain, `test_outputs_finite`/`test_value_agreement` already own it, and this
-check steps aside.
-
-**What it is not.** It is a *structural* probe, not a physical one: nothing claims a
-device can run with zero toroidal field. The claim is narrower and is the one that
-matters for a solver -- a cold `DataStructure` has `0.0` in every model-computed field
-(`next_steps.md` §11.6's cold-start gap), and one `nan` cell anywhere in the Jacobian
-stops VMCON at zero iterations regardless of how unphysical the point that produced it
-was.
-
-**The register below is a second, different defect class, deliberately not fixed here.**
-Every remaining entry is an *unguarded division* `a / x` at `x == 0`: the primal goes to
-`inf`, and a downstream `jnp.minimum`/`jnp.maximum`/`jnp.exp`/negative power pulls it
-back to a finite number while the tangent stays `inf`/`nan`. The double-`jnp.where`
-idiom does not apply -- the repair is a guarded reciprocal at each site, and deciding
-what the value *should* be where PROCESS divides by zero is a per-site modelling
-question, not a mechanical one. They are registered rather than suppressed, in the same
-spirit as `mda_harness.EXPLAINED_DISAGREEMENTS`: recorded, reported, and not subtracted
-from anything.
-
-**A register entry must be earned.** `Tier1Contract.test_gradient_finite_at_zero` fails
-a contract whose registered site *stopped* failing, so a fixed site cannot leave a stale
-excuse behind, and it fails on any site not registered at all -- which is what makes a
-future `x ** 0.5` a test failure rather than another investigation.
-"""
+"""The zero-boundary gradient check, and the register of what it may still find."""
 
 DIVISION_BY_ZERO_AT_BOUNDARY = {
     # ---- availability.py: lifetime = fluence_limit / flux, capped by the plant life.
@@ -306,28 +265,9 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
         "and reaches 6.9 / reynolds through darcy_friction_haaland"
     ),
 }
-"""`(contract class name, argument name)` -> where the `inf` primal is produced.
-
-Keyed by contract rather than by argument name because the same PROCESS variable is
-benign in one unit and singular in another -- `pflux_fw_neutron_mw` divides in
-`availability.py` and merely multiplies elsewhere. A global by-name list would exempt
-both.
-"""
+"""`(contract class name, argument name)` -> where the `inf` primal is produced."""
 
 
 def registered_reason(contract_name, argument):
-    """The recorded reason a site is allowed to be non-finite, or `None`.
-
-    Parameters
-    ----------
-    contract_name :
-        `type(contract).__name__`.
-    argument :
-        The differentiable argument's name, without any array index.
-
-    Returns
-    -------
-    :
-        The reason string, or `None` if the site is not registered.
-    """
+    """The recorded reason a site is allowed to be non-finite, or `None`."""
     return DIVISION_BY_ZERO_AT_BOUNDARY.get((contract_name, argument))

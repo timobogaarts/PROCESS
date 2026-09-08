@@ -1,52 +1,4 @@
-"""The solve environment, built from the input file alone -- no `DataStructure`.
-
-`_audit/next_steps.md` §22.7 consumed the provider by *installing* its answers into a
-deep copy of PROCESS's seed. Reading, assembly, the switch values and the problem
-statement are all PROCESS-free (§23.6, §23.7), but the values a solve starts from were
-still written into a PROCESS object before they reached `mdf.seed`/`sand_harness.
-mda_env`. This module is the replacement for that object.
-
-What it is
-----------
-`native_state(input_file)` returns a **`NativeState`** -- a duck-typed stand-in that
-answers `state.<area>.<field>` and nothing else, because `.<area>.<field>` is the whole
-of the interface `sand_harness.ground_truth` uses (`get_at` walks `GetAttrKey`s, i.e.
-`getattr`). Three sources fill it, in this order, and the order is PROCESS's own:
-
-1. **`DATACLASS_DEFAULTS`** -- PROCESS's own `DataStructure` field defaults, vendored,
-   for the 564 places the seven configurations' schedules read *or* their input files
-   state. §23.2's standing rule applies: vendored for runtime, asserted equal to
-   `DataStructure()`'s in `functional_process/tests/test_provider.py`.
-2. **`importer.read_indat`'s values** -- every scalar *and* every array the file states,
-   at its declared area. Arrays are new here: the provider could only resolve a scalar
-   from file text, so `.pf_coil.zref` and its siblings came from PROCESS even on the
-   `--provider` path (§22.6 "what was not done" (a)).
-3. **`DERIVATIONS`** -- the rules `initialise_imprad` and `init.py` apply *over* the
-   parsed file, ported one at a time. §22.8 measured what their absence costs: with
-   only the first two sources a native env disagreed with PROCESS's cold seed at six
-   places on every configuration, and four of the six were `initialise_imprad`'s
-   all-zero impurity tables. They run last because `init_process` runs after the parse.
-
-A `NativeState` is still **exactly as good as the port's own derivations**, and where it
-is worse than PROCESS's seed it says so rather than being quietly topped up: `init.py`'s
-sentinel resolutions and presence flags and all eighteen of `st_init`'s are still
-unported, so the fields they write are answered with the bare dataclass default.
-
-What it records
----------------
-A field the table does not hold is **not** invented. `_Area.__getattr__` appends the
-place to `state.missing` and raises `AttributeError`, which is what `mdf.seed`'s and
-`mda_env`'s own `except (AttributeError, KeyError)` arms already turn into `0.0`. So the
-run's miss list is a measurement rather than a silent zero, and it is the work list this
-module exists to produce.
-
-Not a provider
---------------
-`provider.py` answers a *classified* boundary and needs the seed to classify against;
-this needs no seed at all and answers whatever is asked. The two are complementary: the
-provider says which paths are `derived`/`computed` -- i.e. which of this module's
-answers are wrong -- and this one is what a run actually reads.
-"""
+"""The solve environment, built from the input file alone -- no `DataStructure`."""
 
 from __future__ import annotations
 
@@ -61,13 +13,7 @@ from functional_process.vocabulary.iteration_variables import ITERATION_VARIABLE
 
 
 class Full(NamedTuple):
-    """A constant array in `DATACLASS_DEFAULTS`, expanded on read.
-
-    Compression, not a different kind of value: five of the nineteen array defaults are
-    `(14, 200)` or `(22, 22)` of one repeated number and writing them out costs 45 kB of
-    the table's 65. `initialise_imprad`'s three `(14, 200)` tables are the biggest of
-    them, and their being *all zeros* is the finding, not an artefact of this encoding.
-    """
+    """A constant array in `DATACLASS_DEFAULTS`, expanded on read."""
 
     value: float
     shape: tuple[int, ...]
@@ -684,20 +630,7 @@ DATACLASS_DEFAULTS: dict[tuple[str, str], Any] = {
     ("vacuum", "pres_div_chamber_burn"): 0.36,
     ("vacuum", "pres_vv_chamber_base"): 0.0005,
 }
-"""`(area, field) -> PROCESS's `DataStructure` dataclass default`. **Generated.**
-
-Demand-driven, for the same reason §22.4 made the provider demand-driven: the union of
-seven boundaries is a few hundred rows where PROCESS's whole field surface is thousands.
-A place missing from it is reported by `NativeState.missing`, never guessed.
-
-**Two demands, not one**: every place the seven configurations' MDF and MDA schedules
-read, *and* every place their input files state. The second half is not redundant, and
-`.impurity_radiation.f_nd_impurity_electrons` is why -- `large_tokamak_nof` sets all
-fourteen elements of it, nothing in the graph reads that field, and `init.py`'s alias
-loop copies it into `.f_nd_impurity_electron_array`, which the graph *does* read. Without
-the stated half the file's own impurity fractions would not be in the state at all, and
-"the alias node is missing" would look like "the values are missing".
-"""
+"""`(area, field) -> PROCESS's `DataStructure` dataclass default`."""
 
 # ------------------------------------------------------------------------- the state
 
@@ -711,19 +644,7 @@ class _Area:
     missing: list[tuple[str, str]]
 
     def __getattr__(self, field_name: str):
-        """The field, or an `AttributeError` **and a row in `missing`**.
-
-        `__getattr__` runs only for names ordinary lookup did not find, so the three
-        declared attributes above never reach here. A dunder does, though -- `copy`,
-        `pickle` and `pytest` all probe for `__deepcopy__`/`__getstate__` -- and a probe
-        is not a missing physics field, so it is refused without being recorded.
-
-        Raises
-        ------
-        AttributeError
-            Whenever this state holds no such field -- which `mdf.seed` and `mda_env`
-            both already catch and turn into a `0.0` seed.
-        """
+        """The field, or an `AttributeError` **and a row in `missing`**."""
         if field_name.startswith("__"):
             raise AttributeError(field_name)
         if field_name in self.values:
@@ -737,29 +658,18 @@ class _Area:
 
 @dataclass
 class NativeState:
-    """What a solve reads instead of PROCESS's `DataStructure`.
-
-    `missing` is the instrument: every `(area, field)` a run asked for and this could not
-    answer, in the order asked. `mdf.seed`/`mda_env` turn the `AttributeError` into
-    `0.0`, exactly as they already do for a minted `VarPath`, so a miss costs a wrong
-    value and not a crash -- and the list is what says which.
-    """
+    """What a solve reads instead of PROCESS's `DataStructure`."""
 
     areas: dict[str, _Area]
     values: dict[tuple[str, str], Any]
     missing: list[tuple[str, str]] = field(default_factory=list)
     sources: dict[tuple[str, str], str] = field(default_factory=dict)
     """`indat` or `defaults` per answered place -- §22.6's `source` column, minus the
-    `process` row that no longer exists here."""
+    `process` row that no longer exists here.
+    """
 
     def __getattr__(self, area_name: str):
-        """The area, or an `AttributeError`. See `_Area.__getattr__` on the dunders.
-
-        Raises
-        ------
-        AttributeError
-            When this file's values name no such area.
-        """
+        """The area, or an `AttributeError`."""
         if area_name.startswith("__"):
             raise AttributeError(area_name)
         if area_name in self.areas:
@@ -772,13 +682,7 @@ class NativeState:
 
 
 def _array_from(imported_value: ArrayInput, default):
-    """One `IN.DAT` array assignment applied to its dataclass default.
-
-    `parse_input_file`'s two spellings differ and the difference is not cosmetic
-    (`importer.ArrayInput`): a comma list zeroes the array first, an indexed assignment
-    leaves the other elements at their default. Reproduced here rather than restated --
-    `dense` is `ArrayInput`'s own, and it needs a length only this side knows.
-    """
+    """One `IN.DAT` array assignment applied to its dataclass default."""
     base = np.asarray(_expand(default), dtype=float)
     out = np.zeros_like(base) if imported_value.zero_filled else base.copy()
     flat = out.reshape(-1)
@@ -791,9 +695,7 @@ def _array_from(imported_value: ArrayInput, default):
 # ------------------------------------------------------------------- the derivations
 
 _Places = dict[tuple[str, str], Any]
-"""`(area, field) -> value`. A derivation takes the merged places and writes into a
-second one of these, so "what did a rule change" needs no value comparison: a place is
-`derived` because a rule wrote it, not because the number moved."""
+"""`(area, field) -> value`."""
 
 #
 # The third source, and the last one. `_audit/init_audit.md` counts **zero** genuine
@@ -809,17 +711,7 @@ second one of these, so "what did a rule change" needs no value comparison: a pl
 
 
 def _initialise_imprad(values: _Places, out: _Places) -> None:
-    """`process/main.py:430`'s four tables -- `init_audit.md` §5's fifth source.
-
-    Vendored constants, not nodes; the four-way justification is
-    `models/physics/impurity_radiation.py`'s module docstring, which also says why
-    `f_nd_impurity_electron_array` is *not* answered here even though `init_imp_element`
-    writes it (`_alias_impurity_fractions` overwrites all fourteen elements afterwards,
-    exactly as `init.py:381-384` does).
-
-    Unconditional: none of the four depends on the input file, on a switch, or on an
-    iteration variable, which is precisely the argument for their being constants.
-    """
+    """`process/main.py:430`'s four tables -- `init_audit.md` §5's fifth source."""
     from functional_process.models.physics.impurity_radiation import (  # noqa: PLC0415
         M_IMPURITY_AMU_ARRAY,
         impurity_tables,
@@ -835,17 +727,6 @@ def _initialise_imprad(values: _Places, out: _Places) -> None:
 def _alias_impurity_fractions(values: _Places, out: _Places) -> None:
     """`init.py:381-384` -- `f_nd_impurity_electron_array[i]` from
     `f_nd_impurity_electrons[i]`.
-
-    **A rename and nothing else**, and the largest single contributor to the pins'
-    `derived` rows (`init_audit.md` §2c, 7/7 on every configuration): the *declared*
-    input is `f_nd_impurity_electrons` (`input.py:198`) and the array every model and
-    twelve `ITERATION_VARIABLES` entries address is `f_nd_impurity_electron_array`, which
-    nothing declares. `native.py` already holds the declared one -- that is the second
-    half of `DATACLASS_DEFAULTS`' demand rule, and the reason it exists.
-
-    Copying all fourteen elements also discards `init_imp_element`'s own
-    `f_nd_impurity_electron_array[0] = 1.0`, which is dead for the same reason it is dead
-    in PROCESS: this loop runs later and is unconditional.
     """
     declared = values.get(("impurity_radiation", "f_nd_impurity_electrons"))
     if declared is None:
@@ -856,21 +737,7 @@ def _alias_impurity_fractions(values: _Places, out: _Places) -> None:
 
 
 def _single_or_double_null(values: _Places, out: _Places) -> None:
-    """`init.py:606-617` -- `.physics.i_single_null` decides four fields, not one.
-
-    `.divertor.n_divertors` is the one that matters here and it is **a structural count,
-    not a rounding difference**: divertor area, mass, heat load and cost all scale on it,
-    and eight slots in this port are keyed on it (`indat._n_divertors`, whose rule this
-    reuses rather than restates). Its dataclass default is `2`, so a native state that
-    left it alone gave every single-null machine the double-null arm.
-
-    The other three are the same eleven lines' double-null branch, and they are latent
-    rather than absent (`init_audit.md` §5c): `dz_fw_plasma_gap`, `dz_shld_upper` and
-    `dz_vv_upper` are forced to match the lower build, which on `dz_shld_upper`
-    **overrides an input the file states**. Measured at 2/7, 2/7 and 0/7. Porting them
-    with `n_divertors` rather than after it is deliberate -- they are one `if`, and
-    splitting an `if` across two sessions is how a branch gets half-ported.
-    """
+    """`init.py:606-617` -- `.physics.i_single_null` decides four fields, not one."""
     from functional_process.cottax.indat import _n_divertors  # noqa: PLC0415
     from functional_process.vocabulary.enums import DivertorNumberModels  # noqa: PLC0415
 
@@ -890,21 +757,7 @@ def _single_or_double_null(values: _Places, out: _Places) -> None:
 
 
 def _deprecated_temperature_margin_alias(values: _Places, out: _Places) -> None:
-    """`init.py:1171-1190` -- `tmargmin` is a deprecated alias for two fields.
-
-    `init_audit.md` §2c's last derivation row, measured 4/7 and 2/7. If the file states
-    `tmargmin` at all (`> 0.0001`, PROCESS's own presence test on a float) it wins over
-    both `temp_tf_superconductor_margin_min` and `temp_cs_superconductor_margin_min`,
-    and PROCESS logs an error rather than raising when a file states both.
-
-    **This one was not in `provider.answers_for`'s boundary**, and that is the finding
-    that put it here: the env diff §22.8 built on that boundary read zero disagreements
-    on all seven while `.tfcoil.temp_tf_superconductor_margin_min` was still `0.0`
-    against PROCESS's `1.5`, because the constraint that reads it (`c36`, the TF
-    superconductor temperature margin) reaches it by a path the provider does not
-    enumerate. A boundary-derived diff is therefore a *lower* bound on the disagreement,
-    which is worth knowing before the next one is quoted as a clean bill of health.
-    """
+    """`init.py:1171-1190` -- `tmargmin` is a deprecated alias for two fields."""
     tmargmin = values.get(("tfcoil", "tmargmin"))
     if tmargmin is None or float(tmargmin) <= 0.0001:
         return
@@ -919,36 +772,11 @@ DERIVATIONS = (
     _deprecated_temperature_margin_alias,
 )
 """The rules a native state applies over the file's own values, in PROCESS's own order.
-
-Not a table, because a derivation is not a value: each entry reads whatever it needs out
-of the merged `values` and writes back whatever `init.py`/`initialise_imprad` writes at
-that point. A place one of these answers reports `source == "derived"`, so §22.6's
-`source` column now has three rows rather than two and the `native and wrong` count is
-readable straight off it.
-
-**Not everything `init_audit.md` classifies is here.** The sentinel resolutions (§2a),
-the presence flags (§2b) and `st_init`'s eighteen (§4) are still unported, and so are
-`init.py`'s remaining derivations; `boundl[3] = teped * 1.001` is deliberately absent
-because it is a *bound*, and bounds belong to `native_bounds`/the problem statement
-(§24.2 item 3), not to the value graph.
 """
 
 
 def native_values(input_file: str | Imported) -> tuple[dict, dict, list]:
-    """`(values, sources)` -- defaults, then the file's values, then `DERIVATIONS`.
-
-    A scalar the file names but the defaults table does not hold is still answered -- the
-    file is the better source and needs no shape. An **array** does need one, so an array
-    place with no vendored default is *skipped and returned as unshapeable* rather than
-    densified to whatever index the file happened to reach: the two `IN.DAT` array
-    spellings differ in what the unset elements are (`importer.ArrayInput`), so guessing
-    a length here would be guessing an array. Zero on the seven tracked files, by the
-    table's second demand.
-
-    The third pass is `DERIVATIONS`, and it runs last because that is where `init.py`
-    runs: a derived place overrides both the default and the file's own statement, which
-    is what makes `init.py:611`'s override-an-input behaviour reproducible.
-    """
+    """`(values, sources)` -- defaults, then the file's values, then `DERIVATIONS`."""
     imported = input_file if isinstance(input_file, Imported) else read_indat(input_file)
     values: dict[tuple[str, str], Any] = {}
     sources: dict[tuple[str, str], str] = {}
@@ -990,40 +818,6 @@ def native_state(input_file: str | Imported) -> NativeState:
 
 def _pedestal_temperature_bound(ixc, state, low: float, high: float):
     """`init.py:444-459` -- iteration variable 4's lower bound, raised off the pedestal.
-
-    **A bound, not a value, and that is the whole reason it lives here.** The block is
-    two assignments under one `if`, and only the first is about a bound: `:440` sets
-    `.physics.temp_plasma_electron_vol_avg_kev = teped * 1.001` (a *value*, and one
-    `DERIVATIONS` deliberately does not carry -- iteration variable 4 owns that field, so
-    a native state writing it would be writing the design vector's own entry), while
-    `:456-458` raises `boundl[3]` to the same number and lifts `boundu[3]` to clear it.
-    `_audit/next_steps.md` §24.2 item 3 places exactly this in the problem statement
-    rather than in the value graph; this is that placement, made.
-
-    PROCESS's own predicate, transcribed from `:397` and `:444-447`:
-
-    ```
-    ife != 1 and i_plasma_pedestal == 1        # :397, the enclosing guard
-      and i_process_run_mode == OPTIMISATION   # the bound half only
-      and 4 in ixc
-      and boundl[3] < temp_plasma_pedestal_kev * 1.001
-    ```
-
-    **`i_plasma_pedestal` is read *after* `st_init`**, not off the file:
-    `init_process` calls `st_init` at `:76` and reaches this block at `:397`, and
-    `st_init` pins the switch to `0` on every `istell != 0` run
-    (`indat.ST_INIT_I_PLASMA_PEDESTAL`). So a stellarator can never take this branch
-    however its `IN.DAT` spells the switch -- which matters, because both stellarators
-    do put `4` in `ixc`. Reproduced rather than relied on: the state itself does not
-    carry `st_init` yet.
-
-    Measured to fire on **1 of 7** configurations, `large_tokamak_nof`
-    (`teped = 5.5` -> `5.5055` against this table's `5.0`), matching `init_audit.md` §2d.
-
-    Returns
-    -------
-    tuple
-        `(low, high)`, moved if the branch fires and unchanged otherwise.
     """
     from functional_process.cottax.indat import (
         ST_INIT_I_PLASMA_PEDESTAL,
@@ -1045,14 +839,7 @@ def _pedestal_temperature_bound(ixc, state, low: float, high: float):
 
 
 def native_bounds(ixc, imported, state=None):
-    """`((VarPath, lower, upper), ...)` -- `ReferenceRun.bounds`, from the file.
-
-    PROCESS builds `numerics.boundl`/`boundu` in `initialise_iteration_variables` out of
-    `ITERATION_VARIABLES`' per-variable defaults and then lets the `IN.DAT` override any
-    element. `init.py`'s `boundl[3] = teped * 1.001` is the third source and the only one
-    that is not a table lookup -- see `_pedestal_temperature_bound`, which needs `state`
-    and is skipped when none is given.
-    """
+    """`((VarPath, lower, upper), ...)` -- `ReferenceRun.bounds`, from the file."""
     from functional_process.cottax.sand import iteration_variable_path  # noqa: PLC0415
 
     lower = imported.get("numerics", "boundl")
@@ -1073,24 +860,7 @@ def native_bounds(ixc, imported, state=None):
 
 @dataclass
 class NativeReference:
-    """`sand_harness.ReferenceRun`'s shape, with nothing from PROCESS in it.
-
-    The harnesses take a `ReferenceRun` and read five things off it on the cold path --
-    `ixc`, `icc`, `n_equality`, `i_figure_merit`, `bounds` -- plus `data`/`cold` as the
-    env to seed from. Everything else on that dataclass is Stage A/B material (the
-    converged `x`, the finite-difference `epsfcn`, PROCESS's own iteration count) that a
-    cold solve never reads. Those fields are absent here rather than `None`-filled: an
-    attribute error at the point of use is a better failure than a `None` propagating
-    into a Jacobian.
-
-    **`data` is the cold state too**, not a converged one. `sand_harness.assemble` reads
-    the "warm" env to find degenerate and array-valued fixed points and
-    `sand.residual_condition_scales` reads it for its `1/|u|` factors; with no PROCESS
-    run there is no warm env, so both come from the cold MDA's own output. That makes a
-    native SAND row a *different problem* from the `--provider` one -- the scales differ
-    -- and it is why the SAND column of a `--native` table is not directly comparable
-    while the MDF column is. Stated rather than hidden.
-    """
+    """`sand_harness.ReferenceRun`'s shape, with nothing from PROCESS in it."""
 
     data: object
     cold: object
@@ -1105,23 +875,7 @@ class NativeReference:
 
 
 def native_reference(input_file: str) -> NativeReference:
-    """Everything a cold solve needs for one input file, PROCESS-free.
-
-    The problem statement is `indat.problem_from_indat`'s (§23.7), including its two
-    caveats: `i_figure_merit` falls back to PROCESS's `numerics.py:154` default of `7`
-    for the two files that state none, and the equality/inequality split stays
-    positional.
-
-    **`ixc` is sorted, and that is an eighth initialisation source.** `SingleRun.init`
-    sorts it at `process/main.py:434-438` -- *after* `init_process` returns, so it is
-    outside every stage `_audit/init_audit.md` wrapped and outside its §5 list of five
-    sources. Three of the seven tracked files state `ixc` out of order
-    (`stellarator_helias` `[..., 109, 59, 56]`, `large_tokamak_nof`, `st_regression`), so
-    a `ReferenceRun`'s `ixc` is *not* the file's order and `problem_from_indat`'s is.
-    §23.7's "byte-identical on all eight" did not catch it because
-    `iteration_variables_from_indat` returns a `frozenset`. The order is not cosmetic:
-    it is the design vector's order, so it is VMCON's column order.
-    """
+    """Everything a cold solve needs for one input file, PROCESS-free."""
     from functional_process.cottax.indat import problem_from_indat  # noqa: PLC0415
 
     imported = read_indat(input_file)
@@ -1153,20 +907,7 @@ CONFIGURATIONS = (
     "tests/regression/input_files/spherical_tokamak_eval.IN.DAT",
     "tests/regression/input_files/st_regression.IN.DAT",
 )
-"""Every `tests/regression/input_files/*.IN.DAT` except `IFE.IN.DAT`.
-
-`IFE` is `ife == 1`, a whole unported device -- `.ife.*` has no unit in
-`unit_registry.md` at all (`_audit/next_steps.md` §20.4) -- so it is not a row that could
-become a number by any amount of running. Everything else is a row whether or not it
-assembles, and the day this file was written is the argument for that: the two spherical
-tokamaks refused on `tf_stress_arm == (0, 1, 0)` at the start of the run and
-**assembled by the end of it**, because the `extended_plane_strain` port landed in the
-same working tree while the pass was going. A runner whose configuration list encoded
-today's verdict would have needed an edit to notice; this one needed a re-run.
-
-Ordered stellarators first, then the four tokamaks, so that a truncated run still has
-the rows whose numbers other records quote.
-"""
+"""Every `tests/regression/input_files/*.IN.DAT` except `IFE.IN.DAT`."""
 
 
 def stem(input_file: str) -> str:

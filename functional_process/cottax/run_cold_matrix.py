@@ -1,159 +1,4 @@
-"""**Cold** MDF and cold SAND on every reference configuration, as one table.
-
-    $PY functional_process/cottax/run_cold_matrix.py                 # all seven in-scope files
-    $PY functional_process/cottax/run_cold_matrix.py --input a.IN.DAT --input b.IN.DAT
-
-Why this exists as a module and not as a scratch script
--------------------------------------------------------
-`_audit/next_steps.md` §16.1's cold matrix was produced by throwaway scripts that no
-longer exist, which is why *"re-run the cold matrix"* kept being a punch-list item
-rather than a command. Every number below is one the two ladder harnesses already
-compute; what was missing was a runner that walks the configurations, survives the ones
-that refuse, and prints the rows side by side.
-
-**This is deliberately not a third harness.** Everything it calls is imported --
-`sand_harness.reference_run`/`mda_env`/`assemble`, `run_sand_harness._seed`/
-`_inputs_only`/`SAND_MAX_ITER`, `mdf.assemble`/`seed`/`prime`/`solve`,
-`run_mdf_harness.MAX_ITER`/`TOLERANCE` -- so a row here and the corresponding Stage C3
-of `run_sand_harness.py`/`run_mdf_harness.py` are the same computation on the same code
-path. Three harnesses that agree by construction is the same rule
-`run_mdf_harness.py`'s docstring states for two.
-
-What it does *not* do is the rest of either ladder: no Stage A, no Jacobian against
-PROCESS's finite differences, no warm (C2) solve. Those are per-configuration
-investigations; this is the matrix, and its unit of work is a row.
-
-The reference file's path is preserved exactly
-----------------------------------------------
-`stellarator_helias.IN.DAT` runs with `graph=None`/`switch_values=None` -- the literal
-default code path whose numbers other records pin -- and every other machine gets
-`graph_for(machine_from_indat(...))` and `sand.switch_values_for(...)`. Same
-`is_reference` discriminator, same reasoning, as `run_sand_harness.main`.
-
-What a row costs, and what it does not include
-----------------------------------------------
-One PROCESS solve (10 s to ~110 s depending on the file), two MDA runs for SAND (the
-warm one that assembly and `residual_condition_scales` read, the cold one that seeds the
-solve -- both, so that a SAND row here is the same problem `run_sand_harness.py`'s C3
-row is), one MDA prime for MDF, and the two solves. A configuration that refuses
-assembly costs `machine_from_indat` alone: the refusal is checked *before* PROCESS is
-run, because a row that reports "REFUSED" needs nothing from PROCESS and a 100 s solve
-for a row that will be one line of text is the difference between a matrix that gets
-re-run and one that does not.
-
-A failure is a row, not an exit
--------------------------------
-Every phase -- the assembly refusal, the PROCESS run, each formulation's build, each
-solve -- is caught per configuration and recorded in the row. The point of the table is
-the *whole* row set: a runner that dies on `st_regression` -- whose MDF build hands the
-SQP a `nan` derivative row and whose SAND build raises `KeyError` on the objective's own
-condition -- tells you nothing about the six rows either side of it, and those two
-failures are themselves the most useful thing the run has to say about that file.
-
-What the columns mean
----------------------
-`SQP` is the recorded iteration count, and **zero is a real and distinct outcome**: it
-means `pyvmcon`'s first QP had no feasible point and `VmconDriver` returned the start
-untouched (`run_sand_harness._why_no_step` is the instrument that says why). `max|eq|`
-is reported in `VmconDriver.condition_scale`'s units -- for SAND that means the residual
-equalities are relative (`sand.residual_condition_scales`' `1/|u|`) and PROCESS's own
-constraints keep a factor of 1.0; MDF declares no residual equalities, so its column is
-already PROCESS's normalised residual. `min ie` is cottax's sign convention as VMCON
-sees it: **negative is violated**. `PROCESS` is `numerics.n_solver_iterations` from the
-run that produced the reference -- it is the count for a *converged* solve from the same
-`IN.DAT`.
-
-`PRO objf`, `d objf` and `worst dx` compare the port with **PROCESS's own answer**
---------------------------------------------------------------------------------
-Until 2026-08-31 this table carried PROCESS's iteration count and never PROCESS's
-*answer*, so every "matches" claim the record made off it compared the port against
-**itself** under a different seeding mode -- which is exactly `_audit/next_steps.md`
-§17.2's error, and it was repeated twice after §17.2 named it. `reference_run` is
-disk-cached, so the three columns cost about `0.01 s` a row.
-
-`PRO objf` is `objective_function(i_figure_merit, reference.data)`; `d objf` its relative
-distance from the port's; `worst dx` the largest relative deviation over the `ixc` design
-vector (`run_sand_harness.py`'s own `rel` column, worst-cased, with the iteration
-variable named in the notes).
-
-**A gap can be right.** `stellarator_helias` reads `1.2149167845171462` against the
-port's `1.21775735`, and that 0.23 % is the `+17.604 MW` chain
-`mda_harness.EXPLAINED_DISAGREEMENTS` documents, where PROCESS's converged
-`DataStructure` is internally inconsistent and the port is the self-consistent side. Such
-rows are flagged **EXPLAINED** in the notes (`EXPLAINED_OBJECTIVE_READS`), because a
-column that reported them as failures would be worse than no column at all.
-
-The problem type comes from the file, not from a default
---------------------------------------------------------
-`large_tokamak_eval` and `spherical_tokamak_eval` state `i_process_run_mode = -2`, and
-PROCESS answers that by **root-finding the equalities** with `scipy.optimize.fsolve`,
-forming no objective and never examining the inequalities. `Row.root_find` reads that off
-the file (`importer.Problem.is_evaluation`) and the MDF arm assembles a `RootFind`
-accordingly (`mdf.assemble`). Their `PRO objf` cell reads `none`, not a number: PROCESS
-forms none, and `reference.i_figure_merit` is `7` on both only because
-`numerics.py:154`'s dataclass default put it there.
-
-**Such a file gets ONE row, and the formulation column is not a choice it has.** MDF and
-SAND are two ways of distributing an *optimisation*; a file that states none has nothing
-to distribute, and MDF's design vector is `ixc` exactly, so the MDF root find is
-PROCESS's own square system rather than one of two readings of it. The second row this
-table used to print was a SAND `Optimise` over design *and* coupling against a figure of
-merit the file never named -- a number with nothing to compare it to, under a heading
-implying there was. `_solve_both` carries the argument; the notes block states it on
-every affected row rather than leaving the single line to be read as a missing
-measurement.
-
-**Every `SQP` count is at `1e-8`**, and saying so is not pedantry. `MDF_TOLERANCE` and
-`SAND_TOLERANCE` are imported from -- or default identically to -- the two ladder
-harnesses, so the stellarator's 67 (MDF) and 83 (SAND) are exactly the counts those
-harnesses already record at that tolerance (`run_mdf_harness.py:85`,
-`run_sand_harness.py:99`). The *same two solves* take **58 and 58** at PROCESS's own
-`epsvmc = 1e-6` (`_audit/optimise_design.md` §15, rows at `:2295`/`:2301`). Both pairs
-are in the records four rows apart, and these counts were once checked against the wrong
-pair and read as tree drift. There is no `conv` column to catch that, so the tolerance
-is stated here instead. Caps: MDF 800, SAND 500.
-
-Where the boundary values come from
------------------------------------
-**Natively, and only natively.** There is no `DataStructure` in a row at all, and no
-PROCESS run to seed from: the env is `native.native_state` -- `importer.read_indat`'s
-values over a vendored table of PROCESS's dataclass defaults -- and the problem is
-`native.native_reference`'s, off `indat.problem_from_indat` and the vendored
-`ITERATION_VARIABLES` bounds.
-
-Until 2026-09-07 there were four modes: `--provider` (the default), `--provider-strict`,
-`--seed` and `--native`. The first three all installed into a copy of PROCESS's seed and
-measured *how much* of the boundary need not come from PROCESS; they existed to move that
-number, and `--native` is where it arrived. Keeping three ways to be partly seeded, one
-of them the default, meant every row carried a `seed` column asking which of them it was.
-`provider.py`, its seven pinned classifications and `test_provider.py` went with them
-(`_audit/README.md`); `git log --diff-filter=D` finds them.
-
-The SAND column carries one caveat -- `native.NativeReference` -- because with no
-converged run there is no warm env for `sand.residual_condition_scales` **or for
-`sand_harness.assemble`'s degeneracy test**, so a native SAND row is a differently scaled
-and sometimes differently *shaped* problem than a seeded one would be, while the MDF rows
-were directly comparable. `_audit/optimise_design.md` §27 measured both and showed they
-are the whole of the difference: the two modes' boundary values were bit-identical on all
-seven files.
-
-Seeding and scoring are two axes, and `--compare-process` is the second one
---------------------------------------------------------------------------
-Until 2026-09-01 a `--native` row's `PRO`, `PRO objf`, `d objf` and `worst dx` cells were
-blank **by construction**, and that was the only remaining reason to run a
-partly-seeded mode at all. The coupling was never real. `sand_harness.reference_run` is disk-cached and costs
-~4.6 s cold and ~0.01 s warm, and scoring a finished solve against PROCESS's converged
-answer needs that answer *loaded*, not *used as a seed*.
-
-So `--compare-process` / `--no-compare-process` compose freely with the four seeding
-modes. In `run_one` the scoring object is a local named `oracle` and never `reference`;
-it reaches `_against_process` and nothing that assembles, seeds or solves. The table
-prints the two facts in two places -- a `seed` column for where the start came from, the
-`PRO*` group for whether the answer was scored -- so that a filled `PRO objf` beside
-`seed nat` reads as what it is.
-
-**`--native --compare-process` is the intended default table.**
-"""
+"""**Cold** MDF and cold SAND on every reference configuration, as one table."""
 
 from __future__ import annotations
 
@@ -211,42 +56,22 @@ from functional_process.cottax.sand_harness import (  # noqa: E402
 )
 
 CONFIGURATIONS = native.CONFIGURATIONS
-"""Re-exported. The list and `stem` live in `native.py` -- this runner is one caller
-of the configuration list, not its owner, and the modules that need it should not have
-to import a 1,900-line runner to get it. Kept as a name here because four callers
-(`run_warm_matrix`, `boundary`, `test_boundary`, `_audit/rss_per_program`) already read
-it off this module."""
+"""Re-exported."""
 
 
 SAND_TOLERANCE = None
-"""`VmconDriver`'s own default, which is what `run_sand_harness.py`'s Stage C uses.
-
-Left explicitly `None` rather than set to `MDF_TOLERANCE`: the two formulations' Stage C
-solves are each compared against their own harness's published number, and a tolerance
-this file chose would make both rows new measurements of a problem nobody has run.
-`run_mdf_harness.TOLERANCE`'s own docstring records why MDF's is tighter than PROCESS's.
-"""
+"""`VmconDriver`'s own default, which is what `run_sand_harness.py`'s Stage C uses."""
 
 
 @dataclass
 class Row:
     """One configuration's whole result -- both formulations, or the reason there is
     none.
-
-    Every field defaults to "not measured" rather than to a number, so a row that fell
-    over in phase two cannot be read as a row that solved: `render` prints `-` for
-    `None` and the `note` carries the refusal or the exception.
     """
 
     name: str
     compared: bool = False
-    """Was PROCESS run for this row's `PRO`/`PRO objf`/`d objf`/`worst dx` cells?
-
-    **This is not the seeding question**, and conflating the two is the thing the split
-    exists to prevent: a `--native --compare-process` row is seeded with no PROCESS
-    object in the path at all and still scored against PROCESS's converged answer,
-    because loading that answer costs one disk-cached `reference_run` and nothing about
-    *scoring* a solve requires having *started* it from PROCESS."""
+    """Was PROCESS run for this row's `PRO`/`PRO objf`/`d objf`/`worst dx` cells?"""
     assembles: bool | None = None
     note: str = ""
     graph_nodes: int | None = None
@@ -259,26 +84,22 @@ class Row:
     seconds: float = 0.0
     timings: dict = field(default_factory=dict)
     """`{formulation: {phase: seconds}}` -- where each arm's wall clock went, from
-    `phase_timing`. Empty when the patches did not install (see `phase_timing.install`),
-    which `render` reports rather than papering over."""
+    `phase_timing`.
+    """
     boundary: dict = field(default_factory=dict)
     """`_native_counts` for this configuration: how many boundary places the native
-    state answered, and from where."""
+    state answered, and from where.
+    """
     omitted_paths: tuple = ()
-    """The places this run asked for and the native state could not
-    answer, so each was seeded `0.0`. The work list, per configuration."""
+    """The places this run asked for and the native state could not answer, so each was
+    seeded `0.0`.
+    """
     root_find: bool = False
     """Does this file state a root find (`i_process_run_mode = -2`) rather than an
-    optimisation? Read off the file's own text (`importer.Problem.is_evaluation`), so it
-    is read from the file's own text, not from any solved state."""
+    optimisation?
+    """
     process_objf: float | None = None
-    """PROCESS's own converged objective, `objective_function(i_figure_merit, data)`.
-
-    `None` in two distinct situations the table must not conflate: a `--native` row (no
-    PROCESS run at all, so the `PRO` column is `-` too) and a root-find row (PROCESS
-    **forms no objective** in evaluation mode -- `_Fsolve.solve` ends `self.objf = None`
-    -- so there is no number to compare against and inventing one would be worse than
-    the blank). `render` distinguishes them by `root_find`."""
+    """PROCESS's own converged objective, `objective_function(i_figure_merit, data)`."""
 
 
 def _blank():
@@ -307,14 +128,7 @@ def _blank():
 
 
 def _trace_tail(trace):
-    """`(iterations, objf, max|eq|, min ie)` off a Stage C callback trace.
-
-    A trace is a list of `(i, convergence, objf, max|eq|, min ie)` tuples recorded by the
-    harnesses' own `record` callbacks, so this reads the last entry and nothing else. An
-    **empty** trace is not an error and not a zero-iteration success: it is the shape a
-    first-QP-infeasible solve leaves behind (`run_sand_harness._why_no_step`), and the
-    caller distinguishes those two by asking that function, not by looking here.
-    """
+    """`(iterations, objf, max|eq|, min ie)` off a Stage C callback trace."""
     if not trace:
         return 0, None, None, None
     last = trace[-1]
@@ -322,14 +136,7 @@ def _trace_tail(trace):
 
 
 def _status(trace, tolerance, cap):
-    """Which of the four ways a solve ended, in one word.
-
-    `run_mdf_harness._why_it_stopped` makes the same three-way distinction in a sentence;
-    this adds the fourth outcome that only shows up cold -- `no-step`, an empty trace --
-    because on this table a blank iteration count and a converged one must not look
-    alike. `tolerance` may be `None` (`VmconDriver`'s own default), in which case the
-    driver's default is what the convergence column is read against.
-    """
+    """Which of the four ways a solve ended, in one word."""
     if not trace:
         return "no-step"
     epsilon = 1.0e-6 if tolerance is None else tolerance
@@ -341,14 +148,7 @@ def _status(trace, tolerance, cap):
 
 
 def _recorder(trace):
-    """The `VmconDriver.callback` both harnesses use, verbatim.
-
-    `result.eq`/`result.ie` are the values `_Problem.__call__` handed VMCON, which are
-    already multiplied by `VmconDriver.condition_scale` (`core/solver/drivers.py:794`).
-    That is what makes the `max|eq|` column comparable across configurations and is why
-    §19.1 item 6's absolute-`1e-6`-on-physical-units concern does not apply once
-    `condition_scale` is passed to the *solve* schedule, as it is below.
-    """
+    """The `VmconDriver.callback` both harnesses use, verbatim."""
 
     def record(i, result, _x, convergence):
         trace.append((
@@ -364,12 +164,7 @@ def _recorder(trace):
 
 @dataclass
 class MdfBuild:
-    """Everything about an MDF arm that does **not** change between solves.
-
-    The unit `functional_process.cottax.session` reuses. `problem` is the assembled `Mdf`,
-    `in_graph` its `InGraphRootFind` where the file states one, and `shape` the cells
-    `_blank()` fills from the assembly rather than from the answer.
-    """
+    """Everything about an MDF arm that does **not** change between solves."""
 
     problem: object
     in_graph: object = None
@@ -380,20 +175,6 @@ class MdfBuild:
 def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBuild:
     """Assemble MDF for this configuration -- the half of a row that a *second* solve of
     the same configuration must not repeat.
-
-    Split out of `cold_mdf` on 2026-09-03 for `functional_process.cottax.session`, and the
-    reason is measured rather than tidy: re-assembling builds a structurally *equal* but
-    freshly allocated block, and every memo downstream is keyed on what was built --
-    `sand_harness._SCHEDULE_WHOLE`, jax's own executable cache -- so a loop that
-    re-assembles re-traces and re-compiles the whole graph on every iteration while a
-    loop that does not is 30-75x faster (`_audit/optimise_design.md` §32.2). Nothing here
-    reads `cold`, which is exactly why it can be hoisted.
-
-    **That 30-75x is the number §37 moved**, and this docstring is left standing as the
-    measurement it was: since the graph became static (§34), the switches stopped being
-    partials (§35) and `host_cache._BOUND` was deleted for a module-level jit (§37), a
-    re-assembled block is a jax cache *hit*. Hoisting is still right -- it saves the
-    assembly itself -- but it is no longer the difference between a second and a minute.
     """
     build = MdfBuild(
         problem=mdf.assemble(
@@ -447,15 +228,6 @@ def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBu
 def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
     """Solve an already-assembled MDF from `cold` -- the half of a row that a repeated
     solve *does* repeat.
-
-    The same three calls `run_mdf_harness._measure` makes for its C3 -- `seed` off the
-    cold `DataStructure`, `prime` the MDA once, `solve`.
-
-    **A re-seed and a re-prime are cheap and are meant to be repeated**: measured warm on
-    `stellarator_helias`, `mdf.seed` plus `mdf.prime` is 10-20 ms with **zero** XLA
-    compiles, and a full re-seed from a *different* start is 25-42 ms
-    (`_audit/optimise_design.md` §32.2). So a scan point is a call to this function and
-    not a reason to rebuild anything.
     """
     problem, root_find = build.problem, build.root_find
     result = _blank()
@@ -535,18 +307,7 @@ def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
 def cold_mdf(
     reference, machine_graph, switch_values, cold, root_find=False, optimiser=None
 ):
-    """Build MDF for this run and solve it from the input file's own cold values.
-
-    `build_mdf` then `solve_mdf`, which is what a matrix row is: assemble the problem
-    and solve it once. A caller that wants to solve it *again* calls the two halves --
-    see `functional_process.cottax.session`, whose whole point is that a second row's worth of
-    answer costs the second half only.
-
-    `root_find` states the file's own problem type instead of an `Optimise` for the two
-    files whose `i_process_run_mode` is `-2` (`mdf.assemble`; `_run_mode` chooses). The
-    row then reports `objf` as `-`, because PROCESS forms none in that mode and neither
-    does the port.
-    """
+    """Build MDF for this run and solve it from the input file's own cold values."""
     began = time.perf_counter()
     build = build_mdf(reference, machine_graph, switch_values, root_find=root_find)
     result = solve_mdf(build, reference, cold, optimiser=optimiser)
@@ -556,14 +317,7 @@ def cold_mdf(
 
 @dataclass
 class SandBuild:
-    """Everything about a SAND arm that does **not** change between solves.
-
-    `solve_schedule` is built **once**, callback and all, and that is the load-bearing
-    part rather than an economy: `sand_harness.run_schedule` memoises its whole-schedule
-    jit and its fused runners on the `Schedule` **object**, so a schedule rebuilt per
-    solve re-traces and re-compiles everything it holds. The per-solve state that used to
-    force a rebuild is the callback's trace, and a list can simply be cleared.
-    """
+    """Everything about a SAND arm that does **not** change between solves."""
 
     solve_schedule: object
     drive: object
@@ -574,19 +328,7 @@ class SandBuild:
 
 
 def build_sand(reference, machine_graph, switch_values, optimiser=None) -> SandBuild:
-    """Assemble SAND for this configuration, solve schedule included.
-
-    `run_sand_harness.main`'s C3 branch up to the point where `cold` first matters, with
-    its warm MDA run kept as it is there and for the reason recorded there: the **warm**
-    env (`reference.data`) is what `sand_harness.assemble` reads to find the degenerate
-    and array-valued fixed points, and what `sand.residual_condition_scales` reads for
-    its `1/|u|` factors. Building the scales off the cold env instead would be a
-    different problem from the one `run_sand_harness.py` reports, and this file's whole
-    claim is that it is not.
-
-    Split out of `cold_sand` on 2026-09-03 for `functional_process.cottax.session` -- see
-    `build_mdf` for why re-assembly is the thing a repeated solve must avoid.
-    """
+    """Assemble SAND for this configuration, solve schedule included."""
     driven, env = mda_env(reference, graph=machine_graph)
     combined, report = sand_assemble(reference, driven, env, switch_values=switch_values)
     schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
@@ -621,15 +363,7 @@ def build_sand(reference, machine_graph, switch_values, optimiser=None) -> SandB
 
 
 def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
-    """Solve an already-assembled SAND from `cold`.
-
-    The **cold** env (`reference.cold`, or whatever `cold` a caller substitutes) is what
-    `_seed` hands the solve for every coupling unknown, since a cold `DataStructure`
-    field holds a dataclass default no run has written.
-
-    The trace is cleared rather than replaced, because the schedule closes over it -- see
-    `SandBuild`.
-    """
+    """Solve an already-assembled SAND from `cold`."""
     result = _blank()
     began = time.perf_counter()
     result.update(build.shape)
@@ -740,12 +474,7 @@ def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
 
 
 def cold_sand(reference, machine_graph, switch_values, cold, optimiser=None):
-    """Build SAND for this run and solve it from the input file's own cold values.
-
-    `build_sand` then `solve_sand`, which is what a matrix row is; a caller that solves
-    the same configuration more than once calls the two halves
-    (`functional_process.cottax.session`).
-    """
+    """Build SAND for this run and solve it from the input file's own cold values."""
     began = time.perf_counter()
     build = build_sand(reference, machine_graph, switch_values, optimiser=optimiser)
     result = solve_sand(build, reference, machine_graph, cold)
@@ -760,33 +489,6 @@ EXPLAINED_OBJECTIVE_READS = {
 }
 """`objective read -> the `mda_harness.EXPLAINED_DISAGREEMENTS` key that explains a gap
 on it`.
-
-Why this table exists at all
-----------------------------
-The `PRO objf` column below is the first thing on this matrix that compares the port
-against **PROCESS's answer** rather than against the port under another seeding mode
-(`_audit/next_steps.md` §17.2's error, repeated twice since). The first time it was run
-it reported `stellarator_helias` off by 0.23 %, and a column that called that a
-regression would be worse than no column: it is the `+17.604 MW` chain
-`mda_harness.EXPLAINED_DISAGREEMENTS` already documents at
-`.heat_transport.p_plant_electric_base_total_mw`, where **PROCESS's own converged
-`DataStructure` is internally inconsistent and the port is the self-consistent side**.
-That entry's own last sentence names the tail of the chain -- *"the rest is that delta
-through the linear cost accumulation to `.costs.coe`"* -- and every objective metric that
-reads a cost total is therefore downstream of it.
-
-Why it is a read map and not a configuration list
--------------------------------------------------
-The property is of the **metric**, not of the machine: `objective_metric_6` is `coe/100`
-and `objective_metric_7` is `cdirt/1e3` or `concost/1e4`, so any file choosing figure of
-merit 6 or 7 inherits the same chain, and a list of today's seven configurations would go
-stale the first time an eighth arrived. `_explained_by` asks the assembled objective node
-what it reads and looks the answer up here.
-
-**A gap is marked explained only when the design vector agrees**, which is the second
-half of the rule and the part that keeps it honest: the chain is a difference in
-*evaluating* the objective at a shared point. A row whose `worst dx` has moved is not
-this; it is a different answer, and it gets no label.
 """
 
 _UNKNOWN_EXPLANATIONS = sorted(
@@ -811,24 +513,13 @@ whoever moved the record, not on a reader of a table generated three weeks later
 
 _EXPLAINED_DX = 1e-4
 """How closely the design vector must agree before an objective gap may be called
-explained. Loose on purpose -- the cold solves land within `1e-6`-ish of PROCESS's `x`
-when they land at all, so this separates "the same point" from "a different answer"
-rather than grading the solve."""
+explained.
+"""
 
 
 def _explained_by(reference, graph, switch_values):
     """`(key, read)` if this run's objective is downstream of a documented, deliberate
     disagreement, else `None`.
-
-    Asks `sand.objective_nodes` -- the same call `mdf.assemble` makes -- which `VarPath`s
-    the run's figure of merit reads, so this cannot drift from what was actually
-    assembled the way a hand-kept per-configuration list would.
-
-    **Every node it builds is asked, not just the first.** A maximise run is two nodes
-    since §36 -- the metric and a `.ObjectiveNegated` -- and the negation reads
-    `^metric.numerics.objf`, which is in no `EXPLAINED_OBJECTIVE_READS` table and simply
-    does not match. Asking all of them is what keeps this from depending on which one
-    happens to come out first.
     """
     from functional_process.cottax.indat import objective_selection  # noqa: PLC0415
 
@@ -849,23 +540,7 @@ def _explained_by(reference, graph, switch_values):
 
 
 def _process_objective(reference, root_find):
-    """PROCESS's **own** converged objective, or `None` when it forms none.
-
-    `objective_function(i_figure_merit, data)` is the function PROCESS's solver
-    maximises or minimises, read at the converged `DataStructure` -- so this is the
-    number the port's `objf` column has to be compared against, and until 2026-08-31
-    this table had no column for it at all. Every "matches PROCESS" claim in the record
-    before then compared the port against *itself* under a different seeding mode, which
-    is exactly `_audit/next_steps.md` §17.2's error.
-
-    `root_find` short-circuits it, and not as an optimisation: a file whose
-    `i_process_run_mode` is `-2` is answered by `_Fsolve`, whose `solve` ends
-    `self.objf = None` and whose output writer omits the figure-of-merit line entirely.
-    `reference.i_figure_merit` is `7` on both such files **because `numerics.py:154`
-    defaults it there**, not because the file or the solver ever chose it -- evaluating
-    that metric would produce a number PROCESS never formed and print it in a column
-    headed "PROCESS".
-    """
+    """PROCESS's **own** converged objective, or `None` when it forms none."""
     if root_find:
         return None
     from process.core.solver.objectives import objective_function  # noqa: PLC0415
@@ -879,33 +554,6 @@ def _process_objective(reference, root_find):
 def _against_process(store, oracle, process_objf, explained=None, ixc=None):
     """Fill a formulation's `dx`/`dobjf`/`explained` -- the port's answer against
     PROCESS's own.
-
-    **`oracle` is PROCESS's run and only PROCESS's run.** On a
-    `--native --compare-process` row the solve was seeded and stated from a
-    `native.NativeReference` and this object is a separate, disk-cached `ReferenceRun`
-    loaded for scoring; the caller passes the right one and this function does not know
-    or care which mode produced `store`.
-
-    `ixc` is the **design vector's own order**, which is the order `store["_x"]` was
-    written in, and it is compared against `oracle.ixc` rather than assumed equal:
-    `native.native_reference` sorts the file's `ixc` and `SingleRun.init` sorts PROCESS's
-    (`native_reference`'s docstring records that this is an eighth initialisation source
-    and that three of the seven files state `ixc` out of order). They agree on all seven
-    today, and a `dx` column computed by zipping two differently ordered ID lists would
-    report a per-variable disagreement that is really a permutation -- silently, and in
-    the one column that exists to catch silent disagreement. So a mismatch blanks the
-    column instead.
-
-    `dx` is the **worst relative deviation over the `ixc` design vector**, the same
-    quantity `run_sand_harness.main`'s per-variable table prints in its `rel` column and
-    computed the same way (`|port - PROCESS| / |PROCESS|`, `reference.converged` being
-    PROCESS's converged value per iteration-variable ID). It is reported as one number
-    plus the ID it occurred at, because on a matrix the row is the unit and the full
-    table belongs to the per-configuration harness.
-
-    A `NativeReference` has no `converged` and no objective, so a `--native` row without
-    `--compare-process` never reaches here at all (`_solve_both` skips the call) and both
-    columns stay `-`, exactly as `PRO` does.
     """
     x = store.get("_x")
     converged = getattr(oracle, "converged", None)
@@ -943,16 +591,7 @@ _HEADLINE = 260
 
 
 def _headline(refusal) -> str:
-    """A refusal in one readable line, and the pointer to the rest of it.
-
-    `indat`'s refusals are *paragraphs* -- deliberately, and they are the right length
-    where they are raised, since a reader who hits one is about to decide whether to port
-    a 517-line solver. Written into a matrix cell unabridged they crowd out the other six
-    rows, which is the one thing this table exists to show at once. So the note carries
-    the first `_HEADLINE` characters -- enough for the arm, the switch and the model that
-    is missing -- and says where the full text is, rather than choosing between an
-    unreadable table and a refusal with no reason.
-    """
+    """A refusal in one readable line, and the pointer to the rest of it."""
     text = " ".join(str(refusal).split())
     if len(text) <= _HEADLINE:
         return text
@@ -960,33 +599,7 @@ def _headline(refusal) -> str:
 
 
 def run_one(path, compare=None, optimiser=None) -> Row:
-    """One configuration: assembly verdict, PROCESS, cold MDF, cold SAND.
-
-    Nothing here raises. Each of the five phases records what it got and the next one
-    runs anyway where it can -- a formulation that fails to build does not stop the other
-    from solving, because the two failures are independent evidence. `mode` selects where
-    the boundary values come from natively; see this module's docstring.
-
-    **A row seeds from no PROCESS object at all.**
-    The other three modes need `reference_run` for the seed they start from; a native row
-    starts from `native.native_state` and states its problem with
-    `native.native_reference`.
-
-    **Seeding and comparison are separate axes, and `compare` is the second one.** Until
-    2026-09-01 they were one: a `--native` row had `process_objf = None` *by
-    construction*, so `PRO objf`, `d objf` and `worst dx` were blank, and that was the
-    only reason a partly-seeded mode still existed. It was never a real coupling.
-    `reference_run`
-    is disk-cached (~4.6 s a row, and 0.01 s once warm), and scoring a solve against
-    PROCESS's converged answer requires *having* that answer, not *having started from*
-    it -- so `compare=True` loads it as an **oracle** and nothing else. It is never
-    handed to `mdf.assemble`, `mda_env`, `sand_harness.assemble` or `_seed`; the local is
-    called `oracle` rather than `reference` precisely so that a future edit that leaks it
-    into the solve path has to rename it first.
-
-    `compare` defaults to `False` -- PROCESS does not run for a native row, so scoring
-    against it is opt-in, via `--compare-process`.
-    """
+    """One configuration: assembly verdict, PROCESS, cold MDF, cold SAND."""
     began = time.perf_counter()
     if compare is None:
         compare = False
@@ -1088,31 +701,7 @@ def _solve_both(
     oracle=None,
     optimiser=None,
 ):
-    """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
-
-    Factored out of `run_one` when the native mode arrived: the modes differed in
-    *where the four arguments come from* and not at all in what is done with them, and a
-    second copy of this loop would be the place a difference crept in unnoticed.
-
-    **An evaluation-mode file gets one arm, not two, and the formulation split is not a
-    thing that exists for it.** MDF and SAND are two ways of *distributing an
-    optimisation*: MDF hands the optimiser PROCESS's `ixc` and converges the MDA inside
-    each evaluation, SAND hands it the design and the coupling together and holds them
-    with residual equalities. A file stating `i_process_run_mode = -2` poses no
-    optimisation to distribute -- PROCESS root-finds the equalities alone with
-    `scipy.optimize.fsolve` and forms no objective at all -- and MDF's design vector *is*
-    `ixc`, so the MDF root find poses **exactly** the square system PROCESS poses. A SAND
-    row would state a larger square system over design *and* coupling that PROCESS never
-    writes down, and reporting it beside PROCESS's answer under a "formulation" heading
-    implies a comparison that has no content. So the run is one row, and the row is MDF's
-    because MDF is the one that is PROCESS's own problem.
-
-    **`oracle` is the comparison side and `reference` is the seeding side.** They are the
-    same object for the seeded modes and *different* objects for
-    `--native --compare-process`, which is exactly why they are two parameters: `oracle`
-    reaches `_against_process` and nothing else, and `reference` reaches every build and
-    every solve. `oracle is None` leaves the `PRO` columns blank.
-    """
+    """Cold MDF and cold SAND for one configuration, each a row rather than an exit."""
     arms = [("MDF", cold_mdf, row.mdf, {"root_find": row.root_find})]
     if not row.root_find:
         arms.append(("SAND", cold_sand, row.sand, {}))
@@ -1185,12 +774,6 @@ def _solve_both(
 
 def _native_counts(state) -> dict:
     """`installed`-shaped counts for a native row, so the boundary block still adds up.
-
-    The columns mean what they meant, with the seed's two gone: `written` is every place
-    the state answers, `from_process` is **zero by construction** -- there is no PROCESS
-    object in a native run to fall back to -- and `held`/`nothing` are zero for the same
-    reason. `unanswered` is filled in after the solve, because it is a property of what
-    the run asked for and not of the state.
     """
     sources = state.sources
     return {
@@ -1227,11 +810,7 @@ _COLUMNS = (
     ("min ie", 11, "{}"),
     ("PRO", 4, "{}"),
 )
-"""`(heading, width, format)` per column of `render`'s table.
-
-Widths are fixed rather than computed so that two runs of this file line up when they are
-diffed, which is the operation the table is actually for.
-"""
+"""`(heading, width, format)` per column of `render`'s table."""
 
 
 def _cell(value, width, numeric=None):
@@ -1246,14 +825,7 @@ def _cell(value, width, numeric=None):
 
 
 def render(rows) -> str:
-    """The table, plus a notes block for anything that did not fit in a cell.
-
-    Two lines per configuration (MDF, SAND) so that the shape columns mean one thing per
-    line; a refused configuration gets one line with its reason in the notes. The notes
-    block is not decoration -- a `no-step` row's *reason* is the whole content of that
-    row, and a table that dropped it would report the same cell for "converged trivially"
-    and "the QP had nowhere to go".
-    """
+    """The table, plus a notes block for anything that did not fit in a cell."""
     head = " ".join(h.rjust(w) for h, w, _ in _COLUMNS)
     lines = [head, "-" * len(head)]
     notes = []
@@ -1475,17 +1047,7 @@ def render(rows) -> str:
 
 
 def _boundary_block(rows) -> list[str]:
-    """Where each row's boundary values came from -- the provider or PROCESS's seed.
-
-    A block rather than a column, for one reason: the table's rows are diffed against
-    every previous run of this file, and a new column would report a change in every one
-    of them. `supplied` excludes the `solver` and `guess` rows (`provider.NOT_SUPPLIED`)
-    -- neither is a value a provider could answer -- and `paths` is the raw boundary
-    total beside it, because §22.6's published ratios are over that one. `held` is the
-    `off` rows the seed still owns in `--provider` mode, `none` the answers that are
-    `None` in both (`provider.install`); the five columns after `configuration` sum to
-    `supplied`.
-    """
+    """Where each row's boundary values came from -- the provider or PROCESS's seed."""
     measured = [row for row in rows if row.boundary.get("supplied")]
     if not measured:
         return []
@@ -1516,39 +1078,7 @@ def _boundary_block(rows) -> list[str]:
 
 
 def _timing_block(rows) -> list[str]:
-    """Where each arm's wall clock went -- tracing, lowering, compiling, solving.
-
-    **The point of the column, from `_audit/optimise_design.md` §24/§25**: this port's
-    cost is compilation, not arithmetic. One schedule lowers to 33 935 MLIR lines
-    (132 125 for a tokamak) and `low_aspect_ratio_DEMO`'s 500 SQP iterations are about
-    15 s of a ~160 s row. Those were hand measurements on one configuration; this is the
-    same question asked of every arm, every pass.
-
-    `solve` is the **residual** of the arm's wall clock after the three measured phases,
-    so the four sum to the total by construction and include the graph assembly, the
-    PROCESS reference load and every dispatch -- see `phase_timing.split`. Times are
-    exclusive, so lowering inside a nested trace is not counted twice.
-
-    Empty when `phase_timing.install()` found jax's internals moved; the header line says
-    so rather than printing a table of zeros.
-
-    **The `model` and `other` columns are UNVERIFIED and must not be quoted.** A direct
-    probe of `stellarator_helias` -- wrapping `host_cache.flat_conditions` plus
-    `flat_condition_jacobian` and running `run_one` on the same tree -- reports `model`
-    4.14 s for the whole row against this block's 6.6 + 4.4 = 11.0 s, and `compile`
-    11.1 s against 25.3 s. The probe reproduces itself to three figures across two runs,
-    so the disagreement is not noise and is not yet explained. `trace`, `lower` and the
-    *shape* of the conclusion (compilation dominates) survive it; the per-arm split does
-    not. `_audit/next_steps.md` §28.3 carries it as an open item.
-
-    What the probe does establish, twice: **552 calls each** of values and Jacobian for
-    108 + 169 = 277 SQP iterations -- about four evaluations per iteration, i.e. the
-    line-search trials §21.1 had to instrument `pyvmcon`'s problem object to see --
-    at 13.7 ms and 32.7 ms per call *inclusive*, and roughly 3.75 ms per call once the
-    trace/lower/compile inside each is subtracted. So a few hundred iterations at a few
-    milliseconds genuinely cannot account for the wall clock, and they do not: the
-    arithmetic is seconds and the compiler is tens of seconds.
-    """
+    """Where each arm's wall clock went -- tracing, lowering, compiling, solving."""
     timed = [(row, arm, split) for row in rows for arm, split in row.timings.items()]
     if not timed:
         return [
@@ -1595,19 +1125,7 @@ def _timing_block(rows) -> list[str]:
 
 
 OUT = str(Path(__file__).parent / "reference_cold_matrix.txt")
-"""Where `main` checkpoints the table.
-
-**Rewritten after every configuration, not once at the end.** A full pass is ten to
-fifteen minutes of PROCESS runs and MDA primes, and a run that is interrupted -- a
-dropped connection, a `Ctrl-C`, a machine going to sleep -- used to leave nothing at all,
-because the table only existed in a list that `print` was going to consume. Four rows on
-disk are worth incomparably more than seven rows nobody ever saw, and the rewrite costs a
-few hundred bytes of I/O against a row that cost minutes to compute.
-
-Not a *pin*: unlike `reference_cold_start.txt` no test reads this and no meta-test
-enforces it. It is the artefact the session's record quotes, and its value is that a
-reader can `git diff` two runs of the matrix and see which cell moved.
-"""
+"""Where `main` checkpoints the table."""
 
 
 PORT_FILES = (
@@ -1623,32 +1141,13 @@ PORT_FILES = (
     "core/solver/drivers.py",
     "core/solver/host_cache.py",
 )
-"""The modules a row's numbers depend on, for the provenance header.
-
-Not every file in the package -- the ones a changed byte in could move a cell. A row is
-`machine_from_indat` -> `reference_run` -> the provider or the native state -> `assemble`
--> `solve`, and this is that path's source.
-
-`core/solver/drivers.py`/`host_cache.py` joined the list 2026-09-05: `VmconDriver.fused`
-lives in the first and `host_cache.bind`'s three programs in the second, and a byte
-changed in either can move a cell (it did not, this time -- see `optimise_design.md`
-§40 -- but the header would not have known that without these two names in the list)."""
+"""The modules a row's numbers depend on, for the provenance header."""
 
 
 def provenance(argv=(), compare=None) -> list[str]:
     """The header every table carries: **which tree state these rows were measured on.**
-
     Emitted by `checkpoint`, not hand-written on top afterwards -- which is the whole
-    change. The previous table's header was a hand-added block, so the first re-run
-    silently deleted it and a reader of the new file had no way to know what it was
-    measured against. A provenance line that a re-run destroys is worse than none,
-    because its absence is invisible.
-
-    The dirty-file list is the load-bearing part. `git rev-parse HEAD` alone is a lie on
-    a working tree with uncommitted edits, and every table this port has ever produced
-    was produced on one -- including this one. So the header names the commit *and* every
-    file of `PORT_FILES` that differs from it, because a row measured against
-    `mdf.py + 200 uncommitted lines` is not a row measured against that commit.
+    change.
     """
     import subprocess  # noqa: PLC0415, S404 -- header only, not a solve path
 
@@ -1734,25 +1233,7 @@ def provenance(argv=(), compare=None) -> list[str]:
 
 
 def _enable_compilation_cache(directory: str) -> None:
-    """Point jax's persistent compilation cache at `directory`, thresholds lowered.
-
-    **Measured** (`_audit/optimise_design.md` §31.20): the whole seven-configuration
-    pass goes **410 s -> 184 s** with every result row **bitwise identical**, and the
-    `compile` column reads `0.0` on every arm because `backend_compile_and_load` is
-    never reached. The cache is 131 files / 43.5 MB.
-
-    **Both thresholds have to be lowered or almost nothing is cached.** At jax's
-    defaults only 4 of 228 programs qualified and 6.0--6.5 s of compilation survived
-    (§31.7): `min_compile_time_secs` admits only programs that took over a second, and
-    this graph's cost is many medium modules rather than a few huge ones.
-
-    **Opt-in, and it should stay that way for measurement runs.** A cache hit does not
-    go through the entry point `phase_timing` patches, so `compile` reads zero and that
-    time reappears in the `model` residual -- a cached row's phase table is therefore
-    *not* comparable with a published one. It is also **not** a memory lever: peak RSS
-    moves 2.750 -> 2.802 GiB across the same pass, because §31.16 established the peak
-    is resident executables rather than the compiler's workspace.
-    """
+    """Point jax's persistent compilation cache at `directory`, thresholds lowered."""
     Path(directory).mkdir(parents=True, exist_ok=True)
     jax.config.update("jax_compilation_cache_dir", directory)
     jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
@@ -1760,24 +1241,8 @@ def _enable_compilation_cache(directory: str) -> None:
 
 
 def _return_freed_memory_to_the_os() -> None:
-    """`malloc_trim(0)`, because `jax.clear_caches()` frees memory it does not give back.
-
-    **Measured** (`_audit/optimise_design.md` §31.16, 2026-09-02). At the end of a
-    `stellarator_helias` row, `gc.collect()` and `jax.clear_caches()` together change
-    RSS by nothing measurable, and `malloc_trim(0)` alone takes it **1.611 GiB ->
-    0.648 GiB**. glibc's allocator had returned the freed arenas to its own pool and not
-    to the kernel, so the next configuration started 1 GiB deeper than it needed to.
-
-    That matters here and almost nowhere else: a pass died twice on
-    `LLVM ERROR: Unable to allocate section memory` at the fifth configuration on a 15 GB
-    box, and §31.16 established the peak is **resident compiled executables** -- roughly
-    200 bytes per character of pre-optimisation StableHLO the row lowers -- rather than
-    the compiler's transient workspace. A warm compilation cache removes *all* compile
-    time and only **1.2%** of the peak, so it is not the lever; releasing what the
-    previous row is finished with is.
-
-    Best effort: glibc-only, and a `malloc_trim` that is absent or fails is not a reason
-    to lose a pass that is otherwise working.
+    """`malloc_trim(0)`, because `jax.clear_caches()` frees memory it does not give
+    back.
     """
     import ctypes  # noqa: PLC0415
 
@@ -1788,13 +1253,7 @@ def _return_freed_memory_to_the_os() -> None:
 
 
 def checkpoint(rows, out=OUT, argv=(), compare=None) -> None:
-    """Write the table as it stands. Called after every configuration; see `OUT`.
-
-    Failing to write the checkpoint must never lose the row that was just computed, so
-    an `OSError` here is reported and swallowed -- a read-only tree or a full disk is a
-    reason to keep going with an in-memory table, not a reason to discard four minutes
-    of PROCESS runs.
-    """
+    """Write the table as it stands."""
     try:
         Path(out).write_text(
             "\n".join(provenance(argv, compare)) + render(rows) + "\n",
@@ -1805,50 +1264,14 @@ def checkpoint(rows, out=OUT, argv=(), compare=None) -> None:
 
 
 def _compare(argv) -> bool:
-    """Should the rows be **scored against PROCESS**? An axis of its own.
-
-    `--compare-process` and `--no-compare-process` set it explicitly; otherwise it is
-    `False`, because a native row runs no PROCESS and scoring against one costs a run
-    (`sand_harness.reference_run`, disk-cached: ~4.6 s cold, ~0.01 s warm). The pairing
-    this exists for is `--compare-process`: seeded with no `DataStructure` anywhere in
-    the solve path, scored against PROCESS's converged answer, and the two facts
-    reported in two different places on the table.
-    """
+    """Should the rows be **scored against PROCESS**?"""
     if "--no-compare-process" in argv:
         return False
     return "--compare-process" in argv
 
 
 def main(argv=None, out=OUT):
-    """Walk the configurations, run both formulations cold on each, print the table.
-
-    `--input <path>` may be repeated and replaces the default list entirely; with none
-    given every entry of `native.CONFIGURATIONS` runs. `--out <path>` moves the
-    checkpoint file;
-    the table is written there after **each** configuration, so an interrupted run leaves
-    every row it finished (see `OUT`).
-    `--seed`/`--provider`/`--provider-strict`/`--native` choose where the boundary values
-    come from (see this module's docstring); the default is `--provider`.
-
-    `--cache <dir>` turns on jax's persistent compilation cache, which takes the whole
-    pass from 410 s to 184 s with bitwise-identical rows (`_enable_compilation_cache`).
-    Off by default, because a cached row's phase table is not comparable with a
-    published one.
-
-    `--compare-process`/`--no-compare-process` are the **other** axis: whether the
-    finished rows are scored against PROCESS's converged answer. They compose freely with
-    the seeding flags, and `--native --compare-process` is the pairing the split was made
-    for -- no `DataStructure` anywhere in the solve path, and the `PRO` columns filled
-    from a disk-cached run loaded afterwards.
-
-    `--slsqp` answers every `Optimise` with `scipy`'s SLSQP instead of VMCON, changing
-    **nothing else**: the same assembly, the same bounds, tolerance and iteration cap,
-    the same equality/inequality counts read off the definition, the same seeding and
-    scoring. That is what makes the two tables comparable, and why the class rather than
-    a built driver is what travels (`mda.default_drivers`' `optimiser`). Write it
-    somewhere other than `OUT` -- `reference_slsqp_matrix.txt` is where the published one
-    lives -- since a VMCON table and an SLSQP table are not the same measurement.
-    """
+    """Walk the configurations, run both formulations cold on each, print the table."""
     argv = sys.argv[1:] if argv is None else argv
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"]
     if "--out" in argv:

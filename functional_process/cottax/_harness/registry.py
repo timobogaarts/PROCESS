@@ -1,10 +1,4 @@
-"""Parse `_audit/unit_registry.md` so the harness can check itself against it.
-
-The registry is the master list of what is in scope and how far along it is. It is
-maintained by hand, in prose, which means it drifts — a unit gets ported and the row
-still says `pending`, or a record's own frontmatter says `draft` while the registry says
-`reviewed`. `test_registry_coverage.py` turns that drift into a test failure.
-"""
+"""Parse `_audit/unit_registry.md` so the harness can check itself against it."""
 
 import re
 from dataclasses import dataclass
@@ -40,21 +34,7 @@ def _normalise_status(cell):
 
 
 def parse_unit_registry(path):
-    """Extract every row of `unit_registry.md` that names an audit record.
-
-    Rows using a ditto mark (the switch table repeats one record across ten rows) are
-    skipped rather than guessed at — they carry no record path of their own.
-
-    Parameters
-    ----------
-    path :
-        Path to `_audit/unit_registry.md`.
-
-    Returns
-    -------
-    :
-        List of `RegistryRow`, one per row naming a record, in file order.
-    """
+    """Extract every row of `unit_registry.md` that names an audit record."""
     rows = []
     for line in path.read_text().splitlines():
         stripped = line.strip()
@@ -80,22 +60,7 @@ def parse_unit_registry(path):
 
 
 def parse_frontmatter(path):
-    """Read the YAML-ish frontmatter block from an audit record.
-
-    Deliberately a five-line parser rather than a YAML dependency: the schema is
-    `key: value` only (`_audit/schema.md`), and anything richer appearing in a record
-    is itself worth noticing.
-
-    Parameters
-    ----------
-    path :
-        Path to a record file.
-
-    Returns
-    -------
-    :
-        Mapping of key to value; empty if the file has no frontmatter block.
-    """
+    """Read the YAML-ish frontmatter block from an audit record."""
     lines = path.read_text().splitlines()
     try:
         start = lines.index("---")

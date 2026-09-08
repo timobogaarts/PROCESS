@@ -1,56 +1,4 @@
-"""Read an `IN.DAT`. The legacy-input arm of the target architecture (§24).
-
-*models + default solvers / cycle cutters + **import legacy PROCESS input file***. Today
-the port reads integer switches out of the file text (`indat.switches_from_indat`) and
-PROCESS's `SingleRun` supplies every number. This module is the replacement for the
-second half, and it emits four things -- three of which no node can (§24.2, §24.3):
-
-1. **Values, scalars and arrays.** Only scalars were read from file text before, and the
-   gap already produced a wrong answer: a last-wins name scan answered the ten-element
-   `.pf_coil.zref` with the `1.0` from `zref(10) = 1.0` (§22.6). An indexed or
-   comma-listed assignment is an `ArrayInput` here, not a scalar.
-2. **Presence** -- the set of names the file *mentions*. Irreducible: it is a property of
-   the text, not of any value, so no node recovers it (§24.2 item 1). `init.py` writes
-   four fields from it, and the live defect at `indat.py:4420-4428` is exactly what its
-   absence costs -- that code infers presence for `i_f_dr_tf_plasma_case` and
-   `tfc_sidewall_is_fraction` by scanning `switches_from_indat` for names that **are not
-   declared PROCESS inputs**, so the scan can only ever return `0`, and one of
-   `st_regression`'s two missing producers follows. `named()` is the answer that code
-   needs. Not fixed here -- `indat.py` is owned elsewhere.
-3. **The `raw` namespace** (`raw_values()`, `.raw.<area>.<field>`). §24.2 item 2: the
-   eight sentinel resolutions (`eff_tf_cryo = -1.0 -> 0.13`) read and write one path, so
-   they cannot be nodes as stated. Under a separate root they can: raw -> resolved is an
-   edge. It also disarms the two sentinels that *look* like answers (`eyoung_ins` at
-   `1e8`, `eyoung_cond_axial` at `6.6e8`, both replaced by two orders of magnitude) --
-   as a raw value they cannot be mistaken for a user's number the way a flat defaults
-   table mistakes them.
-4. **The problem statement** -- `ixc`, `icc`, `i_figure_merit`, and
-   `i_process_run_mode` (§23.4, §24.3). `ixc`/`icc` are the only two names in PROCESS's
-   registry that set no field at all; they reach the `DataStructure` through an
-   `additional_actions` hook, which is a parser concern by construction.
-   `i_process_run_mode` is what says *which kind of problem the file states* -- `-2`
-   makes PROCESS root-find the equalities with `fsolve` and form no objective at all --
-   and reading it here is what let the port stop building an `Optimise` for the two
-   `_eval` files (`Problem.is_evaluation`, §24.10).
-
-**Deliberately out of scope, and each is the next layer.** Sentinel resolution;
-`init.py`/`st_init`/`initialise_imprad` derivations; validation raises (`init.py` holds
-51, and a dozen encode physics-validity ranges the port does not enforce at all); and any
-node. This is what those sit on, not those.
-
-**No `process` import** (§23). The name -> field table is vendored at
-`vocabulary/input_variables.py` and asserted equal to PROCESS's in
-`functional_process/tests/test_importer.py`, per §23.2's standing rule: vendor for
-runtime, assert equality in tests.
-
-**Fidelity.** The line grammar, the Fortran `d`->`e` exponent fix, the "a comma list
-zeroes the array first" rule and the 1-based array index are `parse_input_file`'s own,
-transcribed rather than reinvented; the oracle test diffs every parsed value against a
-real `SingleRun`'s `DataStructure` taken **before** `set_active_constraints`, because
-`init.py` destroys three genuine inputs and `st_init` overwrites nine more
-(`_audit/init_audit.md`), so a post-init comparison could not tell a parse bug from a
-derivation.
-"""
+"""Read an `IN.DAT`."""
 
 from __future__ import annotations
 
@@ -64,11 +12,7 @@ from functional_process.vocabulary.input_variables import INPUT_VARIABLES, Input
 _ASSIGNMENT = re.compile(
     r"([a-zA-Z0-9_]+)(?:\(([0-9]+)\))?[ ]*=[ ]*([ +\-a-zA-Z0-9.,]+).*"
 )
-"""`parse_input_file`'s own line grammar, character class included.
-
-`*` is absent from the value class, so `icc = 1 * Beta` yields `"1 "` and the trailing
-`.*` eats the comment. The index is Fortran 1-based.
-"""
+"""`parse_input_file`'s own line grammar, character class included."""
 
 
 # --------------------------------------------------------------------------- values
@@ -76,16 +20,7 @@ _ASSIGNMENT = re.compile(
 
 @dataclass(frozen=True, slots=True)
 class ArrayInput:
-    """What an `IN.DAT` said about one array field, sparsely.
-
-    `elements` is 0-based, so it indexes the `DataStructure` array directly.
-    `zero_filled` records which of PROCESS's two array spellings was used, and the
-    difference is not cosmetic: `a = 1,2,3` makes `parse_input_file` do `array[:] = 0.0`
-    *before* filling, while `a(2) = 1.0` leaves every other element at its dataclass
-    default. The importer holds no defaults and no shapes, so it cannot densify on its
-    own -- `dense(length)` is offered for a caller that knows one, and only for the
-    zero-filled form is that lossless.
-    """
+    """What an `IN.DAT` said about one array field, sparsely."""
 
     elements: tuple[tuple[int, float], ...]
     zero_filled: bool = False
@@ -114,30 +49,12 @@ class Assignment:
 
 OPTIMISATION_RUN_MODE = 1
 EVALUATION_RUN_MODE = -2
-"""`process.data_structure.numerics.PROCESSRunMode`, vendored (§23.2).
-
-`1` is `numerics.py:150`'s dataclass default, so a file that names no run mode optimises.
-`-2` is the mode `main.py:452-456` answers by replacing VMCON with `scipy.optimize.fsolve`
-over the **equalities alone** -- `_Fsolve.evaluate_eq_cons` calls
-`fcnvmc1(n, self.meq, ...)`, and `_Fsolve.solve` ends with `self.objf = None`.
-"""
+"""`process.data_structure.numerics.PROCESSRunMode`, vendored (§23.2)."""
 
 
 @dataclass(frozen=True, slots=True)
 class Problem:
-    """§23.4's parts, as the file states them.
-
-    Integer IDs, not paths: translating `ixc = [4, 6, 29]` into `VarPath`s is a table
-    lookup (`vocabulary.iteration_variables`) and belongs to whoever states the problem,
-    not to the reader of the text. `n_equality_constraints` is `None` when the file does
-    not set it, which is the `-1` sentinel `init.py` resolves to `count - n_inequality`
-    -- the resolution is not done here.
-
-    **`i_process_run_mode` is part of the problem statement, not a value**, and it is the
-    one field here that changes *which kind of problem* the file states. Carried since
-    2026-08-31, when `_audit/next_steps.md` §24.10 measured that the port was building an
-    `Optimise` for two files PROCESS root-finds.
-    """
+    """§23.4's parts, as the file states them."""
 
     ixc: tuple[int, ...] = ()
     icc: tuple[int, ...] = ()
@@ -146,24 +63,12 @@ class Problem:
     n_inequality_constraints: int | None = None
     i_process_run_mode: int | None = None
     """`None` when the file names none, which is `OPTIMISATION_RUN_MODE` -- unresolved
-    here for the same reason `n_equality_constraints`' sentinel is."""
+    here for the same reason `n_equality_constraints`' sentinel is.
+    """
 
     @property
     def is_evaluation(self) -> bool:
-        """Whether this file states a **root find** rather than an optimisation.
-
-        The discriminator is the file's own `i_process_run_mode = -2` and nothing
-        inferred. Two weaker rules were considered and are wrong:
-
-        - *"no `i_figure_merit`"* -- `large_tokamak_nof` names none either and optimises
-          (its `i_figure_merit = 1` is stated, but a file may omit it and still optimise
-          on `numerics.py:154`'s default of `7`).
-        - *"square"* (`len(icc[:n_equality]) == len(ixc)`) -- `helias_5b` is square
-          (3 equalities, 3 iteration variables) and PROCESS runs **VMCON** on it, in 3
-          iterations, because it names `i_process_run_mode = 1`. Squareness is a
-          *consequence* of the evaluation mode, not its cause, and a caller should check
-          it as a consistency test rather than use it as the test.
-        """
+        """Whether this file states a **root find** rather than an optimisation."""
         if self.i_process_run_mode is None:
             return False
         return int(self.i_process_run_mode) == EVALUATION_RUN_MODE
@@ -181,8 +86,7 @@ class Imported:
     assignments: tuple[Assignment, ...] = ()
     problem: Problem = Problem()
     unknown: tuple[Assignment, ...] = ()
-    """Assignments whose name is not in PROCESS's registry. `parse_input_file` raises on
-    these; collected instead, because refusing to read a file is not this layer's call."""
+    """Assignments whose name is not in PROCESS's registry."""
     errors: tuple[str, ...] = ()
     """Lines that did not parse or cast. Same reason: reported, never raised (§24.2)."""
 
@@ -208,9 +112,6 @@ class Imported:
 
     def raw_values(self) -> dict[str, Any]:
         """The same values under the `raw` root: `.raw.<area>.<field>` (§24.2 item 2).
-
-        A namespacing, not new data. It exists so a sentinel resolution can be a node
-        with a read and a distinct write instead of a self-loop.
         """
         return {
             f".raw.{area}.{name}": value for (area, name), value in self.values.items()

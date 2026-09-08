@@ -1,37 +1,4 @@
-"""Run the `Optimise` layer's whole validation ladder and print the report.
-
-    $PY functional_process/cottax/run_sand_harness.py                   # the stellarator
-    $PY functional_process/cottax/run_sand_harness.py --input <IN.DAT>  # any other machine
-    $PY functional_process/cottax/run_sand_harness.py --machine         # the tokamak
-    $PY functional_process/cottax/run_sand_harness.py --stages A        # one stage, not three
-
-With no argument this is exactly what it always was: the Helias stellarator,
-`tests/regression/input_files/stellarator_helias.IN.DAT`, whose numbers other records
-quote. `--input`/`--machine` are spelled exactly as `run_mda_harness.py`'s (whose
-`input_file` this imports rather than restates): `--machine` is shorthand for
-`boundary.TOKAMAK_INPUT_FILE`, the conventional large tokamak.
-
-A non-reference machine differs from the stellarator path in exactly three threaded
-values, all derived from its own file: the graph (`graph_for(machine_from_indat(...))`),
-the static switch values (`sand.switch_values_for`, read off the cold initialised
-`DataStructure` instead of the hand-audited `REFERENCE_SWITCH_VALUES`), and the study
-itself, which `reference_run` already reads off the run. Everything else -- the ladder,
-the seeding rules, the solve -- is one code path, deliberately: two per-device
-harnesses would drift apart exactly the way five switch registrations once did.
-
-Sibling of `run_mda_harness.py`; see `sand_harness.py`'s module docstring for what each
-of the three stages proves and, just as importantly, what it does not.
-
-One PROCESS run (~95 s for the stellarator) serves all three stages: Stage A needs its
-converged `DataStructure`, Stage B needs its live model objects to re-run the pipeline
-for the finite-difference reference, and Stage C needs both its converged answer (to
-start C2 at) and the input file's own cold start (to start C3 at).
-
-`--stages` runs a subset (`stages()`); **only Stage B needs those live model objects**,
-so a selection without it takes `reference_run`'s disk cache and skips PROCESS's solve
-altogether. Everything ahead of Stage A is run regardless -- it is what the stages are a
-measurement *of*.
-"""
+"""Run the `Optimise` layer's whole validation ladder and print the report."""
 
 import sys
 import time
@@ -68,73 +35,11 @@ from functional_process.cottax.sand_harness import (  # noqa: E402
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
 SAND_MAX_ITER = 500
-"""SQP iterations Stage C allows itself, against `VmconDriver`'s own default of 100.
-
-**100 is PROCESS's `n_iteration_max`, for PROCESS's own eight-variable problem**, and it
-was inherited here rather than chosen. The stellarator's SAND block is a different and
-larger problem -- 14 unknowns, 21 conditions -- and it needs more, measured off one
-cached PROCESS run with everything else held fixed:
-
-| | SQP iterations | conv | `objf` |
-|---|---|---|---|
-| C2 (start at PROCESS's `x`) | **326** | `8.8e-11` | 1.217757338 |
-| C3 (cold) | **258** | `8.0e-09` | 1.217757452 |
-
-Both land on the known optimum (`_audit/next_steps.md` §11.11's `objf 1.217757336`,
-`x109 = 0.0299518`), so what `max_iter = 100` produced was not a wander around a wrong
-point but a solve stopped two-thirds of the way through -- reported as "100 iterations,
-oscillating around `objf ~ 1.218`", which is what the trace of an unconverged run looks
-like from the outside.
-
-**Why the count grew, and why it is not a defect.** Ten `FixedPoint`s dissolved into
-ordinary nodes when the topology switches became slots ("A switch selects an occupant"),
-which is a correctness improvement -- PROCESS's own body for those was *"x is an input"*
--- and it took the SAND block from 22 unknowns / 16 equalities to 14 / 8. The eight
-equalities it removed were nearly-linear `u = g(u)` rows; what is left is the same
-problem with its nonlinearity concentrated into fewer conditions. Measured on the same
-cached run, same seeds, same cottax: the pre-round-2 graph converges in **131**
-iterations, this one in **326**, both on the same point to six digits. Neither the
-cottax version nor any condition scale accounts for it -- `_audit/optimise_design.md`
-§12 carries the bisect that rules both out, and the sweep showing the largest residual
-row's factor moves the count only within this problem's own noise (219-326).
-
-500 rather than 400 leaves headroom over the largest count measured; a solve that needs
-more than this is not slow, it is stuck, and the trace the harness prints says so.
-
-**Every count in this docstring is an OSQP count** and is superseded as a measure of
-how hard the problem is: the driver now passes PROCESS's own CLARABEL, under which
-this solve is 83 iterations at `1e-8` and 58 at PROCESS's `epsvmc`. The cap stays where
-it is because C2 -- which CLARABEL does not currently finish -- still needs the room
-(`_audit/optimise_design.md` §15, `next_steps.md` §17)."""
+"""SQP iterations Stage C allows itself, against `VmconDriver`'s own default of 100."""
 
 
 def _why_no_step(drive, context, seeded):
-    """The conditions that make a first QP infeasible: **violated and constant**.
-
-    `VmconDriver` catches `pyvmcon`'s `QSPSolverException` and returns the start, so a
-    solve that never moved is ambiguous between "converged where it stood" and "no
-    linearised step existed". The discriminator is measurable and cheap to state: a
-    condition whose value is away from satisfaction *and* whose gradient row is
-    identically zero cannot be improved by any step, so the QP that contains it has no
-    feasible point -- no matter how good the rest of the problem is.
-
-    This is `_audit/optimise_design.md` §11.6's diagnosis, made into a measurement
-    instead of a sentence telling the reader to go and look at Stage A. `run_mdf_harness`
-    has the same distinction as `_why_it_stopped`, one layer up: there the three outcomes
-    are convergence, the cap, and the driver giving up; here it is *why* it gave up.
-
-    **"Away from satisfaction" is not `abs(value) > tol`**, and the first draft of this
-    said it was: an inequality's normalised residual is *negative when satisfied*, so
-    that test reported twelve happily-satisfied constraints as the reason the QP had no
-    feasible point. The sign convention is the whole content of the check -- an equality
-    is stuck when `|value|` is away from zero, an inequality only when `value > 0` --
-    which is why the split is taken from the problem node -- **by position**, since the
-    condition names on the two sides compare equal to nothing (see the comment below,
-    and `VmconDriver.n_equality`'s docstring, which relies on the same ordering).
-
-    Costs one `jacfwd` compile of the condition map (~1 min), and only on the path where
-    the solve already failed.
-    """
+    """The conditions that make a first QP infeasible: **violated and constant**."""
     unknowns = [jnp.asarray(seeded[u]) for u in drive.unknowns]
     condition_map = drive.condition_map(context)
 
@@ -180,51 +85,6 @@ def _why_no_step(drive, context, seeded):
 def _seed(schedule, drive, base, fallback, design=()):
     """Every schedule input and every block unknown: **design** variables from `base`,
     every other unknown from `fallback` (a completed MDA env at the same design).
-
-    A SAND solve is cold in its *design* variables. Its **coupling** unknowns are a
-    different thing entirely -- quantities PROCESS never exposes as unknowns, because
-    its own architecture (MDF) converges them by re-running the whole pipeline before
-    every evaluation. They have to start somewhere consistent, and an MDA run at the
-    same design is exactly what MDF would hand iteration 0.
-
-    **This function used to say that and do something else, and it cost a cold start.**
-    The old rule tried `ground_truth(base, var)` first for *every* unknown and fell back
-    to the MDA env only on `AttributeError`/`KeyError`. But every coupling unknown *has*
-    a `DataStructure` field -- holding the dataclass default `0.0` in a cold structure --
-    so the lookup always succeeded and the fallback was never reached (the harness's own
-    report line read `0 unknown(s)/input(s) seeded from the MDA env` on every cold run).
-    Twelve of twenty-three unknowns therefore started at exactly zero, which is not a
-    cold design but a **physically impossible state**: net electric power `-1.9e6` MW,
-    `coe = 1.0e25`.
-
-    What that did to the solve, measured at the cold point, old rule -> new:
-
-    | | as-was | MDA-seeded |
-    |---|---|---|
-    | non-finite Jacobian cells | 46 / 690 | **0** |
-    | condition number VMCON receives | >= 1.1e23 | **2.87e4** |
-    | SQP iterations | **0** | **85, converged** |
-
-    The 46 non-finite cells sat in exactly two rows (the objective and `c16`) and came
-    from `x ** p` with `0 < p < 1` evaluated at `x == 0` -- value `0`, derivative `+inf`,
-    and `inf * 0 = nan` under JVP -- at `buildings.py:282`'s `55.0 * helpow**0.5` and
-    three sibling sites in `costs.py`, all reachable only because the cryogenic loads
-    were seeded to zero. Those sites are worth fixing in their own right (same defect
-    class as `next_steps.md` §9's `sqrt(maximum(...))`), but they are the symptom; this
-    is the disease.
-
-    `design` names the unknowns that genuinely come from `base` -- the run's iteration
-    variables. Anything else is coupling, **including the `^hat.*` cuts**, which are not
-    unknowns and were falling through to `base` until 2026-08-29. They are loop-carried
-    values by construction (`mda.CUTS` mints them to open an SCC), so the same sentence
-    applies to them word for word; the clause below says so.
-
-    That omission is what stood between the cold tokamak and a solve. Its symptom was
-    unusually misleading: the harness's own pre-solve probe **passed** -- it builds its
-    context from `fallback` first and so used the MDA values -- while the solve, whose
-    context comes from running the schedule on `_inputs_only(...)` of *this* env, went
-    non-finite at evaluation zero on `objf`, `c13` and `c16`. A probe that seeds
-    differently from the solve it is probing can only report on itself.
     """
     design = set(design)
     env, borrowed = {}, []  # the env doubles as a value store; see `_inputs_only`
@@ -264,42 +124,13 @@ def _seed(schedule, drive, base, fallback, design=()):
 
 
 def _inputs_only(schedule, env):
-    """`env` restricted to what the schedule may be handed: its own inputs.
-
-    A `_seed` env is also a value store -- it grounds the drive's unknowns at their own
-    names, which is what `borrowed` reporting and a reader inspecting the seeded design
-    point rely on -- but a `Schedule` refuses a value at a name it owns (cottax's
-    owned-name guard: an owned value could only be clobbered unread or, under an
-    ordering bug, read stale in silence). So the solve call filters at the door and the
-    store keeps its extra names for its other readers -- the same seam, in the same
-    style, as `mdf._inputs_only`.
-    """
+    """`env` restricted to what the schedule may be handed: its own inputs."""
     inputs = set(schedule.inputs)
     return {var: value for var, value in env.items() if var in inputs}
 
 
 def stages(argv: list[str]) -> str:
-    """Which of the three stages this invocation runs -- `--stages ABC` by default.
-
-    **Stage A alone is a real use, and it did not have a spelling.**
-    `_audit/next_steps.md` §24.10 item 3 asks for the port's objective *at PROCESS's own
-    converged x*, which is exactly Stage A's `^cond.numerics.objf` row and nothing else;
-    taking it meant either sitting through Stage B's finite-difference Jacobian
-    (`5 * len(ixc)` PROCESS pipeline sweeps) and Stage C's two solves, or writing a
-    scratch script that restates this function's setup -- which is the third harness
-    `run_cold_matrix.py`'s docstring exists to refuse. One flag is cheaper than either.
-
-    The setup ahead of Stage A is *not* optional and is not gated: the PROCESS run, the
-    MDA env and the assembly are what every stage is a measurement *of*, and a run that
-    skipped them would report on a different problem.
-
-    Raises
-    ------
-    SystemExit
-        On a letter that is not a stage, rather than silently running the ones it did
-        recognise -- `--stages D` meaning "A, B and C" is the kind of default that gets
-        a number recorded against the wrong measurement.
-    """
+    """Which of the three stages this invocation runs -- `--stages ABC` by default."""
     if "--stages" not in argv:
         return "ABC"
     index = argv.index("--stages") + 1
@@ -313,10 +144,7 @@ def stages(argv: list[str]) -> str:
 
 
 def main(argv=None):
-    """Run the three stages and print each one's report. `argv` defaults to this
-    process's own, so importing and calling `main([...])` is the same thing as the
-    command line.
-    """
+    """Run the three stages and print each one's report."""
     argv = sys.argv[1:] if argv is None else argv
     path = input_file(argv)
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)

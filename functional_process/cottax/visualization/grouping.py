@@ -1,95 +1,5 @@
-"""
-Grouping this port's graph by the *prefix* of its node names, and drawing the two orderings.
-
-**This is the port's, not cottax's.** An earlier draft put it in
-`cottax.visualization`; it does not belong there. Reading a group off a name is leading-key
-matching, not a graph primitive, and the rest is a bespoke DSM renderer for one picture --
-cottax already has `ragraph_dsm.render_dsm_html`, and a library whose stated instinct is to
-stay thin does not want a second one. If the two hooks this needed (row order from outside,
-cell colour by group rather than by edge kind) turn out to be generally wanted, they belong
-as parameters on the renderer cottax already ships, not as a parallel path.
-
-Grouping a graph by the *prefix* of its node names, and drawing the two orderings.
-
-A hierarchical `NodePath` carries two facts at once. `physics.profiles.DensityProfile`
-says both **who declared this** (`physics.profiles`) and **what it is** (`DensityProfile`),
-and the first of those is a grouping nobody had to write down separately: it is already in
-the name. This module reads it back out, and draws the one picture that makes it worth
-having -- the same graph ordered by that grouping beside the same graph ordered by
-`Blocking`.
-
-**The two orderings answer different questions and neither is derived from the other.**
-Provenance is about ownership, naming and configuration; structure is about scheduling.
-Where they agree the human name is trustworthy. Where they disagree the disagreement is
-the signal: a group scattered across the run order is a *label*, not a module, and a block
-spanning groups is a genuine cross-group feedback loop. `grouping_report` measures exactly
-those two, and `render_grouped_dsm_html` draws them.
-
-**The group *axis* of the provenance picture is a third thing again, and it is not
-free.**
-Nodes have to be laid out in some order, so a picture that ordered groups by declaration
-was not abstaining from a claim -- it was making one by accident, and on this graph the
-accident was `costs` at the top left, which reads as "everything depends on costs" about
-the one subsystem nothing in the graph reads from. `dependency_group_sequence` contracts
-each group to a vertex and orders *that* by SCC, so the axis says only what it can
-support: A before B when A's output reaches B and B's does not reach A, mutually coupled
-groups adjacent, ties by declaration order. Within a group nothing moves, so the
-provenance reading survives exactly where it is about how the file was written. What that
-buys is that a cross-group mark below the diagonal now means something -- real
-feedback -- where before it meant nothing. (Below, not above: the picture is drawn
-outputs-in-rows, `IC_FBD`. See `render_grouped_dsm_html`.)
-
-Three rules are load-bearing and are stated once.
-
-**The grain is the tree's, not a number.** A node's group is *the namespace it lives
-in* -- every leading key of its name but its own -- and no caller has to say how deep to
-look. This graph is ragged (2 to 4 keys; five of seven subsystems flat), so an integer
-depth applied uniformly was one number standing in for a shape, and the headline it
-produced moved with the number: at `depth=1` "0 blocks cross a group boundary", at
-`depth=2` one, on an unchanged graph. `depth` survives only as a *zoom* for a picture,
-never as the grain of a measurement. See `group_of`.
-
-**Crossing is containment, not distinctness.** A block spanning `physics` and
-`physics.profiles` spans two groups and stays inside one subtree; calling that a
-cross-group loop reports a subsystem's internals as coupling between subsystems. So
-`BlockGrouping.crosses` asks whether *any* namespace contains the whole block
-(`containing`, the longest common prefix), and `container` names the smallest one that
-does. On the reference machine that turns a number which was 0 or 1 depending on a knob
-into a fact that needs neither: **no coupling leaves a subsystem, and one loop spans
-three levels inside `physics`.**
-
-**A group is the leading namespace keys of a name, minus the node's own final key.**
-Both key kinds count, because in a `NodePath` both are namespace positions: a
-`GetAttrKey` is a slot in the machine tree and a `DictKey` a mapping key, and the kind
-follows the container rather than marking naming apart from grouping. A name with no
-such prefix -- a flat `['Build']` -- is `UNGROUPED` and says so, rather than being filed
-under whatever its first key happened to spell.
-
-*(This rule used to be "the leading `DictKey`s, asked by kind", with a `GetAttrKey` read
-as a place in the caller's pytree. `model_tree_design.md` §8 step 3 inverted that: slots
-mint `GetAttrKey`s deliberately, so the kind stopped separating a model-tree position
-from a variable place and every machine node silently fell to `UNGROUPED`. See
-`_tree_keys`.)*
-
-**A node minted over a *variable* place borrows the group of whoever owns that
-variable, and only falls to `UNGROUPED` if even that fails.** `^problem.fwbs.
-f_ster_div_single` is a `FixedPointCut`'s problem named after the variable it cuts;
-`.fwbs` is a `DataStructure` area, and grouping by it directly would invent a phantom
-subsystem. `group_of`'s `among` is how that question is put -- a minted name whose
-unminted form is not itself a node -- and `owners`, when given, is where the fallback
-looks: `.fwbs.f_ster_div_single` is owned by `.stellarator.divertor`, so the problem
-groups with `stellarator`, not `fwbs`. This is asked of the graph, not of a key kind.
-
-**A minted name is unwrapped first, so a minted node inherits the group of what it was
-minted over.** `^problem.stellarator.coils.Intersect` is the driver of
-`stellarator.coils.Intersect` and belongs beside it; drawing it anywhere else would put a
-block's own problem outside the block. This is `is_minted`/`unminted` asked once, so the
-rule holds for every namespace at once and no caller carries the list.
-
-**A block's *real* size is its non-minted membership.** A node paired with the problem
-minted over it is a two-node block that couples nothing -- counting it as coupling would
-report every declared `FixedPoint` in the graph as a feedback loop. `BlockGrouping.real`
-is that count, and the headline figures filter on it.
+"""Grouping this port's graph by the *prefix* of its node names, and drawing the two
+orderings.
 """
 
 from __future__ import annotations
@@ -113,42 +23,14 @@ from cottax.visualization.xdsm_html import HtmlDoc
 type Group = tuple[str, ...]
 
 UNGROUPED: Group = ()
-"""
-The group of a node whose name carries no prefix at all.
-
-Not an error and not a bucket named `'other'`: an empty prefix is exactly what a flat name
-*says*, and a picture that spelt it as a group would invent a containment the name does
-not claim. Every flat graph is entirely `UNGROUPED`, which is the honest reading of a
-graph whose names have no tree in them yet.
-"""
+"""The group of a node whose name carries no prefix at all."""
 
 UNGROUPED_LABEL = "(ungrouped)"
 
 
 # ================================================================== reading the prefix
 def _tree_keys(path: NodePath) -> tuple[str, ...]:
-    """
-    The leading run of namespace keys of `path`, once any minted root is dropped.
-
-    **Both key kinds count, because in a `NodePath` both are namespace positions.** A
-    `GetAttrKey` is a slot in the machine tree (`.stellarator.coils.coil_current`) and a
-    `DictKey` a mapping key (`['MiscPlantEquipmentCost']`, a switch arm) -- the kind
-    follows the container, which is cottax's `node_and_names` rule, not a distinction
-    between naming and grouping.
-
-    **This tested for `DictKey` alone, and `model_tree_design.md` §8 step 3 made that
-    wrong in the worst way: silently.** Before step 3 a model-tree position was a
-    `DictKey` and a `GetAttrKey` could only be a variable place, so the kind was a sound
-    proxy for "is this a position in a model tree". Step 3 made slots mint `GetAttrKey`s
-    on purpose (that design's §3.1, so a node name is a working address into the tree),
-    which inverted the proxy: every machine node stopped having any leading key at all
-    and fell to `UNGROUPED`, while `grouped` still exited 0 and wrote both files. The
-    report said `1 group(s) at depth 1` where there are six, and a picture whose whole
-    subject is the grouping drew one colour.
-
-    What the kind stood in for -- model-tree position against a node minted over a
-    *variable* place -- is now asked directly, by `group_of`'s `among`.
-    """
+    """The leading run of namespace keys of `path`, once any minted root is dropped."""
     out: list[str] = []
     for key in unminted(path).keys:
         if isinstance(key, DictKey) and isinstance(key.key, str):
@@ -163,20 +45,8 @@ def _tree_keys(path: NodePath) -> tuple[str, ...]:
 def _cut_owner(
     path: NodePath, owners: "Mapping[VarPath, NodePath]"
 ) -> "NodePath | None":
-    """
-    The node that owns the variable a problem-over-a-variable was minted over, or `None`.
-
-    `FixedPointCut.at` (`~jaxgraph/src/cottax/rewrites.py`) names such a problem after
-    its cut variable's own place -- or, when several variables close one cycle together,
-    that place with one `.cycle` key appended (`mda.py::driven_graph`, the only caller
-    that ever passes `place=`). Either way the cut variable's own keys are a leading run
-    of the problem's unminted name, so trying the full run first and then trimming one
-    key at a time off the end finds it in `owners` without hard-coding `.cycle` by name --
-    it stops the moment a trimmed path is a variable `owners` actually recognises.
-    `graph[path].reads` would name the same variable more directly (it is exactly what a
-    `FixedPoint` problem's inputs are), but that needs the node itself, not just the
-    owners map every call site already has to hand; verified to agree with `reads` on
-    both cases the reference graph has.
+    """The node that owns the variable a problem-over-a-variable was minted over, or
+    `None`.
     """
     keys = unminted(path).keys
     for end in range(len(keys), 0, -1):
@@ -193,45 +63,7 @@ def group_of(
     among: "Iterable[NodePath] | None" = None,
     owners: "Mapping[VarPath, NodePath] | None" = None,
 ) -> Group:
-    """
-    The group `path` declares it belongs to: its leading keys, without its own name.
-
-    **`depth=None`, the default, is the tree's own answer: the namespace the node
-    actually lives in.** `.stellarator.coils.intersect` is in `stellarator.coils`,
-    `.costs.acc22` is in `costs`, and nothing had to say how deep to look -- the name
-    already carries it. That matters because the tree is *ragged*: names run 2 to 4 keys
-    on this graph and five of its seven subsystems are flat, so one integer applied to
-    all of them was a number standing in for a shape.
-
-    `depth` truncates that, and only ever shallower: `depth=1` files every node under its
-    top-level subsystem. Read it as a **zoom for a picture**, not as a claim about
-    structure -- a measurement whose answer moves with an integer nobody derived reports
-    the integer as much as the graph. It also saturates, since the cut is capped at the
-    node's own parent: on this graph `depth=3` and `depth=99` are one grouping, and a
-    name shallower than `depth` gives whatever prefix it has.
-
-    The node's own final key is never part of its group -- `['Build']` is `UNGROUPED`,
-    not a group of one called `Build`.
-
-    **`among` is the node set, and it separates a minted model-tree position from a
-    minted variable place.** A name minted over a node unmints to a name that is *in* the
-    graph (`^problem.stellarator.coils.intersect`); one minted over a variable does not
-    (`^problem.fwbs.f_ster_div_single` -- `.fwbs` is a `DataStructure` area, and reading
-    it as a group invents a subsystem). Omitting `among` does not ask, and reads every
-    minted name as a tree position -- the honest fallback for a caller with no graph to
-    consult.
-
-    **The guard still stands -- grouping `f_ster_div_single` by its own leading key would
-    invent a phantom `fwbs` subsystem** (no node in the graph has a path starting
-    `.fwbs`; the real group is `stellarator`). What changes is what happens *before*
-    giving up: `owners`, when given, lets a problem minted over a variable borrow the
-    group of whoever actually computes that variable (`_cut_owner`) -- `fwbs.f_ster_div_single`
-    is a `DataStructure` area, not a subsystem, but the node that owns it,
-    `.stellarator.divertor`, is, and the problem that converges the variable belongs
-    beside the node that produces it. Only once that also fails does the node fall to
-    `UNGROUPED`. Measured on the reference driven graph: two nodes of 161 are minted over
-    a variable place, and both now resolve -- `^problem.fwbs.f_ster_div_single` to
-    `stellarator` and `^problem.physics.proton_rate_density.cycle` to `physics`.
+    """The group `path` declares it belongs to: its leading keys, without its own name.
     """
     if depth is not None and depth < 1:
         raise ValueError(f"depth must be at least 1, not {depth}")
@@ -252,26 +84,13 @@ def group_label(group: Group) -> str:
 
 
 def top_of(group: Group) -> Group:
-    """The subsystem a group is in: its first key. `stellarator.coils -> stellarator`.
-
-    What a *hue* is keyed on, where `group_of` is what a *group* is. A stellarator is
-    its coils and its fwbs, and giving those three unrelated hues would draw the tree as
-    a flat list of twelve things. The substructure is shown as a tint of the subsystem's
-    hue (`group_palette`) and by nesting the ribbon, which is what containment actually
-    looks like.
-    """
+    """The subsystem a group is in: its first key."""
     return group[:1]
 
 
 def containing(groups: "Iterable[Group]") -> Group:
-    """
-    The smallest namespace holding every one of `groups`: their longest common prefix.
-
-    `UNGROUPED` members are skipped rather than dragging the answer to the root -- a
-    flat-named node says nothing about containment, the same reading
-    `BlockGrouping.named_groups` already takes. All-ungrouped gives `UNGROUPED`, and so
-    does a genuinely cross-subsystem set: what separates the two is whether there was
-    anything named to contain, not this function.
+    """The smallest namespace holding every one of `groups`: their longest common
+    prefix.
     """
     named = [g for g in groups if g != UNGROUPED]
     if not named:
@@ -286,13 +105,7 @@ def containing(groups: "Iterable[Group]") -> Group:
 
 
 def hierarchical(groups: "Iterable[Group]") -> tuple[Group, ...]:
-    """
-    `groups` re-ordered so a namespace is followed by the namespaces inside it.
-
-    First-appearance order decides the subsystems and, within one, the order among
-    siblings; nesting decides the rest. For a legend only -- the matrix axes are
-    `dependency_group_sequence`'s or `group_sequence`'s, and neither is this.
-    """
+    """`groups` re-ordered so a namespace is followed by the namespaces inside it."""
     groups = tuple(dict.fromkeys(groups))
     rank = {g: i for i, g in enumerate(groups)}
     return tuple(
@@ -312,18 +125,7 @@ def group_sequence(
     depth: int | None = None,
     owners: "Mapping[VarPath, NodePath] | None" = None,
 ) -> tuple[Group, ...]:
-    """
-    Every group present, in **first-appearance order** over `names`.
-
-    Stable and declared: a graph's node order is its binding order, so this is the order
-    the groups were first written down in, and it does not move when an unrelated node is
-    added. Deliberately not alphabetical -- sorting would impose an order the declaration
-    never claimed, and the point of the provenance view is to show the one it did.
-
-    `owners`, when given (`graph.owners`), is threaded straight to `group_of` so a
-    problem minted over a variable place still lands in its cut variable's owner's
-    group instead of falling to `UNGROUPED` -- see `group_of`.
-    """
+    """Every group present, in **first-appearance order** over `names`."""
     names = tuple(names)
     among = frozenset(names)
     seen: dict[Group, None] = {}
@@ -335,51 +137,8 @@ def group_sequence(
 def dependency_group_sequence(
     graph: Graph, *, depth: int | None = None
 ) -> tuple[Group, ...]:
-    """
-    Every group present, in **dependency order**: contract each group, then sort that.
-
-    `group_sequence` reads the order off the *declaration* and never looks at an edge,
-    which is honest and, for the group axis of a whole-machine picture, actively
-    misleading. On the port's graph `costs` is the first slot written in the top-level
-    namespace, so it came out first, and a matrix whose first rows are `costs` reads as
-    "everything depends on costs" when the truth is the exact opposite -- `costs` reads
-    from five other subsystems and **nothing in the graph reads from it**. That is a
-    picture that lies about the one thing a DSM is for.
-
-    So: contract every group to a single vertex, put an edge from A to B when some node
-    in A owns a variable some node in B reads (self-edges dropped -- a group reading its
-    own output says nothing about where the group goes), condense *that* by SCC and sort
-    it topologically. Groups that genuinely feed each other collapse into one SCC and are
-    emitted adjacent, which is the honest answer: there is no order between them.
-
-    **What this claims and what it does not.** It claims only that if group A's output
-    reaches group B and B's does not reach A, A comes first. It is *not* a run order and
-    is not derived from `Blocking`: the group graph is far coarser than the node graph,
-    so a group pair that is acyclic here can still contain nodes that interleave in the
-    schedule (`GroupingReport.runs` is what measures that, and on the port's graph it is
-    0/7 contiguous). Within a group nothing is reordered at all -- `provenance_order`
-    keeps declaration order there, deliberately, so that the provenance reading survives
-    exactly where it is about how the file was written. See `provenance_order`.
-
-    **Ties are broken by first-appearance order, at every level.** Members of one SCC are
-    emitted in `group_sequence` order, and SCCs whose predecessors are all already placed
-    are taken lowest-first-appearance first (`nx.lexicographical_topological_sort` with
-    that rank as its key -- not the plain `topological_sort`, whose output depends on the
-    order vertices happened to be inserted). Both matter because these diagrams are
-    regenerated and eyeballed against the previous version: an order that shuffled
-    when an unrelated node was added would make every re-render unreadable.
-
-    Built on `networkx` directly, as `Graph.strongly_connected_components` itself is
-    (`nx.condensation` + a topological sort, ~jaxgraph/src/cottax/graph.py). Reusing
-    `Blocking`/`Graph.strongly_connected_components` was tried first and does not fit:
-    both want a `Graph` of `Node`s keyed by `NodePath`, and a group is neither -- it has
-    no ports and its identity is a `tuple[str, ...]`. Synthesising a node per group to
-    get at the same three lines of `networkx` would be a worse lie than calling it.
-
-    `UNGROUPED`, when present, is contracted like any other group. That is a bucket of
-    unrelated flat-named nodes rather than a subsystem, so it will tend to absorb into
-    whatever SCC its members touch; on a graph where it is large, read its position as
-    meaningless rather than as a claim.
+    """Every group present, in **dependency order**: contract each group, then sort
+    that.
     """
     owners = graph.owners
     among = frozenset(graph.nodes)
@@ -418,36 +177,8 @@ def provenance_order(
     groups: Sequence[Group] | None = None,
     owners: "Mapping[VarPath, NodePath] | None" = None,
 ) -> tuple[NodePath, ...]:
-    """
-    `names` regrouped so every member of a group is adjacent, groups in `groups`' order.
-
-    Within a group the input order is kept, so the only thing this changes is which nodes
-    sit next to which. **It is not a run order** and makes no claim to be one: nothing
-    *inside a group* consults an edge, and no node is ever moved past another node of its
-    own group. A mark below the diagonal within one group's band is therefore not
-    feedback -- it is a place where provenance and dependency disagree, which is the
-    comparison the picture exists to make.
-
-    **Between groups that claim depends on `groups`, and the two callers differ.** With
-    `group_sequence`'s declared order (the default) nothing anywhere consulted an edge,
-    so a cross-group mark below the diagonal says nothing at all: the group axis was
-    arbitrary. With `dependency_group_sequence`'s order the group axis *is* a dependency
-    order, so a cross-group mark below the diagonal means one of exactly two things --
-    real feedback between subsystems, or a pair of subsystems that are mutually coupled
-    and were therefore emitted adjacent with no order between them. `render_xdsm.grouped`
-    passes the latter, because a group axis that has to be arbitrary somewhere should at
-    least not be arbitrary in a way that reads as a claim (`costs` first says "everything
-    depends on costs"; `costs` is a sink). The default stays the declared order: it is
-    what a caller asking for "as written" means, and the tests lean on it.
-
-    `groups` overrides the group order (`group_sequence`'s otherwise -- pass
-    `dependency_group_sequence(graph, depth=depth)` for the dependency-ordered axis);
-    every group present must appear in it.
-
-    `owners` (`graph.owners`) is threaded to every `group_of`/`group_sequence` call
-    below, for the same reason `group_of` wants it: without it, the two problems minted
-    over a variable place (rather than a node) would be `UNGROUPED` here too, and
-    `missing` would then demand `UNGROUPED` be in `groups` whenever it is passed.
+    """`names` regrouped so every member of a group is adjacent, groups in `groups`'
+    order.
     """
     names = tuple(names)
     among = frozenset(names)
@@ -474,13 +205,7 @@ def provenance_order(
 
 
 def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
-    """
-    `blocking`'s own order, flattened: the order the graph actually runs in.
-
-    The top level only. A block's interior is its own blocking and draws its own picture;
-    at this level a block is contiguous by construction, which is what lets it be one
-    square on the diagonal.
-    """
+    """`blocking`'s own order, flattened: the order the graph actually runs in."""
     return tuple(name for block in blocking.blocks for name in block)
 
 
@@ -514,25 +239,8 @@ class BlockGrouping:
 
     @property
     def crosses(self) -> bool:
-        """
-        Whether it couples namespaces that **nothing smaller than the machine contains**.
-
-        *This is not "spans more than one group", which is what it used to mean, and the
-        difference changes a headline.* Once the grain is the tree's own
-        (`group_of`'s `depth=None`) a block can span `physics` and `physics.profiles` --
-        two groups, one subtree, a loop that never leaves `physics`. Counting that as a
-        cross-group loop reports a subsystem's internals as coupling between subsystems,
-        which is the opposite of what the reader takes from it. So the test is
-        containment, not distinctness: `crosses` is a block whose `container` is
-        `UNGROUPED`, i.e. one whose members share no namespace at all.
-
-        Measured on the reference machine's declared graph: 14 multi-node SCCs, 13 of
-        them inside a single namespace, **one** spanning `physics`,
-        `physics.profiles` and `physics.profiles.parameterisation` -- and **zero**
-        crossing. The old rule read that last one as a cross-group loop; at `depth=1` it
-        read it as nothing at all, because the whole subtree collapsed to `physics`.
-        Neither was the fact, which is: *no coupling in this graph leaves a subsystem,
-        and one loop spans three levels inside `physics`.*
+        """Whether it couples namespaces that **nothing smaller than the machine
+        contains**.
         """
         return self.spans and self.container == UNGROUPED
 
@@ -550,14 +258,7 @@ class GroupingReport:
     groups: tuple[Group, ...]
     sizes: Mapping[Group, int]
     runs: Mapping[Group, int]
-    """
-    How many maximal contiguous stretches each group occupies in the **run** order.
-
-    One means the group is also a schedulable unit -- provenance and structure agree about
-    it. Many means its members are interleaved with other groups' throughout the schedule:
-    the group is a *label*, not a module. This is the second of § 11.2's two signals, and
-    the only one a count of blocks cannot give (almost every block is a single node, so
-    "how many blocks does this group touch" just re-counts its members).
+    """How many maximal contiguous stretches each group occupies in the **run** order.
     """
 
     blocks: tuple[BlockGrouping, ...]
@@ -565,14 +266,7 @@ class GroupingReport:
     """Node-to-node edges whose endpoints are in different named groups."""
 
     cross_subsystem_edges: int
-    """
-    Of those, the ones whose endpoints are in different *subsystems* (`top_of`).
-
-    Both are reported because at the tree's own grain the first alone misleads: an edge
-    from `.physics.fusion_rates` into `.physics.profiles.density_profile` is a
-    cross-group edge and is not a subsystem talking to another subsystem. The pair is
-    what says how much of the crossing is a subsystem's internal structure.
-    """
+    """Of those, the ones whose endpoints are in different *subsystems* (`top_of`)."""
 
     @property
     def coupled(self) -> tuple[BlockGrouping, ...]:
@@ -582,7 +276,8 @@ class GroupingReport:
     @property
     def crossing(self) -> tuple[BlockGrouping, ...]:
         """Of those, the ones no single namespace contains -- see
-        `BlockGrouping.crosses`."""
+        `BlockGrouping.crosses`.
+        """
         return tuple(b for b in self.coupled if b.crosses)
 
     @property
@@ -610,12 +305,7 @@ class GroupingReport:
 
 
 def grouping_report(blocking: Blocking, *, depth: int | None = None) -> GroupingReport:
-    """
-    Measure provenance against structure on `blocking`: § 11's table, for any graph.
-
-    Takes a `Blocking` rather than a `Graph` because "structure" is a partition somebody
-    chose -- `Blocking.scc` is the finest honest one, `Blocking.fused` a coarser one, and
-    which was meant is not this function's decision to make.
+    """Measure provenance against structure on `blocking`: § 11's table, for any graph.
     """
     graph = blocking.graph
     order = structure_order(blocking)
@@ -677,26 +367,14 @@ PALETTE = (
     "#bab0ac",
     "#5c9ecf",
 )
-"""
-One colour per group, mid-luminance so every one of them reads on white and on black.
-
-Chosen for that constraint rather than for prettiness: a palette tuned for a light page
-goes to mud on a dark one, and this picture is drawn in whichever the reader's system
-asks for. A greyscale reader still has the group ribbon's written label beside every row.
+"""One colour per group, mid-luminance so every one of them reads on white and on black.
 """
 
 UNGROUPED_COLOUR = "#8c8c8c"
 
 TIER_OVERLAY = (None, "hatch-stripe", "hatch-dot")
-"""
-What a group beyond the palette's length is drawn with, on top of its recycled colour.
-
-More groups than colours is a real case and silently recycling would make two groups
-indistinguishable at exactly the moment there are too many to hold in your head. So the
-colour recycles and a texture is laid over it: the 13th group is the 1st's blue under
-stripes, the 25th the same blue under dots. Past that the texture recycles too and the
-picture says so in its legend, because three tiers of texture is already more than a
-reader can keep apart and pretending otherwise would be worse than admitting it.
+"""What a group beyond the palette's length is drawn with, on top of its recycled
+colour.
 """
 
 
@@ -708,27 +386,8 @@ def group_style(index: int) -> tuple[str, str | None]:
 
 
 TINT_LADDER = (0.0, 0.34, -0.26, 0.52, -0.44, 0.18, -0.13, 0.62, -0.55, 0.44, -0.35)
-"""
-How far each namespace *inside* a subsystem is shaded away from the subsystem's own hue.
-
-Positive is toward white, negative toward black; the subsystem itself takes `0.0` and
-keeps the palette colour, so `tokamak` is orange and `tokamak.build`,
-`tokamak.divertor`, `tokamak.ccfe_hcpb` are tints of that orange rather than three
-unrelated hues. That is the whole point: depth already reads as containment in the
-ribbon's lanes, and giving a child a colour of its own would say the opposite -- that it
-is a peer of `physics`.
-
-**It alternates light/dark with growing magnitude** rather than ramping one way. A
-one-directional ramp of nine children ends either invisible on white or invisible on
-black, and adjacent siblings differ by a step too small to see; alternating spends the
-whole legible range and puts the *largest* contrasts between the first siblings, which
-are the ones with the most nodes. The magnitudes stop at 0.62/0.55 for the same reason
-`PALETTE` is mid-luminance -- the page is drawn in whichever theme the reader's system
-asks for, and a tint past that goes to paper on one of them.
-
-Beyond its length it recycles, as `TIER_OVERLAY` does, and for the same reason: eleven
-tints of one hue is already more than a reader can tell apart, and the ribbon's written
-label is what actually names a group.
+"""How far each namespace *inside* a subsystem is shaded away from the subsystem's own
+hue.
 """
 
 
@@ -749,24 +408,11 @@ class Shade:
     colour: str
     overlay: str | None
     base: str
-    """The subsystem's undiluted hue -- what a *label* is written in.
-
-    A tint is chosen to be distinguishable as a filled cell, which is not the same
-    constraint as being readable as 8px text on the page's background. The band labels
-    take this instead, so the pale end of a family stays legible without pulling the
-    ladder in to where its members stop being distinguishable.
-    """
+    """The subsystem's undiluted hue -- what a *label* is written in."""
 
 
 def group_palette(groups: Iterable[Group]) -> dict[Group, Shade]:
-    """One `Shade` per group **and per namespace above one**, keyed by group.
-
-    Hue is the subsystem's (`top_of`), tint is the group's position within it in
-    `hierarchical` order -- the namespace first, then what is inside it. Intermediate
-    namespaces are included whether or not any node lives directly in them, because the
-    ribbon draws a lane for every level of the tree and a lane with no colour of its own
-    would be a hole in the middle of a subsystem.
-    """
+    """One `Shade` per group **and per namespace above one**, keyed by group."""
     named = tuple(dict.fromkeys(g for g in groups if g != UNGROUPED))
     closure = tuple(dict.fromkeys(g[: i + 1] for g in named for i in range(len(g))))
     subsystems = tuple(dict.fromkeys(top_of(g) for g in closure))
@@ -782,13 +428,8 @@ def group_palette(groups: Iterable[Group]) -> dict[Group, Shade]:
 
 
 TIP_VARS = 12
-"""How many variable names one hover may list before it stops and says how many are left.
-
-One number for every list the tooltip draws -- a cell's shared variables and a node's own
-`reads`/`owns` alike -- because they are the same kind of list read the same way, and a
-cap that differed between them would be a difference the reader has to discover. Some
-nodes here declare tens of ports; an uncapped tip is a page-height column of names that
-covers the matrix it is describing, which is worse than a truncated one that says so.
+"""How many variable names one hover may list before it stops and says how many are
+left.
 """
 
 
@@ -812,11 +453,7 @@ def _matrix_struct(
     depth: int | None,
     formatter: Formatter,
 ) -> dict:
-    """
-    Everything the page draws, as plain data: rows, cells, group bands, block boxes.
-
-    Built here and shipped as JSON, exactly as `render_xdsm_html` ships `xdsm_struct` --
-    the browser lays out and paints, and no structural decision is taken there.
+    """Everything the page draws, as plain data: rows, cells, group bands, block boxes.
     """
     graph = blocking.graph
     order = tuple(order)
@@ -1333,34 +970,8 @@ def render_grouped_dsm_html(
     write: bool = False,
     formatter: Formatter = NoFormat(),
 ) -> HtmlDoc:
-    """
-    `blocking`'s graph as a DSM in `order`, every row coloured by the group its name declares.
-
-    `order` defaults to `structure_order(blocking)` -- the order the graph runs in. Pass
-    `provenance_order(blocking.graph.nodes, depth=depth)` for the other view; the two
-    together are the comparison this module exists for, and drawing them as two files with
-    everything else held fixed is what makes them comparable at a glance.
-
-    Self-contained: one HTML file, no CDN, no external asset, SVG drawn by ~200 lines of
-    vanilla JS with wheel-zoom and drag-pan. Deliberately **not** `render_dsm_html`, whose
-    figure is plotly's: that route colours cells by *edge kind* and orders rows by the
-    ragraph node list, and neither is reachable from the outside, which is precisely the
-    two things this picture needs to control. It is a different instrument, not a
-    replacement -- `render_dsm_html` keeps the hierarchy folding and the variable-level
-    modes this one has no answer for.
-
-    The convention is **outputs in rows, feedback below the diagonal** -- a mark at
-    (row *r*, column *c*) means *r* produces something *c* reads. That is ragraph's
-    `IC_FBD`, the same convention `render_dsm`'s plotly figure uses, so the two DSMs this
-    port writes are now read the same way round; it used to be the mirrored `IR_FAD`,
-    which is a real hazard, because a mirrored DSM is read backwards without anything
-    looking wrong.
-
-    **The page carries no prose.** It is a title, the matrix, and a legend of groups with
-    their node counts -- nothing that explains what a reader is looking at. The
-    explanation belongs here, in the source, where it can be kept true; a paragraph baked
-    into every rendered file is a copy that silently rots when the convention changes,
-    which is exactly what the flip above just did to the one that used to be there.
+    """`blocking`'s graph as a DSM in `order`, every row coloured by the group its name
+    declares.
     """
     order = structure_order(blocking) if order is None else order
     struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter)

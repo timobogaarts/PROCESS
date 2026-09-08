@@ -1,36 +1,4 @@
-"""The matrix solved **warm**: assembled once, compiled once, then measured.
-
-    $PY -m functional_process.cottax.run_warm_matrix
-    $PY -m functional_process.cottax.run_warm_matrix --repeats 3 --out warm.txt
-
-Why this exists, next to `run_cold_matrix`
-------------------------------------------
-`run_cold_matrix` measures a row from nothing: assemble, trace, lower, compile, solve.
-That is the right instrument for "what does a fresh configuration cost", and it is a
-**useless** one for comparing two optimisers, because compilation is ~97 % of it
-(`_audit/optimise_design.md` §44) and both optimisers compile nearly the same programs.
-
-It is worse than useless for reading per-call cost. §44 measured a cold row's 128 block
-calls: two carry the compile at 9 194 ms and 6 662 ms, the other 126 run at 1.4 ms, and
-the mean over all of them -- 53.6 ms -- describes no call that happened. A cold row's
-`model` column is 2.08 s of first-call residue and 0.13 s of arithmetic.
-
-Warm, all of that is gone: the second solve of the same `Session` compiles nothing
-(`session.py`, measured at 0 compiles), so what is left is what a driver actually costs
-per solve -- its evaluations and its own host-side work. That is the comparison
-`--slsqp` was built for, and this module is where it is fair.
-
-What a row reports
-------------------
-Wall clock for the warm solve, split into **XLA** (summed over every call to
-`host_cache.bind`'s programs, each `block_until_ready`-ed) and **host** (the remainder --
-the optimiser's own cost: `cvxpy` for VMCON, the Fortran line search for SLSQP, plus
-`ravel`/`unravel` and the callback boundary). Then the call count and the median call, so
-a program's cost and a solve's cost are never confused for one another again.
-
-The answer columns are the cold matrix's own, and must agree with it row for row: a warm
-solve is the *same* solve. A disagreement is a defect in this module, not a finding.
-"""
+"""The matrix solved **warm**: assembled once, compiled once, then measured."""
 
 from __future__ import annotations
 
@@ -56,13 +24,7 @@ _ORIGINAL_BIND = _host_cache.bind
 
 
 def _timing_bind(conditions, unravel):
-    """`host_cache.bind`, with every returned program timed into `CALLS`.
-
-    Patched into `drivers` as well as `host_cache`: `drivers` did
-    `from ... import bind`, so rebinding only the defining module would leave the
-    solver calling the original. That is not a subtlety worth rediscovering -- an
-    earlier probe measured zero calls for exactly this reason.
-    """
+    """`host_cache.bind`, with every returned program timed into `CALLS`."""
     programs = _ORIGINAL_BIND(conditions, unravel)
 
     def timed(program):
@@ -84,10 +46,6 @@ _drivers.bind = _timing_bind
 
 def measure(path, arm: str, optimiser, repeats: int) -> dict:
     """Solve `arm` once to pay the compiler, then `repeats` times, and report the last.
-
-    The discarded first solve is the whole point: everything this module reports is
-    conditioned on nothing being compiled, and `session.Session` is what makes a second
-    solve free (`_audit/optimise_design.md` §37).
     """
     # **Drop the previous measurement's executables first.** jax caches every program
     # it compiles for the life of the process, and this loop compiles a whole
