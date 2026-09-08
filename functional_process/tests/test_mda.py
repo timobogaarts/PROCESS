@@ -356,9 +356,9 @@ def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point()
         if problem_type is None:
             continue
         driver = drivers[problem]
-        if issubclass(problem_type, RootFind):
+        if problem_type == 'root-find':
             assert isinstance(driver, SeededNewtonDriver)
-        elif issubclass(problem_type, FixedPoint):
+        elif problem_type == 'fixed-point':
             assert isinstance(driver, PicardDriver)
 
 
@@ -378,7 +378,7 @@ def test_every_root_find_unknown_has_a_starting_guess_that_does_not_need_data():
     for problem, problem_type in zip(
         blocking.problems, blocking.problem_types, strict=True
     ):
-        if problem_type is None or not issubclass(problem_type, RootFind):
+        if problem_type is None or not problem_type == 'root-find':
             continue
         unknowns = graph[problem].owns
         # A `Supply`-ed start is a `Start` port the graph owns -- `starts_for` filters

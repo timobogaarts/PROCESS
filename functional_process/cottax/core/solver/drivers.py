@@ -19,6 +19,7 @@ from cottax.problem import (
     RootFind,
     Start,
     Steps,
+    is_optimise, is_root_find,
 )
 from cottax.spec import VarPath
 from cottax.tools.path import written
@@ -391,7 +392,7 @@ class SlsqpDriver(AbstractDriver):
     problem `VmconDriver` receives.
     """
 
-    drives = Optimise
+    accepts = staticmethod(is_optimise)
     requires = (Start,)
 
     n_equality: int = 0
@@ -592,7 +593,7 @@ class SeededNewtonDriver(AbstractDriver):
     block's own **context** when the one supplied in `env` is unusable.
     """
 
-    drives = RootFind
+    accepts = staticmethod(is_root_find)
     requires = (Start,)
 
     rtol: float = 1e-4
@@ -666,7 +667,7 @@ class VmconDriver(AbstractDriver):
     finite differences.
     """
 
-    drives = Optimise
+    accepts = staticmethod(is_optimise)
     requires = (Start,)
 
     n_equality: int

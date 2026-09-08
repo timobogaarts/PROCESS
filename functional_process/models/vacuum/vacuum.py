@@ -475,7 +475,7 @@ def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=
 # uses). `DuctFeasibilityConditions` mints `.vacuum.a1max`/`.vacuum.s_i` (real locals of
 # `_solve_vacuum_pumping_old`'s per-species loop, same minting precedent as
 # `DuctDiameterRootFind`'s own `l1`/`l2`/`l3`/`xmult_i`/`ceff_i`) and the two inequality
-# residuals as ordinary `Output`s, since a bodyless `ProblemNode` like `Feasibility`
+# residuals as ordinary `Output`s, since a bodyless `ConditionNode` like `Feasibility`
 # reads pre-computed residual values, it does not compute them itself.
 #
 # **Structural addition only, same discipline as `Intersect`/`DuctDiameterRootFind`

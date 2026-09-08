@@ -28,7 +28,7 @@ import pytest
 from cottax.blocking import Blocking
 from cottax.evaluate import AbstractDriver, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.problem import RootFind, Start
+from cottax.problem import RootFind, Start, is_root_find, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
 from cottax.tools.path import path_map
@@ -961,7 +961,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.is_acyclic
     (block,) = [b for b in graph.scc_blocks if b.declared]
-    assert block.problem_type is RootFind
+    assert shape_of(block[block.problem]) == 'root-find'
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
@@ -1038,7 +1038,7 @@ class _GenericBisectionRootFind(AbstractDriver):
     tabulated `wp_width_r` array's own min/max.
     """
 
-    drives = RootFind
+    accepts = staticmethod(is_root_find)
     lower: float
     upper: float
 

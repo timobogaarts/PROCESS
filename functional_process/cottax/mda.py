@@ -11,10 +11,11 @@ from cottax.problem import (
     Start,
     driver_vars,
     unknowns_of,
+    is_fixed_point, is_optimise, is_root_find,
 )
 from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
-from cottax.spec import ProblemNode, NodePath, VarPath
+from cottax.spec import ConditionNode, NodePath, VarPath
 from cottax.tools.path import path_map, written
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
@@ -297,13 +298,13 @@ def default_drivers(
     """
     drivers = {}
     for problem, definition in graph.definitions.items():
-        if not isinstance(definition, ProblemNode) or isinstance(definition, Driven):
+        if not isinstance(definition, ConditionNode) or isinstance(definition, Driven):
             continue
-        if isinstance(definition, RootFind):
+        if is_root_find(definition):
             drivers[problem] = SeededNewtonDriver(seed=_root_find_seed)
-        elif isinstance(definition, FixedPoint):
+        elif is_fixed_point(definition):
             drivers[problem] = PicardDriver()
-        elif isinstance(definition, Optimise):
+        elif is_optimise(definition):
             # Not passed as `max_iter=max_iter`: `None` here means *say nothing*, and
             # `VmconDriver.max_iter` is an `int` field with a default it would then be
             # handed instead of keeping.

@@ -37,10 +37,11 @@ from cottax import (
     Start,
 )
 from cottax.blocking import Blocking
+from cottax.problem import is_feasibility, is_root_find
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.rewrites import Assign
-from cottax.spec import NodePath
+from cottax.spec import NodePath, Implemented
 from cottax.tools.path import path_map
 from jax.tree_util import DictKey
 
@@ -227,8 +228,7 @@ class _NewtonRootFindDriver(AbstractDriver):
     `solve_duct_diameter` itself -- not a general-purpose Newton driver.
     """
 
-    drives = RootFind
-
+    accepts = staticmethod(is_root_find)
     max_iter: int = 100
     tol: float = 1e-10
 
@@ -291,8 +291,8 @@ def test_duct_diameter_root_find_builds_cleanly():
 
     assert set(g.nodes) == {d.name, d.problem_name}
     body, problem = g[d.name], g[d.problem_name]
-    assert isinstance(body, ImplementedFunction)
-    assert isinstance(problem, RootFind)
+    assert isinstance(body, Implemented)
+    assert is_root_find(problem)
     assert problem.owns == (vpath(".vacuum.d_duct"),)
     assert problem.reads == body.owns
     assert body.reads == (
@@ -354,7 +354,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
 
 def _duct_feasibility_graph():
-    """`DuctFeasibility` (a bare `problem.py` `ProblemNode`, not a `NodalDeclaration`,
+    """`DuctFeasibility` (a bare `problem.py` `ConditionNode`, not a `NodalDeclaration`,
     so it carries no class-derived name the way `DuctFeasibilityConditions`/
     `DuctDiameterRootFind` do) assembled together with `DuctFeasibilityConditions` and
     `DuctDiameterRootFind` via `to_graph`'s `{name: NodeDefinition}` mapping form --
@@ -399,10 +399,10 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     codebase.
     """
     root_find_problem = _duct_feasibility_graph()[DuctDiameterRootFind().problem_name]
-    assert isinstance(root_find_problem, RootFind)
+    assert is_root_find(root_find_problem)
 
     joined = DuctFeasibility + root_find_problem
-    assert isinstance(joined, Feasibility)
+    assert is_feasibility(joined)
     assert joined.design == DuctFeasibility.design + root_find_problem.outputs
     assert joined.equalities == root_find_problem.inputs
     assert joined.inequalities == DuctFeasibility.inequalities
@@ -423,8 +423,7 @@ class _MeritFunctionFeasibilityDriver(AbstractDriver):
     `coils/test_calculate.py`).
     """
 
-    drives = Feasibility
-
+    accepts = staticmethod(is_feasibility)
     def __call__(self, conditions, data):
         start = data.get(Start)
         x0 = (

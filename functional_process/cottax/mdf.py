@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
+from cottax.rewrites import NestInside
 from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
@@ -71,7 +72,7 @@ class Mdf:
     n_equality: int
     n_inequality: int
     report: dict
-    problem_type: type = Optimise
+    problem_type: str = 'optimise'
     """Which problem this file states -- `Optimise` or `RootFind`. See `assemble`."""
     reported: tuple[VarPath, ...] = ()
     """Conditions assembled but **not driven**: a `RootFind`'s inequalities."""
@@ -181,7 +182,7 @@ def assemble(
         n_equality=n_equality,
         n_inequality=0 if root_find else n_inequality,
         report=report,
-        problem_type=RootFind if root_find else Optimise,
+        problem_type='root-find' if root_find else 'optimise',
         reported=reported,
     )
 
@@ -290,7 +291,7 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     # instead of beside it (`_audit/optimise_design.md` §8, closed upstream). MDF's
     # order is the one `mdf_graph` assembles -- objective, equalities, inequalities --
     # and it is spelled here rather than counted by anyone.
-    if issubclass(mdf.problem_type, RootFind):
+    if mdf.problem_type == 'root-find':
         # Every condition vanishes at the answer, and none of them is an objective or a
         # one-sided bound -- which is precisely `RootFind.condition_roles`.
         roles = (Residual,) * len(mdf.conditions)
@@ -363,9 +364,9 @@ class MdfNewtonDriver(SeededNewtonDriver):
 
 def root_find_driver(mdf: Mdf, **kwargs) -> MdfNewtonDriver:
     """The driver for a `RootFind` MDF -- `mdf.problem_type` decides, not the caller."""
-    if not issubclass(mdf.problem_type, RootFind):
+    if not mdf.problem_type == 'root-find':
         raise TypeError(
-            f"this MDF states an {mdf.problem_type.__name__}, not a RootFind -- "
+            f"this MDF states an {mdf.problem_type}, not a RootFind -- "
             f"`mdf.driver` is the one to build"
         )
     return MdfNewtonDriver(**kwargs)
@@ -375,7 +376,7 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     """Drive the outer problem, then re-run the MDA at the answer."""
     conditions = condition_map(mdf, env)
     start = tuple(jnp.asarray(env[var]) for var in mdf.design)
-    if optimiser is None and issubclass(mdf.problem_type, RootFind):
+    if optimiser is None and mdf.problem_type == 'root-find':
         # A `RootFind` takes neither an objective nor a bound nor a per-iterate callback:
         # `bounds` and `callback` are dropped here rather than forwarded, so that a
         # caller passing the `Optimise` arm's arguments gets PROCESS's unbounded
@@ -509,7 +510,7 @@ def inner_residuals(schedule: Schedule, env):
         if not isinstance(step, Drive):
             continue
         values = step.condition_map(env)(*[env[u] for u in step.unknowns])
-        fixed_point = issubclass(step.problem_type, FixedPoint)
+        fixed_point = step.problem_type == 'fixed-point'
         for unknown, value in zip(step.unknowns, values, strict=True):
             current = np.asarray(env[unknown], dtype=float)
             gap = np.asarray(value, dtype=float) - (current if fixed_point else 0.0)
@@ -528,13 +529,13 @@ def inner_residuals(schedule: Schedule, env):
 
 
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, **kwargs):
-    """MDF **stated as structure**: `Blocking.scc(graph + Optimise).nest(the Optimise)`.
+    """MDF **stated as structure**: `Blocking.scc((graph + Optimise + NestInside(the Optimise)).graph)`.
     """
     driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
-    return Blocking.scc(with_problem).nest(problem_name), problem_name, report
+    return Blocking.scc((with_problem + NestInside(problem_name)).graph), problem_name, report
 
 
 IN_GRAPH_PLACE = NodePath((GetAttrKey("RootFind"),))
@@ -550,7 +551,7 @@ class InGraphRootFind:
     graph: Graph
     """`mdf.graph` plus the `RootFind`, with every problem's driver `Assign`ed on."""
     blocking: Blocking
-    """`Blocking.scc(graph).nest(problem)`: the SCC blocking, nested at the problem."""
+    """`Blocking.scc((graph + NestInside(problem)).graph)`: the SCC blocking, nested at the problem."""
     schedule: Schedule
     problem: NodePath
 
@@ -605,9 +606,9 @@ class InGraphRootFind:
 def root_find_node(mdf: Mdf) -> RootFind:
     """The `RootFind` `mdf` states, as a cottax node: owns `design`, reads `conditions`.
     """
-    if not issubclass(mdf.problem_type, RootFind):
+    if not mdf.problem_type == 'root-find':
         raise TypeError(
-            f"this MDF states an {mdf.problem_type.__name__}, and only the `RootFind` "
+            f"this MDF states an {mdf.problem_type}, and only the `RootFind` "
             f"arm is stated in-graph here -- an `Optimise` nests just as well "
             f"(`_audit/in_graph_rootfind.md` §1 measures it), but its outer driver is a "
             f"`VmconDriver`, which does not trace, so that is a separate change"
@@ -644,7 +645,7 @@ def in_graph_root_find(
     # instead of raising it, which is what makes a non-converged outer solve a row.
     drivers[place] = driver or MdfNewtonDriver(**kwargs)
     assigned = assign_drivers(with_problem, drivers)
-    blocking = Blocking.scc(assigned).nest(place)
+    blocking = Blocking.scc((assigned + NestInside(place)).graph)
     return InGraphRootFind(
         mdf=mdf,
         graph=assigned,

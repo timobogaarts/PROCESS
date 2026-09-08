@@ -18,6 +18,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from cottax.problem import (
     RootFind,
     Start,
+    is_root_find,
 )
 from cottax.spec import (
     VarPath,
@@ -213,7 +214,7 @@ class IntersectBisectionNewtonPolish(AbstractDriver):
     full x-overlap, then a few exact Newton corrections (`_intersect_newton_polish`).
     """
 
-    drives = RootFind
+    accepts = staticmethod(is_root_find)
     requires = (Start,)
 
     def __call__(self, conditions: ConditionMap, data):

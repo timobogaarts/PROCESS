@@ -14,8 +14,8 @@ from cottax.blocking import Blocking
 from cottax.evaluate import Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
-from cottax.problem import Driven, FixedPoint, Optimise, conditions_of
-from cottax.rewrites import Assign, Combine, Residualise
+from cottax.problem import Driven, FixedPoint, Optimise, conditions_of, is_fixed_point, is_optimise
+from cottax.rewrites import Assign, Combine, NestInside, Residualise
 
 from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
@@ -518,7 +518,7 @@ def fixed_point_residuals(graph, env, problems=None):
     from cottax.evaluate import _run_acyclic
 
     if problems is None:
-        problems = tuple(n for n in graph.declared if isinstance(graph[n], FixedPoint))
+        problems = tuple(n for n in graph.declared if is_fixed_point(graph[n]))
     residuals = []
     for problem in problems:
         definition = graph[problem]
@@ -600,7 +600,7 @@ def array_valued_problems(graph, env, problems=None):
     ones today's SAND layer cannot absorb, detected rather than listed.
     """
     if problems is None:
-        problems = tuple(n for n in graph.declared if isinstance(graph[n], FixedPoint))
+        problems = tuple(n for n in graph.declared if is_fixed_point(graph[n]))
     return tuple(
         problem
         for problem in problems
@@ -621,14 +621,16 @@ def sand_graph(graph, skip=(), keep=()):
     for problem in graph.declared:
         if problem in skip or problem in keep:
             continue
-        if not isinstance(graph[problem], FixedPoint):
+        if not is_fixed_point(graph[problem]):
             continue
         plan = plan + Residualise(problem)
         residualised.append(problem)
-    plan = plan + Combine(
-        NodePath((GetAttrKey("sand"),)),
-        tuple(p for p in plan.graph.declared if p not in keep),
-    )
+    # The optimiser first: `+` concatenates and is order-preserving now (it used to
+    # absorb from whichever side it was written on), so the design variables lead the
+    # combined unknowns -- which `sand_harness`'s Schur reduction indexes positionally.
+    folding = [p for p in plan.graph.declared if p not in keep]
+    folding.sort(key=lambda p: not is_optimise(plan.graph[p]))
+    plan = plan + Combine(NodePath((GetAttrKey("sand"),)), tuple(folding))
     return plan.graph, tuple(residualised)
 
 
@@ -642,7 +644,7 @@ def constraints_outside_block(graph):
     # problems, which is exactly the shape `sand_graph(keep=...)` leaves behind, and
     # this question -- *which constraints are outside the optimiser's block* -- has the
     # same answer either way. Nothing else about the check changes.
-    optimise = next(p for p, d in graph.definitions.items() if isinstance(d, Optimise))
+    optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
     problem_block = next(
         frozenset(nodes) for nodes in blocking.blocks if optimise in nodes
     )
@@ -692,7 +694,7 @@ def sand_schedule(
     optimiser=None,
 ):
     """A `Schedule` for `graph`'s single `^problem.sand`, answered by `driver`."""
-    optimise = next(p for p, d in graph.definitions.items() if isinstance(d, Optimise))
+    optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
     drivers = default_drivers(
         graph,
         bounds=bounds,
@@ -706,8 +708,11 @@ def sand_schedule(
     drivers.update(inner_drivers or {})
     # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
     assigned = assign_drivers(graph, drivers)
-    blocking = Blocking.scc(assigned)
-    return Schedule(blocking.nest(optimise) if nest else blocking)
+    # Nesting is an op on the *graph* now, not a call on the blocking: which statement's
+    # iteration answers which is recorded in `Graph.within`, and `Blocking` reads it.
+    if nest:
+        assigned = (assigned + NestInside(optimise)).graph
+    return Schedule(Blocking.scc(assigned))
 
 
 def sand_shape(schedule: Schedule) -> dict:

@@ -29,6 +29,7 @@ from cottax.problem import (
     Start,
     Steps,
     driver_vars,
+    is_fixed_point,
 )
 from cottax.rewrites import Assign
 from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
@@ -469,7 +470,7 @@ def test_default_drivers_reads_the_split_off_the_problem_node():
     problem = next(
         p
         for p, t in zip(blocking.problems, blocking.problem_types, strict=True)
-        if t is not None and issubclass(t, Optimise)
+        if t is not None and t == 'optimise'
     )
     definition = blocking.graph[problem]
     assert driver.n_equality == len(definition.equalities)
@@ -1359,7 +1360,7 @@ def test_the_pf_ring_is_detected_as_an_array_unknown_problem():
     pf = [
         p
         for p in graph.declared
-        if isinstance(graph[p], CottaxFixedPoint)
+        if is_fixed_point(graph[p])
         and any("pf_coil" in u.path_str() for u in graph[p].owns)
     ]
     assert len(pf) == 1

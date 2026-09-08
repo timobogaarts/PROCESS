@@ -28,6 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.blocking import Blocking
+from cottax.rewrites import NestInside
 from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
@@ -41,6 +42,7 @@ from cottax.problem import (
     conditions_of,
     driver_vars,
     unknowns_of,
+    is_root_find,
 )
 from cottax.tools.path import path_map
 
@@ -134,7 +136,7 @@ def test_cottax_states_mdf_structurally(problem):
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
     )
     index = nested.index[name]
-    assert issubclass(nested.problem_types[index], Optimise)
+    assert nested.problem_types[index] == 'optimise'
     interior = nested.inner[index]
     assert interior is not None
     # The interior is the block minus the node solved at this level, and it holds the
@@ -178,7 +180,8 @@ def test_cottax_runs_that_nesting_once_the_drivers_are_assigned():
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
     )
     graph = nested.graph
-    blocking = Blocking.scc(assign_drivers(graph, default_drivers(graph))).nest(name)
+    assigned = assign_drivers(graph, default_drivers(graph))
+    blocking = Blocking.scc((assigned + NestInside(name)).graph)
     schedule = Schedule(blocking)
     outer = schedule.steps[blocking.index[name]]
     assert isinstance(outer, Drive)
@@ -404,7 +407,7 @@ def _array_fixed_point(max_iter):
     configuration. The three elements converge at three different rates, so which element
     is the worst is a fact and not a coincidence.
     """
-    from cottax.rewrites import Assign
+    from cottax.rewrites import Assign, NestInside
     from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
     from cottax.tools.path import path_map
     from jax.tree_util import GetAttrKey
@@ -527,7 +530,7 @@ def test_a_root_find_drives_the_equalities_and_nothing_else(square_problem):
     `_Fsolve.evaluate_eq_cons` does: `fcnvmc1(n, self.meq, x, 0)` returns the first
     `meq` constraints and stops.
     """
-    assert issubclass(square_problem.problem_type, RootFind)
+    assert square_problem.problem_type == 'root-find'
     assert len(square_problem.conditions) == len(square_problem.design)
     assert square_problem.conditions == tuple(square_problem.report["equalities"])
     assert square_problem.n_inequality == 0
@@ -589,7 +592,7 @@ def test_the_optimise_arm_is_untouched(problem, square_problem):
     fails, `root_find` has started changing the model rather than the question asked of
     it.
     """
-    assert issubclass(problem.problem_type, Optimise)
+    assert problem.problem_type == 'optimise'
     assert problem.reported == ()
     assert problem.report["objective"] is not None
     # Exactly one block apart, and the one is the objective node: it is an ordinary
@@ -605,10 +608,10 @@ def test_the_root_find_driver_refuses_an_optimise_and_needs_a_start(
     """`mdf.solve` picks the driver off `problem_type`, so the mismatch is caught at the
     one place a caller could get it wrong by hand.
     """
-    with pytest.raises(TypeError, match="states an Optimise"):
+    with pytest.raises(TypeError, match="states an optimise"):
         mdf.root_find_driver(problem)
     driver = mdf.root_find_driver(square_problem)
-    assert driver.drives is RootFind
+    assert driver.accepts is is_root_find
     with pytest.raises(ValueError, match="needs a starting value"):
         driver(mdf.condition_map(square_problem, {}), {})
 
@@ -705,7 +708,7 @@ def test_the_outer_drive_body_is_the_interiors_own_schedule(in_graph):
     outer = in_graph.drive
     assert isinstance(outer, Drive)
     assert isinstance(outer.body, Schedule)
-    assert issubclass(outer.problem_type, RootFind)
+    assert outer.problem_type == 'root-find'
     assert outer.unknowns == in_graph.design
     assert outer.conditions == in_graph.conditions
     assert set(outer.body.nodes) == set(in_graph.block) - {in_graph.problem}
@@ -740,7 +743,7 @@ def test_an_optimise_is_not_stated_in_graph_here(problem):
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "this MDF states an Optimise, and only the `RootFind` arm is stated in-graph"
+            "this MDF states an optimise, and only the `RootFind` arm is stated in-graph"
         ),
     ):
         mdf.in_graph_root_find(problem)
