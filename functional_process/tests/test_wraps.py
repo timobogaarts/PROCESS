@@ -31,7 +31,7 @@ from functional_process.models.physics.density_limit import (  # noqa: E402
 )
 
 
-class WrapsGreenwald(WrapsFunction, fn=calculate_greenwald_density_limit):
+class WrapsGreenwald(WrapsFunction):
     """`GreenwaldDensityLimit`, with the reads declared rather than forwarded.
 
     Carries the rename case: the pure function's parameter is `c_plasma` and the field is
@@ -39,14 +39,18 @@ class WrapsGreenwald(WrapsFunction, fn=calculate_greenwald_density_limit):
     call and this one spells with `FromExactly`.
     """
 
+    fn = calculate_greenwald_density_limit
+
     c_plasma = FromExactly(physics.plasma_current)
     rminor = From(physics)
 
     nd_plasma_electron_max_array_7 = Output(physics.nd_plasma_electron_max_array[6])
 
 
-class WrapsEnforced(WrapsFunction, fn=select_enforced_density_limit_greenwald):
+class WrapsEnforced(WrapsFunction):
     """`EnforcedDensityLimitGreenwald` -- a read of one array element."""
+
+    fn = select_enforced_density_limit_greenwald
 
     nd_plasma_electron_max_array_7 = FromExactly(
         physics.nd_plasma_electron_max_array[6]
@@ -95,7 +99,9 @@ def test_a_read_that_does_not_match_the_function_is_refused():
     """
     with pytest.raises(TypeError, match=r"missing \['rminor'\]"):
 
-        class Missing(WrapsFunction, fn=calculate_greenwald_density_limit):
+        class Missing(WrapsFunction):
+            fn = calculate_greenwald_density_limit
+
             c_plasma = FromExactly(physics.plasma_current)
 
             nd_plasma_electron_max_array_7 = Output(
@@ -107,7 +113,9 @@ def test_a_read_that_is_not_a_parameter_is_refused():
     """The other direction: a declared read the function has no parameter for."""
     with pytest.raises(TypeError, match=r"declared but not a parameter: \['kappa'\]"):
 
-        class Extra(WrapsFunction, fn=calculate_greenwald_density_limit):
+        class Extra(WrapsFunction):
+            fn = calculate_greenwald_density_limit
+
             c_plasma = FromExactly(physics.plasma_current)
             rminor = From(physics)
             kappa = From(physics)
@@ -115,3 +123,33 @@ def test_a_read_that_is_not_a_parameter_is_refused():
             nd_plasma_electron_max_array_7 = Output(
                 physics.nd_plasma_electron_max_array[6]
             )
+
+
+def test_an_arm_overrides_only_the_formula():
+    """The switch-arm case, and the reason `fn` is an attribute and not a class keyword.
+
+    An arm that shares its family's reads and writes and differs only in which formula
+    answers them says exactly that: one line. A keyword in the class header would have to
+    be repeated by every arm, and a call form could not subclass at all.
+    """
+
+    class Family(WrapsFunction):
+        """A family head."""
+
+        fn = calculate_greenwald_density_limit
+
+        c_plasma = FromExactly(physics.plasma_current)
+        rminor = From(physics)
+
+        nd_plasma_electrons_max = OutputInto(physics)
+
+    class Arm(Family):
+        """An arm: same ports, its own formula."""
+
+        fn = calculate_greenwald_density_limit
+
+    assert [str(i.var) for i in Arm().inputs] == [str(i.var) for i in Family().inputs]
+    assert [str(o.var) for o in Arm().outputs] == [str(o.var) for o in Family().outputs]
+    assert Arm()(c_plasma=1.2e7, rminor=2.0) == calculate_greenwald_density_limit(
+        c_plasma=1.2e7, rminor=2.0
+    )

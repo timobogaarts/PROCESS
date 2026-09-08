@@ -12,12 +12,23 @@ argument for this module. `NodalDeclaration.outputs` reads **class attributes**
 (`_params`). Outputs are therefore declared once and never duplicated; reads are declared
 in one place and spent in another. `WrapsFunction` makes reads symmetric with writes:
 
-    class Volume(WrapsFunction, fn=calculate_plasma_volume):
+    class Volume(WrapsFunction):
+        fn = calculate_plasma_volume
+
         rminor = From(physics)
         rmajor = From(physics)
         kappa  = From(physics)
 
         vol_plasma = OutputInto(physics)
+
+**`fn` is a class attribute, not a class keyword**, so that everything about the node is
+declared the same way -- the body, the reads and the writes are all attributes, and the
+class header carries only the base. It also inherits: a switch arm that shares its
+family's reads and differs only in formula overrides `fn` and nothing else, which is what
+a keyword in the header cannot do without repeating itself. A call form
+(`X = wrap(fn, ...)`) was considered and refused for the same reason twice over: cottax
+names a node from its class (`_class_name`), which an assignment target cannot supply,
+and 230 of this port's 612 declarations are arms subclassing a family head.
 
 Every port and every write is on its own line, greppable and visible, and each name is
 written once. `FromExactly` stays the escape hatch it already is, and here it also
@@ -59,7 +70,7 @@ def _declared_reads_on_cls(cls: type) -> dict[str, FromExactly]:
 class WrapsFunction(ExplicitFunction):
     """`ExplicitFunction` whose reads are class attributes and whose body is `fn`."""
 
-    def __init_subclass__(cls, fn=None, **kwargs):
+    def __init_subclass__(cls, **kwargs):
         """Synthesise `__call__` from the declared reads, in `fn`'s parameter order.
 
         Raises
@@ -71,6 +82,8 @@ class WrapsFunction(ExplicitFunction):
             the missing port.
         """
         super().__init_subclass__(**kwargs)
+        fn = getattr(cls, "fn", None)
+        fn = getattr(fn, "__func__", fn)          # a `staticmethod` if it was wrapped
         if fn is None:
             return                      # an intermediate base; its subclasses name `fn`
 
@@ -107,4 +120,4 @@ class WrapsFunction(ExplicitFunction):
         call.__name__ = "__call__"
         call.__doc__ = f"`{fn.__module__}.{fn.__name__}`, ports declared above."
         cls.__call__ = call
-        cls.fn = staticmethod(fn)
+        cls.fn = staticmethod(fn)  # so a subclass reads it back unbound
