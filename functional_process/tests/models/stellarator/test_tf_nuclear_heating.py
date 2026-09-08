@@ -111,19 +111,4 @@ class TestScTfCoilNuclearHeating(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_shld_inboard": (0.05, 1.0),
-        "dr_fw_inboard": (0.005, 0.1),
-        "dr_blkt_inboard": (0.1, 2.0),
-        "dr_shld_outboard": (0.05, 1.0),
-        "dr_fw_outboard": (0.005, 0.1),
-        "dr_blkt_outboard": (0.1, 2.0),
-        "dr_tf_wp_with_insulation": (0.1, 2.0),
-        "dx_tf_wp_insulation": (0.001, 0.1),
-        "pflux_fw_neutron_mw": (0.01, 5.0),
-        "tfsai": (1.0, 1.0e3),
-        "tfsao": (1.0, 1.0e3),
-        "dr_tf_plasma_case": (0.01, 0.5),
-        "f_t_plant_available": (0.3, 0.95),
-        "life_plant": (10.0, 60.0),
-    }
+    fuzz = True

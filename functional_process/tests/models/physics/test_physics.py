@@ -443,17 +443,7 @@ class TestPlasmaOhmicHeating(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_c_plasma_inductive": (0.1, 1.0),
-        "kappa95": (1.0, 2.5),
-        "plasma_current": (1.0e6, 3.0e7),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "temp_plasma_electron_density_weighted_kev": (1.0, 40.0),
-        "vol_plasma": (100.0, 5000.0),
-        "n_charge_plasma_effective_vol_avg": (1.0, 5.0),
-        "plasma_res_factor": (0.5, 1.0),
-    }
+    fuzz = True
 
 
 # =========================================================== `PlasmaBeta.run`'s limits

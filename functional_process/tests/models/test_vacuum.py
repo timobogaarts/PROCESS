@@ -134,19 +134,7 @@ class TestVacuumPumpingSimple(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "molflow_plasma_fuelling_required": (1.0e21, 1.0e23),
-        "molflow_vac_pumps": (1.0e21, 1.0e23),
-        "volflow_vac_pumps_max": (5.0, 50.0),
-        "f_a_vac_pump_port_plasma_surface": (0.005, 0.05),
-        "f_volflow_vac_pumps_impedance": (0.05, 0.5),
-        "a_plasma_surface": (200.0, 3000.0),
-        "n_tf_coils": (10.0, 60.0),
-        "outgasfactor": (0.005, 0.05),
-        "pres_vv_chamber_base": (1.0e-5, 1.0e-3),
-        "outgasindex": (0.5, 2.0),
-        "t_plant_pulse_dwell": (10.0, 2000.0),
-    }
+    fuzz = True
 
 
 def _reference_solve_duct_diameter(l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=0.01):
@@ -978,18 +966,7 @@ class TestCalculateEllipticalVesselVolumes(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "triang": (0.0, 0.8),
-        "r_shld_inboard_inner": (0.5, 8.0),
-        "r_shld_outboard_outer": (5.0, 20.0),
-        "dz_vv_half": (1.0, 15.0),
-        "dr_vv_inboard": (0.05, 1.0),
-        "dr_vv_outboard": (0.05, 1.0),
-        "dz_vv_upper": (0.05, 1.0),
-        "dz_vv_lower": (0.05, 1.0),
-    }
+    fuzz = True
 
 
 def _reference_vacuum_vessel_outputs(

@@ -521,13 +521,7 @@ class TestNcore(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_plasma_pedestal_density_norm": (0.8, 0.99),
-        "nd_plasma_pedestal_electron": (1.0e19, 4.0e19),
-        "nd_plasma_separatrix_electron": (1.0e18, 3.0e19),
-        "nd_plasma_electrons_vol_avg": (6.0e19, 2.0e20),
-        "alphan": (0.1, 1.0),
-    }
+    fuzz = True
     """Bounds chosen to stay clear of the floor.
 
     `alphan`'s range is PROCESS's own (iteration variable 6). The three densities are given
@@ -562,14 +556,7 @@ class TestTcore(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_plasma_pedestal_temp_norm": (0.8, 0.99),
-        "temp_plasma_pedestal_kev": (1.0, 8.0),
-        "temp_plasma_separatrix_kev": (0.05, 1.0),
-        "temp_plasma_electron_vol_avg_kev": (5.0, 25.0),
-        "alphat": (0.5, 2.5),
-        "tbeta": (1.0, 3.0),
-    }
+    fuzz = True
     """`alphat`'s range is PROCESS's own (iteration variable 5); the rest are operating
     ranges. `tbeta` is kept away from 0, where `2 / tbeta` diverges."""
 
@@ -646,11 +633,7 @@ class TestParabolicOnAxisDensities(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_plasma_electrons_vol_avg": (1.0e19, 2.0e20),
-        "nd_plasma_ions_total_vol_avg": (1.0e19, 2.0e20),
-        "alphan": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 class TestPedestalOnAxisDensities(Tier1Contract):
@@ -676,14 +659,7 @@ class TestPedestalOnAxisDensities(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_plasma_pedestal_density_norm": (0.8, 0.99),
-        "nd_plasma_pedestal_electron": (1.0e19, 4.0e19),
-        "nd_plasma_separatrix_electron": (1.0e18, 3.0e19),
-        "nd_plasma_electrons_vol_avg": (6.0e19, 2.0e20),
-        "nd_plasma_ions_total_vol_avg": (1.0e19, 2.0e20),
-        "alphan": (0.1, 1.0),
-    }
+    fuzz = True
     """Same clear-of-the-floor reasoning as `TestNcore`."""
 
 
@@ -752,11 +728,7 @@ class TestParabolicOnAxisTemperatures(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
-        "temp_plasma_ion_vol_avg_kev": (1.0, 40.0),
-        "alphat": (0.5, 2.5),
-    }
+    fuzz = True
 
 
 class TestPedestalOnAxisTemperatures(Tier1Contract):
@@ -783,15 +755,7 @@ class TestPedestalOnAxisTemperatures(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_plasma_pedestal_temp_norm": (0.8, 0.99),
-        "temp_plasma_pedestal_kev": (1.0, 8.0),
-        "temp_plasma_separatrix_kev": (0.05, 1.0),
-        "temp_plasma_electron_vol_avg_kev": (5.0, 25.0),
-        "temp_plasma_ion_vol_avg_kev": (5.0, 25.0),
-        "alphat": (0.5, 2.5),
-        "tbeta": (1.0, 3.0),
-    }
+    fuzz = True
 
 
 # --------------------------------------------------------- pedestal/separatrix densities
@@ -864,14 +828,7 @@ class TestGreenwaldDensityFractions(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_plasma_pedestal_electron": (1.0e19, 1.0e20),
-        "nd_plasma_separatrix_electron": (1.0e18, 5.0e19),
-        # PROCESS's own bounds for iteration variable 2 (`plasma_current`) and 3
-        # (`rminor`) are far wider than any real device; these are operating ranges.
-        "plasma_current": (5.0e6, 3.0e7),
-        "rminor": (0.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestPedestalSeparatrixDensities(Tier1Contract):
@@ -894,9 +851,4 @@ class TestPedestalSeparatrixDensities(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_nd_plasma_pedestal_greenwald": (0.1, 1.2),
-        "f_nd_plasma_separatrix_greenwald": (0.05, 0.9),
-        "plasma_current": (5.0e6, 3.0e7),
-        "rminor": (0.5, 4.0),
-    }
+    fuzz = True

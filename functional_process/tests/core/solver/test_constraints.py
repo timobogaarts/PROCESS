@@ -355,10 +355,7 @@ class TestConstraint6(Tier1Contract):
         legacy_sample("infeasible", beta_poloidal_eps=1.5, beta_poloidal_eps_max=1.38),
     ]
 
-    fuzz_bounds = {
-        "beta_poloidal_eps": (0.01, 3.0),
-        "beta_poloidal_eps_max": (0.5, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_7 = data_reference(lambda d: _evaluate(7, d))
@@ -394,10 +391,7 @@ class TestConstraint7(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_beam_ions_out": (0.0, 1.0e19),
-        "nd_beam_ions": (0.0, 1.0e19),
-    }
+    fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
 
 
@@ -437,10 +431,7 @@ class TestConstraint8(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "pflux_fw_neutron_mw": (0.0, 3.0),
-        "pflux_fw_neutron_max_mw": (0.5, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_9 = data_reference(lambda d: _evaluate(9, d))
@@ -462,10 +453,7 @@ class TestConstraint9(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_fusion_total_mw": (1.0, 5000.0),
-        "p_fusion_total_max_mw": (1.0, 5000.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_11 = data_reference(lambda d: _evaluate(11, d))
@@ -483,7 +471,7 @@ class TestConstraint11(Tier1Contract):
         legacy_sample("inconsistent", rbld=8.2, rmajor=8.0),
     ]
 
-    fuzz_bounds = {"rbld": (1.0, 20.0), "rmajor": (1.0, 20.0)}
+    fuzz = True
 
 
 def _reference_constraint_12(vs_cs_pf_total_pulse, vs_plasma_total_required):
@@ -513,10 +501,7 @@ class TestConstraint12(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "vs_cs_pf_total_pulse": (1.0, 500.0),
-        "vs_plasma_total_required": (1.0, 500.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_13 = data_reference(lambda d: _evaluate(13, d))
@@ -534,10 +519,7 @@ class TestConstraint13(Tier1Contract):
         legacy_sample("infeasible", t_plant_pulse_burn=500.0, t_burn_min=1000.0),
     ]
 
-    fuzz_bounds = {
-        "t_plant_pulse_burn": (1.0, 4.0e7),
-        "t_burn_min": (1.0, 1.0e4),
-    }
+    fuzz = True
 
 
 _reference_constraint_14 = data_reference(lambda d: _evaluate(14, d))
@@ -563,10 +545,7 @@ class TestConstraint14(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_beam_decay_lengths_core": (0.1, 5.0),
-        "n_beam_decay_lengths_core_required": (0.1, 5.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_15 = data_reference(lambda d: _evaluate(15, d))
@@ -594,11 +573,7 @@ class TestConstraint15(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw": (1.0, 200.0),
-        "p_l_h_threshold_mw": (1.0, 200.0),
-        "f_h_mode_margin": (0.5, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_16 = data_reference(lambda d: _evaluate(16, d))
@@ -624,10 +599,7 @@ class TestConstraint16(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plant_electric_net_mw": (1.0, 2000.0),
-        "p_plant_electric_net_required_mw": (1.0, 2000.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_17 = data_reference(lambda d: _evaluate(17, d))
@@ -670,12 +642,7 @@ class TestConstraint17(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_p_plasma_separatrix_rad": (0.0, 1.0),
-        "f_p_plasma_separatrix_rad_max": (0.1, 1.0),
-        "psolradmw": (0.0, 200.0),
-        "p_plasma_heating_total_mw": (10.0, 1000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"istell": 1}
 
 
@@ -698,10 +665,7 @@ class TestConstraint18(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "pflux_div_heat_load_mw": (0.1, 20.0),
-        "pflux_div_heat_load_max_mw": (0.1, 20.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_19 = data_reference(lambda d: _evaluate(19, d))
@@ -723,11 +687,7 @@ class TestConstraint19(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_cp_resistive_mw": (0.0, 100.0),
-        "p_tf_leg_resistive_mw": (0.0, 100.0),
-        "mvalim": (1.0, 200.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_20 = data_reference(lambda d: _evaluate(20, d))
@@ -749,10 +709,7 @@ class TestConstraint20(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_beam_tangency": (0.1, 20.0),
-        "radius_beam_tangency_max": (0.1, 20.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_21 = data_reference(lambda d: _evaluate(21, d))
@@ -770,7 +727,7 @@ class TestConstraint21(Tier1Contract):
         legacy_sample("infeasible", rminor=0.1, rminor_min=0.25),
     ]
 
-    fuzz_bounds = {"rminor": (0.01, 5.0), "rminor_min": (0.01, 2.0)}
+    fuzz = True
 
 
 _reference_constraint_22 = data_reference(lambda d: _evaluate(22, d))
@@ -798,11 +755,7 @@ class TestConstraint22(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_l_h_threshold_mw": (0.1, 500.0),
-        "f_l_mode_margin": (0.5, 2.0),
-        "p_plasma_separatrix_mw": (0.1, 500.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_23 = data_reference(lambda d: _evaluate(23, d))
@@ -834,13 +787,7 @@ class TestConstraint23(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (0.1, 5.0),
-        "dr_fw_plasma_gap_outboard": (0.0, 1.0),
-        "dr_fw_outboard": (0.0, 1.0),
-        "dr_blkt_outboard": (0.0, 2.0),
-        "f_r_conducting_wall": (1.0, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_24 = data_reference(lambda d: _evaluate(24, d))
@@ -929,10 +876,7 @@ class TestConstraint25(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_tf_inboard_peak_with_ripple": (0.1, 30.0),
-        "b_tf_inboard_max": (0.1, 30.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_26 = data_reference(lambda d: _evaluate(26, d))
@@ -960,11 +904,7 @@ class TestConstraint26(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "j_cs_flat_top_end": (1.0e6, 5.0e7),
-        "j_cs_critical_flat_top_end": (1.0e6, 5.0e7),
-        "fjohc": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_27 = data_reference(lambda d: _evaluate(27, d))
@@ -992,11 +932,7 @@ class TestConstraint27(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "j_cs_pulse_start": (1.0e6, 5.0e7),
-        "j_cs_critical_pulse_start": (1.0e6, 5.0e7),
-        "fjohc0": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_28 = data_reference(lambda d: _evaluate(28, d))
@@ -1026,10 +962,7 @@ class TestConstraint28(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "big_q_plasma": (0.1, 100.0),
-        "big_q_plasma_min": (1.0, 50.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
 
 
@@ -1064,11 +997,7 @@ class TestConstraint29(Tier1Contract):
         legacy_sample("inconsistent", rmajor=8.0, rminor=2.5, rinboard=5.0),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (1.0, 20.0),
-        "rminor": (0.1, 5.0),
-        "rinboard": (0.1, 15.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_30 = data_reference(lambda d: _evaluate(30, d))
@@ -1090,10 +1019,7 @@ class TestConstraint30(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_injected_total_mw": (0.1, 300.0),
-        "p_hcd_injected_max": (10.0, 500.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_31 = data_reference(lambda d: _evaluate(31, d))
@@ -1121,10 +1047,7 @@ class TestConstraint31(Tier1Contract):
         legacy_sample("stellarator-default", sig_tf_case=0.0, sig_tf_case_max=6.0e8),
     ]
 
-    fuzz_bounds = {
-        "sig_tf_case": (0.0, 1.0e9),
-        "sig_tf_case_max": (1.0e8, 1.0e9),
-    }
+    fuzz = True
 
 
 _reference_constraint_32 = data_reference(lambda d: _evaluate(32, d))
@@ -1142,10 +1065,7 @@ class TestConstraint32(Tier1Contract):
         legacy_sample("infeasible", sig_tf_wp=7.0e8, sig_tf_wp_max=6.0e8),
     ]
 
-    fuzz_bounds = {
-        "sig_tf_wp": (1.0e7, 1.0e9),
-        "sig_tf_wp_max": (1.0e8, 1.0e9),
-    }
+    fuzz = True
 
 
 _reference_constraint_33 = data_reference(lambda d: _evaluate(33, d))
@@ -1182,11 +1102,7 @@ class TestConstraint33(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "j_tf_wp": (1.0e7, 1.0e9),
-        "j_tf_wp_critical": (1.0e8, 1.0e9),
-        "f_j_tf_wp_critical_max": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_34 = data_reference(lambda d: _evaluate(34, d))
@@ -1212,10 +1128,7 @@ class TestConstraint34(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "v_tf_coil_dump_quench_kv": (0.1, 30.0),
-        "v_tf_coil_dump_quench_max_kv": (1.0, 30.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_35 = data_reference(lambda d: _evaluate(35, d))
@@ -1233,10 +1146,7 @@ class TestConstraint35(Tier1Contract):
         legacy_sample("infeasible", j_tf_wp=7.0e8, j_tf_wp_quench_heat_max=6.0e8),
     ]
 
-    fuzz_bounds = {
-        "j_tf_wp": (1.0e7, 1.0e9),
-        "j_tf_wp_quench_heat_max": (1.0e8, 1.0e9),
-    }
+    fuzz = True
 
 
 _reference_constraint_36 = data_reference(lambda d: _evaluate(36, d))
@@ -1262,10 +1172,7 @@ class TestConstraint36(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_tf_superconductor_margin": (0.01, 5.0),
-        "temp_tf_superconductor_margin_min": (0.1, 3.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_37 = data_reference(lambda d: _evaluate(37, d))
@@ -1287,10 +1194,7 @@ class TestConstraint37(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eta_cd_norm_hcd_primary": (0.01, 1.0),
-        "eta_cd_norm_hcd_primary_max": (0.1, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_39 = data_reference(lambda d: _evaluate(39, d))
@@ -1308,10 +1212,7 @@ class TestConstraint39(Tier1Contract):
         legacy_sample("infeasible", temp_fw_peak=700.0, temp_fw_max=650.0),
     ]
 
-    fuzz_bounds = {
-        "temp_fw_peak": (300.0, 900.0),
-        "temp_fw_max": (400.0, 1000.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_40 = data_reference(lambda d: _evaluate(40, d))
@@ -1333,10 +1234,7 @@ class TestConstraint40(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_injected_total_mw": (0.0, 500.0),
-        "p_hcd_injected_min_mw": (1.0, 200.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_41 = data_reference(lambda d: _evaluate(41, d))
@@ -1383,10 +1281,7 @@ class TestConstraint42(Tier1Contract):
         legacy_sample("infeasible", t_plant_pulse_total=1500.0, t_cycle_min=1800.0),
     ]
 
-    fuzz_bounds = {
-        "t_plant_pulse_total": (100.0, 1.0e4),
-        "t_cycle_min": (100.0, 1.0e4),
-    }
+    fuzz = True
 
 
 def _reference_constraint_43(i_tf_sup, temp_cp_average, tcpav2):
@@ -1428,10 +1323,7 @@ class TestConstraint43(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_cp_average": (250.0, 600.0),
-        "tcpav2": (250.0, 600.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
 
 
@@ -1474,10 +1366,7 @@ class TestConstraint44(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_cp_max": (400.0, 1000.0),
-        "temp_cp_peak": (300.0, 1000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
 
 
@@ -1498,7 +1387,7 @@ class TestConstraint45(Tier1Contract):
         legacy_sample("infeasible", itart=1, q95=2.5, q95_min=3.0),
     ]
 
-    fuzz_bounds = {"q95": (1.5, 10.0), "q95_min": (1.0, 5.0)}
+    fuzz = True
     fuzz_fixed = {"itart": 1}
 
 
@@ -1523,11 +1412,7 @@ class TestConstraint46(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eps": (0.4, 0.95),
-        "plasma_current": (1.0e6, 5.0e7),
-        "c_tf_total": (1.0e6, 1.0e8),
-    }
+    fuzz = True
     fuzz_fixed = {"itart": 1}
 
 
@@ -1546,10 +1431,7 @@ class TestConstraint48(Tier1Contract):
         legacy_sample("infeasible", beta_poloidal_vol_avg=1.2, beta_poloidal_max=1.0),
     ]
 
-    fuzz_bounds = {
-        "beta_poloidal_vol_avg": (0.01, 2.0),
-        "beta_poloidal_max": (0.1, 3.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_51 = data_reference(lambda d: _evaluate(51, d))
@@ -1571,10 +1453,7 @@ class TestConstraint51(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "vs_plasma_ramp_required": (-300.0, 300.0),
-        "vs_cs_pf_total_ramp": (1.0, 300.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_53 = data_reference(lambda d: _evaluate(53, d))
@@ -1600,10 +1479,7 @@ class TestConstraint53(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "flu_tf_neutron_fast_peak": (1.0e20, 5.0e23),
-        "flu_tf_neutron_fast_max": (1.0e21, 2.0e23),
-    }
+    fuzz = True
 
 
 _reference_constraint_54 = data_reference(lambda d: _evaluate(54, d))
@@ -1621,7 +1497,7 @@ class TestConstraint54(Tier1Contract):
         legacy_sample("infeasible", ptfnucpm3=2.0e-3, ptfnucmax=1.0e-3),
     ]
 
-    fuzz_bounds = {"ptfnucpm3": (1.0e-5, 5.0e-3), "ptfnucmax": (1.0e-4, 5.0e-3)}
+    fuzz = True
 
 
 _reference_constraint_56 = data_reference(lambda d: _evaluate(56, d))
@@ -1647,10 +1523,7 @@ class TestConstraint56(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_rmajor_mw": (0.1, 30.0),
-        "p_plasma_separatrix_rmajor_max_mw": (1.0, 30.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_59 = data_reference(lambda d: _evaluate(59, d))
@@ -1672,10 +1545,7 @@ class TestConstraint59(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_p_beam_shine_through": (0.0, 0.1),
-        "f_p_beam_shine_through_max": (0.001, 0.1),
-    }
+    fuzz = True
 
 
 _reference_constraint_60 = data_reference(lambda d: _evaluate(60, d))
@@ -1701,10 +1571,7 @@ class TestConstraint60(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_cs_superconductor_margin": (0.1, 5.0),
-        "temp_cs_superconductor_margin_min": (0.1, 3.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_61 = data_reference(lambda d: _evaluate(61, d))
@@ -1726,10 +1593,7 @@ class TestConstraint61(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_t_plant_available": (0.1, 1.0),
-        "f_t_plant_available_min": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_62 = data_reference(lambda d: _evaluate(62, d))
@@ -1755,10 +1619,7 @@ class TestConstraint62(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_t_alpha_energy_confinement": (0.1, 20.0),
-        "f_t_alpha_energy_confinement_min": (0.1, 10.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_63 = data_reference(lambda d: _evaluate(63, d))
@@ -1776,10 +1637,7 @@ class TestConstraint63(Tier1Contract):
         legacy_sample("infeasible", n_iter_vacuum_pumps=60.0, n_tf_coils=50.0),
     ]
 
-    fuzz_bounds = {
-        "n_iter_vacuum_pumps": (1.0, 100.0),
-        "n_tf_coils": (1.0, 100.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_64 = data_reference(lambda d: _evaluate(64, d))
@@ -1805,10 +1663,7 @@ class TestConstraint64(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_charge_plasma_effective_vol_avg": (1.0, 5.0),
-        "n_charge_plasma_effective_vol_avg_max": (1.0, 5.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_65 = data_reference(lambda d: _evaluate(65, d))
@@ -1826,10 +1681,7 @@ class TestConstraint65(Tier1Contract):
         legacy_sample("infeasible", vv_stress_quench=2.5e8, max_vv_stress=2.0e8),
     ]
 
-    fuzz_bounds = {
-        "vv_stress_quench": (1.0e6, 5.0e8),
-        "max_vv_stress": (1.0e6, 5.0e8),
-    }
+    fuzz = True
 
 
 _reference_constraint_66 = data_reference(lambda d: _evaluate(66, d))
@@ -2051,10 +1903,7 @@ class TestConstraint77(Tier1Contract):
         legacy_sample("infeasible", c_tf_turn=1.0e5, c_tf_turn_max=9.0e4),
     ]
 
-    fuzz_bounds = {
-        "c_tf_turn": (1.0e3, 2.0e5),
-        "c_tf_turn_max": (1.0e3, 2.0e5),
-    }
+    fuzz = True
 
 
 _reference_constraint_78 = data_reference(lambda d: _evaluate(78, d))
@@ -2072,10 +1921,7 @@ class TestConstraint78(Tier1Contract):
         legacy_sample("infeasible", fzactual=1.0e-4, fzmin=3.0e-4),
     ]
 
-    fuzz_bounds = {
-        "fzactual": (1.0e-6, 1.0e-2),
-        "fzmin": (1.0e-6, 1.0e-2),
-    }
+    fuzz = True
 
 
 _reference_constraint_79 = data_reference(lambda d: _evaluate(79, d))
@@ -2109,11 +1955,7 @@ class TestConstraint79(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_cs_peak_flat_top_end": (1.0, 20.0),
-        "b_cs_peak_pulse_start": (1.0, 20.0),
-        "b_cs_limit_max": (1.0, 20.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_80 = data_reference(lambda d: _evaluate(80, d))
@@ -2139,10 +1981,7 @@ class TestConstraint80(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw": (1.0, 1000.0),
-        "p_plasma_separatrix_min_mw": (1.0, 1000.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_81 = data_reference(lambda d: _evaluate(81, d))
@@ -2168,10 +2007,7 @@ class TestConstraint81(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_plasma_electron_on_axis": (1.0e19, 3.0e20),
-        "nd_plasma_pedestal_electron": (1.0e19, 3.0e20),
-    }
+    fuzz = True
 
 
 _reference_constraint_82 = data_reference(lambda d: _evaluate(82, d))
@@ -2189,10 +2025,7 @@ class TestConstraint82(Tier1Contract):
         legacy_sample("infeasible", toroidalgap=0.2, dx_tf_inboard_out_toroidal=0.4),
     ]
 
-    fuzz_bounds = {
-        "toroidalgap": (0.01, 2.0),
-        "dx_tf_inboard_out_toroidal": (0.01, 2.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_83 = data_reference(lambda d: _evaluate(83, d))
@@ -2212,10 +2045,7 @@ class TestConstraint83(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "available_radial_space": (0.1, 10.0),
-        "required_radial_space": (0.1, 10.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_84 = data_reference(lambda d: _evaluate(84, d))
@@ -2233,10 +2063,7 @@ class TestConstraint84(Tier1Contract):
         legacy_sample("infeasible", beta_total_vol_avg=0.005, beta_vol_avg_min=0.01),
     ]
 
-    fuzz_bounds = {
-        "beta_total_vol_avg": (0.001, 0.1),
-        "beta_vol_avg_min": (0.0, 0.05),
-    }
+    fuzz = True
 
 
 _reference_constraint_85 = data_reference(lambda d: _evaluate(85, d))
@@ -2291,10 +2118,7 @@ class TestConstraint86(Tier1Contract):
         legacy_sample("infeasible", dx_tf_turn_general=0.07, t_turn_tf_max=0.05),
     ]
 
-    fuzz_bounds = {
-        "dx_tf_turn_general": (0.001, 0.2),
-        "t_turn_tf_max": (0.001, 0.2),
-    }
+    fuzz = True
 
 
 _reference_constraint_87 = data_reference(lambda d: _evaluate(87, d))
@@ -2317,10 +2141,7 @@ class TestConstraint87(Tier1Contract):
             p_cryo_plant_electric_max_mw=50.0,
         ),
     ]
-    fuzz_bounds = {
-        "p_cryo_plant_electric_mw": (0.1, 100.0),
-        "p_cryo_plant_electric_max_mw": (1.0, 200.0),
-    }
+    fuzz = True
 
 
 _reference_constraint_88 = data_reference(lambda d: _evaluate(88, d))
@@ -2340,10 +2161,7 @@ class TestConstraint88(Tier1Contract):
     ]
     # `abs(str_wp)` is non-differentiable at str_wp == 0 -- keep fuzz bounds off zero,
     # same discipline as any other |.|-based constraint would need.
-    fuzz_bounds = {
-        "str_wp": (-0.02, -0.001),
-        "str_wp_max": (0.001, 0.02),
-    }
+    fuzz = True
 
 
 _reference_constraint_89 = data_reference(lambda d: _evaluate(89, d))
@@ -2360,10 +2178,7 @@ class TestConstraint89(Tier1Contract):
         legacy_sample("feasible", copperaoh_m2=5.0e7, copperaoh_m2_max=1.0e8),
         legacy_sample("infeasible", copperaoh_m2=1.5e8, copperaoh_m2_max=1.0e8),
     ]
-    fuzz_bounds = {
-        "copperaoh_m2": (1.0e6, 2.0e8),
-        "copperaoh_m2_max": (1.0e6, 2.0e8),
-    }
+    fuzz = True
 
 
 _reference_constraint_90 = data_reference(lambda d: _evaluate(90, d))
@@ -2417,11 +2232,7 @@ class TestConstraint90(Tier1Contract):
             bktcycles=1.0e3,
         ),
     ]
-    fuzz_bounds = {
-        "n_cycle": (1.0e3, 1.0e5),
-        "n_cycle_min": (1.0e3, 1.0e5),
-        "bktcycles": (1.0e2, 1.0e4),
-    }
+    fuzz = True
     fuzz_fixed = {"ibkt_life": 0, "bkt_life_csf": 0.0}
 
 
@@ -2461,11 +2272,7 @@ class TestConstraint91(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_primary_extra_heat_mw": (0.0, 500.0),
-        "powerht_constraint": (1.0, 1000.0),
-        "powerscaling_constraint": (1.0, 1000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
 
 
@@ -2499,8 +2306,4 @@ class TestConstraint92(Tier1Contract):
             f_plasma_fuel_helium3=0.0,
         ),
     ]
-    fuzz_bounds = {
-        "f_plasma_fuel_deuterium": (0.0, 1.0),
-        "f_plasma_fuel_tritium": (0.0, 1.0),
-        "f_plasma_fuel_helium3": (0.0, 1.0),
-    }
+    fuzz = True

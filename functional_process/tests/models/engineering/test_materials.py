@@ -46,7 +46,4 @@ class TestEurofer97ThermalConductivity(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp": (77.0, 1900.0),
-        "fw_th_conductivity": (20.0, 40.0),
-    }
+    fuzz = True

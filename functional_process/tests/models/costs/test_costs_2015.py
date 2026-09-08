@@ -111,20 +111,7 @@ class TestBuildingCosts(Tier1Contract):
             p_plant_secondary_heat_mw=300.0,
         ),
     ]
-    fuzz_bounds = {
-        "light_build_cost_per_vol": (100.0, 500.0),
-        "tok_build_cost_per_vol": (500.0, 2000.0),
-        "r_cryostat_inboard": (3.0, 15.0),
-        "z_cryostat_half_inside": (3.0, 15.0),
-        "pwpnb": (0.0, 300.0),
-        "helpow": (1.0e4, 2.0e5),
-        "r_pf_coil_outer_max": (2.0, 12.0),
-        "c_tf_total": (1.0e7, 3.0e8),
-        "n_tf_coils": (10.0, 24.0),
-        "e_tf_magnetic_stored_total_gj": (10.0, 300.0),
-        "p_plant_primary_heat_mw": (100.0, 4000.0),
-        "p_plant_secondary_heat_mw": (10.0, 1000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"cost_factor_buildings": 1.0}
 
 
@@ -144,10 +131,5 @@ class TestLandCosts(Tier1Contract):
             dr_tf_inboard=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "r_cryostat_inboard": (3.0, 15.0),
-        "dh_tf_inner_bore": (5.0, 25.0),
-        "dr_tf_inner_bore": (5.0, 25.0),
-        "dr_tf_inboard": (0.2, 3.0),
-    }
+    fuzz = True
     fuzz_fixed = {"cost_factor_land": 1.0, "costexp": 0.8}

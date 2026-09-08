@@ -72,11 +72,7 @@ class TestIter1996Nominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestIter1996Upper(Tier1Contract):
@@ -95,11 +91,7 @@ class TestIter1996Upper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestIter1996Lower(Tier1Contract):
@@ -118,11 +110,7 @@ class TestIter1996Lower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestSnipes1997Iter(Tier1Contract):
@@ -141,11 +129,7 @@ class TestSnipes1997Iter(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestSnipes1997Kappa(Tier1Contract):
@@ -165,12 +149,7 @@ class TestSnipes1997Kappa(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "kappa": (1.0, 2.2),
-    }
+    fuzz = True
 
 
 class TestMartin08Nominal(Tier1Contract):
@@ -190,12 +169,7 @@ class TestMartin08Nominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestMartin08Upper(Tier1Contract):
@@ -215,12 +189,7 @@ class TestMartin08Upper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestMartin08Lower(Tier1Contract):
@@ -240,12 +209,7 @@ class TestMartin08Lower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000Nominal(Tier1Contract):
@@ -266,13 +230,7 @@ class TestSnipes2000Nominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000Upper(Tier1Contract):
@@ -293,13 +251,7 @@ class TestSnipes2000Upper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000Lower(Tier1Contract):
@@ -320,13 +272,7 @@ class TestSnipes2000Lower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000ClosedDivertorNominal(Tier1Contract):
@@ -348,12 +294,7 @@ class TestSnipes2000ClosedDivertorNominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000ClosedDivertorUpper(Tier1Contract):
@@ -375,12 +316,7 @@ class TestSnipes2000ClosedDivertorUpper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestSnipes2000ClosedDivertorLower(Tier1Contract):
@@ -402,12 +338,7 @@ class TestSnipes2000ClosedDivertorLower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "m_ions_total_amu": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestHubbard2012Nominal(Tier1Contract):
@@ -423,10 +354,7 @@ class TestHubbard2012Nominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "plasma_current": (1.0e6, 2.0e7),
-        "dnla20": (0.05, 2.0),
-    }
+    fuzz = True
 
 
 class TestHubbard2012Upper(Tier1Contract):
@@ -442,10 +370,7 @@ class TestHubbard2012Upper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "plasma_current": (1.0e6, 2.0e7),
-        "dnla20": (0.05, 2.0),
-    }
+    fuzz = True
 
 
 class TestHubbard2012Lower(Tier1Contract):
@@ -461,10 +386,7 @@ class TestHubbard2012Lower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "plasma_current": (1.0e6, 2.0e7),
-        "dnla20": (0.05, 2.0),
-    }
+    fuzz = True
 
 
 class TestHubbard2017(Tier1Contract):
@@ -483,11 +405,7 @@ class TestHubbard2017(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-    }
+    fuzz = True
 
 
 class TestMartin08AspectNominal(Tier1Contract):
@@ -514,13 +432,7 @@ class TestMartin08AspectNominal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestMartin08AspectUpper(Tier1Contract):
@@ -541,13 +453,7 @@ class TestMartin08AspectUpper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestMartin08AspectLower(Tier1Contract):
@@ -568,13 +474,7 @@ class TestMartin08AspectLower(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dnla20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "a_plasma_surface": (50.0, 2000.0),
-        "m_ions_total_amu": (2.0, 3.0),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------

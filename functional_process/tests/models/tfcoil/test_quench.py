@@ -320,7 +320,7 @@ class TestNb3snSpecificHeatCapacity(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"temperature": (4.0, 300.0)}
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -604,21 +604,6 @@ class TestJTfWpQuenchHeatMax(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        # `temp_he_peak`/`temp_quench_max` are deliberately **not** fuzzed: a moving
-        # grid is a moving property table, and `fuzz_fixed` is how the harness says a
-        # value is held rather than sampled.
-        "a_tf_turn_cable_space": (5.0e-4, 2.0e-3),
-        "a_tf_turn": (1.5e-3, 4.0e-3),
-        "tau_discharge": (10.0, 40.0),
-        "b_peak": (5.0, 14.0),
-        "f_a_cable_copper": (0.6, 0.9),
-        "f_a_cable_space_helium": (0.2, 0.45),
-        "cu_rrr": (50.0, 300.0),
-        "t_quench_detection": (0.5, 5.0),
-        # Inside `FLUENCE_MODEL_RANGE`, so `jnp.clip` is inert and the sampled
-        # derivative is the model's own rather than the clip's.
-        "fluence": (1.0e21, 5.0e21),
-    }
+    fuzz = True
 
     fuzz_fixed = {"temp_he_peak": 4.75, "temp_quench_max": 150.0}

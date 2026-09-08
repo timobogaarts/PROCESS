@@ -90,7 +90,7 @@ class TestCircumference(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"aaa": (0.5, 12.0), "bbb": (0.5, 12.0)}
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +164,7 @@ class TestTfGlobalGeometryCircularCase(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_tf_coils": (8.0, 24.0),
-        "r_tf_inboard_out": (1.5, 5.0),
-        "r_tf_inboard_in": (0.5, 1.4),
-        "r_tf_outboard_mid": (6.0, 20.0),
-        "dr_tf_outboard": (0.2, 1.5),
-    }
+    fuzz = True
 
 
 class TestTfGlobalGeometryStraightCase(Tier1Contract):
@@ -191,13 +185,7 @@ class TestTfGlobalGeometryStraightCase(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_tf_coils": (8.0, 24.0),
-        "r_tf_inboard_out": (1.5, 5.0),
-        "r_tf_inboard_in": (0.5, 1.4),
-        "r_tf_outboard_mid": (6.0, 20.0),
-        "dr_tf_outboard": (0.2, 1.5),
-    }
+    fuzz = True
 
 
 def _reference_dr_tf_plasma_case_from_input(
@@ -305,12 +293,7 @@ class TestDrTfPlasmaCaseFromInput(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_tf_plasma_case": (0.0, 0.3),
-        "r_tf_inboard_in": (0.5, 3.0),
-        "dr_tf_inboard": (0.3, 1.5),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 class TestDrTfPlasmaCaseFromFraction(Tier1Contract):
@@ -333,12 +316,7 @@ class TestDrTfPlasmaCaseFromFraction(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_dr_tf_plasma_case": (0.01, 0.3),
-        "dr_tf_inboard": (0.3, 1.5),
-        "r_tf_inboard_in": (0.5, 3.0),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 class TestDxTfSideCaseMinFromFraction(Tier1Contract):
@@ -361,12 +339,7 @@ class TestDxTfSideCaseMinFromFraction(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "casths_fraction": (0.01, 0.2),
-        "r_tf_inboard_in": (0.5, 3.0),
-        "dr_tf_nose_case": (0.05, 0.8),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -410,12 +383,7 @@ class TestRBTfInboardPeak(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_tf_inboard_out": (1.5, 6.0),
-        "dr_tf_plasma_case": (0.02, 0.3),
-        "dx_tf_wp_insulation": (0.002, 0.05),
-        "dx_tf_wp_insertion_gap": (0.002, 0.05),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -453,13 +421,7 @@ class TestTfCurrent(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_tf_coils": (8.0, 24.0),
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "rmajor": (4.0, 12.0),
-        "r_b_tf_inboard_peak": (1.0, 5.0),
-        "a_tf_inboard_total": (0.4, 30.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +554,8 @@ class TestTfCoilShapePictureFrameTart(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # port ValueError: setting an array element with a sequence. The requested array has an i
     fuzz_bounds = {
         "r_cp_top": (0.5, 3.0),
         "r_tf_outboard_in": (5.0, 15.0),
@@ -692,12 +656,7 @@ class TestTfCoilSelfInductancePictureFrame(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_tf_inside_half": (4.0, 14.0),
-        "dr_tf_outboard": (0.3, 2.0),
-        "r_tf_outboard_mid": (10.0, 22.0),
-        "r_tf_inboard_mid": (1.5, 6.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -726,11 +685,7 @@ class TestTfStoredMagneticEnergy(Tier1Contract):
         legacy_sample("stored-energy-5", ind_tf_coil=1.0, c_tf_total=0.0, n_tf_coils=10),
     ]
 
-    fuzz_bounds = {
-        "ind_tf_coil": (1e-6, 1e-5),
-        "c_tf_total": (1e7, 5e8),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -771,12 +726,4 @@ class TestGenericTfCoilAreaAndMasses(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_tf_inboard_out": (1.5, 6.0),
-        "r_tf_inboard_in": (1.0, 4.0),
-        "rad_tf_coil_inboard_toroidal_half": (0.13, 0.4),
-        "tan_theta_coil": (0.13, 0.42),
-        "len_tf_coil": (20.0, 80.0),
-        "r_tf_inboard_mid": (1.5, 6.0),
-        "r_tf_outboard_mid": (10.0, 22.0),
-    }
+    fuzz = True

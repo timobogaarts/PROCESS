@@ -348,20 +348,7 @@ class TestSynchrotronRadiationPower(Tier1Contract):
     # plausible operating ranges otherwise. `tbeta` is kept at or above 1 so that
     # `tbeta**1.53 + 1.87 alphat - 0.16` stays positive -- `k_function` raises that to a
     # negative power and is non-finite below, which PROCESS does not guard either.
-    fuzz_bounds = {
-        "nd_plasma_electron_on_axis": (5.0e19, 5.0e20),
-        "rminor": (0.5, 4.0),
-        "b_plasma_toroidal_on_axis": (2.0, 15.0),
-        "aspect": (1.5, 12.0),
-        "alphan": (0.1, 1.0),
-        "alphat": (0.5, 2.5),
-        "tbeta": (1.0, 3.0),
-        "temp_plasma_electron_on_axis_kev": (5.0, 60.0),
-        "f_sync_reflect": (0.05, 0.9),
-        "rmajor": (1.5, 20.0),
-        "kappa": (1.0, 2.5),
-        "vol_plasma": (10.0, 3000.0),
-    }
+    fuzz = True
 
 
 class TestImpurityRadiationPowerDensity(Tier1Contract):

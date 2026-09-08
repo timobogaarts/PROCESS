@@ -313,18 +313,7 @@ class TestProfileValues(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rho": (0.0, 0.99),
-        "temp_plasma_electron_on_axis_kev": (1.0, 50.0),
-        "temp_plasma_ion_on_axis_kev": (1.0, 50.0),
-        "alphat": (0.1, 3.0),
-        "nd_plasma_electron_on_axis": (1.0e19, 1.0e21),
-        "f_plasma_fuel_deuterium": (0.1, 0.9),
-        "nd_plasma_ions_on_axis": (1.0e19, 1.0e21),
-        "nd_plasma_alphas_thermal_vol_avg": (1.0e17, 1.0e20),
-        "alphan": (0.1, 3.0),
-        "rminor": (0.5, 5.0),
-    }
+    fuzz = True
 
 
 class TestEffectiveThermalDiffusivity(Tier1Contract):
@@ -371,21 +360,7 @@ class TestEffectiveThermalDiffusivity(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "vol_plasma": (100.0, 5000.0),
-        "f_st_rmajor": (0.5, 1.5),
-        "radius_plasma_core_norm": (0.1, 0.9),
-        "rminor": (0.5, 5.0),
-        "stella_config_rminor_ref": (0.5, 5.0),
-        "a_plasma_surface": (100.0, 5000.0),
-        "f_p_alpha_plasma_deposited": (0.5, 1.0),
-        "pden_alpha_total_mw": (0.1, 5.0),
-        "pden_plasma_core_rad_mw": (0.01, 1.0),
-        "nd_plasma_electron_on_axis": (1.0e19, 1.0e21),
-        "temp_plasma_electron_on_axis_kev": (1.0, 50.0),
-        "alphat": (0.1, 3.0),
-        "alphan": (0.1, 3.0),
-    }
+    fuzz = True
 
 
 class TestKt(Tier1Contract):

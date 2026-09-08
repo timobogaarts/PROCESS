@@ -94,20 +94,4 @@ class TestCalculateStructureMasses(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "ai": (1.0e6, 3.0e7),
-        "r0": (2.0, 20.0),
-        "a": (0.5, 5.0),
-        "akappa": (1.0, 2.2),
-        "b0": (1.0, 12.0),
-        "tf_h_width": (1.0, 30.0),
-        "tfhmax": (1.0, 20.0),
-        "shldmass": (1.0e4, 5.0e6),
-        "dvrtmass": (1.0e3, 1.0e5),
-        "pfmass": (1.0e4, 1.0e7),
-        "tfmass": (1.0e4, 5.0e7),
-        "m_fw_total": (1.0e3, 1.0e6),
-        "blmass": (1.0e3, 1.0e7),
-        "m_fw_blkt_div_coolant_total": (1.0e2, 1.0e4),
-        "dewmass": (1.0e4, 5.0e7),
-    }
+    fuzz = True

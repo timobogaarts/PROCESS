@@ -44,10 +44,7 @@ class TestRadiationFraction(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_rad_mw": (0.0, 1000.0),
-        "p_plasma_heating_mw": (1.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestEuDemoReAttachmentMetric(Tier1Contract):

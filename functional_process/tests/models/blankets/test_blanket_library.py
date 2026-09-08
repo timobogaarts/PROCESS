@@ -258,17 +258,7 @@ class TestBlktHalfHeightSingleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_plasma_xpoint_lower": (3.0, 7.0),
-        "dz_xpoint_divertor": (1.0, 3.0),
-        "dz_divertor": (0.3, 1.0),
-        "dz_blkt_upper": (0.5, 1.2),
-        "z_plasma_xpoint_upper": (3.0, 7.0),
-        "dr_fw_plasma_gap_inboard": (0.1, 0.5),
-        "dr_fw_plasma_gap_outboard": (0.1, 0.5),
-        "dr_fw_inboard": (0.005, 0.05),
-        "dr_fw_outboard": (0.005, 0.05),
-    }
+    fuzz = True
 
 
 class TestBlktHalfHeightDoubleNull(Tier1Contract):
@@ -293,12 +283,7 @@ class TestBlktHalfHeightDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_plasma_xpoint_lower": (3.0, 7.0),
-        "dz_xpoint_divertor": (1.0, 3.0),
-        "dz_divertor": (0.3, 1.0),
-        "dz_blkt_upper": (0.5, 1.2),
-    }
+    fuzz = True
 
 
 class TestEllipticalBlktAreas(Tier1Contract):
@@ -515,8 +500,4 @@ class TestBlktInboardPoloidalPlasmaAngle(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (1.0, 4.0),
-        "dz_blkt_half": (1.0, 10.0),
-        "dr_fw_plasma_gap_inboard": (0.05, 1.0),
-    }
+    fuzz = True

@@ -411,15 +411,7 @@ class TestBmaxFromAwp(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "wp_width_radial": (0.01, 2.0),
-        "current": (0.1, 100.0),
-        "n_tf_coils": (10.0, 100.0),
-        "r_coil_major": (5.0, 30.0),
-        "r_coil_minor": (0.5, 6.0),
-        "stella_config_a1": (0.1, 1.5),
-        "stella_config_a2": (0.001, 0.1),
-    }
+    fuzz = True
 
 
 def _legacy_intersect_case():

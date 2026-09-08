@@ -78,13 +78,7 @@ class TestAsdexDensityLimit(Tier1Contract):
             prn1=_PRN1,
         ),
     ]
-    fuzz_bounds = {
-        "p_perp": (0.05, 1.0),
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "q95": (2.0, 10.0),
-        "rmajor": (3.0, 25.0),
-        "prn1": (0.2, 0.8),
-    }
+    fuzz = True
 
 
 class TestBorrassIterIDensityLimit(Tier1Contract):
@@ -106,13 +100,7 @@ class TestBorrassIterIDensityLimit(Tier1Contract):
             prn1=_PRN1,
         ),
     ]
-    fuzz_bounds = {
-        "p_perp": (0.05, 1.0),
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "q95": (2.0, 10.0),
-        "rmajor": (3.0, 25.0),
-        "prn1": (0.2, 0.8),
-    }
+    fuzz = True
 
 
 class TestBorrassIterIIDensityLimit(Tier1Contract):
@@ -134,13 +122,7 @@ class TestBorrassIterIIDensityLimit(Tier1Contract):
             prn1=_PRN1,
         ),
     ]
-    fuzz_bounds = {
-        "p_perp": (0.05, 1.0),
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "q95": (2.0, 10.0),
-        "rmajor": (3.0, 25.0),
-        "prn1": (0.2, 0.8),
-    }
+    fuzz = True
 
 
 class TestJetEdgeRadiationDensityLimit(Tier1Contract):
@@ -177,12 +159,7 @@ class TestJetEdgeRadiationDensityLimit(Tier1Contract):
             qcyl=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "zeff": (1.2, 4.0),
-        "p_hcd_injected_total_mw": (1.0, 150.0),
-        "prn1": (0.2, 0.8),
-        "qcyl": (2.0, 8.0),
-    }
+    fuzz = True
 
 
 class TestJetSimpleDensityLimit(Tier1Contract):
@@ -203,12 +180,7 @@ class TestJetSimpleDensityLimit(Tier1Contract):
             prn1=_PRN1,
         ),
     ]
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "rmajor": (3.0, 25.0),
-        "prn1": (0.2, 0.8),
-    }
+    fuzz = True
 
 
 class TestHugillMurakamiDensityLimit(Tier1Contract):
@@ -228,11 +200,7 @@ class TestHugillMurakamiDensityLimit(Tier1Contract):
             qcyl=_QCYL,
         ),
     ]
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (2.0, 12.0),
-        "rmajor": (3.0, 25.0),
-        "qcyl": (2.0, 8.0),
-    }
+    fuzz = True
 
 
 class TestGreenwaldDensityLimit(Tier1Contract):
@@ -248,10 +216,7 @@ class TestGreenwaldDensityLimit(Tier1Contract):
     samples = [
         legacy_sample("large-tokamak-nof", c_plasma=_PLASMA_CURRENT, rminor=_RMINOR),
     ]
-    fuzz_bounds = {
-        "c_plasma": (1.0e6, 3.0e7),
-        "rminor": (0.5, 5.0),
-    }
+    fuzz = True
 
 
 class TestAsdexNewDensityLimit(Tier1Contract):
@@ -273,12 +238,7 @@ class TestAsdexNewDensityLimit(Tier1Contract):
             prn1=_PRN1,
         ),
     ]
-    fuzz_bounds = {
-        "p_hcd_injected_total_mw": (1.0, 150.0),
-        "c_plasma": (1.0e6, 3.0e7),
-        "q95": (2.0, 10.0),
-        "prn1": (0.2, 0.8),
-    }
+    fuzz = True
 
 
 def test_expected_dlimit_sanity_check():
@@ -347,7 +307,7 @@ class TestSelectEnforcedDensityLimitGreenwald(Tier1Contract):
             "large-tokamak-nof", nd_plasma_electron_max_array_7=_EXPECTED_GREENWALD
         ),
     ]
-    fuzz_bounds = {"nd_plasma_electron_max_array_7": (1.0e19, 5.0e20)}
+    fuzz = True
 
 
 def _reference_greenwald_fraction(
@@ -380,7 +340,4 @@ class TestGreenwaldFraction(Tier1Contract):
             nd_plasma_electron_max_array_7=_EXPECTED_GREENWALD,
         ),
     ]
-    fuzz_bounds = {
-        "nd_plasma_electron_line": (1.0e19, 2.0e20),
-        "nd_plasma_electron_max_array_7": (1.0e19, 5.0e20),
-    }
+    fuzz = True

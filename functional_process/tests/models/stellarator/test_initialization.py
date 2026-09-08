@@ -82,10 +82,7 @@ class TestPulseDurations(Tier1Contract):
     # on `data` beforehand (see the adapter's docstring), so fuzzing them would compare
     # the port against a reference that silently ignores the fuzzed value. `fuzz_fixed`
     # pins the other four to `st_init`'s own literals so the comparison stays honest.
-    fuzz_bounds = {
-        "t_plant_pulse_fusion_ramp": (0.0, 1.0e3),
-        "t_plant_pulse_dwell": (0.0, 1.0e4),
-    }
+    fuzz = True
     fuzz_fixed = {
         "t_plant_pulse_coil_precharge": 0.0,
         "t_plant_pulse_plasma_current_ramp_up": 0.0,

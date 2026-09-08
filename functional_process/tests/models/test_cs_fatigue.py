@@ -97,6 +97,8 @@ class TestSurfaceStressIntensityFactor(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # a disagreement or non-finite value at the wider range
     fuzz_bounds = {
         "hoop_stress": (100.0, 1000.0),
         "t": (0.004, 0.01),
@@ -188,20 +190,7 @@ class TestNCycle(Tier1Contract):
     fixture leaves them at. Genuinely legacy -- its own docstring says it came from
     `baseline_2018_IN.DAT`, a file no longer in the repository."""
 
-    fuzz_bounds = {
-        "max_hoop_stress": (2.0e8, 7.0e8),
-        "residual_stress": (1.5e8, 3.0e8),
-        "t_crack_vertical": (0.0005, 0.0012),
-        "dz_cs_turn_conduit": (0.006, 0.025),
-        "dr_cs_turn_conduit": (0.006, 0.025),
-        "paris_coefficient": (4.0e-13, 9.0e-13),
-        "paris_power_law": (3.0, 4.0),
-        "walker_coefficient": (0.3, 0.6),
-        "sf_vertical_crack": (1.5, 2.5),
-        "sf_radial_crack": (1.5, 2.5),
-        "fracture_toughness": (150.0, 250.0),
-        "sf_fast_fracture": (1.2, 1.8),
-    }
+    fuzz = True
     """Straddling both tracked operating points -- `low_aspect_ratio_DEMO`'s computed
     conduit thicknesses (~0.0099 m) and the legacy sample's 0.0063 -- and staying inside
     `surface_stress_intensity_factor`'s own domain gap, which is the binding constraint

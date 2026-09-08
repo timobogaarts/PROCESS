@@ -101,12 +101,7 @@ class TestNeoAlcatorConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dene20": (0.05, 2.0),
-        "rminor": (0.5, 5.0),
-        "rmajor": (2.0, 20.0),
-        "qstar": (1.5, 8.0),
-    }
+    fuzz = True
 
 
 class TestMirnovConfinementTime(Tier1Contract):
@@ -124,11 +119,7 @@ class TestMirnovConfinementTime(Tier1Contract):
         legacy_sample("mirnov-all-ones", rminor=1.0, kappa95=1.0, cur_plasma_ma=1.0),
     ]
 
-    fuzz_bounds = {
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "cur_plasma_ma": (1.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestMerezhkinMuhkovatovConfinementTime(Tier1Contract):
@@ -155,15 +146,7 @@ class TestMerezhkinMuhkovatovConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "qstar": (1.5, 8.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "afuel": (2.0, 3.0),
-        "ten": (2.0, 30.0),
-    }
+    fuzz = True
 
 
 class TestShimomuraConfinementTime(Tier1Contract):
@@ -188,13 +171,7 @@ class TestShimomuraConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "kappa95": (1.0, 2.2),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestKayeGoldstonConfinementTime(Tier1Contract):
@@ -222,16 +199,7 @@ class TestKayeGoldstonConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "kappa95": (1.0, 2.2),
-        "cur_plasma_ma": (1.0, 20.0),
-        "n20": (0.05, 2.0),
-        "rmajor": (2.0, 20.0),
-        "afuel": (2.0, 3.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rminor": (0.5, 5.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestIter89pConfinementTime(Tier1Contract):
@@ -259,16 +227,7 @@ class TestIter89pConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.0, 2.5),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestIter890ConfinementTime(Tier1Contract):
@@ -296,16 +255,7 @@ class TestIter890ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.0, 2.5),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestRebutLalliaConfinementTime(Tier1Contract):
@@ -334,17 +284,7 @@ class TestRebutLalliaConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (0.5, 5.0),
-        "rmajor": (2.0, 20.0),
-        "kappa": (1.0, 2.5),
-        "afuel": (2.0, 3.0),
-        "cur_plasma_ma": (1.0, 20.0),
-        "zeff": (1.0, 3.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestGoldstonConfinementTime(Tier1Contract):
@@ -370,14 +310,7 @@ class TestGoldstonConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestT10ConfinementTime(Tier1Contract):
@@ -406,17 +339,7 @@ class TestT10ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "rmajor": (2.0, 20.0),
-        "qstar": (1.5, 8.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "zeff": (1.0, 3.0),
-        "cur_plasma_ma": (1.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestJaeriConfinementTime(Tier1Contract):
@@ -446,18 +369,7 @@ class TestJaeriConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "kappa95": (1.0, 2.2),
-        "rminor": (0.5, 5.0),
-        "afuel": (2.0, 3.0),
-        "n20": (0.05, 2.0),
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "qstar": (1.5, 8.0),
-        "zeff": (1.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestKayeBigConfinementTime(Tier1Contract):
@@ -485,16 +397,7 @@ class TestKayeBigConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "kappa95": (1.0, 2.2),
-        "cur_plasma_ma": (1.0, 20.0),
-        "n20": (0.05, 2.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestIterH90PConfinementTime(Tier1Contract):
@@ -522,16 +425,7 @@ class TestIterH90PConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.0, 2.5),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestRiedelLConfinementTime(Tier1Contract):
@@ -558,15 +452,7 @@ class TestRiedelLConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestChristiansenConfinementTime(Tier1Contract):
@@ -594,16 +480,7 @@ class TestChristiansenConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestLacknerGottardiConfinementTime(Tier1Contract):
@@ -630,15 +507,7 @@ class TestLacknerGottardiConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestNeoKayeConfinementTime(Tier1Contract):
@@ -665,15 +534,7 @@ class TestNeoKayeConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestRiedelHConfinementTime(Tier1Contract):
@@ -701,16 +562,7 @@ class TestRiedelHConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa95": (1.0, 2.2),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestIterH90PAmendedConfinementTime(Tier1Contract):
@@ -736,14 +588,7 @@ class TestIterH90PAmendedConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "afuel": (2.0, 3.0),
-        "rmajor": (2.0, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "kappa": (1.0, 2.5),
-    }
+    fuzz = True
 
 
 class TestSudoEtAlConfinementTime(Tier1Contract):
@@ -768,13 +613,7 @@ class TestSudoEtAlConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestGyroReducedBohmConfinementTime(Tier1Contract):
@@ -799,13 +638,7 @@ class TestGyroReducedBohmConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rminor": (0.5, 5.0),
-        "rmajor": (2.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestLacknerGottardiStellaratorConfinementTime(Tier1Contract):
@@ -833,14 +666,7 @@ class TestLacknerGottardiStellaratorConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "q": (2.0, 8.0),
-    }
+    fuzz = True
 
 
 class TestIter93hConfinementTime(Tier1Contract):
@@ -868,16 +694,7 @@ class TestIter93hConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "afuel": (2.0, 3.0),
-        "rmajor": (2.0, 20.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "aspect": (1.5, 4.0),
-        "kappa": (1.0, 2.5),
-    }
+    fuzz = True
 
 
 class TestIterH97pConfinementTime(Tier1Contract):
@@ -905,16 +722,7 @@ class TestIterH97pConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "rmajor": (2.0, 20.0),
-        "aspect": (1.5, 4.0),
-        "kappa": (1.0, 2.5),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterH97pElmyConfinementTime(Tier1Contract):
@@ -942,16 +750,7 @@ class TestIterH97pElmyConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "rmajor": (2.0, 20.0),
-        "aspect": (1.5, 4.0),
-        "kappa": (1.0, 2.5),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIter96pConfinementTime(Tier1Contract):
@@ -979,16 +778,7 @@ class TestIter96pConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "kappa95": (1.0, 2.2),
-        "rmajor": (2.0, 20.0),
-        "aspect": (1.5, 4.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestValovicElmyConfinementTime(Tier1Contract):
@@ -1016,16 +806,7 @@ class TestValovicElmyConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "afuel": (2.0, 3.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.0, 2.5),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestKayeConfinementTime(Tier1Contract):
@@ -1053,16 +834,7 @@ class TestKayeConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "kappa": (1.0, 2.5),
-        "rmajor": (2.0, 20.0),
-        "aspect": (1.5, 4.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "afuel": (2.0, 3.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestIterPb98pyConfinementTime(Tier1Contract):
@@ -1090,16 +862,7 @@ class TestIterPb98pyConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterIpb98yConfinementTime(Tier1Contract):
@@ -1127,16 +890,7 @@ class TestIterIpb98yConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterIpb98y1ConfinementTime(Tier1Contract):
@@ -1164,16 +918,7 @@ class TestIterIpb98y1ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterIpb98y2ConfinementTime(Tier1Contract):
@@ -1201,16 +946,7 @@ class TestIterIpb98y2ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterIpb98y3ConfinementTime(Tier1Contract):
@@ -1238,16 +974,7 @@ class TestIterIpb98y3ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIterIpb98y4ConfinementTime(Tier1Contract):
@@ -1275,16 +1002,7 @@ class TestIterIpb98y4ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestIss95StellaratorConfinementTime(Tier1Contract):
@@ -1310,14 +1028,7 @@ class TestIss95StellaratorConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (0.5, 5.0),
-        "rmajor": (2.0, 20.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "iotabar": (0.3, 3.0),
-    }
+    fuzz = True
 
 
 class TestIss04StellaratorConfinementTime(Tier1Contract):
@@ -1343,14 +1054,7 @@ class TestIss04StellaratorConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (0.5, 5.0),
-        "rmajor": (2.0, 20.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "iotabar": (0.3, 3.0),
-    }
+    fuzz = True
 
 
 class TestDs03ConfinementTime(Tier1Contract):
@@ -1378,16 +1082,7 @@ class TestDs03ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa95": (1.0, 2.2),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestMurariConfinementTime(Tier1Contract):
@@ -1413,14 +1108,7 @@ class TestMurariConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestPetty08ConfinementTime(Tier1Contract):
@@ -1447,15 +1135,7 @@ class TestPetty08ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestLangHighDensityConfinementTime(Tier1Contract):
@@ -1486,19 +1166,7 @@ class TestLangHighDensityConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "plasma_current": (1000000.0, 20000000.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line": (1e19, 1e21),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "q": (2.0, 8.0),
-        "qstar": (1.5, 8.0),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-        "kappa_ipb": (1.0, 2.5),
-    }
+    fuzz = True
 
 
 class TestHubbardNominalConfinementTime(Tier1Contract):
@@ -1522,12 +1190,7 @@ class TestHubbardNominalConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestHubbardLowerConfinementTime(Tier1Contract):
@@ -1551,12 +1214,7 @@ class TestHubbardLowerConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestHubbardUpperConfinementTime(Tier1Contract):
@@ -1580,12 +1238,7 @@ class TestHubbardUpperConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestMenardNstxConfinementTime(Tier1Contract):
@@ -1613,16 +1266,7 @@ class TestMenardNstxConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestMenardNstxPetty08HybridConfinementTime(Tier1Contract):
@@ -1652,16 +1296,7 @@ class TestMenardNstxPetty08HybridConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "kappa_ipb": (1.0, 2.5),
-        "aspect": (1.5, 4.0),
-        "afuel": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestNstxGyroBohmConfinementTime(Tier1Contract):
@@ -1686,13 +1321,7 @@ class TestNstxGyroBohmConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "nd_plasma_electron_line_20": (0.05, 2.0),
-    }
+    fuzz = True
 
 
 class TestItpa20ConfinementTime(Tier1Contract):
@@ -1721,17 +1350,7 @@ class TestItpa20ConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "rmajor": (2.0, 20.0),
-        "triang": (0.0, 0.6),
-        "kappa_ipb": (1.0, 2.5),
-        "eps": (0.1, 0.5),
-        "aion": (2.0, 3.0),
-    }
+    fuzz = True
 
 
 class TestItpa20IlConfinementTime(Tier1Contract):
@@ -1759,16 +1378,7 @@ class TestItpa20IlConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-        "aion": (2.0, 3.0),
-        "rmajor": (2.0, 20.0),
-        "triang": (0.0, 0.6),
-        "kappa_ipb": (1.0, 2.5),
-    }
+    fuzz = True
 
 
 class TestNcstConfinementTime(Tier1Contract):
@@ -1792,12 +1402,7 @@ class TestNcstConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-    }
+    fuzz = True
 
 
 class TestPazSoldanNtConfinementTime(Tier1Contract):
@@ -1821,12 +1426,7 @@ class TestPazSoldanNtConfinementTime(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "cur_plasma_ma": (1.0, 20.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "p_plasma_loss_mw": (10.0, 1000.0),
-        "nd_plasma_electron_line_19": (0.5, 20.0),
-    }
+    fuzz = True
 
 
 class TestIterPhysicsBasisElongation(Tier1Contract):
@@ -1843,11 +1443,7 @@ class TestIterPhysicsBasisElongation(Tier1Contract):
         legacy_sample("reference-point", vol_plasma=2426.25, rmajor=8.0, rminor=2.5),
     ]
 
-    fuzz_bounds = {
-        "vol_plasma": (100.0, 5000.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-    }
+    fuzz = True
 
 
 class TestCalculateDoubleAndTripleProduct(Tier1Contract):
@@ -1870,11 +1466,7 @@ class TestCalculateDoubleAndTripleProduct(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_plasma_electrons_vol_avg": (1.0e19, 2.0e20),
-        "temp_plasma_electrons_vol_avg_kev": (1.0, 40.0),
-        "t_energy_confinement": (0.1, 20.0),
-    }
+    fuzz = True
 
 
 def _reference_calculate_confinement_time(**kwargs):

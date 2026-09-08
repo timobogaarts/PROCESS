@@ -195,12 +195,7 @@ class TestCalculateCsGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_tf_inside_half": (2.0, 20.0),
-        "f_z_cs_tf_internal": (0.5, 1.0),
-        "dr_cs": (0.05, 2.0),
-        "dr_cs_bore": (0.2, 6.0),
-    }
+    fuzz = True
 
 
 class TestPlaceCsFilaments(Tier1Contract):
@@ -221,12 +216,7 @@ class TestPlaceCsFilaments(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_cs_middle": (0.5, 8.0),
-        "z_cs_inside_half": (1.0, 12.0),
-        "c_cs_flat_top_end": (-4.0e8, -1.0e7),
-        "f_j_cs_start_pulse_end_flat_top": (0.5, 1.2),
-    }
+    fuzz = True
 
 
 class TestCalculatePFCoilGroupPositions(Tier1Contract):
@@ -303,10 +293,4 @@ class TestCalculateCsTurnGeometryEuDemo(Tier1Contract):
     count is spelled as the quotient that produces it because that is what the
     `DataStructure` carries at that point (`a_cs_turn = 0.00263 m^2`)."""
 
-    fuzz_bounds = {
-        "a_cs_poloidal": (5.0, 20.0),
-        "n_pf_coil_turns_cs": (2000.0, 6000.0),
-        "f_dr_dz_cs_turn": (2.0, 4.0),
-        "radius_cs_turn_corners": (0.002, 0.004),
-        "f_a_cs_turn_steel": (0.4, 0.8),
-    }
+    fuzz = True

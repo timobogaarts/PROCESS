@@ -51,12 +51,7 @@ class TestCalculateReynoldsNumber(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "den_coolant": (1.0, 1000.0),
-        "vel_coolant": (0.1, 30.0),
-        "radius_channel": (0.001, 0.1),
-        "visc_coolant": (1.0e-5, 1.0e-3),
-    }
+    fuzz = True
 
 
 class TestDarcyFrictionHaaland(Tier1Contract):
@@ -85,11 +80,7 @@ class TestDarcyFrictionHaaland(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "reynolds": (3.0e3, 5.0e6),
-        "roughness_channel": (1.0e-9, 1.0e-4),
-        "radius_channel": (0.001, 0.1),
-    }
+    fuzz = True
 
 
 class TestGnielinskiHeatTransferCoefficient(Tier1Contract):
@@ -130,12 +121,4 @@ class TestGnielinskiHeatTransferCoefficient(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "mflux_coolant": (50.0, 500.0),
-        "den_coolant": (1.0, 1000.0),
-        "radius_channel": (0.003, 0.02),
-        "heatcap_coolant": (4000.0, 6000.0),
-        "visc_coolant": (2.0e-5, 6.0e-5),
-        "thermcond_coolant": (0.05, 0.2),
-        "roughness_channel": (1.0e-9, 1.0e-6),
-    }
+    fuzz = True

@@ -332,11 +332,7 @@ class TestIonVolAvgTemperature(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_temp_plasma_ion_electron": (0.1, 1.5),
-        "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
-        "temp_plasma_ion_vol_avg_kev": (1.0, 40.0),
-    }
+    fuzz = True
 
 
 class TestParabolicProfileValues(Tier1Contract):
@@ -360,13 +356,7 @@ class TestParabolicProfileValues(Tier1Contract):
     # `alphan`/`alphat` bounds are PROCESS's own (iteration variables 6 and 5); the
     # densities and temperatures are given plausible operating ranges since the
     # volume-averaged forms are not themselves iteration variables.
-    fuzz_bounds = {
-        "alphan": (0.1, 1.0),
-        "alphat": (0.5, 2.5),
-        "nd_plasma_electrons_vol_avg": (1.0e19, 2.0e20),
-        "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
-        "temp_plasma_ion_vol_avg_kev": (1.0, 40.0),
-    }
+    fuzz = True
 
 
 class TestLModeProfileReset(Tier1Contract):
@@ -415,15 +405,7 @@ class TestLModeProfileReset(Tier1Contract):
 
     # PROCESS's own input ranges for the pedestal fields; the bounds matter only in that
     # they must straddle the L-mode values so both sides of the guard are sampled.
-    fuzz_bounds = {
-        "radius_plasma_pedestal_temp_norm": (0.8, 1.0),
-        "radius_plasma_pedestal_density_norm": (0.8, 1.0),
-        "temp_plasma_pedestal_kev": (0.0, 6.0),
-        "temp_plasma_separatrix_kev": (0.0, 0.5),
-        "nd_plasma_pedestal_electron": (0.0, 8.0e19),
-        "nd_plasma_separatrix_electron": (0.0, 6.0e19),
-        "tbeta": (1.0, 2.0),
-    }
+    fuzz = True
 
 
 class TestPedestalProfileValues(Tier1Contract):
@@ -584,10 +566,4 @@ class TestParabolicGradientLengths(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "alphat": (0.1, 2.5),
-        "alphan": (0.1, 2.5),
-        "temp_plasma_electron_on_axis_kev": (5.0, 60.0),
-        "nd_plasma_electron_on_axis": (1.0e19, 3.0e20),
-        "rminor": (0.5, 4.0),
-    }
+    fuzz = True

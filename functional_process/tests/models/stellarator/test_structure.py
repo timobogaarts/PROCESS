@@ -113,19 +113,7 @@ class TestStructureMasses(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "stella_config_coilsurface": (100.0, 1.0e4),
-        "f_st_rmajor": (0.5, 1.5),
-        "r_coil_minor": (0.1, 5.0),
-        "stella_config_coil_rminor": (0.1, 5.0),
-        "dx_tf_inboard_out_toroidal": (0.01, 5.0),
-        "len_tf_coil": (10.0, 5000.0),
-        "n_tf_coils": (1.0, 100.0),
-        "b_plasma_toroidal_on_axis": (1.0, 20.0),
-        "den_steel": (1000.0, 10000.0),
-        "m_tf_coils_total": (1.0e3, 1.0e8),
-        "dewmkg": (0.0, 1.0e8),
-    }
+    fuzz = True
 
 
 class TestIntercoilMassScalingReference(Tier1Contract):
@@ -144,6 +132,4 @@ class TestIntercoilMassScalingReference(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "e_tf_magnetic_stored_total_gj": (1.0, 1.0e4),
-    }
+    fuzz = True

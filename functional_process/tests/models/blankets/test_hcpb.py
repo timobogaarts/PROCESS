@@ -859,11 +859,7 @@ class TestFirstWallCoolantVoidFractions(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_fw_channel": (0.001, 0.02),
-        "dx_fw_module": (0.005, 0.05),
-        "dr_fw_inboard": (0.005, 0.05),
-    }
+    fuzz = True
 
 
 class TestDivertorSurfaceAndPlateMassSingleNull(Tier1Contract):
@@ -891,14 +887,7 @@ class TestDivertorSurfaceAndPlateMassSingleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "fdiva": (0.8, 1.5),
-        "rmajor": (5.0, 12.0),
-        "rminor": (1.0, 4.0),
-        "den_div_structure": (5000.0, 15000.0),
-        "f_vol_div_coolant": (0.1, 0.5),
-        "dx_div_plate": (0.01, 0.1),
-    }
+    fuzz = True
 
 
 class TestDivertorSurfaceAndPlateMassDoubleNull(Tier1Contract):
@@ -926,14 +915,7 @@ class TestDivertorSurfaceAndPlateMassDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "fdiva": (0.8, 1.5),
-        "rmajor": (5.0, 12.0),
-        "rminor": (1.0, 4.0),
-        "den_div_structure": (5000.0, 15000.0),
-        "f_vol_div_coolant": (0.1, 0.5),
-        "dx_div_plate": (0.01, 0.1),
-    }
+    fuzz = True
 
 
 class TestComponentMasses(Tier1Contract):
@@ -1002,32 +984,7 @@ class TestComponentMasses(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a_div_surface_total": (50.0, 400.0),
-        "f_vol_div_coolant": (0.1, 0.5),
-        "dx_div_plate": (0.01, 0.1),
-        "vol_blkt_total": (100.0, 3000.0),
-        "f_a_blkt_cooling_channels": (0.05, 0.5),
-        "vol_shld_total": (100.0, 2000.0),
-        "vfshld": (0.1, 0.8),
-        "a_fw_inboard": (200.0, 1200.0),
-        "a_fw_outboard": (400.0, 2000.0),
-        "a_fw_total": (600.0, 3200.0),
-        "dr_fw_inboard": (0.005, 0.05),
-        "dr_fw_outboard": (0.005, 0.05),
-        "f_a_fw_coolant_inboard": (0.05, 0.6),
-        "f_a_fw_coolant_outboard": (0.05, 0.6),
-        "den_steel": (6000.0, 9000.0),
-        "a_plasma_surface": (500.0, 2500.0),
-        "fw_armour_thickness": (0.001, 0.02),
-        # Inside iteration variable 108's declared bounds (0.060, 1.0), so the clamp at
-        # `hcpb.py:404-405` is inert here -- deliberately, since the clamp's only effect
-        # is on points the solver is not allowed to visit.
-        "breeder_f": (0.06, 1.0),
-        "breeder_multiplier": (0.5, 0.9),
-        "vfcblkt": (0.01, 0.1),
-        "vfpblkt": (0.02, 0.2),
-    }
+    fuzz = True
 
 
 class TestNuclearHeatingMagnetsConventional(Tier1Contract):
@@ -1166,11 +1123,7 @@ class TestNuclearHeatingFw(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "m_fw_total": (1.0e4, 1.0e6),
-        "fw_armour_u_nuc_heating": (1.0e-7, 1.0e-6),
-        "p_fusion_total_mw": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestNuclearHeatingBlanket(Tier1Contract):
@@ -1202,10 +1155,7 @@ class TestNuclearHeatingBlanket(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "m_blkt_total": (1.0e5, 1.0e7),
-        "p_fusion_total_mw": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestNuclearHeatingShieldConventional(Tier1Contract):
@@ -1250,14 +1200,7 @@ class TestNuclearHeatingShieldConventional(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_shld_outboard": (0.1, 2.0),
-        "dr_shld_inboard": (0.1, 2.0),
-        "shield_density": (1000.0, 8000.0),
-        "whtshld": (1.0e5, 1.0e7),
-        "x_blanket": (0.1, 10.0),
-        "p_fusion_total_mw": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestNuclearHeatingShieldSphericalTokamak(Tier1Contract):
@@ -1285,13 +1228,7 @@ class TestNuclearHeatingShieldSphericalTokamak(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_shld_outboard": (0.1, 2.0),
-        "shield_density": (1000.0, 8000.0),
-        "whtshld": (1.0e5, 1.0e7),
-        "x_blanket": (0.1, 10.0),
-        "p_fusion_total_mw": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestCentrepostNeutronicsAbsent(Tier1Contract):
@@ -1337,15 +1274,7 @@ class TestNuclearHeatingRenormalisation(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_fw_nuclear_heat_total_mw_unnormalised": (50.0, 500.0),
-        "p_blkt_nuclear_heat_total_mw_unnormalised": (500.0, 2500.0),
-        "p_shld_nuclear_heat_mw_unnormalised": (0.1, 10.0),
-        "p_tf_nuclear_heat_mw_unnormalised": (0.001, 1.0),
-        "f_ster_div_single": (0.02, 0.2),
-        "f_p_blkt_multiplication": (1.0, 1.5),
-        "p_neutron_total_mw": (100.0, 4000.0),
-    }
+    fuzz = True
 
 
 class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
@@ -1380,15 +1309,7 @@ class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_fw_nuclear_heat_total_mw_unnormalised": (50.0, 500.0),
-        "p_blkt_nuclear_heat_total_mw_unnormalised": (500.0, 2500.0),
-        "p_shld_nuclear_heat_mw_unnormalised": (0.1, 10.0),
-        "p_tf_nuclear_heat_mw_unnormalised": (0.001, 1.0),
-        "f_ster_div_single": (0.02, 0.2),
-        "f_p_blkt_multiplication": (1.0, 1.5),
-        "p_neutron_total_mw": (100.0, 4000.0),
-    }
+    fuzz = True
 
 
 _CP_ANGLE_TOLERANCE = Tolerance(
@@ -1530,6 +1451,8 @@ class TestCentrepostAngleFraction(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # a disagreement or non-finite value at the wider range
     fuzz_bounds = {
         "z_cp_top": (0.5, 8.0),
         # `2 * rmajor` stays above `r_cp_mid + r_cp_top` over the whole box, which is
@@ -1574,11 +1497,7 @@ class TestCentrepostFastNeutronFluxSuperconducting(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_neutron_total_mw": (100.0, 4000.0),
-        "sh_width": (0.1, 1.5),
-        "rmajor": (1.5, 6.0),
-    }
+    fuzz = True
 
 
 class TestCentrepostNuclearHeatingSuperconducting(Tier1Contract):
@@ -1622,11 +1541,7 @@ class TestCentrepostNuclearHeatingSuperconducting(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "pneut": (100.0, 4000.0),
-        "sh_width": (0.1, 1.5),
-        "rmajor": (1.5, 6.0),
-    }
+    fuzz = True
 
 
 class TestCentrepostAndRenormalisationSingleNullSphericalTokamak(Tier1Contract):
@@ -1769,32 +1684,4 @@ class TestPowerflowCalcMechanicalWithPressureDrop(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_rad_mw": (50.0, 600.0),
-        # Non-zero, unlike every legacy point: `p_fw_hcd_rad_total_mw` is identically
-        # zero at `f_a_fw_outboard_hcd == 0`, so without this the fuzz would never
-        # exercise that output at all.
-        "f_a_fw_outboard_hcd": (0.001, 0.15),
-        "p_div_rad_total_mw": (1.0, 60.0),
-        "a_fw_outboard": (400.0, 2000.0),
-        "a_fw_total": (600.0, 3200.0),
-        "p_beam_orbit_loss_mw": (0.0, 20.0),
-        "p_fw_alpha_mw": (1.0, 60.0),
-        "p_he": (4.0e6, 1.2e7),
-        # Kept well below `p_he`'s lower bound: `pfactor`'s base is
-        # `p_he / (p_he - dp_he)` and goes singular as the two approach each other.
-        "dp_he": (1.0e5, 1.0e6),
-        "gamma_he": (1.3, 1.7),
-        "t_in_bb": (450.0, 650.0),
-        "t_out_bb": (700.0, 900.0),
-        "etaiso": (0.7, 0.99),
-        "f_p_fw_blkt_pump": (0.5, 1.5),
-        "p_fw_nuclear_heat_total_mw": (50.0, 500.0),
-        "p_blkt_nuclear_heat_total_mw": (500.0, 2500.0),
-        "f_p_shld_coolant_pump_total_heat": (0.001, 0.05),
-        "p_shld_nuclear_heat_mw": (0.1, 10.0),
-        "p_cp_shield_nuclear_heat_mw": (0.0, 5.0),
-        "f_p_div_coolant_pump_total_heat": (0.001, 0.05),
-        "p_plasma_separatrix_mw": (50.0, 400.0),
-        "p_div_nuclear_heat_total_mw": (20.0, 300.0),
-    }
+    fuzz = True

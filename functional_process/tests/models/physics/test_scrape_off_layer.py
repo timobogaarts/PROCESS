@@ -89,12 +89,7 @@ class TestCalculateEich2013SolPowerDecayLength(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "rmajor": (2.0, 20.0),
-        "b_plasma_surface_poloidal_average": (0.05, 1.5),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestCalculateMast2014SolPowerDecayLength1(Tier1Contract):
@@ -127,10 +122,7 @@ class TestCalculateMast2014SolPowerDecayLength1(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "b_plasma_surface_poloidal_average": (0.05, 1.5),
-    }
+    fuzz = True
 
 
 class TestCalculateMast2014SolPowerDecayLength2(Tier1Contract):
@@ -150,10 +142,7 @@ class TestCalculateMast2014SolPowerDecayLength2(Tier1Contract):
         legacy_sample("high-current", p_plasma_separatrix_mw=100.0, cur_plasma_ma=3.0),
     ]
 
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "cur_plasma_ma": (1.0, 20.0),
-    }
+    fuzz = True
 
 
 class TestCalculateUpstreamSolOutboardParallelArea(Tier1Contract):
@@ -182,13 +171,7 @@ class TestCalculateUpstreamSolOutboardParallelArea(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "len_plasma_sol_power_decay": (1.0e-4, 1.0e-2),
-        "b_plasma_outboard_total": (1.0, 12.0),
-        "b_plasma_surface_poloidal_average": (0.05, 1.5),
-    }
+    fuzz = True
 
 
 def _reference_scrape_off_layer(
@@ -294,15 +277,7 @@ class TestScrapeOffLayer(Tier1Contract):
     ]
 
     fuzz_fixed = {"i_len_sol_outboard_power_decay": 1}
-    fuzz_bounds = {
-        "p_plasma_separatrix_mw_raw": (10.0, 500.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "b_plasma_surface_poloidal_average": (0.05, 1.5),
-        "b_plasma_outboard_total": (1.0, 12.0),
-        "aspect": (1.5, 4.0),
-        "plasma_current": (1.0e6, 2.0e7),
-    }
+    fuzz = True
 
 
 def test_user_input_switch_value_is_not_ported():

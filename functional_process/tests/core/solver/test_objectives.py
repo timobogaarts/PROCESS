@@ -93,7 +93,7 @@ class TestObjectiveMetric1(Tier1Contract):
     ported = objective_metric_1
 
     samples = [legacy_sample("nominal", rmajor=9.0)]
-    fuzz_bounds = {"rmajor": (1.0, 20.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric3(Tier1Contract):
@@ -104,7 +104,7 @@ class TestObjectiveMetric3(Tier1Contract):
     ported = objective_metric_3
 
     samples = [legacy_sample("nominal", pflux_fw_neutron_mw=1.5)]
-    fuzz_bounds = {"pflux_fw_neutron_mw": (0.0, 10.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric4(Tier1Contract):
@@ -115,7 +115,7 @@ class TestObjectiveMetric4(Tier1Contract):
     ported = objective_metric_4
 
     samples = [legacy_sample("nominal", tfcmw=50.0, srcktpm=2000.0)]
-    fuzz_bounds = {"tfcmw": (0.0, 200.0), "srcktpm": (0.0, 10000.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric5(Tier1Contract):
@@ -126,7 +126,7 @@ class TestObjectiveMetric5(Tier1Contract):
     ported = objective_metric_5
 
     samples = [legacy_sample("nominal", big_q_plasma=15.0)]
-    fuzz_bounds = {"big_q_plasma": (0.1, 50.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric6(Tier1Contract):
@@ -137,7 +137,7 @@ class TestObjectiveMetric6(Tier1Contract):
     ported = objective_metric_6
 
     samples = [legacy_sample("nominal", coe=80.0)]
-    fuzz_bounds = {"coe": (10.0, 500.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric7(Tier1Contract):
@@ -153,7 +153,7 @@ class TestObjectiveMetric7(Tier1Contract):
         legacy_sample("direct-cost", cdirt=5000.0, concost=8000.0, ireactor=0),
         legacy_sample("construction-cost", cdirt=5000.0, concost=8000.0, ireactor=1),
     ]
-    fuzz_bounds = {"cdirt": (100.0, 20000.0), "concost": (100.0, 30000.0)}
+    fuzz = True
     fuzz_fixed = {"ireactor": 0}
 
 
@@ -165,7 +165,7 @@ class TestObjectiveMetric8(Tier1Contract):
     ported = objective_metric_8
 
     samples = [legacy_sample("nominal", aspect=10.0)]
-    fuzz_bounds = {"aspect": (2.0, 20.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric9(Tier1Contract):
@@ -176,7 +176,7 @@ class TestObjectiveMetric9(Tier1Contract):
     ported = objective_metric_9
 
     samples = [legacy_sample("nominal", pflux_div_heat_load_mw=5.0)]
-    fuzz_bounds = {"pflux_div_heat_load_mw": (0.0, 20.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric10(Tier1Contract):
@@ -187,7 +187,7 @@ class TestObjectiveMetric10(Tier1Contract):
     ported = objective_metric_10
 
     samples = [legacy_sample("nominal", b_plasma_toroidal_on_axis=5.0)]
-    fuzz_bounds = {"b_plasma_toroidal_on_axis": (1.0, 15.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric11(Tier1Contract):
@@ -198,7 +198,7 @@ class TestObjectiveMetric11(Tier1Contract):
     ported = objective_metric_11
 
     samples = [legacy_sample("nominal", p_hcd_injected_total_mw=50.0)]
-    fuzz_bounds = {"p_hcd_injected_total_mw": (0.0, 200.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric14(Tier1Contract):
@@ -209,7 +209,7 @@ class TestObjectiveMetric14(Tier1Contract):
     ported = objective_metric_14
 
     samples = [legacy_sample("nominal", t_plant_pulse_burn=7200.0)]
-    fuzz_bounds = {"t_plant_pulse_burn": (0.0, 50000.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric15(Tier1Contract):
@@ -239,7 +239,7 @@ class TestObjectiveMetric15(Tier1Contract):
             f_t_plant_available=0.85,
         ),
     ]
-    fuzz_bounds = {"f_t_plant_available": (0.5, 1.0)}
+    fuzz = True
     fuzz_fixed = {"i_plant_availability": int(AvailabilityModel.WARD_TAYLOR)}
 
 
@@ -267,7 +267,7 @@ class TestObjectiveMetric16(Tier1Contract):
     ported = objective_metric_16
 
     samples = [legacy_sample("nominal", rmajor=9.0, t_plant_pulse_burn=7200.0)]
-    fuzz_bounds = {"rmajor": (1.0, 20.0), "t_plant_pulse_burn": (0.0, 50000.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric17(Tier1Contract):
@@ -280,7 +280,7 @@ class TestObjectiveMetric17(Tier1Contract):
     ported = objective_metric_17
 
     samples = [legacy_sample("nominal", p_plant_electric_net_mw=500.0)]
-    fuzz_bounds = {"p_plant_electric_net_mw": (0.0, 2000.0)}
+    fuzz = True
 
 
 class TestObjectiveMetric18(Tier1Contract):
@@ -308,7 +308,7 @@ class TestObjectiveMetric19(Tier1Contract):
     ported = objective_metric_19
 
     samples = [legacy_sample("nominal", big_q_plasma=15.0, t_plant_pulse_burn=7200.0)]
-    fuzz_bounds = {"big_q_plasma": (0.1, 50.0), "t_plant_pulse_burn": (0.0, 50000.0)}
+    fuzz = True
 
 
 def test_objective_metrics_16_and_19_are_not_the_same_formula():

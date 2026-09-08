@@ -155,12 +155,7 @@ class TestCalculateCyclindricalPlasmaCurrent(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rminor": (2.0, 3.5),
-        "rmajor": (6.0, 10.0),
-        "q95": (2.5, 5.0),
-        "b_plasma_toroidal_on_axis": (4.0, 7.0),
-    }
+    fuzz = True
 
 
 class TestCalculateCurrentCoefficientIpdg89(Tier1Contract):
@@ -182,11 +177,7 @@ class TestCalculateCurrentCoefficientIpdg89(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eps": (0.2, 0.45),
-        "kappa95": (1.4, 2.0),
-        "triang95": (0.05, 0.5),
-    }
+    fuzz = True
 
 
 class TestCalculatePlasmaCurrentIpdg89(Tier1Contract):
@@ -226,15 +217,7 @@ class TestCalculatePlasmaCurrentIpdg89(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eps": (0.2, 0.45),
-        "kappa95": (1.4, 2.0),
-        "triang95": (0.05, 0.5),
-        "rminor": (2.0, 3.5),
-        "rmajor": (6.0, 10.0),
-        "q95": (2.5, 5.0),
-        "b_plasma_toroidal_on_axis": (4.0, 7.0),
-    }
+    fuzz = True
 
 
 class TestCalculateCurrentCoefficientFiesta(Tier1Contract):
@@ -349,14 +332,7 @@ class TestCalculateCylindricalSafetyFactor(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (6.0, 10.0),
-        "rminor": (2.0, 3.5),
-        "plasma_current": (1.0e7, 2.5e7),
-        "b_plasma_toroidal_on_axis": (4.0, 7.0),
-        "kappa95": (1.4, 2.0),
-        "triang95": (0.05, 0.5),
-    }
+    fuzz = True
 
 
 class TestCalculateCurrentProfileIndexWesson(Tier1Contract):
@@ -386,10 +362,7 @@ class TestCalculateCurrentProfileIndexWesson(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "qstar": (2.0, 4.5),
-        "q0": (0.8, 1.5),
-    }
+    fuzz = True
 
 
 class TestCalculateInternalInductanceWesson(Tier1Contract):
@@ -419,6 +392,4 @@ class TestCalculateInternalInductanceWesson(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "alphaj": (0.5, 3.0),
-    }
+    fuzz = True

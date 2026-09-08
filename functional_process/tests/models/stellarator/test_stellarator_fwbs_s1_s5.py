@@ -333,24 +333,4 @@ class TestCryostatAndVvGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_tf_outboard_mid": (8.0, 20.0),
-        "dr_tf_outboard": (0.3, 1.2),
-        "dr_pf_cryostat": (0.2, 1.0),
-        "rmajor": (6.0, 15.0),
-        "dr_cryostat": (0.05, 0.3),
-        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
-        "dr_fw_inboard": (0.005, 0.05),
-        "dr_blkt_inboard": (0.2, 0.8),
-        "dr_shld_inboard": (0.1, 0.6),
-        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
-        "dr_fw_outboard": (0.005, 0.05),
-        "dr_blkt_outboard": (0.2, 0.8),
-        "dr_shld_outboard": (0.1, 0.6),
-        "rminor": (1.5, 5.0),
-        "dr_vv_inboard": (0.03, 0.15),
-        "dr_vv_outboard": (0.03, 0.15),
-        "a_plasma_surface": (500.0, 3000.0),
-        "fvoldw": (0.9, 1.5),
-        "den_steel": (7700.0, 7900.0),
-    }
+    fuzz = True

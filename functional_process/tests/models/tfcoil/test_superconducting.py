@@ -302,11 +302,7 @@ class TestDxTfSideCaseRectangular(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dx_tf_side_case_min": (0.01, 0.2),
-        "tan_theta_coil": (0.13, 0.42),
-        "dr_tf_wp_with_insulation": (0.2, 1.0),
-    }
+    fuzz = True
 
 
 class TestDxTfSideCaseDoubleRectangular(Tier1Contract):
@@ -325,11 +321,7 @@ class TestDxTfSideCaseDoubleRectangular(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dx_tf_side_case_min": (0.01, 0.2),
-        "tan_theta_coil": (0.13, 0.42),
-        "dr_tf_wp_with_insulation": (0.2, 1.0),
-    }
+    fuzz = True
 
 
 class TestDxTfSideCaseTrapezoidal(Tier1Contract):
@@ -345,7 +337,7 @@ class TestDxTfSideCaseTrapezoidal(Tier1Contract):
         )
     ]
 
-    fuzz_bounds = {"dx_tf_side_case_min": (0.01, 0.2)}
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -386,11 +378,7 @@ class TestTfWpCurrents(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "c_tf_total": (5e7, 5e8),
-        "n_tf_coils": (8.0, 24.0),
-        "a_tf_wp_no_insulation": (0.1, 2.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +468,7 @@ class TestPeakBTfInboardWithRippleFlatAllowance(Tier1Contract):
         legacy_sample("peak-b-ripple-flat", b_tf_inboard_peak_symmetric=11.7),
     ]
 
-    fuzz_bounds = {"b_tf_inboard_peak_symmetric": (4.0, 20.0)}
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -564,16 +552,7 @@ class TestCiccAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "j_tf_wp": (1e7, 4e7),
-        "c_tf_turn": (4e4, 1e5),
-        "dx_tf_turn_steel": (0.004, 0.012),
-        "dx_tf_turn_insulation": (5e-4, 2e-3),
-        "layer_ins": (0.0, 1e-3),
-        "a_tf_wp_no_insulation": (0.3, 1.2),
-        "dia_tf_turn_coolant_channel": (0.002, 0.008),
-        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +654,8 @@ class TestCiccIntegerTurnGeometry(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # a value or finiteness disagreement at the wider range
     fuzz_bounds = {
         # The box is chosen so the cable space stays positive at every corner
         # (worst case: dr_tf_wp 0.45, insulation+gap maximal, 12 layers, 8 mm steel
@@ -750,18 +731,7 @@ class TestTfCiccInboardAreasAndFractions(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "n_tf_coil_turns": (50.0, 400.0),
-        "dia_tf_turn_coolant_channel": (0.002, 0.008),
-        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
-        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
-        "a_tf_turn_insulation": (1e-4, 1e-3),
-        "a_tf_turn_steel": (5e-4, 3e-3),
-        "n_tf_coils": (8.0, 24.0),
-        "a_tf_inboard_total": (5.0, 40.0),
-        "a_tf_coil_inboard_case": (0.3, 3.0),
-        "a_tf_wp_ground_insulation": (0.005, 0.1),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -795,12 +765,7 @@ class TestTfTurnArea(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "c_tf_total": (5e7, 5e8),
-        "j_tf_wp": (1e7, 4e7),
-        "n_tf_coils": (8.0, 24.0),
-        "n_tf_coil_turns": (50.0, 400.0),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -965,27 +930,7 @@ class TestSuperconductingTfCoilAreasAndMassesConventional(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "len_tf_coil": (20.0, 80.0),
-        "a_tf_wp_with_insulation": (0.3, 1.5),
-        "a_tf_wp_no_insulation": (0.2, 1.2),
-        "den_tf_wp_turn_insulation": (1500.0, 2200.0),
-        "z_tf_inside_half": (4.0, 14.0),
-        "dr_tf_inboard": (0.5, 2.0),
-        "den_tf_coil_case": (7000.0, 9000.0),
-        "a_tf_coil_inboard_case": (0.3, 3.0),
-        "a_tf_coil_outboard_case": (0.3, 3.0),
-        "n_tf_coil_turns": (50.0, 400.0),
-        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
-        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
-        "f_a_tf_turn_cable_copper": (0.5, 0.9),
-        "a_tf_wp_coolant_channels": (0.005, 0.05),
-        "den_tf_sc_material": (6000.0, 8600.0),
-        "a_tf_turn_steel": (5e-4, 3e-3),
-        "den_steel": (7000.0, 8200.0),
-        "a_tf_coil_wp_turn_insulation": (0.02, 0.2),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 def _run_reference_sc_areas_and_masses_spherical_tokamak(
@@ -1164,27 +1109,7 @@ class TestSuperconductingTfCoilAreasAndMassesSphericalTokamak(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "len_tf_coil": (10.0, 80.0),
-        "a_tf_wp_with_insulation": (0.3, 1.5),
-        "a_tf_wp_no_insulation": (0.2, 1.2),
-        "den_tf_wp_turn_insulation": (1500.0, 2200.0),
-        "z_tf_inside_half": (3.0, 14.0),
-        "dr_tf_inboard": (0.5, 2.0),
-        "den_tf_coil_case": (7000.0, 9000.0),
-        "a_tf_coil_inboard_case": (0.3, 3.0),
-        "a_tf_coil_outboard_case": (0.3, 3.0),
-        "n_tf_coil_turns": (50.0, 400.0),
-        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
-        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
-        "f_a_tf_turn_cable_copper": (0.5, 0.9),
-        "a_tf_wp_coolant_channels": (0.005, 0.05),
-        "den_tf_sc_material": (6000.0, 8600.0),
-        "a_tf_turn_steel": (5e-4, 3e-3),
-        "den_steel": (7000.0, 8200.0),
-        "a_tf_coil_wp_turn_insulation": (0.02, 0.2),
-        "n_tf_coils": (8.0, 24.0),
-    }
+    fuzz = True
 
 
 class TestSuperconductingTfCoilAreasAndMassesConventionalWstNb3sn(Tier1Contract):
@@ -1220,7 +1145,7 @@ class TestSuperconductingTfCoilAreasAndMassesConventionalWstNb3sn(Tier1Contract)
         ),
     ]
 
-    fuzz_bounds = TestSuperconductingTfCoilAreasAndMassesConventional.fuzz_bounds
+    fuzz = True
 
 
 _ST_SHORTLEG = TestSuperconductingTfCoilAreasAndMassesSphericalTokamak.samples[1].kwargs
@@ -1265,7 +1190,7 @@ class TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = TestSuperconductingTfCoilAreasAndMassesSphericalTokamak.fuzz_bounds
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -1461,41 +1386,7 @@ class TestVvStressQuenchFromBuild(Tier1Contract):
         )
     ]
 
-    fuzz_bounds = {
-        # Same shape constraints as the core case, expressed in build fields: the
-        # vessel's `ro_vv` is `r_tf_outboard_mid` minus five subtractions, so the
-        # outboard radius is kept large and the five gaps small enough that it stays
-        # above `rm_vv`.
-        "z_tf_inside_half": (7.0, 10.0),
-        "dr_tf_inboard": (0.9, 1.5),
-        "r_tf_inboard_mid": (2.6, 3.4),
-        "r_tf_outboard_mid": (12.0, 15.0),
-        "r_tf_inboard_out": (3.3, 4.0),
-        "tfa_first_arc": (1.0, 2.0),
-        "z_plasma_xpoint_upper": (4.5, 6.5),
-        "dz_xpoint_divertor": (0.4, 0.9),
-        "dz_divertor": (0.4, 0.9),
-        "dz_shld_upper": (0.4, 0.9),
-        "dz_vv_upper": (0.2, 0.5),
-        "r_vv_inboard_out": (4.0, 4.6),
-        "dr_vv_outboard": (0.2, 0.4),
-        "dr_tf_outboard": (0.9, 1.5),
-        "dr_tf_shld_gap": (0.02, 0.1),
-        "dr_shld_thermal_outboard": (0.02, 0.1),
-        "dr_shld_vv_gap_outboard": (0.1, 0.25),
-        "len_tf_coil": (40.0, 60.0),
-        "theta1_coil": (35.0, 55.0),
-        "theta1_vv": (0.5, 3.0),
-        "n_tf_coils": (12.0, 20.0),
-        "n_tf_coil_turns": (100.0, 300.0),
-        "a_tf_coil_inboard_steel": (0.2, 0.9),
-        "a_tf_plasma_case": (0.1, 0.4),
-        "a_tf_coil_nose_case": (0.2, 0.6),
-        "dx_tf_side_case_average": (0.01, 0.06),
-        "t_tf_superconductor_quench": (10.0, 30.0),
-        "c_tf_coil": (8.0e6, 2.0e7),
-        "dr_vv_shells": (0.06, 0.2),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------

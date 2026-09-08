@@ -218,7 +218,7 @@ class TestZPlasmaXpoint(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"rminor": (1.5, 4.0), "kappa": (1.2, 2.2)}
+    fuzz = True
 
 
 def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
@@ -251,7 +251,7 @@ class TestDzBlktUpper(Tier1Contract):
     """`BASELINE`'s own two blanket thicknesses -- both are run inputs at
     `blktmodel == 0`, which is the arm every tracked tokamak takes."""
 
-    fuzz_bounds = {"dr_blkt_inboard": (0.2, 1.5), "dr_blkt_outboard": (0.3, 2.0)}
+    fuzz = True
 
 
 def _reference_divertor_geometry_conventional(
@@ -296,20 +296,7 @@ class TestDivertorGeometryConventional(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (6.0, 10.0),
-        "rminor": (2.0, 3.5),
-        "kappa": (1.5, 2.1),
-        # `triang` is kept away from 1, where `(triang - 1)**2` in `rci` is a division
-        # by zero, and away from 0 only for variety -- 0 is well inside the domain.
-        "triang": (0.2, 0.7),
-        "plsepi": (0.7, 1.5),
-        "plsepo": (1.0, 2.0),
-        "plleni": (0.7, 1.5),
-        "plleno": (0.7, 1.5),
-        "betai": (0.8, 1.3),
-        "betao": (0.8, 1.3),
-    }
+    fuzz = True
 
 
 def _reference_divertor_geometry_spherical_tokamak(rminor):
@@ -345,7 +332,7 @@ class TestDivertorGeometrySphericalTokamak(Tier1Contract):
         legacy_sample("spherical_tokamak_eval-input", rminor=2.5),
     ]
 
-    fuzz_bounds = {"rminor": (0.8, 3.0)}
+    fuzz = True
 
 
 def _reference_z_tf_inside_half(
@@ -410,16 +397,7 @@ class TestZTfInsideHalf(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_plasma_xpoint_upper": (3.0, 7.0),
-        "dz_xpoint_divertor": (1.0, 3.0),
-        "dz_divertor": (0.3, 1.0),
-        "dz_shld_lower": (0.4, 1.0),
-        "dz_vv_lower": (0.2, 0.6),
-        "dz_shld_vv_gap": (0.1, 0.3),
-        "dz_shld_thermal": (0.02, 0.1),
-        "dr_tf_shld_gap": (0.02, 0.1),
-    }
+    fuzz = True
 
 
 # `z_tf_inside_half` is not settable on `data`: `calculate_vertical_build` computes it
@@ -555,21 +533,7 @@ class TestTfTopHeightSingleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_tf_inside_half": (7.0, 10.0),
-        "dr_tf_inboard": (1.0, 1.4),
-        "dr_tf_shld_gap": (0.03, 0.08),
-        "dz_shld_thermal": (0.02, 0.1),
-        "dz_shld_vv_gap": (0.1, 0.3),
-        "dz_vv_upper": (0.2, 0.4),
-        "dz_shld_upper": (0.4, 0.8),
-        "dr_shld_blkt_gap": (0.01, 0.04),
-        "dz_blkt_upper": (0.6, 1.1),
-        "dr_fw_inboard": (0.01, 0.03),
-        "dr_fw_outboard": (0.01, 0.03),
-        "dz_fw_plasma_gap": (0.4, 0.8),
-        "z_plasma_xpoint_upper": (4.0, 6.0),
-    }
+    fuzz = True
 
 
 def _reference_tf_top_height_double_null(z_tf_inside_half, dr_tf_inboard):
@@ -628,10 +592,7 @@ class TestTfTopHeightDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_tf_inside_half": (7.0, 10.0),
-        "dr_tf_inboard": (1.0, 1.4),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -670,10 +631,7 @@ class TestDzBlktUpper(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_blkt_inboard": (0.3, 1.0),
-        "dr_blkt_outboard": (0.8, 1.2),
-    }
+    fuzz = True
 
 
 def _reference_dr_tf_wp_with_insulation(
@@ -707,11 +665,7 @@ class TestDrTfWpWithInsulation(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_tf_inboard": (0.8, 1.8),
-        "dr_tf_plasma_case": (0.03, 0.2),
-        "dr_tf_nose_case": (0.1, 0.5),
-    }
+    fuzz = True
 
 
 def _reference_dr_tf_inboard(
@@ -754,11 +708,7 @@ class TestDrTfInboardFromWindingPack(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_tf_wp_with_insulation": (0.4, 1.4),
-        "dr_tf_plasma_case": (0.03, 0.2),
-        "dr_tf_nose_case": (0.1, 0.5),
-    }
+    fuzz = True
 
 
 def _reference_tf_inboard_radii(
@@ -811,15 +761,7 @@ class TestTfInboardRadii(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_bore": (0.5, 4.0),
-        "dr_cs": (0.2, 1.5),
-        "fseppc": (1.0e8, 6.0e8),
-        "fcspc": (0.3, 0.9),
-        "sigallpc": (1.0e8, 6.0e8),
-        "dr_cs_tf_gap": (0.02, 0.3),
-        "dr_tf_inboard": (0.5, 2.0),
-    }
+    fuzz = True
 
 
 def _reference_tf_inboard_radii_no_precomp(
@@ -878,12 +820,7 @@ class TestTfInboardRadiiNoCsPrecomp(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dr_bore": (0.1, 4.0),
-        "dr_cs": (0.1, 1.5),
-        "dr_cs_tf_gap": (0.0, 0.3),
-        "dr_tf_inboard": (0.2, 2.0),
-    }
+    fuzz = True
 
 
 def _reference_r_shld_inboard_inner(
@@ -924,14 +861,7 @@ class TestRShldInboardInner(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (6.0, 10.0),
-        "rminor": (2.0, 3.5),
-        "dr_fw_plasma_gap_inboard": (0.1, 0.5),
-        "dr_fw_inboard": (0.01, 0.05),
-        "dr_blkt_inboard": (0.3, 1.0),
-        "dr_shld_inboard": (0.2, 0.6),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -1142,25 +1072,7 @@ class TestOutboardBuildChain(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (7.5, 8.5),
-        "rminor": (2.4, 2.9),
-        "dr_fw_plasma_gap_outboard": (0.2, 0.3),
-        "dr_fw_outboard": (0.01, 0.03),
-        "dr_blkt_outboard": (0.8, 1.2),
-        "dr_shld_outboard": (0.6, 1.0),
-        "dr_shld_blkt_gap": (0.01, 0.04),
-        "dr_vv_outboard": (0.2, 0.4),
-        "gapomin": (0.15, 0.35),
-        "dr_shld_thermal_outboard": (0.03, 0.08),
-        "dr_tf_shld_gap": (0.03, 0.08),
-        "dr_tf_inboard": (1.0, 1.4),
-        "ripple_b_tf_plasma_edge_max": (0.4, 0.8),
-        "n_tf_coils": (16.0, 18.0),
-        "dx_tf_wp_primary_toroidal": (1.0, 1.5),
-        "dx_tf_wp_insulation": (0.005, 0.012),
-        "dx_tf_wp_insertion_gap": (0.005, 0.015),
-    }
+    fuzz = True
 
 
 def _ported_ripple_superconducting(
@@ -1265,16 +1177,7 @@ class TestRippleSuperconducting(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "ripple_b_tf_plasma_edge_max": (0.4, 0.8),
-        "r_tf_outboard_mid": (13.0, 16.0),
-        "n_tf_coils": (16.0, 18.0),
-        "rmajor": (7.5, 8.5),
-        "rminor": (2.4, 2.9),
-        "dx_tf_wp_primary_toroidal": (1.0, 1.5),
-        "dx_tf_wp_insulation": (0.005, 0.012),
-        "dx_tf_wp_insertion_gap": (0.005, 0.015),
-    }
+    fuzz = True
 
 
 def _reference_ripple_picture_frame(
@@ -1347,13 +1250,7 @@ class TestRipplePictureFrame(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "ripple_b_tf_plasma_edge_max": (0.5, 1.5),
-        "r_tf_outboard_mid": (8.0, 12.0),
-        "n_tf_coils": (10.0, 14.0),
-        "rmajor": (4.0, 5.0),
-        "rminor": (2.2, 2.8),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -1441,16 +1338,7 @@ class TestVacuumVesselAndShieldRadii(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        # Placed by moving `dr_tf_inboard` off its 1.2 m baseline, so the range is
-        # bounded below by the radius at which that thickness would go negative.
-        "r_tf_inboard_out": (3.0, 6.0),
-        "dr_tf_shld_gap": (0.01, 0.2),
-        "dr_shld_thermal_inboard": (0.01, 0.2),
-        "dr_shld_vv_gap_inboard": (0.005, 0.2),
-        "dr_vv_inboard": (0.1, 0.8),
-        "dr_shld_inboard": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 def _reference_rbld(
@@ -1512,16 +1400,7 @@ class TestRbld(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        # Same bound as `TestVacuumVesselAndShieldRadii`, shifted by the constant
-        # offset between the two radii on this arm.
-        "r_sh_inboard_out": (4.0, 7.0),
-        "dr_shld_blkt_gap": (0.005, 0.1),
-        "dr_blkt_inboard": (0.3, 1.2),
-        "dr_fw_inboard": (0.005, 0.08),
-        "dr_fw_plasma_gap_inboard": (0.05, 0.6),
-        "rminor": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 def _reference_r_cp_top(r_tf_inboard_out):
@@ -1564,7 +1443,7 @@ class TestRCpTop(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"r_tf_inboard_out": (0.8, 5.0)}
+    fuzz = True
 
 
 def _reference_r_cp_top_superconducting_spherical_tokamak(r_tf_inboard_out):
@@ -1620,4 +1499,4 @@ class TestRCpTopSuperconductingSphericalTokamak(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"r_tf_inboard_out": (0.8, 5.0)}
+    fuzz = True

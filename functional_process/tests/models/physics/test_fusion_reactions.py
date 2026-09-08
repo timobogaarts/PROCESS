@@ -197,7 +197,7 @@ class TestDeuteriumBranchingTrit(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"ion_temperature": (0.5, 200.0)}
+    fuzz = True
 
 
 class TestBoschHaleReactivity(Tier1Contract):
@@ -346,13 +346,7 @@ class TestSetFusionPowers(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_beam_alpha_mw": (0.0, 500.0),
-        "pden_non_alpha_charged_mw": (1.0e-5, 1.0),
-        "vol_plasma": (100.0, 5000.0),
-        "pden_plasma_alpha_mw": (1.0e-3, 1.0),
-        "pden_plasma_neutron_mw": (1.0e-3, 5.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "f_p_alpha_plasma_deposited": 0.95,
         "f_alpha_electron": 0.68,
@@ -383,15 +377,7 @@ class TestBeamSlowingDownState(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "e_beam_kev": (100.0, 2000.0),
-        "critical_energy_deuterium": (50.0, 500.0),
-        "critical_energy_tritium": (50.0, 700.0),
-        "t_beam_slow": (0.1, 5.0),
-        "f_beam_tritium": (0.0, 1.0),
-        "c_beam_total": (10.0, 300.0),
-        "vol_plasma": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestFastIonPressureIntegral(Tier1Contract):
@@ -410,7 +396,7 @@ class TestFastIonPressureIntegral(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"e_beam_kev": (100.0, 2000.0), "critical_energy": (50.0, 700.0)}
+    fuzz = True
 
 
 class TestBeamTargetReactionRate(Tier1Contract):
@@ -433,12 +419,7 @@ class TestBeamTargetReactionRate(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "nd_beam_ion": (1.0e9, 1.0e13),
-        "nd_target_ion": (1.0e18, 1.0e20),
-        "sigv_beam": (1.0e-23, 1.0e-20),
-        "vol_plasma": (100.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestAlphaPowerBeam(Tier1Contract):
@@ -458,7 +439,7 @@ class TestAlphaPowerBeam(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"beam_target_reaction_rate_value": (1.0e10, 1.0e15)}
+    fuzz = True
 
 
 class TestBeamFusionCrossSection(Tier1Contract):
@@ -485,7 +466,7 @@ class TestBeamFusionCrossSection(Tier1Contract):
         legacy_sample("cross-section-high-clamp", vrelsq=50000.0),  # e_beam_kev ~ 50340
     ]
 
-    fuzz_bounds = {"vrelsq": (2000.0, 8000.0)}  # e_beam_kev in [~2013, ~8054], mid arm
+    fuzz = True
 
 
 class TestHotBeamFusionReactionRateIntegrand(Tier1Contract):
@@ -507,4 +488,4 @@ class TestHotBeamFusionReactionRateIntegrand(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {"velocity_ratio": (0.05, 3.0), "critical_velocity": (1.0e5, 1.0e7)}
+    fuzz = True

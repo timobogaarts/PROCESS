@@ -40,10 +40,7 @@ class TestJcritRebco(Tier1Contract):
         legacy_sample("jcrit-rebco-reference", temp_conductor=4.75, b_conductor=7.0),
     ]
 
-    fuzz_bounds = {
-        "temp_conductor": (1.0, 85.0),
-        "b_conductor": (0.5, 25.0),
-    }
+    fuzz = True
 
 
 class TestBotturaScaling(Tier1Contract):
@@ -80,13 +77,7 @@ class TestBotturaScaling(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_conductor": (1.0, 15.5),
-        "b_conductor": (0.5, 32.0),
-        "epsilon": (-0.005, 0.0),
-        "b_c20max": (25.0, 35.0),
-        "temp_c0max": (14.0, 18.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "csc": 19922.0,
         "p": 0.63,
@@ -127,6 +118,8 @@ class TestItersc(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # a disagreement or non-finite value at the wider range
     fuzz_bounds = {
         "temp_conductor": (1.0, 15.5),
         "b_conductor": (0.5, 32.0),
@@ -166,13 +159,7 @@ class TestJcritNbti(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "temp_conductor": (1.0, 9.0),
-        "b_conductor": (0.5, 14.0),
-        "c0": (1.0e9, 2.0e10),
-        "b_c20max": (12.0, 18.0),
-        "temp_c0max": (7.0, 11.0),
-    }
+    fuzz = True
 
 
 class TestBi2212(Tier1Contract):
@@ -211,12 +198,7 @@ class TestBi2212(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_conductor": (6.0, 20.0),
-        "jstrand": (1.0e6, 5.0e7),
-        "temp_conductor": (1.0, 20.0),
-        "f_strain": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 class TestGlNbti(Tier1Contract):
@@ -244,6 +226,8 @@ class TestGlNbti(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference TypeError: float() argument must be a string or a real number, not 'complex'
     fuzz_bounds = {
         "temp_conductor": (1.0, 9.0),
         "b_conductor": (0.5, 12.0),
@@ -279,6 +263,8 @@ class TestGlRebco(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference TypeError: float() argument must be a string or a real number, not 'complex'
     fuzz_bounds = {
         "temp_conductor": (1.0, 8.0),
         "b_conductor": (0.5, 3.0),
@@ -309,6 +295,8 @@ class TestWesternSuperconductingNb3Sn(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # a value or finiteness disagreement at the wider range
     fuzz_bounds = {
         "temp_conductor": (1.0, 15.0),
         "b_conductor": (0.5, 26.0),
@@ -362,6 +350,8 @@ class TestHijcRebco(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference TypeError: '>' not supported between instances of 'complex' and 'float'
     fuzz_bounds = {
         "temp_conductor": (4.0, 60.0),
         "b_conductor": (2.0, 30.0),

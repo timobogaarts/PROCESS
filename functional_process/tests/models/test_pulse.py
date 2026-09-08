@@ -59,8 +59,4 @@ class TestCalculateBurnTime(Tier1Contract):
     # defect -- `test_outputs_finite`/`test_gradient_finite_at_zero` treat a value that
     # goes non-finite at the boundary as out of scope, not a failure, per
     # `_harness/contracts.py`).
-    fuzz_bounds = {
-        "vs_cs_pf_total_burn": (-200.0, 200.0),
-        "v_plasma_loop_burn": (0.01, 0.5),
-        "t_plant_pulse_fusion_ramp": (0.0, 10000.0),  # process/core/input.py:788
-    }
+    fuzz = True

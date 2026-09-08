@@ -162,11 +162,7 @@ class TestPlasmaAnglesArcs(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a": (0.5, 5.0),
-        "kappa": (1.6, 2.5),
-        "triang": (0.0, 0.3),
-    }
+    fuzz = True
 
 
 class TestPlasmaPoloidalPerimeter(Tier1Contract):
@@ -192,12 +188,7 @@ class TestPlasmaPoloidalPerimeter(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "xi": (1.0, 20.0),
-        "thetai": (0.1, 1.4),
-        "xo": (1.0, 20.0),
-        "thetao": (0.1, 1.4),
-    }
+    fuzz = True
 
 
 class TestPlasmaSurfaceArea(Tier1Contract):
@@ -223,14 +214,7 @@ class TestPlasmaSurfaceArea(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "xi": (1.0, 20.0),
-        "thetai": (0.1, 1.4),
-        "xo": (1.0, 20.0),
-        "thetao": (0.1, 1.4),
-    }
+    fuzz = True
 
 
 class TestPlasmaVolume(Tier1Contract):
@@ -256,14 +240,7 @@ class TestPlasmaVolume(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "xi": (1.0, 20.0),
-        "thetai": (0.1, 1.4),
-        "xo": (1.0, 20.0),
-        "thetao": (0.1, 1.4),
-    }
+    fuzz = True
 
 
 class TestPlasmaCrossSection(Tier1Contract):
@@ -287,12 +264,7 @@ class TestPlasmaCrossSection(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "xi": (1.0, 20.0),
-        "thetai": (0.1, 1.4),
-        "xo": (1.0, 20.0),
-        "thetao": (0.1, 1.4),
-    }
+    fuzz = True
 
 
 class TestSauterGeometry(Tier1Contract):
@@ -319,13 +291,7 @@ class TestSauterGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a": (0.5, 5.0),
-        "r0": (2.0, 20.0),
-        "kappa": (1.6, 2.5),
-        "triang": (0.0, 0.3),
-        "square": (-0.2, 0.2),
-    }
+    fuzz = True
 
 
 class TestCalculateGeometrySauter(Tier1Contract):
@@ -359,13 +325,7 @@ class TestCalculateGeometrySauter(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.6, 2.5),
-        "triang": (0.0, 0.3),
-        "plasma_square": (-0.2, 0.2),
-    }
+    fuzz = True
 
 
 class TestCalculateMinorRadius(Tier1Contract):
@@ -387,10 +347,7 @@ class TestCalculateMinorRadius(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "aspect": (1.5, 4.0),
-    }
+    fuzz = True
 
 
 class TestCalculateShapeIpdg89XPoint(Tier1Contract):
@@ -413,10 +370,7 @@ class TestCalculateShapeIpdg89XPoint(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "kappa": (1.6, 2.5),
-        "triang": (0.0, 0.3),
-    }
+    fuzz = True
 
 
 class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
@@ -463,11 +417,7 @@ class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "aspect": (2.6, 3.6),
-        "m_s_limit": (0.0, 0.5),
-        "triang": (0.0, 0.5),
-    }
+    fuzz = True
 
 
 class TestCalculateGeometryDoubleArc(Tier1Contract):
@@ -495,10 +445,4 @@ class TestCalculateGeometryDoubleArc(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "kappa": (1.6, 2.5),
-        "triang": (0.0, 0.3),
-        "f_vol_plasma": (0.5, 1.5),
-    }
+    fuzz = True

@@ -176,9 +176,7 @@ class TestDefaultAspectRatio(Tier1Contract):
         legacy_sample("default-aspect-helias5b", stella_config_aspect_ref=12.33),
     ]
 
-    fuzz_bounds = {
-        "stella_config_aspect_ref": (1.5, 30.0),
-    }
+    fuzz = True
 
 
 class TestStellaratorScalingFactors(Tier1Contract):
@@ -214,21 +212,7 @@ class TestStellaratorScalingFactors(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (1.0, 30.0),
-        "aspect": (1.5, 30.0),
-        "b_plasma_toroidal_on_axis": (1.0, 20.0),
-        "f_st_coil_aspect": (0.5, 3.0),
-        "stella_config_coilspermodule": (1.0, 20.0),
-        "stella_config_symmetry": (1.0, 10.0),
-        "stella_config_rmajor_ref": (1.0, 30.0),
-        "stella_config_rminor_ref": (0.1, 5.0),
-        "stella_config_aspect_ref": (1.5, 30.0),
-        "stella_config_bt_ref": (1.0, 20.0),
-        "stella_config_coil_rmajor": (1.0, 30.0),
-        "stella_config_coil_rminor": (0.1, 10.0),
-        "stella_config_min_plasma_coil_distance": (0.1, 5.0),
-    }
+    fuzz = True
 
 
 class TestStellaratorPlasmaGeometry(Tier1Contract):
@@ -253,10 +237,4 @@ class TestStellaratorPlasmaGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_st_rmajor": (0.1, 3.0),
-        "f_st_rminor": (0.1, 3.0),
-        "rminor": (0.1, 10.0),
-        "stella_config_vol_plasma": (1.0, 5000.0),
-        "stella_config_plasma_surface": (1.0, 5000.0),
-    }
+    fuzz = True

@@ -95,7 +95,7 @@ class TestDpaPerFpy(Tier1Contract):
     ported = calculate_dpa_per_fpy
 
     samples = [legacy_sample("dpa-per-fpy-round-numbers", p_fusion_total_mw=4.0e3)]
-    fuzz_bounds = {"p_fusion_total_mw": (100.0, 5000.0)}
+    fuzz = True
 
 
 def _reference_divertor_lifetime(adivflnc, pflux_div_heat_load_mw, life_plant):
@@ -121,11 +121,7 @@ class TestDivertorLifetime(Tier1Contract):
             life_plant=30.0,
         ),
     ]
-    fuzz_bounds = {
-        "adivflnc": (1.0, 200.0),
-        "pflux_div_heat_load_mw": (0.5, 20.0),
-        "life_plant": (20.0, 40.0),
-    }
+    fuzz = True
 
 
 def _reference_cp_lifetime_superconducting(
@@ -154,11 +150,7 @@ class TestCpLifetimeSuperconducting(Tier1Contract):
             life_plant=30.0,
         ),
     ]
-    fuzz_bounds = {
-        "neut_flux_cp": (1.0e13, 1.0e15),
-        "flu_tf_neutron_fast_max": (1.0e22, 1.0e24),
-        "life_plant": (20.0, 40.0),
-    }
+    fuzz = True
 
 
 def _reference_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant):
@@ -185,11 +177,7 @@ class TestCpLifetimeResistive(Tier1Contract):
             life_plant=30.0,
         ),
     ]
-    fuzz_bounds = {
-        "cpstflnc": (1.0, 50.0),
-        "pflux_fw_neutron_mw": (0.5, 20.0),
-        "life_plant": (20.0, 40.0),
-    }
+    fuzz = True
 
 
 def _reference_u_unplanned_magnets(
@@ -239,13 +227,7 @@ class TestUUnplannedMagnets(Tier1Contract):
             temp_margin=1.8,
         ),
     ]
-    fuzz_bounds = {
-        "temp_tf_superconductor_margin_min": (1.0, 2.5),
-        "temp_cs_superconductor_margin_min": (1.0, 2.5),
-        "t_plant_operational_total_yrs": (5.0, 40.0),
-        "conf_mag": (0.5, 1.0),
-        "temp_margin": (2.6, 5.0),
-    }
+    fuzz = True
 
 
 def _reference_u_unplanned_divertor(
@@ -290,10 +272,7 @@ class TestUUnplannedDivertor(Tier1Contract):
             div_nref=_defaults.div_nref,
         ),
     ]
-    fuzz_bounds = {
-        "life_div_fpy": (1.0, 1.9),
-        "t_plant_pulse_total": (2000.0, 20000.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "div_prob_fail": _defaults.div_prob_fail,
         "div_umain_time": _defaults.div_umain_time,
@@ -349,10 +328,7 @@ class TestUUnplannedFwbs(Tier1Contract):
             fwbs_nref=_defaults.fwbs_nref,
         ),
     ]
-    fuzz_bounds = {
-        "life_blkt_fpy": (1.0, 6.0),
-        "t_plant_pulse_total": (2000.0, 20000.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "fwbs_prob_fail": _defaults.fwbs_prob_fail,
         "fwbs_umain_time": _defaults.fwbs_umain_time,
@@ -377,7 +353,7 @@ class TestUUnplannedBop(Tier1Contract):
     samples = [
         legacy_sample("bop-round-numbers", t_plant_operational_total_yrs=25.0),
     ]
-    fuzz_bounds = {"t_plant_operational_total_yrs": (5.0, 40.0)}
+    fuzz = True
 
 
 _reference_u_unplanned_hcd = functools.partial(Availability.calc_u_unplanned_hcd)
@@ -439,11 +415,7 @@ class TestUUnplannedVacuum(Tier1Contract):
             redun_vac=calculate_redun_vac(40, 2.0),
         ),
     ]
-    fuzz_bounds = {
-        "t_plant_operational_total_yrs": (5.0, 28.0),
-        "life_plant": (29.0, 31.0),
-        "num_rh_systems": (2.0, 8.0),
-    }
+    fuzz = True
     fuzz_fixed = {"n_vac_pumps_high": 20, "redun_vac": calculate_redun_vac(20, 25.0)}
 
 
@@ -514,14 +486,7 @@ class TestBlanketLifetimeFpyAvail(Tier1Contract):
             ibkt_life=0,
         ),
     ]
-    fuzz_bounds = {
-        "life_fw_fpy": (0.5, 5.0),
-        "abktflnc": (1.0, 20.0),
-        "pflux_fw_neutron_mw": (0.5, 15.0),
-        "life_dpa": (10.0, 60.0),
-        "dpa_fpy": (5.0, 30.0),
-        "life_plant": (20.0, 40.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ibkt_life": 0}
 
 
@@ -564,13 +529,7 @@ class TestBlanketLifetimeFpySimple(Tier1Contract):
             ibkt_life=1,
         ),
     ]
-    fuzz_bounds = {
-        "abktflnc": (1.0, 20.0),
-        "pflux_fw_neutron_mw": (0.5, 15.0),
-        "life_dpa": (10.0, 60.0),
-        "dpa_fpy": (5.0, 30.0),
-        "life_plant": (20.0, 40.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ibkt_life": 0}
 
 
@@ -661,16 +620,7 @@ class TestUPlanned(Tier1Contract):
             ibkt_life=0,
         ),
     ]
-    fuzz_bounds = {
-        "p_fusion_total_mw": (500.0, 5000.0),
-        "abktflnc": (1.0, 20.0),
-        "pflux_fw_neutron_mw": (0.5, 15.0),
-        "life_dpa": (10.0, 60.0),
-        "adivflnc": (1.0, 30.0),
-        "pflux_div_heat_load_mw": (0.5, 15.0),
-        "life_plant": (20.0, 40.0),
-        "num_rh_systems": (2.0, 8.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ibkt_life": 0}
 
 
@@ -742,18 +692,7 @@ class TestWardTaylorAvailability(Tier1Contract):
             uuves=0.11,
         ),
     ]
-    fuzz_bounds = {
-        "t_div_replace_yrs": (0.05, 0.5),
-        "t_blkt_replace_yrs": (0.05, 0.5),
-        "tcomrepl": (0.1, 1.0),
-        "uubop": (0.01, 0.1),
-        "uucd": (0.01, 0.1),
-        "uudiv": (0.01, 0.1),
-        "uufuel": (0.01, 0.1),
-        "uufw": (0.01, 0.1),
-        "uumag": (0.01, 0.1),
-        "uuves": (0.01, 0.1),
-    }
+    fuzz = True
     fuzz_fixed = {"life_div_fpy": 30.0, "life_blkt_fpy": 30.0}
 
 
@@ -869,21 +808,7 @@ class TestAvail(Tier1Contract):
             itart=0,
         ),
     ]
-    fuzz_bounds = {
-        "p_fusion_total_mw": (500.0, 5000.0),
-        "life_fw_fpy": (0.5, 5.0),
-        "abktflnc": (1.0, 20.0),
-        "pflux_fw_neutron_mw": (0.5, 15.0),
-        "life_dpa": (10.0, 60.0),
-        "life_plant": (20.0, 40.0),
-        "pflux_div_heat_load_mw": (0.5, 15.0),
-        "adivflnc": (1.0, 30.0),
-        "t_plant_pulse_total": (2000.0, 20000.0),
-        "t_plant_pulse_burn": (500.0, 15000.0),
-        "f_t_plant_available": (0.3, 0.95),
-        "cplife": (5.0, 30.0),
-        "cplife_in": (5.0, 30.0),
-    }
+    fuzz = True
     # `itart = 0` for fuzzing: at `itart == 1` (exercised by the legacy samples above,
     # hand-checked against `calculate_cp_lifetime_*`) the reference recomputes `cplife`
     # from `.tfcoil.i_tf_sup`/`.fwbs.neut_flux_cp`/etc internally, which an independently
@@ -1057,6 +982,8 @@ class TestAvail2(Tier1Contract):
             itart=0,
         ),
     ]
+    # Narrower than the shared DOMAIN: widening gives
+    # a disagreement or non-finite value at the wider range
     fuzz_bounds = {
         "p_fusion_total_mw": (500.0, 5000.0),
         # `abktflnc`/`pflux_fw_neutron_mw` and `adivflnc`/`pflux_div_heat_load_mw` are
@@ -1281,6 +1208,8 @@ class TestAvailSt(Tier1Contract):
             itart=0,
         ),
     ]
+    # Narrower than the shared DOMAIN: widening gives
+    # a value or finiteness disagreement at the wider range
     fuzz_bounds = {
         # See `TestAvail2.fuzz_bounds`'s note on `abktflnc`/`pflux_fw_neutron_mw` and
         # `adivflnc`/`pflux_div_heat_load_mw` -- `avail_st`'s maintenance-cycle model
@@ -1364,11 +1293,7 @@ class TestCplifeLifetimeAdjustment(Tier1Contract):
             f_t_plant_available=0.6,
         ),
     ]
-    fuzz_bounds = {
-        "cplife": (1.0, 15.0),
-        "life_plant": (20.0, 40.0),
-        "f_t_plant_available": (0.3, 0.95),
-    }
+    fuzz = True
 
 
 def _reference_cplife_next(
@@ -1475,13 +1400,7 @@ class TestCplifeNext(Tier1Contract):
             itart=1,
         ),
     ]
-    fuzz_bounds = {
-        "cplife": (1.0, 15.0),
-        "neut_flux_cp": (3.0e14, 1.0e15),
-        "flu_tf_neutron_fast_max": (1.0e22, 3.0e22),
-        "life_plant": (25.0, 40.0),
-        "f_t_plant_available": (0.3, 0.95),
-    }
+    fuzz = True
     fuzz_fixed = {
         "cpstflnc": 20.0,
         "pflux_fw_neutron_mw": 5.0,

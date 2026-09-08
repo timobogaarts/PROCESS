@@ -21,6 +21,7 @@ import pytest
 # See functional_process/cottax/_harness/__init__.py.
 import functional_process
 import functional_process.cottax._harness  # noqa: F401
+from functional_process.cottax._harness.fuzz_domain import bounds_for
 from functional_process.cottax._harness.sampling import fuzz_samples
 
 _FUZZ_DEFAULT = 1
@@ -119,11 +120,22 @@ def pytest_generate_tests(metafunc):
 
     samples = list(getattr(metafunc.cls, "samples", ()))
 
-    bounds = getattr(metafunc.cls, "fuzz_bounds", None)
+    # Two ways to opt in. `fuzz = True` takes the arguments from the unit's own sample
+    # points and their ranges from the shared `DOMAIN`, so a contract does not repeat
+    # its parameter list; `fuzz_bounds` alone is the older, wholly explicit form, and
+    # still wins wherever both are given.
+    declared = getattr(metafunc.cls, "fuzz_bounds", None) or {}
+    fixed = getattr(metafunc.cls, "fuzz_fixed", None) or {}
+    if getattr(metafunc.cls, "fuzz", False):
+        names = dict.fromkeys(
+            list(declared) + [k for s in samples for k in s.kwargs if k not in fixed]
+        )
+    else:
+        names = dict.fromkeys(declared)
     count = metafunc.config.getoption("--fp-fuzz")
-    if bounds and count:
+    if names and count:
         samples += fuzz_samples(
-            bounds,
+            bounds_for(names, declared),
             count,
             metafunc.config.getoption("--fp-fuzz-seed"),
             fixed=getattr(metafunc.cls, "fuzz_fixed", None),
@@ -131,7 +143,8 @@ def pytest_generate_tests(metafunc):
 
     if not samples:
         pytest.fail(
-            f"{metafunc.cls.__name__} declares no samples and no fuzz_bounds — it "
+            f"{metafunc.cls.__name__} declares no samples, no fuzz_bounds and no "
+            f"`fuzz = True` — it "
             f"would pass without checking anything"
         )
 

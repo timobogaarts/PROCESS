@@ -128,14 +128,7 @@ class TestCrocoAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "j_tf_wp": (1e7, 4e7),
-        "c_tf_turn": (4e4, 1.5e5),
-        "dx_tf_turn_steel": (4e-3, 1.2e-2),
-        "dx_tf_turn_insulation": (4e-4, 2e-3),
-        "layer_ins": (0.0, 2e-3),
-        "a_tf_wp_no_insulation": (0.3, 1.2),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +170,7 @@ class TestCrocoCableSpaceProperties(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dx_tf_turn_conduit_full_average": (0.03, 0.09),
-        "dx_tf_turn_steel": (4e-3, 1.0e-2),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +276,7 @@ class TestCrocoCableGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "dia_croco_strand": (8e-3, 1.6e-2),
-        "dx_croco_strand_copper": (1.0e-3, 2.4e-3),
-        "dx_hts_tape_rebco": (8e-7, 1.2e-6),
-        "dx_hts_tape_copper": (1.8e-4, 2.2e-4),
-        "dx_hts_tape_hastelloy": (9e-6, 1.1e-5),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -377,18 +361,7 @@ class TestCrocoInboardAreasAndFractions(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
-        "n_tf_coil_turns": (50.0, 400.0),
-        "f_a_tf_turn_cable_space_extra_void": (0.0, 0.1),
-        "a_tf_turn_insulation": (5e-5, 5e-4),
-        "a_tf_turn_steel": (5e-4, 4e-3),
-        "a_tf_coil_inboard_case": (0.3, 3.0),
-        "n_tf_coils": (8.0, 24.0),
-        "a_tf_inboard_total": (5.0, 40.0),
-        "a_tf_wp_ground_insulation": (0.005, 0.1),
-        "a_tf_croco_strand": (5e-5, 3e-4),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -426,10 +399,7 @@ class TestCrocoTurnCableSpaceCoolingFraction(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
-        "a_tf_croco_strand": (5e-5, 1.5e-4),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -513,16 +483,7 @@ class TestHazeltonZhaiRebcoCrocoSuperconductorProperties(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a_tf_turn": (1e-3, 8e-3),
-        "b_tf_inboard_peak": (4.0, 20.0),
-        "cur_tf_turn": (4e4, 1.5e5),
-        "temp_tf_peak": (4.0, 20.0),
-        "dr_tf_hts_tape": (3e-3, 8e-3),
-        "dx_tf_hts_tape_rebco": (8e-7, 1.2e-6),
-        "dx_tf_hts_tape_total": (1e-4, 3e-4),
-        "a_tf_croco_strand": (5e-5, 3e-4),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +553,8 @@ class TestHazeltonZhaiRebcoCrocoTemperatureMargin(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference RuntimeError: Failed to converge after 50 iterations, value is nan.
     fuzz_bounds = {
         "j_superconductor": (5e7, 2e8),
         "b_tf_inboard_peak": (8.0, 16.0),

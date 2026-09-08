@@ -919,10 +919,7 @@ class TestEnforceBootstrapCurrentFractionMax(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_c_plasma_bootstrap": (0.1, 0.6),
-        "f_c_plasma_bootstrap_max": (0.8, 0.99),
-    }
+    fuzz = True
 
 
 class TestDiamagneticFractionScene(Tier1Contract):
@@ -956,11 +953,7 @@ class TestDiamagneticFractionScene(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "beta": (0.02, 0.35),
-        "q95": (2.5, 8.0),
-        "q0": (0.8, 3.0),
-    }
+    fuzz = True
 
 
 class TestPsFractionScene(Tier1Contract):
@@ -983,7 +976,7 @@ class TestPsFractionScene(Tier1Contract):
         legacy_sample("ps_fraction_scene-unit_test", beta=0.15),
     ]
 
-    fuzz_bounds = {"beta": (0.02, 0.35)}
+    fuzz = True
 
 
 class TestCalculatePlasmaCurrentFractions(Tier1Contract):
@@ -1013,12 +1006,7 @@ class TestCalculatePlasmaCurrentFractions(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "f_c_plasma_bootstrap": (0.10, 0.30),
-        "f_c_plasma_diamagnetic": (0.0, 0.02),
-        "f_c_plasma_pfirsch_schluter": (0.0, 0.02),
-        "f_c_plasma_non_inductive": (0.50, 0.80),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------

@@ -420,3 +420,13 @@ initial keyword-swept register, not proven complete.
   **Do not write a fourth codemod for this**; the remaining 8,802 lines are the cost of
   having a real oracle, and the ~1,100 lines two more rules might reach are not worth
   making the fixtures less explicit.
+- **[found 2026-09-08, unexamined] Two disagreements that only wider fuzzing sees.**
+  `.current_drive` ECRH gamma differs from PROCESS by **3.0e-05 relative** at
+  `b_plasma_toroidal_on_axis = 1.63 T`, `rmajor = 7.30 m`,
+  `nd_plasma_electrons_vol_avg = 5.1e20` -- far outside the range that contract used to
+  fuzz, and invisible until it was widened. And `TestPFCoilChain` /
+  `...CsWstNb3Sn` fail at `--fp-fuzz 8` with a **sign flip** (`port = -191.6` against
+  `process = +192.1`, `port = 36691` against `-36691`), which is an SVD singular-vector
+  sign convention amplified through the coil sizing and mass sums. **The second is
+  pre-existing** -- an extracted HEAD reproduces both failures exactly -- so neither is
+  caused by the shared domain; the domain is what made them visible.

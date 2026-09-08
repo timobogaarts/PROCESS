@@ -211,12 +211,7 @@ class TestCalculateSolenoidSelfInductance(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a": (0.5, 6.0),
-        "b": (2.0, 24.0),
-        "c": (0.05, 2.0),
-        "n": (100.0, 1.0e4),
-    }
+    fuzz = True
 
 
 class TestCalculatePfCsPlasmaInductances(Tier1Contract):

@@ -293,6 +293,8 @@ class TestCalculateFirstWallOutputs(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
     fuzz_bounds = {
         "z_plasma_xpoint_lower": (-10.0, -1.0),
         "dz_xpoint_divertor": (0.1, 2.0),
@@ -425,6 +427,8 @@ class TestCalculateFirstWallOutputsDoubleNull(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
     fuzz_bounds = {
         "z_plasma_xpoint_lower": (3.0, 7.0),
         "dz_xpoint_divertor": (0.1, 2.0),
@@ -479,10 +483,7 @@ class TestSetFwGeometry(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "radius_fw_channel": (0.002, 0.02),
-        "dr_fw_wall": (0.001, 0.01),
-    }
+    fuzz = True
 
 
 class TestCalculateDshapedFirstWallAreas(Tier1Contract):
@@ -618,6 +619,8 @@ class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference ProcessValueError: fhole+f_ster_div_single+f_a_fw_outboard_hcd is too high for
     fuzz_bounds = {
         "z_plasma_xpoint_lower": (3.0, 7.0),
         "dz_xpoint_divertor": (0.1, 2.0),
@@ -730,9 +733,4 @@ class TestRadiatedWallLoadScaledPlasmaSurface(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "ffwal": (0.8, 1.2),
-        "p_plasma_rad_mw": (10.0, 1000.0),
-        "a_plasma_surface": (100.0, 2000.0),
-        "f_fw_rad_max": (0.5, 3.0),
-    }
+    fuzz = True

@@ -137,34 +137,7 @@ class TestQuenchProtection(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (5.0, 30.0),
-        "rminor": (0.5, 5.0),
-        "dr_fw_plasma_gap_inboard": (0.005, 0.1),
-        "dr_fw_inboard": (0.005, 0.1),
-        "dr_blkt_inboard": (0.1, 2.0),
-        "dr_shld_blkt_gap": (0.005, 0.2),
-        "dr_shld_inboard": (0.05, 1.0),
-        "dr_fw_plasma_gap_outboard": (0.005, 0.1),
-        "dr_fw_outboard": (0.005, 0.1),
-        "dr_blkt_outboard": (0.1, 2.0),
-        "dr_shld_outboard": (0.05, 1.0),
-        "b_plasma_toroidal_on_axis": (1.0, 20.0),
-        "c_tf_total": (1.0e7, 1.0e9),
-        "t_tf_superconductor_quench": (1.0, 60.0),
-        "dr_vv_inboard": (0.05, 1.0),
-        "dr_vv_outboard": (0.05, 1.0),
-        "t_tf_quench_detection": (0.1, 20.0),
-        "f_a_tf_turn_cable_copper": (0.1, 0.95),
-        "f_a_tf_turn_cable_space_extra_void": (0.01, 0.9),
-        "tftmp": (1.0, 20.0),
-        "a_tf_turn_cable_space_no_void": (1.0e-4, 0.1),
-        "dx_tf_turn_general": (0.005, 0.5),
-        "a_tf_wp_conductor": (0.01, 5.0),
-        "e_tf_magnetic_stored_total_gj": (1.0, 1.0e4),
-        "n_tf_coils": (1.0, 100.0),
-        "c_tf_turn": (100.0, 1.0e6),
-    }
+    fuzz = True
 
 
 class TestMaxDumpVoltage(Tier1Contract):
@@ -184,11 +157,7 @@ class TestMaxDumpVoltage(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "tf_energy_stored": (1.0e6, 1.0e11),
-        "t_dump": (0.5, 100.0),
-        "current": (1.0e3, 1.0e7),
-    }
+    fuzz = True
 
 
 class TestQuenchProtectionCurrentDensity(Tier1Contract):
@@ -212,12 +181,4 @@ class TestQuenchProtectionCurrentDensity(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "tau_quench": (1.0, 60.0),
-        "t_detect": (0.0, 20.0),
-        "f_cu": (0.1, 0.95),
-        "f_cond": (0.1, 0.95),
-        "temp": (4.0, 124.0),
-        "a_cable": (1.0e-4, 0.1),
-        "a_turn": (1.0e-4, 0.1),
-    }
+    fuzz = True

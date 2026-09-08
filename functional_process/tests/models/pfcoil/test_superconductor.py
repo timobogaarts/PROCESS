@@ -421,12 +421,7 @@ class TestPFStrandCriticalCurrentDensity(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_pf_coil_peak": (0.5, 6.0),
-        "bpf2": (0.5, 6.0),
-        "temp_pf_peak_field": (4.0, 6.0),
-        "fcupfsu": (0.4, 0.85),
-    }
+    fuzz = True
 
 
 # ---------------------------------------------------------------------------------
@@ -549,15 +544,4 @@ class TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_pf_coil_peak": (0.5, 6.0),
-        "bpf2": (0.5, 6.0),
-        # Well under `tc0m = 92 K`: above it PROCESS's `(1 - T/T_c0) ** 1.4` returns a
-        # *complex* and the port returns `nan`, a type-level disagreement neither side
-        # is trying to reproduce (`TestHijcRebco`'s docstring, and `hijc_rebco`'s).
-        "temp_pf_peak_field": (4.0, 40.0),
-        "fcupfsu": (0.4, 0.85),
-        "dr_hts_tape": (2.0e-3, 8.0e-3),
-        "dx_hts_tape_rebco": (5.0e-7, 2.0e-6),
-        "dx_hts_tape_total": (5.0e-5, 3.0e-4),
-    }
+    fuzz = True

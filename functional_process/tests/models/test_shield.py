@@ -197,11 +197,7 @@ class TestCalculateShieldHalfHeightDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_plasma_xpoint_lower": (1.0, 8.0),
-        "dz_xpoint_divertor": (0.1, 1.0),
-        "dz_divertor": (0.1, 1.0),
-    }
+    fuzz = True
 
 
 class TestCalculateShieldHalfHeightSingleNull(Tier1Contract):
@@ -228,17 +224,7 @@ class TestCalculateShieldHalfHeightSingleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "z_plasma_xpoint_lower": (1.0, 8.0),
-        "dz_xpoint_divertor": (0.1, 1.0),
-        "dz_divertor": (0.1, 1.0),
-        "z_plasma_xpoint_upper": (1.0, 8.0),
-        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
-        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
-        "dr_fw_inboard": (0.01, 0.2),
-        "dr_fw_outboard": (0.01, 0.2),
-        "dz_blkt_upper": (0.0, 0.6),
-    }
+    fuzz = True
 
 
 class TestCalculateEllipticalShieldVolumes(Tier1Contract):
@@ -263,17 +249,7 @@ class TestCalculateEllipticalShieldVolumes(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_shld_inboard_inner": (2.5, 3.5),
-        "r_shld_outboard_outer": (12.0, 15.0),
-        "rmajor": (6.0, 10.0),
-        "triang": (0.0, 0.3),
-        "dr_shld_inboard": (0.2, 0.4),
-        "rminor": (2.0, 3.0),
-        "dz_shld_half": (2.0, 6.0),
-        "dr_shld_outboard": (0.5, 1.0),
-        "dz_shld_upper": (0.1, 0.8),
-    }
+    fuzz = True
 
 
 class TestCalculateDshapedShieldVolumes(Tier1Contract):
@@ -307,20 +283,7 @@ class TestCalculateDshapedShieldVolumes(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "r_shld_inboard_inner": (2.5, 3.5),
-        "dr_shld_inboard": (0.2, 0.4),
-        "dr_fw_inboard": (0.01, 0.1),
-        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
-        "rminor": (2.0, 3.0),
-        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
-        "dr_fw_outboard": (0.01, 0.1),
-        "dr_blkt_inboard": (0.1, 0.6),
-        "dr_blkt_outboard": (0.1, 0.8),
-        "dz_shld_half": (2.0, 6.0),
-        "dr_shld_outboard": (0.5, 1.0),
-        "dz_shld_upper": (0.1, 0.8),
-    }
+    fuzz = True
 
 
 class TestCalculateShieldVolumesElliptical(Tier1Contract):
@@ -360,6 +323,8 @@ class TestCalculateShieldVolumesElliptical(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference AssertionError: the fixed half-height inputs in this adapter must reproduce th
     fuzz_bounds = {
         "r_shld_inboard_inner": (2.5, 3.5),
         "r_shld_outboard_outer": (12.0, 15.0),
@@ -506,6 +471,8 @@ class TestCalculateShieldVolumesDshaped(Tier1Contract):
         ),
     ]
 
+    # Narrower than the shared DOMAIN: widening gives
+    # reference AssertionError: the fixed half-height inputs in this adapter must reproduce th
     fuzz_bounds = {
         "r_shld_inboard_inner": (2.5, 3.5),
         "dr_shld_inboard": (0.2, 0.4),

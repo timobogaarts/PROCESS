@@ -115,10 +115,7 @@ class TestEcrhHeating(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_primary_extra_heat_mw": (0.1, 200.0),
-        "eta_ecrh_injector_wall_plug": (0.1, 0.9),
-    }
+    fuzz = True
 
 
 class TestLowhybHeating(Tier1Contract):
@@ -136,10 +133,7 @@ class TestLowhybHeating(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_primary_extra_heat_mw": (0.1, 200.0),
-        "eta_lowhyb_injector_wall_plug": (0.1, 0.9),
-    }
+    fuzz = True
 
 
 class TestInjectedPowerTotal(Tier1Contract):
@@ -157,10 +151,7 @@ class TestInjectedPowerTotal(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_injected_electrons_mw": (0.0, 200.0),
-        "p_hcd_injected_ions_mw": (0.0, 200.0),
-    }
+    fuzz = True
 
 
 class TestBeamCurrent(Tier1Contract):
@@ -183,10 +174,7 @@ class TestBeamCurrent(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_hcd_beam_injected_total_mw": (1.0, 200.0),
-        "e_beam_kev": (10.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestFusionGain(Tier1Contract):
@@ -213,9 +201,4 @@ class TestFusionGain(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "p_fusion_total_mw": (1.0, 2000.0),
-        "p_hcd_injected_total_mw": (0.0, 200.0),
-        "p_beam_orbit_loss_mw": (0.0, 50.0),
-        "p_plasma_ohmic_mw": (0.0, 5.0),
-    }
+    fuzz = True

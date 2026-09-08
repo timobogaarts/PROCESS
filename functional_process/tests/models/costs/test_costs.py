@@ -275,13 +275,7 @@ class TestConvertFpyToCalendar(Tier1Contract):
             cplife=10.0,
         ),
     ]
-    fuzz_bounds = {
-        "life_blkt_fpy": (1.0, 50.0),
-        "life_plant": (10.0, 40.0),
-        "f_t_plant_available": (0.5, 1.0),
-        "life_div_fpy": (1.0, 50.0),
-        "cplife": (1.0, 50.0),
-    }
+    fuzz = True
     fuzz_fixed = {"itart": 0}
 
 
@@ -345,29 +339,7 @@ class TestStructuresCost(Tier1Contract):
             cturbb=100.0,
         ),
     ]
-    fuzz_bounds = {
-        "csi": (1.0, 50.0),
-        "cland": (1.0, 50.0),
-        "ucrb": (100.0, 800.0),
-        "rbvol": (1.0e4, 1.0e6),
-        "UCMB": (100.0, 500.0),
-        "rmbvol": (1.0e4, 1.0e5),
-        "UCWS": (100.0, 800.0),
-        "wsvol": (1.0e3, 5.0e4),
-        "UCTR": (100.0, 800.0),
-        "triv": (1.0e3, 1.0e5),
-        "UCEL": (100.0, 800.0),
-        "elevol": (1.0e3, 5.0e4),
-        "UCAD": (50.0, 400.0),
-        "admvol": (1.0e3, 5.0e4),
-        "UCCO": (100.0, 800.0),
-        "convol": (1.0e3, 3.0e4),
-        "UCSH": (50.0, 400.0),
-        "shovol": (1.0e3, 3.0e4),
-        "UCCR": (100.0, 800.0),
-        "cryvol": (1.0e3, 5.0e4),
-        "cturbb": (10.0, 500.0),
-    }
+    fuzz = True
     fuzz_fixed = {"lsa": 4, "ireactor": 1}
 
 
@@ -395,7 +367,7 @@ class TestIndirectCosts(Tier1Contract):
             fcontng=0.195,
         ),
     ]
-    fuzz_bounds = {"cdirt": (100.0, 1.0e4), "cowner": (0.0, 0.5), "fcontng": (0.0, 0.5)}
+    fuzz = True
     fuzz_fixed = {"cfind": [0.244, 0.244, 0.244, 0.29], "lsa": 4}
 
 
@@ -406,7 +378,7 @@ class TestReactorStructureCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", gsmass=5.0e5, UCGSS=35.0, lsa=4, fkind=1.0)]
-    fuzz_bounds = {"gsmass": (1.0e4, 1.0e6), "UCGSS": (10.0, 100.0), "fkind": (0.5, 1.0)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -417,7 +389,7 @@ class TestVacuumVesselAssemblyCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", m_vv=9.0e6, uccryo=32.0, lsa=4, fkind=1.0)]
-    fuzz_bounds = {"m_vv": (1.0e5, 2.0e7), "uccryo": (10.0, 100.0), "fkind": (0.5, 1.0)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -461,11 +433,7 @@ class TestDivertorCost(Tier1Contract):
             ifueltyp=0,
         ),
     ]
-    fuzz_bounds = {
-        "a_div_surface_total": (10.0, 1000.0),
-        "ucdiv": (1.0e4, 1.0e6),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "ifueltyp": 0}
 
 
@@ -511,21 +479,7 @@ class TestVacuumSystemCost(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "n_vac_pumps_high": (1.0, 20.0),
-        "UCCPMP": (1.0e4, 1.0e6),
-        "UCTPMP": (1.0e4, 1.0e6),
-        "n_vv_vacuum_ducts": (1.0, 20.0),
-        "UCBPMP": (1.0e3, 1.0e5),
-        "dlscal": (0.1, 10.0),
-        "UCDUCT": (1.0e3, 1.0e5),
-        "dia_vv_vacuum_ducts": (0.1, 5.0),
-        "UCVALV": (1.0e4, 1.0e6),
-        "m_vv_vacuum_duct_shield": (1.0e2, 5.0e4),
-        "UCVDSH": (10.0, 500.0),
-        "UCVIAC": (1.0e6, 5.0e7),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_vacuum_pump_type": 0}
 
 
@@ -579,25 +533,7 @@ class TestTfCoilPowerConditioningCost(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "uctfps": (1.0e3, 1.0e5),
-        "tfckw": (1.0e2, 1.0e4),
-        "tfcmw": (1.0, 200.0),
-        "uctfbr": (1.0e5, 5.0e6),
-        "n_tf_coils": (10.0, 24.0),
-        "c_tf_turn": (1.0e3, 1.0e5),
-        "v_tf_coil_dump_quench_kv": (1.0, 50.0),
-        "uctfsw": (1.0e3, 1.0e6),
-        "UCTFDR": (1.0e-4, 1.0e-2),
-        "e_tf_magnetic_stored_total_gj": (1.0, 200.0),
-        "UCTFGR": (1.0e3, 1.0e6),
-        "UCTFIC": (1.0e2, 1.0e5),
-        "uctfbus": (0.1, 10.0),
-        "m_tf_bus": (1.0e2, 5.0e4),
-        "ucbus": (100.0, 1000.0),
-        "len_tf_bus": (10.0, 1000.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_tf_sup": 1}
 
 
@@ -644,23 +580,7 @@ class TestPfCoilPowerConditioningCost(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "ucpfps": (1.0e3, 1.0e5),
-        "peakmva": (10.0, 1000.0),
-        "ucpfic": (1.0e3, 1.0e5),
-        "pfckts": (1.0, 30.0),
-        "ucpfb": (1.0e3, 1.0e5),
-        "spfbusl": (10.0, 1000.0),
-        "acptmax": (1.0e3, 1.0e5),
-        "ucpfbs": (1.0e4, 1.0e6),
-        "srcktpm": (1.0e3, 1.0e5),
-        "ucpfbk": (1.0e3, 1.0e5),
-        "vpfskv": (1.0, 50.0),
-        "ucpfdr1": (1.0e3, 1.0e5),
-        "ensxpfm": (10.0, 5.0e3),
-        "ucpfcb": (1.0e4, 1.0e6),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
 
 
 class TestReactorCoolingSystemCost(Tier1Contract):
@@ -697,15 +617,7 @@ class TestReactorCoolingSystemCost(Tier1Contract):
             p_plant_primary_heat_mw=1500.0,
         ),
     ]
-    fuzz_bounds = {
-        "p_fw_div_heat_deposited_mw": (10.0, 1000.0),
-        "p_blkt_nuclear_heat_total_mw": (10.0, 1000.0),
-        "p_shld_nuclear_heat_mw": (1.0, 200.0),
-        "fkind": (0.5, 1.0),
-        "UCPHX": (1.0, 100.0),
-        "n_primary_heat_exchangers": (1.0, 6.0),
-        "p_plant_primary_heat_mw": (100.0, 3000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"uchts": [15.3, 19.1], "i_blkt_coolant_type": 1, "lsa": 4}
 
 
@@ -715,7 +627,7 @@ class TestFuellingSystemCost(Tier1Contract):
     ported = calculate_fuelling_system_cost
 
     samples = [legacy_sample("nominal", ucf1=2.23e7, fkind=1.0)]
-    fuzz_bounds = {"ucf1": (1.0e6, 5.0e7), "fkind": (0.5, 1.0)}
+    fuzz = True
 
 
 class TestNuclearBuildingVentilationCost(Tier1Contract):
@@ -726,12 +638,7 @@ class TestNuclearBuildingVentilationCost(Tier1Contract):
     samples = [
         legacy_sample("nominal", UCNBV=1.0e6, volrci=1.0e5, wsvol=1.0e4, fkind=1.0)
     ]
-    fuzz_bounds = {
-        "UCNBV": (1.0e5, 5.0e6),
-        "volrci": (1.0e4, 5.0e5),
-        "wsvol": (1.0e3, 5.0e4),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
 
 
 class TestInstrumentationAndControlCost(Tier1Contract):
@@ -740,7 +647,7 @@ class TestInstrumentationAndControlCost(Tier1Contract):
     ported = calculate_instrumentation_and_control_cost
 
     samples = [legacy_sample("nominal", uciac=4.0e7, fkind=1.0)]
-    fuzz_bounds = {"uciac": (1.0e6, 1.0e8), "fkind": (0.5, 1.0)}
+    fuzz = True
 
 
 class TestMaintenanceEquipmentCost(Tier1Contract):
@@ -749,7 +656,7 @@ class TestMaintenanceEquipmentCost(Tier1Contract):
     ported = calculate_maintenance_equipment_cost
 
     samples = [legacy_sample("nominal", ucme=1.25e8, fkind=1.0)]
-    fuzz_bounds = {"ucme": (1.0e7, 5.0e8), "fkind": (0.5, 1.0)}
+    fuzz = True
 
 
 class TestTurbinePlantEquipmentCost(Tier1Contract):
@@ -774,7 +681,7 @@ class TestTurbinePlantEquipmentCost(Tier1Contract):
             p_plant_electric_gross_mw=1200.0,
         ),
     ]
-    fuzz_bounds = {"p_plant_electric_gross_mw": (100.0, 3000.0)}
+    fuzz = True
     fuzz_fixed = {"ireactor": 1, "ucturb": [230.0e6, 245.0e6], "i_blkt_coolant_type": 1}
 
 
@@ -785,7 +692,7 @@ class TestSwitchyardCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", UCSWYD=1.9e7, lsa=4)]
-    fuzz_bounds = {"UCSWYD": (1.0e6, 5.0e7)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -805,12 +712,7 @@ class TestTransformersCost(Tier1Contract):
             lsa=4,
         )
     ]
-    fuzz_bounds = {
-        "UCPP": (10.0, 200.0),
-        "pacpmw": (1.0, 500.0),
-        "UCAP": (1.0, 100.0),
-        "p_plant_electric_base_total_mw": (1.0, 100.0),
-    }
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -821,7 +723,7 @@ class TestLowVoltageCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", UCLV=265.0, tlvpmw=10.0, lsa=4)]
-    fuzz_bounds = {"UCLV": (50.0, 500.0), "tlvpmw": (0.1, 100.0)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -832,7 +734,7 @@ class TestDieselGeneratorsCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", UCDGEN=1.7e6, lsa=4)]
-    fuzz_bounds = {"UCDGEN": (1.0e5, 5.0e6)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -843,7 +745,7 @@ class TestAuxiliaryFacilityPowerCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", UCAF=1.5e6, lsa=4)]
-    fuzz_bounds = {"UCAF": (1.0e5, 5.0e6)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -855,13 +757,7 @@ class TestElectricPlantEquipmentCost(Tier1Contract):
     samples = [
         legacy_sample("nominal", c241=10.0, c242=15.0, c243=8.0, c244=6.0, c245=2.0)
     ]
-    fuzz_bounds = {
-        "c241": (0.0, 100.0),
-        "c242": (0.0, 100.0),
-        "c243": (0.0, 100.0),
-        "c244": (0.0, 100.0),
-        "c245": (0.0, 100.0),
-    }
+    fuzz = True
 
 
 class TestMiscPlantEquipmentCost(Tier1Contract):
@@ -871,7 +767,7 @@ class TestMiscPlantEquipmentCost(Tier1Contract):
     static_argnames = ("lsa",)
 
     samples = [legacy_sample("nominal", ucmisc=2.5e7, lsa=4)]
-    fuzz_bounds = {"ucmisc": (1.0e6, 1.0e8)}
+    fuzz = True
     fuzz_fixed = {"lsa": 4}
 
 
@@ -905,14 +801,7 @@ class TestHeatRejectionCost(Tier1Contract):
             lsa=4,
         ),
     ]
-    fuzz_bounds = {
-        "p_fusion_total_mw": (100.0, 5000.0),
-        "p_hcd_electric_total_mw": (1.0, 500.0),
-        "tfcmw": (1.0, 200.0),
-        "p_plant_primary_heat_mw": (100.0, 3000.0),
-        "p_plant_electric_gross_mw": (100.0, 2000.0),
-        "uchrs": (1.0e6, 5.0e7),
-    }
+    fuzz = True
     fuzz_fixed = {"ireactor": 1, "lsa": 4}
 
 
@@ -1353,13 +1242,7 @@ class TestFirstWallCost(Tier1Contract):
             ifueltyp=2,
         ),
     ]
-    fuzz_bounds = {
-        "UCFWA": (1.0e4, 1.0e5),
-        "UCFWS": (1.0e4, 1.0e5),
-        "a_fw_total": (100.0, 5000.0),
-        "UCFWPS": (1.0e6, 1.0e8),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2, "ifueltyp": 0}
 
 
@@ -1416,17 +1299,7 @@ class TestBlanketCost(Tier1Contract):
             ifueltyp=2,
         ),
     ]
-    fuzz_bounds = {
-        "m_blkt_beryllium": (0.0, 5.0e6),
-        "ucblbe": (100.0, 500.0),
-        "m_blkt_li2o": (0.0, 5.0e6),
-        "ucblli2o": (100.0, 1000.0),
-        "m_blkt_steel_total": (0.0, 5.0e6),
-        "ucblss": (50.0, 200.0),
-        "m_blkt_vanadium": (0.0, 5.0e5),
-        "ucblvd": (100.0, 500.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2, "ifueltyp": 0}
 
 
@@ -1448,13 +1321,7 @@ class TestShieldCost(Tier1Contract):
             fkind=1.0,
         )
     ]
-    fuzz_bounds = {
-        "whtshld": (1.0e5, 1.0e7),
-        "ucshld": (10.0, 100.0),
-        "wpenshld": (1.0e5, 1.0e7),
-        "ucpens": (10.0, 100.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2}
 
 
@@ -1468,13 +1335,7 @@ class TestReactorCost(Tier1Contract):
             "nominal", c2211=277.2, c2212=531.5, c2213=217.3, c2214=0.0, c2215=22.6
         )
     ]
-    fuzz_bounds = {
-        "c2211": (0.0, 1000.0),
-        "c2212": (0.0, 1000.0),
-        "c2213": (0.0, 1000.0),
-        "c2214": (0.0, 1000.0),
-        "c2215": (0.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestTfMagnetCostSuperconducting(Tier1Contract):
@@ -1537,25 +1398,7 @@ class TestTfMagnetCostSuperconducting(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "m_tf_coil_superconductor": (1.0e4, 1.0e6),
-        "len_tf_coil": (10.0, 200.0),
-        "n_tf_coil_turns": (10.0, 500.0),
-        "j_crit_str_tf": (1.0e8, 1.0e9),
-        "uccu": (10.0, 200.0),
-        "m_tf_coil_copper": (1.0e4, 1.0e6),
-        "cconshtf": (10.0, 200.0),
-        "cconfix": (10.0, 200.0),
-        "n_tf_coils": (10.0, 60.0),
-        "ucwindtf": (100.0, 1000.0),
-        "m_tf_coil_case": (1.0e4, 1.0e6),
-        "uccase": (10.0, 200.0),
-        "aintmass": (1.0e5, 1.0e7),
-        "UCINT": (10.0, 100.0),
-        "clgsmass": (1.0e5, 1.0e7),
-        "UCGSS": (10.0, 100.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "supercond_cost_model": 0,
         "lsa": 2,
@@ -1607,13 +1450,7 @@ class TestTfMagnetCostResistive(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "whtcp": (1.0e4, 1.0e7),
-        "uccpcl1": (50.0, 500.0),
-        "whttflgs": (1.0e4, 1.0e7),
-        "uccpclb": (50.0, 500.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"lsa": 2, "itart": 0, "ifueltyp": 0}
 
 
@@ -1776,23 +1613,7 @@ class TestPfMagnetCost(Tier1Contract):
             fkind=1.0,
         ),
     ]
-    fuzz_bounds = {
-        "cconshpf": (10.0, 200.0),
-        "fcupfsu": (0.1, 0.9),
-        "j_crit_str_pf": (1.0e8, 1.0e9),
-        "uccu": (10.0, 200.0),
-        "cconfix": (10.0, 200.0),
-        "a_cs_cable_space": (0.01, 1.0),
-        "f_a_cs_void": (0.1, 0.5),
-        "fcuohsu": (0.1, 0.9),
-        "j_crit_str_cs": (1.0e8, 1.0e9),
-        "ucwindpf": (100.0, 1000.0),
-        "uccase": (10.0, 200.0),
-        "m_pf_coil_structure_total": (0.0, 5.0e6),
-        "ucfnc": (10.0, 100.0),
-        "fncmass": (0.0, 5.0e6),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "n_cs_pf_coils": 4,
         "iohcl": 1,
@@ -1823,11 +1644,7 @@ class TestMagnetsCost(Tier1Contract):
         legacy_sample("magnetic", ife=0, c2221=989.5, c2222=0.0, c2223=952.2),
         legacy_sample("ife", ife=1, c2221=989.5, c2222=0.0, c2223=952.2),
     ]
-    fuzz_bounds = {
-        "c2221": (0.0, 5000.0),
-        "c2222": (0.0, 5000.0),
-        "c2223": (0.0, 5000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0}
 
 
@@ -1884,17 +1701,7 @@ class TestPowerInjectionCost(Tier1Contract):
             fkind=0.8,
         ),
     ]
-    fuzz_bounds = {
-        "ucech": (0.5, 10.0),
-        "p_hcd_ecrh_injected_total_mw": (0.0, 200.0),
-        "uclh": (0.5, 10.0),
-        "ucich": (0.5, 10.0),
-        "p_hcd_lowhyb_injected_total_mw": (0.0, 200.0),
-        "ucnbi": (0.5, 10.0),
-        "p_beam_injected_mw": (0.0, 200.0),
-        "fcdfuel": (0.01, 0.5),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "i_hcd_primary": 5, "ifueltyp": 0}
 
 
@@ -1927,10 +1734,7 @@ class TestEnergyStorageCost(Tier1Contract):
             fkind=0.8,
         ),
     ]
-    fuzz_bounds = {
-        "p_plant_electric_net_mw": (100.0, 2000.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"i_pulsed_plant": 0, "istore": 1}
 
 
@@ -1944,11 +1748,7 @@ class TestPowerConditioningCost(Tier1Contract):
         legacy_sample("magnetic", ife=0, c2251=330.8, c2252=0.0, c2253=0.0),
         legacy_sample("ife", ife=1, c2251=330.8, c2252=0.0, c2253=0.0),
     ]
-    fuzz_bounds = {
-        "c2251": (0.0, 1000.0),
-        "c2252": (0.0, 1000.0),
-        "c2253": (0.0, 1000.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0}
 
 
@@ -1972,15 +1772,7 @@ class TestAuxiliaryComponentCoolingCost(Tier1Contract):
             fkind=1.0,
         )
     ]
-    fuzz_bounds = {
-        "UCAHTS": (1.0, 100.0),
-        "p_hcd_electric_loss_mw": (0.0, 200.0),
-        "p_cryo_plant_electric_mw": (0.0, 200.0),
-        "vachtmw": (0.0, 20.0),
-        "p_tritium_plant_electric_mw": (0.0, 100.0),
-        "fachtmw": (0.0, 200.0),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0, "lsa": 2}
 
 
@@ -2000,12 +1792,7 @@ class TestCryogenicSystemCost(Tier1Contract):
             fkind=1.0,
         )
     ]
-    fuzz_bounds = {
-        "uccry": (1.0e4, 5.0e5),
-        "temp_tf_cryo": (1.0, 30.0),
-        "helpow": (1.0e3, 1.0e6),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"lsa": 2}
 
 
@@ -2015,11 +1802,7 @@ class TestHeatTransportSystemCost(Tier1Contract):
     ported = calculate_heat_transport_system_cost
 
     samples = [legacy_sample("nominal", c2261=145.8, c2262=21.1, c2263=284.3)]
-    fuzz_bounds = {
-        "c2261": (0.0, 1000.0),
-        "c2262": (0.0, 1000.0),
-        "c2263": (0.0, 1000.0),
-    }
+    fuzz = True
 
 
 class TestFuelProcessingCost(Tier1Contract):
@@ -2038,12 +1821,7 @@ class TestFuelProcessingCost(Tier1Contract):
             fkind=1.0,
         )
     ]
-    fuzz_bounds = {
-        "rndfuel": (1.0e19, 1.0e22),
-        "m_fuel_amu": (2.0, 3.0),
-        "UCFPR": (1.0e7, 1.0e9),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
     fuzz_fixed = {"ife": 0}
 
 
@@ -2078,13 +1856,7 @@ class TestAtmosphericRecoveryCost(Tier1Contract):
             fkind=0.9,
         ),
     ]
-    fuzz_bounds = {
-        "f_plasma_fuel_tritium": (0.0, 1.0),
-        "UCDTC": (1.0, 1000.0),
-        "volrci": (1.0e4, 5.0e5),
-        "wsvol": (1.0e3, 5.0e4),
-        "fkind": (0.5, 1.0),
-    }
+    fuzz = True
 
 
 class TestFuelHandlingCost(Tier1Contract):
@@ -2095,12 +1867,7 @@ class TestFuelHandlingCost(Tier1Contract):
     samples = [
         legacy_sample("nominal", c2271=22.3, c2272=143.0, c2273=162.0, c2274=157.2)
     ]
-    fuzz_bounds = {
-        "c2271": (0.0, 500.0),
-        "c2272": (0.0, 500.0),
-        "c2273": (0.0, 500.0),
-        "c2274": (0.0, 500.0),
-    }
+    fuzz = True
 
 
 class TestFusionPowerIslandCost(Tier1Contract):
@@ -2149,11 +1916,7 @@ class TestConstructedCost(Tier1Contract):
     ported = calculate_constructed_cost
 
     samples = [legacy_sample("nominal", cdirt=6570.4, cindrt=1843.7, ccont=1262.1)]
-    fuzz_bounds = {
-        "cdirt": (0.0, 20000.0),
-        "cindrt": (0.0, 5000.0),
-        "ccont": (0.0, 5000.0),
-    }
+    fuzz = True
 
 
 class TestCostOfElectricity(Tier1Contract):
@@ -2324,38 +2087,7 @@ class TestCostOfElectricity(Tier1Contract):
             dtlife=0.0,
         ),
     ]
-    fuzz_bounds = {
-        "p_plant_electric_net_mw": (100.0, 2000.0),
-        "f_t_plant_available": (0.3, 0.95),
-        "t_plant_pulse_burn": (1.0e6, 3.2e7),
-        "t_plant_pulse_total": (3.2e7, 3.3e7),
-        "concost": (1000.0, 20000.0),
-        "fcap0": (1.0, 1.5),
-        "fcr0": (0.02, 0.15),
-        "discount_rate": (0.02, 0.12),
-        "life_blkt": (2.0, 30.0),
-        "fwallcst": (0.0, 500.0),
-        "blkcst": (0.0, 1000.0),
-        "fcap0cp": (1.0, 1.5),
-        "life_blkt_fpy": (2.0, 30.0),
-        "life_plant": (20.0, 50.0),
-        "life_div": (2.0, 30.0),
-        "divcst": (0.0, 200.0),
-        "life_div_fpy": (2.0, 30.0),
-        "cplife_cal": (1.0, 20.0),
-        "cpstcst": (0.0, 500.0),
-        "cplife": (1.0, 20.0),
-        "cdrlife_cal": (2.0, 30.0),
-        "cdcost": (0.0, 500.0),
-        "fcdfuel": (0.01, 0.5),
-        "ucfuel": (1.0, 10.0),
-        "f_plasma_fuel_helium3": (0.0, 0.2),
-        "wtgpd": (10.0, 5000.0),
-        "uche3": (1.0e5, 1.0e7),
-        "decomf": (0.01, 0.3),
-        "dintrt": (0.0, 0.02),
-        "dtlife": (0.0, 5.0),
-    }
+    fuzz = True
     fuzz_fixed = {
         "ife": 0,
         "itart": 0,

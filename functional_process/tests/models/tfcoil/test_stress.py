@@ -144,14 +144,7 @@ class TestEyoungParallel(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eyoung_j_1": (0.0, 2.1e11),
-        "a_1": (1.0e-3, 1.0),
-        "poisson_j_perp_1": (0.2, 0.4),
-        "eyoung_j_2": (0.0, 2.1e11),
-        "a_2": (1.0e-3, 1.0),
-        "poisson_j_perp_2": (0.2, 0.4),
-    }
+    fuzz = True
 
 
 class TestEyoungSeries(Tier1Contract):
@@ -189,14 +182,7 @@ class TestEyoungSeries(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "eyoung_j_1": (0.0, 2.1e11),
-        "l_1": (1.0e-4, 0.1),
-        "poisson_j_perp_1": (0.2, 0.4),
-        "eyoung_j_2": (0.0, 2.1e11),
-        "l_2": (1.0e-4, 0.1),
-        "poisson_j_perp_2": (0.2, 0.4),
-    }
+    fuzz = True
 
 
 def _reference_eyoung_parallel_array(eyoung_j_in, a_in, poisson_j_perp_in):

@@ -53,11 +53,7 @@ class TestCalculatePlasmaInboardToroidalField(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 1.9),
-    }
+    fuzz = True
     """`rminor` capped below `rmajor`'s own lower bound (2.0) so fuzz never approaches
     the `rmajor == rminor` singularity documented in the audit record's JAX-difficulty
     flags -- the sampler draws `rmajor` and `rminor` independently, so nothing else
@@ -83,11 +79,7 @@ class TestCalculatePlasmaOutboardToroidalField(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-    }
+    fuzz = True
 
 
 class TestCalculateToroidalFieldProfile(Tier1Contract):
@@ -119,11 +111,7 @@ class TestCalculateToroidalFieldProfile(Tier1Contract):
     ]
 
     fuzz_fixed = {"n_plasma_profile_elements": 3}
-    fuzz_bounds = {
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 1.9),
-    }
+    fuzz = True
     """Same `rminor` cap as `TestCalculatePlasmaInboardToroidalField`: at the magnetic
     axis (`rho == 0`, i.e. `rmajor == rminor`) PROCESS's own zero-guard
     (`jnp.where(rho == 0, 1e-10, rho)`) already gives a well-defined value, but nothing

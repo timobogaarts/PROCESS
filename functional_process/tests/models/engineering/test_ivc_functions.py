@@ -39,12 +39,7 @@ class TestEshellarea(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rshell": (2.0, 20.0),
-        "rmini": (0.5, 8.0),
-        "rmino": (0.5, 8.0),
-        "zminor": (0.5, 15.0),
-    }
+    fuzz = True
 
 
 class TestEshellvol(Tier1Contract):
@@ -74,15 +69,7 @@ class TestEshellvol(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rshell": (2.0, 20.0),
-        "rmini": (0.5, 8.0),
-        "rmino": (0.5, 8.0),
-        "zminor": (0.5, 15.0),
-        "drin": (0.05, 1.0),
-        "drout": (0.05, 1.0),
-        "dz": (0.05, 1.0),
-    }
+    fuzz = True
 
 
 class TestDshellarea(Tier1Contract):

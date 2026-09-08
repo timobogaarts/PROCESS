@@ -76,12 +76,7 @@ class TestCalculateDivertorHeatFluxSplit(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "deg_blkt_inboard_poloidal_plasma": (10.0, 170.0),
-        "p_plasma_neutron_mw": (100.0, 3000.0),
-        "p_plasma_rad_mw": (10.0, 600.0),
-        "n_divertors": (1.0, 2.0),
-    }
+    fuzz = True
 
 
 def _reference_divertor_heat_load_wade(
@@ -155,18 +150,7 @@ class TestCalculateDivertorHeatLoadWade(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "aspect": (1.5, 4.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "b_plasma_poloidal_average": (0.05, 1.5),
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "f_div_flux_expansion": (1.0, 5.0),
-        "nd_plasma_separatrix_electron": (1.0e18, 1.0e20),
-        "deg_div_field_plate": (1.0, 15.0),
-        "rad_fraction_sol": (0.1, 0.9),
-    }
+    fuzz = True
 
 
 def _reference_divertor_heat_load_wade_double_null(
@@ -245,16 +229,4 @@ class TestCalculateDivertorHeatLoadWadeDoubleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "rmajor": (2.0, 20.0),
-        "rminor": (0.5, 5.0),
-        "aspect": (1.5, 4.0),
-        "b_plasma_toroidal_on_axis": (1.0, 12.0),
-        "b_plasma_poloidal_average": (0.05, 1.5),
-        "p_plasma_separatrix_mw": (10.0, 500.0),
-        "f_div_flux_expansion": (1.0, 5.0),
-        "nd_plasma_separatrix_electron": (1.0e18, 1.0e20),
-        "deg_div_field_plate": (1.0, 15.0),
-        "rad_fraction_sol": (0.1, 0.9),
-        "f_p_div_lower": (0.0, 0.45),
-    }
+    fuzz = True
