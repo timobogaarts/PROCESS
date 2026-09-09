@@ -101,16 +101,27 @@ class PFCoilTopology:
     the `Graph`; this object is that value, gathered into one place instead of five
     module constants, so that a second machine can carry a second one.
 
-    It is a **static** field of every node in the package (`eqx.field(static=True)`),
-    the same shape `BootstrapCurrentFractionScaling` gives `n_plasma_profile_elements`
-    and `PFCoilInductance` gives `NOH`: it changes the traced program, so it may not be
-    a traced value, and a different topology is a different node instance rather than a
-    different argument.
+    **A topology is a class, not a field.** It changes the traced program, so it may
+    not be a traced value -- but it is not an `eqx.field(static=True)` either. Each node
+    in this package is a family whose arms bake one topology apiece into `fn`, and
+    `indat` selects the arm; nothing carries a topology as an argument, and no node body
+    reads one. That is the port's rule for every model choice, not a local convention
+    here: a static field encoding a choice between behaviours must not exist, because a
+    node holding one cannot be a plain `WrapsFunction` declaration -- `wraps.py` requires
+    the declared reads to be exactly `fn`'s parameters, and a static field is neither.
+    Arms are cheap: the reads and outputs live once on the family base, and an arm adds
+    only `fn` (`test_wraps.py::test_an_arm_overrides_only_the_formula`).
+
+    This is the opposite of what this docstring said until 2026-09-09, when the package's
+    sixteen topology-carrying nodes became thirty-two arms and the field disappeared. The
+    reasoning that is genuinely load-bearing survives -- a topology may not be traced --
+    and only the conclusion it was thought to force, that it must therefore be a static
+    field, does not.
 
     Two instances exist: `REFERENCE_TOPOLOGY` (`large_tokamak_eval.IN.DAT`, and every
     conventional tokamak the port assembles) and `SPHERICAL_TOKAMAK_TOPOLOGY`
-    (`spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`). `indat` chooses between
-    them; nothing else constructs one.
+    (`spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`). `indat` chooses which arm
+    to place; nothing else constructs one.
     """
 
     n_pf_coil_groups: int

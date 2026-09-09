@@ -1,12 +1,7 @@
 """Mutual and self inductances of the PF coils, the CS and the plasma."""
 
-import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import From, OutputInto
 
-from functional_process.cottax.models.pfcoil import (
-    SPHERICAL_TOKAMAK_TOPOLOGY,
-    PFCoilTopology,
-)
 from functional_process.cottax.paths import build, pf_coil, physics
 from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.inductance import (
@@ -15,7 +10,8 @@ from functional_process.models.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,  # noqa: F401 -- re-exported for tests
     calculate_pf_cs_plasma_inductances_at_reference_width,
     calculate_pf_plasma_inductances_no_central_solenoid,  # noqa: F401 -- re-exported for tests
-    calculate_pf_plasma_inductances_no_central_solenoid_for_topology,
+    calculate_pf_plasma_inductances_no_central_solenoid_bound,
+    calculate_pf_plasma_inductances_no_central_solenoid_for_topology,  # noqa: F401 -- re-exported for tests
     calculate_solenoid_self_inductance,  # noqa: F401 -- re-exported for tests
 )
 
@@ -45,30 +41,17 @@ class PFCoilInductance(WrapsFunction):
     ind_pf_cs_plasma_mutual = OutputInto(pf_coil)
 
 
-class PFCoilInductanceNoCentralSolenoid(ExplicitFunction):
+class PFCoilInductanceNoCentralSolenoid(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.inductance`, the `iohcl = 0` occupant."""
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    fn = calculate_pf_plasma_inductances_no_central_solenoid_bound
+
+    rmajor = From(physics)
+    ind_plasma = From(physics)
+    r_pf_coil_middle = From(pf_coil)
+    z_pf_coil_middle = From(pf_coil)
+    z_pf_coil_upper = From(pf_coil)
+    z_pf_coil_lower = From(pf_coil)
+    n_pf_coil_turns = From(pf_coil)
 
     ind_pf_cs_plasma_mutual = OutputInto(pf_coil)
-
-    def __call__(
-        self,
-        rmajor=From(physics),
-        ind_plasma=From(physics),
-        r_pf_coil_middle=From(pf_coil),
-        z_pf_coil_middle=From(pf_coil),
-        z_pf_coil_upper=From(pf_coil),
-        z_pf_coil_lower=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-    ):
-        return calculate_pf_plasma_inductances_no_central_solenoid_for_topology(
-            rmajor=rmajor,
-            ind_plasma=ind_plasma,
-            r_pf_coil_middle=r_pf_coil_middle,
-            z_pf_coil_middle=z_pf_coil_middle,
-            z_pf_coil_upper=z_pf_coil_upper,
-            z_pf_coil_lower=z_pf_coil_lower,
-            n_pf_coil_turns=n_pf_coil_turns,
-            topology=self.topology,
-        )

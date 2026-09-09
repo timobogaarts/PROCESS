@@ -1374,3 +1374,224 @@ def calculate_cplife_avail_st_next(
     if itart != 1:
         return fresh
     return calculate_cplife_lifetime_adjustment(fresh, life_plant, f_t_plant_available)
+
+
+# ---------------------------------------------------------------------------
+# `Avail2`/`AvailSt`'s whole `__call__` bodies, `ibkt_life`/`itart`/`i_tf_sup` still
+# keyword-only here (the switch's `if` is *pushed down* to this plain, self-less
+# function per `_audit/next_steps.md`'s pushdown convention, commit `ede83e67`) --
+# every cottax occupant calls one of these with its own switch values already baked to
+# literals, never from a node's `self`. See `cottax/models/availability/availability.py`
+# for the occupant classes themselves.
+# ---------------------------------------------------------------------------
+
+
+def calculate_avail_2_dropping_extras(
+    p_fusion_total_mw,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    num_rh_systems,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    cplife,
+    n_vac_pumps_high,
+    redun_vac,
+    *,
+    ibkt_life,
+    itart,
+):
+    """`Avail2`'s whole `__call__` body: `calculate_avail_2`, `u_planned`/`u_unplanned`
+    dropped (no `VarPath`, see the module docstring's `Avail2` note).
+
+    Parameters
+    ----------
+    (see `calculate_avail_2` for every field)
+
+    Returns
+    -------
+    :
+        `(life_blkt_fpy, life_div_fpy, life_hcd_fpy, t_plant_operational_total_yrs,
+        f_t_plant_available, cpfact)`, `Avail2`'s outputs, in that order.
+    """
+    (
+        life_blkt_fpy,
+        life_div_fpy,
+        life_hcd_fpy,
+        _cplife_mod,
+        t_plant_operational_total_yrs,
+        _u_planned,
+        _u_unplanned,
+        f_t_plant_available,
+        cpfact,
+    ) = calculate_avail_2(
+        p_fusion_total_mw=p_fusion_total_mw,
+        abktflnc=abktflnc,
+        pflux_fw_neutron_mw=pflux_fw_neutron_mw,
+        life_dpa=life_dpa,
+        adivflnc=adivflnc,
+        pflux_div_heat_load_mw=pflux_div_heat_load_mw,
+        life_plant=life_plant,
+        num_rh_systems=num_rh_systems,
+        temp_tf_superconductor_margin_min=temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min=temp_cs_superconductor_margin_min,
+        conf_mag=conf_mag,
+        temp_margin=temp_margin,
+        div_prob_fail=div_prob_fail,
+        div_umain_time=div_umain_time,
+        div_nu=div_nu,
+        div_nref=div_nref,
+        fwbs_prob_fail=fwbs_prob_fail,
+        fwbs_umain_time=fwbs_umain_time,
+        fwbs_nu=fwbs_nu,
+        fwbs_nref=fwbs_nref,
+        n_vac_pumps_high=n_vac_pumps_high,
+        redun_vac=redun_vac,
+        t_plant_pulse_burn=t_plant_pulse_burn,
+        t_plant_pulse_total=t_plant_pulse_total,
+        cplife=cplife,
+        cplife_in=cplife,
+        ibkt_life=ibkt_life,
+        itart=itart,
+    )
+    return (
+        life_blkt_fpy,
+        life_div_fpy,
+        life_hcd_fpy,
+        t_plant_operational_total_yrs,
+        f_t_plant_available,
+        cpfact,
+    )
+
+
+def calculate_avail_st_dropping_extras(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+    *,
+    ibkt_life,
+    itart,
+    i_tf_sup,
+):
+    """`AvailSt`'s whole `__call__` body: the `i_tf_sup`-selected fresh centrepost
+    lifetime feeding into `calculate_avail_st`, `maint_cycle`/`n_cycles_main`/
+    `n_centre_cols`/`u_planned`/`u_unplanned` dropped (no `VarPath`).
+
+    `i_tf_sup` picks which `calculate_cp_lifetime_*` alternative supplies the *fresh*
+    centrepost lifetime `calculate_avail_st` needs -- this cannot instead read
+    `.costs.cplife` back from `CplifeAvailSt`, whose adjusted output is not the same
+    number `calculate_avail_st`'s own `shortest_lifetime` needs (see `AvailSt`'s
+    docstring).
+
+    Parameters
+    ----------
+    (see `calculate_cp_lifetime_superconducting`, `calculate_cp_lifetime_resistive`,
+    `calculate_avail_st` for every field)
+
+    Returns
+    -------
+    :
+        `(life_blkt_fpy, life_div_fpy, life_hcd_fpy, t_plant_operational_total_yrs,
+        f_t_plant_available, cpfact)`, `AvailSt`'s outputs, in that order.
+    """
+    if i_tf_sup == 1:
+        cplife = calculate_cp_lifetime_superconducting(
+            neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+        )
+    else:
+        cplife = calculate_cp_lifetime_resistive(
+            cpstflnc, pflux_fw_neutron_mw, life_plant
+        )
+    (
+        life_blkt_fpy,
+        life_div_fpy,
+        life_hcd_fpy,
+        _cplife_mod,
+        _maint_cycle,
+        _n_cycles_main,
+        _n_centre_cols,
+        _u_planned,
+        t_plant_operational_total_yrs,
+        _u_unplanned,
+        f_t_plant_available,
+        cpfact,
+    ) = calculate_avail_st(
+        abktflnc=abktflnc,
+        pflux_fw_neutron_mw=pflux_fw_neutron_mw,
+        life_dpa=life_dpa,
+        p_fusion_total_mw=p_fusion_total_mw,
+        adivflnc=adivflnc,
+        pflux_div_heat_load_mw=pflux_div_heat_load_mw,
+        life_plant=life_plant,
+        cplife=cplife,
+        tmain=tmain,
+        temp_tf_superconductor_margin_min=temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min=temp_cs_superconductor_margin_min,
+        conf_mag=conf_mag,
+        temp_margin=temp_margin,
+        div_prob_fail=div_prob_fail,
+        div_umain_time=div_umain_time,
+        div_nu=div_nu,
+        div_nref=div_nref,
+        fwbs_prob_fail=fwbs_prob_fail,
+        fwbs_umain_time=fwbs_umain_time,
+        fwbs_nu=fwbs_nu,
+        fwbs_nref=fwbs_nref,
+        num_rh_systems=num_rh_systems,
+        n_vac_pumps_high=n_vac_pumps_high,
+        redun_vac=redun_vac,
+        u_unplanned_cp=u_unplanned_cp,
+        t_plant_pulse_burn=t_plant_pulse_burn,
+        t_plant_pulse_total=t_plant_pulse_total,
+        ibkt_life=ibkt_life,
+        itart=itart,
+    )
+    return (
+        life_blkt_fpy,
+        life_div_fpy,
+        life_hcd_fpy,
+        t_plant_operational_total_yrs,
+        f_t_plant_available,
+        cpfact,
+    )

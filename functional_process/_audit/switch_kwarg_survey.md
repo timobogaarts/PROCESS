@@ -2,10 +2,19 @@
 
 **Closed, 2026-08-26 (conversion finished 2026-08-27).** Full conversion record and
 outcome table: `next_steps_archive.md` §14.11. Of the 32 switch-carrying slots this
-survey found, 30 are families now; only `power.component_thermal_powers` and
-`power.delta_eta_step` still carry a static switch (kept static deliberately — see
-below). Kept here: the measurement method, and the bugs/insights found along the way
-that are not restated in §14.11.
+survey found, 30 became families here; the last two, `power.component_thermal_powers`
+and `power.delta_eta_step`, were exempted as too costly to split. Kept here: the
+measurement method, and the bugs/insights found along the way that are not restated in
+§14.11.
+
+**The exemption is withdrawn, 2026-09-09.** No node holds a switch as a static field any
+more: the rule is one class per distinct behaviour, stated in
+`naming_convention.md` § "Switches are not ports". The exemption rested on a cost that
+was overestimated — a 2×3×2 product "over a 26-read signature" assumed every arm
+restates the family's reads, when the base holds them once and an arm adds only `fn`.
+The design decisions below still stand, including the warning against one class per
+*value*; arms are counted by behaviour, and a 52-member switch with one live scaling is
+still one arm plus `UNPORTED` rows, not 49 classes.
 
 ## Method
 

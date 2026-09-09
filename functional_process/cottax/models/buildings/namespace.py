@@ -6,7 +6,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.cottax.models.buildings.buildings import (
     Bldgs,
-    BldgsSizes,
+    BldgsSizesBase,
     TfCoilEnvelope,
 )
 
@@ -14,9 +14,11 @@ from functional_process.cottax.models.buildings.buildings import (
 class Buildings(ModelNamespace):
     """Plant buildings."""
 
-    sizing: Bldgs | BldgsSizes = dataclasses.field(kw_only=True)
+    sizing: Bldgs | BldgsSizesBase = dataclasses.field(kw_only=True)
     """Which building-size model runs (`.buildings.i_bldgs_size`, default 0 = ITER
-    1992).
+    1992) -- `BldgsSizesBase`'s occupant further depends on
+    `.current_drive.i_hcd_primary`'s method (`BldgsSizesNeutralBeam`/
+    `BldgsSizesOtherHcd`).
     """
 
     # unit #15, buildings.py -- unconditional preamble, feeds both `i_bldgs_size` arms

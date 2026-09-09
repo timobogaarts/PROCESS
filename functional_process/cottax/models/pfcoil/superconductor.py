@@ -1,6 +1,5 @@
 """The coils' superconductor properties -- `superconpf`'s ITER Nb3Sn and NbTi arms."""
 
-import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -8,11 +7,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.cottax.models.pfcoil import (
-    N_PF_COILS,
-    SPHERICAL_TOKAMAK_TOPOLOGY,
-    PFCoilTopology,
-)
+from functional_process.cottax.models.pfcoil import N_PF_COILS
 from functional_process.cottax.paths import pf_coil, superconducting_tfcoil, tfcoil
 from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.superconductor import (
@@ -25,7 +20,8 @@ from functional_process.models.pfcoil.superconductor import (
     calculate_cs_temperature_margin_wst_nb3sn,
     calculate_pf_strand_critical_current_density,
     calculate_pf_strand_critical_current_density_hazelton_zhai_rebco,  # noqa: F401 -- re-exported for tests
-    calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology,
+    calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound,
+    calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology,  # noqa: F401 -- re-exported for tests
 )
 
 
@@ -121,38 +117,22 @@ class PFStrandCriticalCurrentDensity(WrapsFunction):
     j_crit_str_pf = OutputInto(pf_coil)
 
 
-class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(ExplicitFunction):
+class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.strand_critical_current`, `i_pf_superconductor ==
     9`.
     """
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
-    """Static -- which coil the `pfcoil()` loop finishes on, and therefore which slot of
-    the two peak-field arrays the surviving scalar came from.
-    """
+    fn = calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound
+
+    b_pf_coil_peak = From(pf_coil)
+    bpf2 = From(pf_coil)
+    tftmp = From(tfcoil)
+    fcupfsu = From(pf_coil)
+    dr_tf_hts_tape = From(superconducting_tfcoil)
+    dx_tf_hts_tape_rebco = From(superconducting_tfcoil)
+    dx_tf_hts_tape_total = From(superconducting_tfcoil)
 
     j_crit_str_pf = OutputInto(pf_coil)
-
-    def __call__(
-        self,
-        b_pf_coil_peak=From(pf_coil),
-        bpf2=From(pf_coil),
-        tftmp=From(tfcoil),
-        fcupfsu=From(pf_coil),
-        dr_tf_hts_tape=From(superconducting_tfcoil),
-        dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
-        dx_tf_hts_tape_total=From(superconducting_tfcoil),
-    ):
-        return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology(
-            b_pf_coil_peak=b_pf_coil_peak,
-            bpf2=bpf2,
-            tftmp=tftmp,
-            fcupfsu=fcupfsu,
-            dr_tf_hts_tape=dr_tf_hts_tape,
-            dx_tf_hts_tape_rebco=dx_tf_hts_tape_rebco,
-            dx_tf_hts_tape_total=dx_tf_hts_tape_total,
-            topology=self.topology,
-        )
 
 
 # `.pf_coil.j_pf_wp_critical` -- left unowned, and named here so a reader who greps for

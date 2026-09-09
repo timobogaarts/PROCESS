@@ -3,7 +3,6 @@
 Unit #15.
 """
 
-import equinox as eqx
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
@@ -23,12 +22,12 @@ from functional_process.models.buildings.buildings import (
     calculate_bldgs,  # noqa: F401 -- re-exported for tests
     calculate_bldgs_from_elements,
     calculate_bldgs_sizes,  # noqa: F401 -- re-exported for tests
-    calculate_bldgs_sizes_from_hcd,
+    calculate_bldgs_sizes_neutral_beam,
+    calculate_bldgs_sizes_other_hcd,
     calculate_shield_height,  # noqa: F401 -- re-exported for tests
     calculate_tf_coil_envelope,
 )
 from functional_process.models.safe_math import safe_pow  # noqa: F401
-from functional_process.vocabulary import CurrentDriveModel
 
 
 class TfCoilEnvelope(WrapsFunction):
@@ -53,7 +52,8 @@ class TfCoilEnvelope(WrapsFunction):
 
 class Bldgs(WrapsFunction):
     """cottax node: `calculate_bldgs_from_elements` --
-    `calculate_bldgs`. Instantiate iff `i_bldgs_size == ITER_1992`."""
+    `calculate_bldgs`. Instantiate iff `i_bldgs_size == ITER_1992`.
+    """
 
     fn = calculate_bldgs_from_elements
 
@@ -113,14 +113,138 @@ class Bldgs(WrapsFunction):
     volnucb = OutputInto(buildings)
 
 
-class BldgsSizes(ExplicitFunction):
-    """cottax node: `calculate_bldgs_sizes_from_hcd` -- `calculate_bldgs_sizes`. Kept as
-    an `ExplicitFunction`, not `WrapsFunction`: `i_hcd_primary` is a static field, not a
-    `From` read, and `WrapsFunction` requires the declared reads to match `fn`'s
-    parameters exactly -- there is no way to declare a static field as one of them.
+class BldgsSizesBase(ExplicitFunction):
+    """cottax node family: `calculate_bldgs_sizes` -- bodiless base. Two occupants,
+    keyed on `.current_drive.i_hcd_primary`'s method: `BldgsSizesNeutralBeam`/
+    `BldgsSizesOtherHcd`. `i_hcd_primary` has 12 values but `bldgs_sizes` reads it to
+    decide one bit (whether the method is neutral-beam-shaped) -- see this unit's
+    `models/` module docstring. Reads are declared once, here, and shared by both arms;
+    each arm names only its `fn`.
     """
 
-    i_hcd_primary: CurrentDriveModel = eqx.field(static=True)
+    r_pf_coil_outer_max = From(pf_coil)
+    r_cryostat_inboard = From(fwbs)
+    tf_radial_dim = From(buildings)
+    bioshld_thk = From(buildings)
+    reactor_clrnc = From(buildings)
+    transp_clrnc = From(buildings)
+    crane_clrnc_h = From(buildings)
+    cryostat_clrnc = From(buildings)
+    ground_clrnc = From(buildings)
+    crane_arm_h = From(buildings)
+    tf_vertical_dim = From(buildings)
+    nbi_sys_l = From(buildings)
+    nbi_sys_w = From(buildings)
+    hcd_building_l = From(buildings)
+    hcd_building_w = From(buildings)
+    hcd_building_h = From(buildings)
+    fc_building_l = From(buildings)
+    fc_building_w = From(buildings)
+    reactor_wall_thk = From(buildings)
+    reactor_roof_thk = From(buildings)
+    reactor_fndtn_thk = From(buildings)
+    life_plant = From(costs)
+    z_tf_inside_half = From(build)
+    dr_tf_inboard = From(build)
+    dr_tf_shld_gap = From(build)
+    dz_shld_thermal = From(build)
+    dz_shld_vv_gap = From(build)
+    dr_shld_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    dr_fw_inboard = From(build)
+    rmajor = From(physics)
+    rminor = From(physics)
+    dr_fw_plasma_gap_inboard = From(build)
+    n_tf_coils = From(tfcoil)
+    hot_sepdist = From(buildings)
+    qnty_sfty_fac = From(buildings)
+    dr_fw_outboard = From(build)
+    dr_blkt_outboard = From(build)
+    dr_shld_outboard = From(build)
+    dr_fw_plasma_gap_outboard = From(build)
+    life_div_fpy = From(costs)
+    dz_divertor = From(divertor)
+    cplife = From(costs)
+    i_tf_sup = From(tfcoil)
+    r_cp_top = From(build)
+    hotcell_h = From(buildings)
+    chemlab_l = From(buildings)
+    chemlab_w = From(buildings)
+    chemlab_h = From(buildings)
+    heat_sink_l = From(buildings)
+    heat_sink_w = From(buildings)
+    heat_sink_h = From(buildings)
+    aux_build_l = From(buildings)
+    aux_build_w = From(buildings)
+    aux_build_h = From(buildings)
+    magnet_trains_l = From(buildings)
+    magnet_trains_w = From(buildings)
+    magnet_trains_h = From(buildings)
+    magnet_pulse_l = From(buildings)
+    magnet_pulse_w = From(buildings)
+    magnet_pulse_h = From(buildings)
+    control_buildings_l = From(buildings)
+    control_buildings_w = From(buildings)
+    control_buildings_h = From(buildings)
+    warm_shop_l = From(buildings)
+    warm_shop_w = From(buildings)
+    warm_shop_h = From(buildings)
+    workshop_l = From(buildings)
+    workshop_w = From(buildings)
+    workshop_h = From(buildings)
+    robotics_l = From(buildings)
+    robotics_w = From(buildings)
+    robotics_h = From(buildings)
+    maint_cont_l = From(buildings)
+    maint_cont_w = From(buildings)
+    maint_cont_h = From(buildings)
+    cryomag_l = From(buildings)
+    cryomag_w = From(buildings)
+    cryomag_h = From(buildings)
+    cryostore_l = From(buildings)
+    cryostore_w = From(buildings)
+    cryostore_h = From(buildings)
+    auxcool_l = From(buildings)
+    auxcool_w = From(buildings)
+    auxcool_h = From(buildings)
+    elecdist_l = From(buildings)
+    elecdist_w = From(buildings)
+    elecdist_h = From(buildings)
+    elecload_l = From(buildings)
+    elecload_w = From(buildings)
+    elecload_h = From(buildings)
+    elecstore_l = From(buildings)
+    elecstore_w = From(buildings)
+    elecstore_h = From(buildings)
+    turbine_hall_l = From(buildings)
+    turbine_hall_w = From(buildings)
+    turbine_hall_h = From(buildings)
+    ilw_smelter_l = From(buildings)
+    ilw_smelter_w = From(buildings)
+    ilw_smelter_h = From(buildings)
+    ilw_storage_l = From(buildings)
+    ilw_storage_w = From(buildings)
+    ilw_storage_h = From(buildings)
+    llw_storage_l = From(buildings)
+    llw_storage_w = From(buildings)
+    llw_storage_h = From(buildings)
+    hw_storage_l = From(buildings)
+    hw_storage_w = From(buildings)
+    hw_storage_h = From(buildings)
+    tw_storage_l = From(buildings)
+    tw_storage_w = From(buildings)
+    tw_storage_h = From(buildings)
+    gas_buildings_l = From(buildings)
+    gas_buildings_w = From(buildings)
+    gas_buildings_h = From(buildings)
+    water_buildings_l = From(buildings)
+    water_buildings_w = From(buildings)
+    water_buildings_h = From(buildings)
+    sec_buildings_l = From(buildings)
+    sec_buildings_w = From(buildings)
+    sec_buildings_h = From(buildings)
+    staff_buildings_area = From(buildings)
+    staff_buildings_h = From(buildings)
 
     reactor_hall_l = OutputInto(buildings)
     reactor_hall_w = OutputInto(buildings)
@@ -128,255 +252,16 @@ class BldgsSizes(ExplicitFunction):
     a_plant_floor_effective = OutputInto(buildings)
     volnucb = OutputInto(buildings)
 
-    def __call__(
-        self,
-        r_pf_coil_outer_max=From(pf_coil),
-        r_cryostat_inboard=From(fwbs),
-        tf_radial_dim=From(buildings),
-        bioshld_thk=From(buildings),
-        reactor_clrnc=From(buildings),
-        transp_clrnc=From(buildings),
-        crane_clrnc_h=From(buildings),
-        cryostat_clrnc=From(buildings),
-        ground_clrnc=From(buildings),
-        crane_arm_h=From(buildings),
-        tf_vertical_dim=From(buildings),
-        nbi_sys_l=From(buildings),
-        nbi_sys_w=From(buildings),
-        hcd_building_l=From(buildings),
-        hcd_building_w=From(buildings),
-        hcd_building_h=From(buildings),
-        fc_building_l=From(buildings),
-        fc_building_w=From(buildings),
-        reactor_wall_thk=From(buildings),
-        reactor_roof_thk=From(buildings),
-        reactor_fndtn_thk=From(buildings),
-        life_plant=From(costs),
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-        dr_tf_shld_gap=From(build),
-        dz_shld_thermal=From(build),
-        dz_shld_vv_gap=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_fw_inboard=From(build),
-        rmajor=From(physics),
-        rminor=From(physics),
-        dr_fw_plasma_gap_inboard=From(build),
-        n_tf_coils=From(tfcoil),
-        hot_sepdist=From(buildings),
-        qnty_sfty_fac=From(buildings),
-        dr_fw_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dr_shld_outboard=From(build),
-        dr_fw_plasma_gap_outboard=From(build),
-        life_div_fpy=From(costs),
-        dz_divertor=From(divertor),
-        cplife=From(costs),
-        i_tf_sup=From(tfcoil),
-        r_cp_top=From(build),
-        hotcell_h=From(buildings),
-        chemlab_l=From(buildings),
-        chemlab_w=From(buildings),
-        chemlab_h=From(buildings),
-        heat_sink_l=From(buildings),
-        heat_sink_w=From(buildings),
-        heat_sink_h=From(buildings),
-        aux_build_l=From(buildings),
-        aux_build_w=From(buildings),
-        aux_build_h=From(buildings),
-        magnet_trains_l=From(buildings),
-        magnet_trains_w=From(buildings),
-        magnet_trains_h=From(buildings),
-        magnet_pulse_l=From(buildings),
-        magnet_pulse_w=From(buildings),
-        magnet_pulse_h=From(buildings),
-        control_buildings_l=From(buildings),
-        control_buildings_w=From(buildings),
-        control_buildings_h=From(buildings),
-        warm_shop_l=From(buildings),
-        warm_shop_w=From(buildings),
-        warm_shop_h=From(buildings),
-        workshop_l=From(buildings),
-        workshop_w=From(buildings),
-        workshop_h=From(buildings),
-        robotics_l=From(buildings),
-        robotics_w=From(buildings),
-        robotics_h=From(buildings),
-        maint_cont_l=From(buildings),
-        maint_cont_w=From(buildings),
-        maint_cont_h=From(buildings),
-        cryomag_l=From(buildings),
-        cryomag_w=From(buildings),
-        cryomag_h=From(buildings),
-        cryostore_l=From(buildings),
-        cryostore_w=From(buildings),
-        cryostore_h=From(buildings),
-        auxcool_l=From(buildings),
-        auxcool_w=From(buildings),
-        auxcool_h=From(buildings),
-        elecdist_l=From(buildings),
-        elecdist_w=From(buildings),
-        elecdist_h=From(buildings),
-        elecload_l=From(buildings),
-        elecload_w=From(buildings),
-        elecload_h=From(buildings),
-        elecstore_l=From(buildings),
-        elecstore_w=From(buildings),
-        elecstore_h=From(buildings),
-        turbine_hall_l=From(buildings),
-        turbine_hall_w=From(buildings),
-        turbine_hall_h=From(buildings),
-        ilw_smelter_l=From(buildings),
-        ilw_smelter_w=From(buildings),
-        ilw_smelter_h=From(buildings),
-        ilw_storage_l=From(buildings),
-        ilw_storage_w=From(buildings),
-        ilw_storage_h=From(buildings),
-        llw_storage_l=From(buildings),
-        llw_storage_w=From(buildings),
-        llw_storage_h=From(buildings),
-        hw_storage_l=From(buildings),
-        hw_storage_w=From(buildings),
-        hw_storage_h=From(buildings),
-        tw_storage_l=From(buildings),
-        tw_storage_w=From(buildings),
-        tw_storage_h=From(buildings),
-        gas_buildings_l=From(buildings),
-        gas_buildings_w=From(buildings),
-        gas_buildings_h=From(buildings),
-        water_buildings_l=From(buildings),
-        water_buildings_w=From(buildings),
-        water_buildings_h=From(buildings),
-        sec_buildings_l=From(buildings),
-        sec_buildings_w=From(buildings),
-        sec_buildings_h=From(buildings),
-        staff_buildings_area=From(buildings),
-        staff_buildings_h=From(buildings),
-    ):
-        return calculate_bldgs_sizes_from_hcd(
-            self.i_hcd_primary,
-            r_pf_coil_outer_max,
-            r_cryostat_inboard,
-            tf_radial_dim,
-            bioshld_thk,
-            reactor_clrnc,
-            transp_clrnc,
-            crane_clrnc_h,
-            cryostat_clrnc,
-            ground_clrnc,
-            crane_arm_h,
-            tf_vertical_dim,
-            nbi_sys_l,
-            nbi_sys_w,
-            hcd_building_l,
-            hcd_building_w,
-            hcd_building_h,
-            fc_building_l,
-            fc_building_w,
-            reactor_wall_thk,
-            reactor_roof_thk,
-            reactor_fndtn_thk,
-            life_plant,
-            z_tf_inside_half,
-            dr_tf_inboard,
-            dr_tf_shld_gap,
-            dz_shld_thermal,
-            dz_shld_vv_gap,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            dr_fw_inboard,
-            rmajor,
-            rminor,
-            dr_fw_plasma_gap_inboard,
-            n_tf_coils,
-            hot_sepdist,
-            qnty_sfty_fac,
-            dr_fw_outboard,
-            dr_blkt_outboard,
-            dr_shld_outboard,
-            dr_fw_plasma_gap_outboard,
-            life_div_fpy,
-            dz_divertor,
-            cplife,
-            i_tf_sup,
-            r_cp_top,
-            hotcell_h,
-            chemlab_l,
-            chemlab_w,
-            chemlab_h,
-            heat_sink_l,
-            heat_sink_w,
-            heat_sink_h,
-            aux_build_l,
-            aux_build_w,
-            aux_build_h,
-            magnet_trains_l,
-            magnet_trains_w,
-            magnet_trains_h,
-            magnet_pulse_l,
-            magnet_pulse_w,
-            magnet_pulse_h,
-            control_buildings_l,
-            control_buildings_w,
-            control_buildings_h,
-            warm_shop_l,
-            warm_shop_w,
-            warm_shop_h,
-            workshop_l,
-            workshop_w,
-            workshop_h,
-            robotics_l,
-            robotics_w,
-            robotics_h,
-            maint_cont_l,
-            maint_cont_w,
-            maint_cont_h,
-            cryomag_l,
-            cryomag_w,
-            cryomag_h,
-            cryostore_l,
-            cryostore_w,
-            cryostore_h,
-            auxcool_l,
-            auxcool_w,
-            auxcool_h,
-            elecdist_l,
-            elecdist_w,
-            elecdist_h,
-            elecload_l,
-            elecload_w,
-            elecload_h,
-            elecstore_l,
-            elecstore_w,
-            elecstore_h,
-            turbine_hall_l,
-            turbine_hall_w,
-            turbine_hall_h,
-            ilw_smelter_l,
-            ilw_smelter_w,
-            ilw_smelter_h,
-            ilw_storage_l,
-            ilw_storage_w,
-            ilw_storage_h,
-            llw_storage_l,
-            llw_storage_w,
-            llw_storage_h,
-            hw_storage_l,
-            hw_storage_w,
-            hw_storage_h,
-            tw_storage_l,
-            tw_storage_w,
-            tw_storage_h,
-            gas_buildings_l,
-            gas_buildings_w,
-            gas_buildings_h,
-            water_buildings_l,
-            water_buildings_w,
-            water_buildings_h,
-            sec_buildings_l,
-            sec_buildings_w,
-            sec_buildings_h,
-            staff_buildings_area,
-            staff_buildings_h,
-        )
+
+class BldgsSizesNeutralBeam(BldgsSizesBase, WrapsFunction):
+    """`i_hcd_primary`'s method is `NEUTRAL_BEAM` (`ITER_NEUTRAL_BEAM`/
+    `CULHAM_NEUTRAL_BEAM`) -- `calculate_bldgs_sizes_neutral_beam`.
+    """
+
+    fn = calculate_bldgs_sizes_neutral_beam
+
+
+class BldgsSizesOtherHcd(BldgsSizesBase, WrapsFunction):
+    """Every other `i_hcd_primary` value -- `calculate_bldgs_sizes_other_hcd`."""
+
+    fn = calculate_bldgs_sizes_other_hcd

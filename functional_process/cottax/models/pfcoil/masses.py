@@ -1,27 +1,19 @@
 """How big each coil has to be, and what it weighs."""
 
-import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces.pytree_namespace_module import From, FromExactly, OutputInto
 
-from functional_process.cottax.models.pfcoil import (
-    SPHERICAL_TOKAMAK_TOPOLOGY,
-    PFCoilTopology,
-)
 from functional_process.cottax.paths import fwbs, pf_coil, physics, tfcoil
 from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_masses_from_elements,
     calculate_pf_coil_masses_no_central_solenoid,  # noqa: F401 -- re-exported for tests
-    calculate_pf_coil_masses_no_central_solenoid_for_topology,
+    calculate_pf_coil_masses_no_central_solenoid_bound,
+    calculate_pf_coil_masses_no_central_solenoid_for_topology,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_sizes,  # noqa: F401 -- re-exported for tests
-    calculate_pf_coil_sizes_for_topology,
+    calculate_pf_coil_sizes_for_topology,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_sizes_from_elements,
+    calculate_pf_coil_sizes_no_central_solenoid,
 )
 
 I_PF_SUPERCONDUCTOR = 3
@@ -77,15 +69,20 @@ class PFCoilSizes(WrapsFunction):
     r_pf_coil_outer_max = OutputInto(pf_coil)
 
 
-class PFCoilSizesNoCentralSolenoid(ExplicitFunction):
-    """cottax node: `.tokamak.pf_coil.sizes`, the `iohcl = 0` occupant.
+class PFCoilSizesNoCentralSolenoid(WrapsFunction):
+    """cottax node: `.tokamak.pf_coil.sizes`, the `iohcl = 0` occupant."""
 
-    Not `WrapsFunction`: `calculate_pf_coil_sizes_for_topology` takes a `topology`
-    keyword this occupant must thread through explicitly (`self.topology`, see
-    `PFCoilMassesNoCentralSolenoid` for the same shape elsewhere in this module).
-    """
+    fn = calculate_pf_coil_sizes_no_central_solenoid
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    c_pf_cs_coils_peak_ma = From(pf_coil)
+    j_pf_coil_wp_peak = From(pf_coil)
+    c_pf_coil_turn_peak_input = From(pf_coil)
+    r_pf_coil_middle = From(pf_coil)
+    z_pf_coil_middle = From(pf_coil)
+    pf_current_safety_factor = From(pf_coil)
+    rmajor = From(physics)
+    rminor = From(physics)
+    kappa = From(physics)
 
     n_pf_coil_turns = OutputInto(pf_coil)
     r_pf_coil_inner = OutputInto(pf_coil)
@@ -93,35 +90,6 @@ class PFCoilSizesNoCentralSolenoid(ExplicitFunction):
     z_pf_coil_upper = OutputInto(pf_coil)
     z_pf_coil_lower = OutputInto(pf_coil)
     r_pf_coil_outer_max = OutputInto(pf_coil)
-
-    def __call__(
-        self,
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        j_pf_coil_wp_peak=From(pf_coil),
-        c_pf_coil_turn_peak_input=From(pf_coil),
-        r_pf_coil_middle=From(pf_coil),
-        z_pf_coil_middle=From(pf_coil),
-        pf_current_safety_factor=From(pf_coil),
-        rmajor=From(physics),
-        rminor=From(physics),
-        kappa=From(physics),
-    ):
-        return calculate_pf_coil_sizes_for_topology(
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
-            j_pf_coil_wp_peak=j_pf_coil_wp_peak,
-            c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
-            r_pf_coil_middle=r_pf_coil_middle,
-            z_pf_coil_middle=z_pf_coil_middle,
-            pf_current_safety_factor=pf_current_safety_factor,
-            r_cs_inner=None,
-            r_cs_outer=None,
-            z_cs_upper=None,
-            z_cs_lower=None,
-            rmajor=rmajor,
-            rminor=rminor,
-            kappa=kappa,
-            topology=self.topology,
-        )
 
 
 class PFCoilMasses(WrapsFunction):
@@ -171,10 +139,29 @@ class PFCoilMasses(WrapsFunction):
     a_cs_cable_space = OutputInto(pf_coil)
 
 
-class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
+class PFCoilMassesNoCentralSolenoid(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.masses`, the `iohcl = 0` occupant."""
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    fn = calculate_pf_coil_masses_no_central_solenoid_bound
+
+    c_pf_cs_coils_peak_ma = From(pf_coil)
+    j_pf_coil_wp_peak = From(pf_coil)
+    n_pf_coil_turns = From(pf_coil)
+    r_pf_coil_middle = From(pf_coil)
+    r_pf_coil_inner = From(pf_coil)
+    r_pf_coil_outer = From(pf_coil)
+    z_pf_coil_upper = From(pf_coil)
+    z_pf_coil_lower = From(pf_coil)
+    b_pf_coil_peak = From(pf_coil)
+    bpf2 = From(pf_coil)
+    f_a_pf_coil_void = From(pf_coil)
+    pf_current_safety_factor = From(pf_coil)
+    sigpfcf = From(pf_coil)
+    sigpfcalw = From(pf_coil)
+    den_steel = From(fwbs)
+    den_pf_conductor = FromExactly(
+        tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1]
+    )
 
     m_pf_coil_conductor = OutputInto(pf_coil)
     m_pf_coil_structure = OutputInto(pf_coil)
@@ -183,47 +170,6 @@ class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
     m_pf_coil_structure_total = OutputInto(pf_coil)
     m_pf_coil_max = OutputInto(pf_coil)
     ricpf = OutputInto(pf_coil)
-
-    def __call__(
-        self,
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        j_pf_coil_wp_peak=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-        r_pf_coil_middle=From(pf_coil),
-        r_pf_coil_inner=From(pf_coil),
-        r_pf_coil_outer=From(pf_coil),
-        z_pf_coil_upper=From(pf_coil),
-        z_pf_coil_lower=From(pf_coil),
-        b_pf_coil_peak=From(pf_coil),
-        bpf2=From(pf_coil),
-        f_a_pf_coil_void=From(pf_coil),
-        pf_current_safety_factor=From(pf_coil),
-        sigpfcf=From(pf_coil),
-        sigpfcalw=From(pf_coil),
-        den_steel=From(fwbs),
-        den_pf_conductor=FromExactly(
-            tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1]
-        ),
-    ):
-        return calculate_pf_coil_masses_no_central_solenoid_for_topology(
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
-            j_pf_coil_wp_peak=j_pf_coil_wp_peak,
-            n_pf_coil_turns=n_pf_coil_turns,
-            r_pf_coil_middle=r_pf_coil_middle,
-            r_pf_coil_inner=r_pf_coil_inner,
-            r_pf_coil_outer=r_pf_coil_outer,
-            z_pf_coil_upper=z_pf_coil_upper,
-            z_pf_coil_lower=z_pf_coil_lower,
-            b_pf_coil_peak=b_pf_coil_peak,
-            bpf2=bpf2,
-            f_a_pf_coil_void=f_a_pf_coil_void,
-            pf_current_safety_factor=pf_current_safety_factor,
-            sigpfcf=sigpfcf,
-            sigpfcalw=sigpfcalw,
-            den_steel=den_steel,
-            den_pf_conductor=den_pf_conductor,
-            topology=self.topology,
-        )
 
 
 class PFCoilMassesCsWstNb3Sn(PFCoilMasses):

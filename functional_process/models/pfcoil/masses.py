@@ -521,6 +521,40 @@ def calculate_pf_coil_masses(
     )
 
 
+def calculate_pf_coil_sizes_no_central_solenoid(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    c_pf_coil_turn_peak_input,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    pf_current_safety_factor,
+    rmajor,
+    rminor,
+    kappa,
+):
+    """`PFCoilSizesNoCentralSolenoid`: `calculate_pf_coil_sizes_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with the four CS edge reads baked to `None` since this
+    topology has no CS to size -- see `calculate_pf_coil_sizes_from_elements` for the
+    `REFERENCE_TOPOLOGY` counterpart.
+    """
+    return calculate_pf_coil_sizes_for_topology(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        pf_current_safety_factor=pf_current_safety_factor,
+        r_cs_inner=None,
+        r_cs_outer=None,
+        z_cs_upper=None,
+        z_cs_lower=None,
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
 def calculate_pf_coil_masses_from_elements(
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
@@ -678,4 +712,48 @@ def calculate_pf_coil_masses_no_central_solenoid_for_topology(
         m_structure_total,
         m_pf_coil_max,
         ricpf,
+    )
+
+
+def calculate_pf_coil_masses_no_central_solenoid_bound(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    n_pf_coil_turns,
+    r_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    b_pf_coil_peak,
+    bpf2,
+    f_a_pf_coil_void,
+    pf_current_safety_factor,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+):
+    """`PFCoilMassesNoCentralSolenoid`:
+    `calculate_pf_coil_masses_no_central_solenoid_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with no `topology` parameter left over for
+    `WrapsFunction` to complain about.
+    """
+    return calculate_pf_coil_masses_no_central_solenoid_for_topology(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        n_pf_coil_turns=n_pf_coil_turns,
+        r_pf_coil_middle=r_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        b_pf_coil_peak=b_pf_coil_peak,
+        bpf2=bpf2,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
     )

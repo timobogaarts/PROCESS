@@ -1,13 +1,7 @@
 """Where the CS and the PF coils are: cross-sections, filament placement, coil centres."""
 
-import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import From, OutputInto
 
-from functional_process.cottax.models.pfcoil import (
-    REFERENCE_TOPOLOGY,
-    SPHERICAL_TOKAMAK_TOPOLOGY,
-    PFCoilTopology,
-)
 from functional_process.cottax.paths import (
     build,
     cs_fatigue,
@@ -22,10 +16,13 @@ from functional_process.models.pfcoil.geometry import (
     calculate_cs_turn_geometry_eu_demo,  # noqa: F401 -- re-exported for tests
     calculate_cs_turn_geometry_eu_demo_from_turns,
     calculate_pf_coil_group_positions,  # noqa: F401 -- re-exported for tests
-    calculate_pf_coil_placement_for_topology,
+    calculate_pf_coil_placement_for_topology,  # noqa: F401 -- re-exported for tests
+    calculate_pf_coil_placement_no_central_solenoid,
+    calculate_pf_coil_placement_reference,
     calculate_pf_coil_positions,  # noqa: F401 -- re-exported for tests
-    calculate_pf_coil_positions_for_topology,
+    calculate_pf_coil_positions_for_topology,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_positions_from_elements,
+    calculate_pf_coil_positions_no_central_solenoid,
     place_cs_filaments,  # noqa: F401 -- re-exported for currents.py / tests
 )
 
@@ -78,84 +75,39 @@ class CSCoilTurnGeometry(WrapsFunction):
     dz_cs_turn_conduit = OutputInto(cs_fatigue)
 
 
-class PFCoilPlacement(ExplicitFunction):
+class PFCoilPlacement(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.placement`."""
 
-    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
-    """Static, and the reference topology by construction: this occupant's whole
-    identity is that pattern.
-    """
+    fn = calculate_pf_coil_placement_reference
 
-    r_pf_outside_tf_is_constant: bool = eqx.field(static=True, default=False)
-    """`i_tf_shape == PICTURE_FRAME or i_r_pf_outside_tf_placement == 1`
-    (`pfcoil.py:1322-1326`), resolved once.
-    """
+    r_tf_outboard_out = From(superconducting_tfcoil)
+    dr_pf_tf_outboard_out_offset = From(pf_coil)
+    rmajor = From(physics)
+    rminor = From(physics)
+    triang = From(physics)
+    rpf2 = From(pf_coil)
+    z_tf_top = From(build)
+    dz_tf_upper_lower_midplane = From(build)
+    zref = From(pf_coil)
 
     r_pf_outside_tf_midplane = OutputInto(pf_coil)
     r_pf_coil_middle_group_array = OutputInto(pf_coil)
     z_pf_coil_middle_group_array = OutputInto(pf_coil)
 
-    def __call__(
-        self,
-        r_tf_outboard_out=From(superconducting_tfcoil),
-        dr_pf_tf_outboard_out_offset=From(pf_coil),
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        rpf2=From(pf_coil),
-        z_tf_top=From(build),
-        dz_tf_upper_lower_midplane=From(build),
-        zref=From(pf_coil),
-    ):
-        return calculate_pf_coil_placement_for_topology(
-            r_tf_outboard_out=r_tf_outboard_out,
-            dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
-            rmajor=rmajor,
-            rminor=rminor,
-            triang=triang,
-            rpf2=rpf2,
-            z_tf_top=z_tf_top,
-            dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
-            zref=zref,
-            rref=None,
-            topology=self.topology,
-            r_pf_outside_tf_is_constant=self.r_pf_outside_tf_is_constant,
-        )
-
 
 class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
-    """cottax node: `.tokamak.pf_coil.placement`, the spherical tokamaks' occupant."""
+    """cottax node: `.tokamak.pf_coil.placement`, the spherical tokamaks' occupant.
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
-    r_pf_outside_tf_is_constant: bool = eqx.field(static=True, default=True)
+    Reads everything `PFCoilPlacement` does, plus `rref` -- the `GENERALLY_PLACED`
+    group's radial placement ratio, which `REFERENCE_TOPOLOGY` never has and this
+    topology does. A strict superset, so this stays the inheriting arm: it adds the one
+    extra read and overrides `fn` to the topology/`r_pf_outside_tf_is_constant`-bound
+    counterpart.
+    """
 
-    def __call__(
-        self,
-        r_tf_outboard_out=From(superconducting_tfcoil),
-        dr_pf_tf_outboard_out_offset=From(pf_coil),
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        rpf2=From(pf_coil),
-        z_tf_top=From(build),
-        dz_tf_upper_lower_midplane=From(build),
-        zref=From(pf_coil),
-        rref=From(pf_coil),
-    ):
-        return calculate_pf_coil_placement_for_topology(
-            r_tf_outboard_out=r_tf_outboard_out,
-            dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
-            rmajor=rmajor,
-            rminor=rminor,
-            triang=triang,
-            rpf2=rpf2,
-            z_tf_top=z_tf_top,
-            dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
-            zref=zref,
-            rref=rref,
-            topology=self.topology,
-            r_pf_outside_tf_is_constant=self.r_pf_outside_tf_is_constant,
-        )
+    fn = calculate_pf_coil_placement_no_central_solenoid
+
+    rref = From(pf_coil)
 
 
 class PFCoilPositions(WrapsFunction):
@@ -177,26 +129,13 @@ class PFCoilPositions(WrapsFunction):
     z_pf_coil_middle = OutputInto(pf_coil)
 
 
-class PFCoilPositionsNoCentralSolenoid(ExplicitFunction):
-    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant.
+class PFCoilPositionsNoCentralSolenoid(WrapsFunction):
+    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant."""
 
-    Not `WrapsFunction`: `calculate_pf_coil_positions_for_topology` takes a `topology`
-    keyword this occupant must thread through explicitly (`self.topology`).
-    """
+    fn = calculate_pf_coil_positions_no_central_solenoid
 
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    r_pf_coil_middle_group_array = From(pf_coil)
+    z_pf_coil_middle_group_array = From(pf_coil)
 
     r_pf_coil_middle = OutputInto(pf_coil)
     z_pf_coil_middle = OutputInto(pf_coil)
-
-    def __call__(
-        self,
-        r_pf_coil_middle_group_array=From(pf_coil),
-        z_pf_coil_middle_group_array=From(pf_coil),
-    ):
-        return calculate_pf_coil_positions_for_topology(
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
-            r_cs_middle=None,
-            topology=self.topology,
-        )

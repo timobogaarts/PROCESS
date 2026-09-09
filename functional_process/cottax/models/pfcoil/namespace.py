@@ -4,11 +4,11 @@ import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
-from functional_process.cottax.models.pfcoil import SPHERICAL_TOKAMAK_TOPOLOGY
 from functional_process.cottax.models.pfcoil.currents import (
     CSCurrentDensityPulseStart,
     CSFluxSwing,
     PFCoilEquilibriumCurrents,
+    PFCoilEquilibriumCurrentsNoCentralSolenoid,
     PFCoilInitiationCurrents,
     PFCoilInitiationCurrentsNoCentralSolenoid,
     PFCoilTimePointCurrents,
@@ -17,6 +17,7 @@ from functional_process.cottax.models.pfcoil.currents import (
 from functional_process.cottax.models.pfcoil.fields import (
     CSCoilPeakField,
     PFCoilCurrentWaveform,
+    PFCoilCurrentWaveformNoCentralSolenoid,
     PFCoilPeakField,
     PFCoilPeakFieldNoCentralSolenoid,
 )
@@ -48,6 +49,7 @@ from functional_process.cottax.models.pfcoil.superconductor import (
 )
 from functional_process.cottax.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
+    PFCoilTurnCurrentsNoCentralSolenoid,
     PFCoilVoltSeconds,
     PFCoilVoltSecondsNoCentralSolenoid,
 )
@@ -198,8 +200,8 @@ class PFCoilSphericalTokamak(PFCoil):
     )
     """The plasma-initiation SVD solve with `nfxf = 0` (`:366-405`, `:202-204`)."""
 
-    equilibrium_currents: PFCoilEquilibriumCurrents = PFCoilEquilibriumCurrents(
-        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    equilibrium_currents: PFCoilEquilibriumCurrentsNoCentralSolenoid = (
+        PFCoilEquilibriumCurrentsNoCentralSolenoid()
     )
     """The equilibrium SVD solve (`:456-598`)."""
 
@@ -210,8 +212,8 @@ class PFCoilSphericalTokamak(PFCoil):
     `.pf_coil.f_j_cs_start_end_flat_top = 1.0` (`:660`).
     """
 
-    waveform: PFCoilCurrentWaveform = PFCoilCurrentWaveform(
-        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    waveform: PFCoilCurrentWaveformNoCentralSolenoid = (
+        PFCoilCurrentWaveformNoCentralSolenoid()
     )
     """Peak currents and the waveform fraction array over eight circuits plus the plasma
     (`waveform()`, `:2869-2940`).
@@ -244,8 +246,8 @@ class PFCoilSphericalTokamak(PFCoil):
     guarded out and `nef = n_cs_pf_coils`.
     """
 
-    turn_currents: PFCoilTurnCurrents = PFCoilTurnCurrents(
-        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    turn_currents: PFCoilTurnCurrentsNoCentralSolenoid = (
+        PFCoilTurnCurrentsNoCentralSolenoid()
     )
     """Per-turn circuit currents at the six waveform time points (`:1082-1111`)."""
 

@@ -687,6 +687,76 @@ def calculate_coil_current_waveform_for_topology(
     return peak_full, waveform_full
 
 
+def calculate_coil_current_waveform_reference(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+):
+    """`PFCoilCurrentWaveform`: `calculate_coil_current_waveform_for_topology` fixed to
+    `REFERENCE_TOPOLOGY`, with no `topology` parameter left over for `WrapsFunction`
+    to complain about.
+    """
+    return calculate_coil_current_waveform_for_topology(
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_coil_current_waveform_no_central_solenoid(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+):
+    """`PFCoilCurrentWaveformNoCentralSolenoid`:
+    `calculate_coil_current_waveform_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`. Same reads and outputs as
+    `calculate_coil_current_waveform_reference` -- only which row is the plasma's
+    differs.
+    """
+    return calculate_coil_current_waveform_for_topology(
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
+def calculate_pf_coil_peak_fields_no_central_solenoid_bound(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    rmajor,
+    plasma_current,
+):
+    """`PFCoilPeakFieldNoCentralSolenoid`:
+    `calculate_pf_coil_peak_fields_no_central_solenoid_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with no `topology` parameter left over for
+    `WrapsFunction` to complain about.
+    """
+    return calculate_pf_coil_peak_fields_no_central_solenoid_for_topology(
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
 _T_B_FIELD_PEAK_FLAT_TOP_END = 5
 """`ohcalc`'s `timepoint = 5` for the end-of-flat-top field (`pfcoil.py:3345`), a
 1-based column index into the six-point waveform."""

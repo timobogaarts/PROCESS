@@ -1,6 +1,5 @@
 """PROCESS's input encoding, and the one place this port reads it."""
 
-import functools
 import re
 from pathlib import Path
 
@@ -61,7 +60,8 @@ from functional_process.cottax.models.build import (
 )
 from functional_process.cottax.models.buildings.buildings import (
     Bldgs,
-    BldgsSizes,
+    BldgsSizesNeutralBeam,
+    BldgsSizesOtherHcd,
 )
 from functional_process.cottax.models.buildings.namespace import Buildings
 from functional_process.cottax.models.costs.costs import (
@@ -1719,11 +1719,32 @@ ST_INIT_I_PLASMA_PEDESTAL = 0
 """What `.physics.i_plasma_pedestal` is on a stellarator run, whatever the IN.DAT says.
 """
 
+
+def _bldgs_sizing_arm(i_bldgs_size: int, i_hcd_primary: int) -> int:
+    """`(i_bldgs_size, i_hcd_primary)` -> the building-size occupant.
+
+    `i_bldgs_size == ITER_1992` (0) needs no further resolution. `CHAPMAN_2024` (1)
+    further depends on whether `.current_drive.i_hcd_primary`'s method is
+    neutral-beam-shaped -- `i_hcd_primary` has 12 values but `bldgs_sizes` reads it to
+    decide this one bit (`functional_process/models/buildings/buildings.py`'s module
+    docstring), so this is a 2-way split (`BldgsSizesNeutralBeam`/`BldgsSizesOtherHcd`),
+    not 12 occupants.
+    """
+    if int(i_bldgs_size) == 0:  # `BuildingsModel.ITER_1992`
+        return 0
+    is_neutral_beam = (
+        CurrentDriveModel(int(i_hcd_primary)).method
+        == CurrentDriveMethodType.NEUTRAL_BEAM
+    )
+    return 1 if is_neutral_beam else 2
+
+
 BUILDING_SIZING = {
     0: Bldgs,
-    1: functools.partial(BldgsSizes, i_hcd_primary=CurrentDriveModel.ITER_NEUTRAL_BEAM),
+    1: BldgsSizesNeutralBeam,
+    2: BldgsSizesOtherHcd,
 }
-"""`.buildings.i_bldgs_size` -> the building-size occupant."""
+"""`_bldgs_sizing_arm(...)` -> the building-size occupant."""
 
 AVAIL = {
     BlanketLifetimeModel.NEUTRON_FLUENCE: AvailNeutronFluence,
@@ -3971,6 +3992,10 @@ def machine_from_indat(input_file, stella_conf=None):
     i_tf_sup = switches.get("i_tf_sup", 1)
     tf_power = _slot_occupant("i_tf_sup", i_tf_sup, TF_POWER)
     i_tf_sup = TFConductorModel(i_tf_sup)
+    # `.buildings.i_bldgs_size`'s `CHAPMAN_2024` arm further depends on this -- see
+    # `_bldgs_sizing_arm`. Same default as `_tokamak_device`'s own read
+    # (`current_drive_variables.py:190`).
+    i_hcd_primary = switches.get("i_hcd_primary", 5)
     # `ife` decides no slot of its own: it is a *device*, and the seven Account-22x
     # cost nodes that branch on it have no inertial-confinement arm at all. Answered
     # once, here, before anything is built -- `_audit/next_steps.md` §14.2. Its default
@@ -4248,7 +4273,13 @@ def machine_from_indat(input_file, stella_conf=None):
             CRYO_LOADS,
         ),
     )
-    buildings = Buildings(sizing=pick("i_bldgs_size", BUILDING_SIZING, 0))
+    buildings = Buildings(
+        sizing=_slot_occupant(
+            "bldgs_sizing_arm",
+            _bldgs_sizing_arm(switches.get("i_bldgs_size", 0), i_hcd_primary),
+            BUILDING_SIZING,
+        )
+    )
     availability = Availability(
         electric_production=_slot_occupant(
             "electric_production_arm",

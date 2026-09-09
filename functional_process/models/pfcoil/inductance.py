@@ -522,3 +522,29 @@ def calculate_pf_plasma_inductances_no_central_solenoid_for_topology(
         n_pf_coil_turns=n_pf_coil_turns[:n],
         topology=topology,
     )
+
+
+def calculate_pf_plasma_inductances_no_central_solenoid_bound(
+    rmajor,
+    ind_plasma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    n_pf_coil_turns,
+):
+    """`PFCoilInductanceNoCentralSolenoid`:
+    `calculate_pf_plasma_inductances_no_central_solenoid_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with no `topology` parameter left over for
+    `WrapsFunction` to complain about.
+    """
+    return calculate_pf_plasma_inductances_no_central_solenoid_for_topology(
+        rmajor=rmajor,
+        ind_plasma=ind_plasma,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        n_pf_coil_turns=n_pf_coil_turns,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )

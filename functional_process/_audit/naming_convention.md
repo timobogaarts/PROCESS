@@ -31,11 +31,25 @@ any other, but its **role** differs from an ordinary port:
   `VarPath` on any node at all — it's consumed by the Python code that assembles the
   `Graph`, the same way cottax expects `Graph` structure to be decided by the caller
   once, not re-read per evaluation.
-- If it's kept as a static branch inside one node (a formula-changing switch with a
-  provably identical reads-set across values — expected to be rare, see policy doc), it
-  becomes a plain **static kwarg** on that node's `fn`, named after its PROCESS field
-  name, not wrapped in a `VarPath`. `VarPath` is for values flowing along graph edges;
-  a compile-time configuration choice is neither.
+- If it selects between formulas rather than between subgraphs, it becomes **one class
+  per distinct behaviour** — never a static kwarg, and never `functools.partial` at the
+  call site. The family base holds the reads and the outputs once; each arm adds only
+  `fn` (`cottax/wraps.py`, and `tests/test_wraps.py::test_an_arm_overrides_only_the_formula`).
+  Count arms by behaviour, not by enum arity: a twelve-valued switch read to decide one
+  bit is two arms. `indat` names the arm; no node body reads the switch.
+
+  **Superseded 2026-09-09**, when this bullet said such a switch "becomes a plain static
+  kwarg on that node's `fn`". A node holding an `eqx.field(static=True)` cannot be a
+  plain declaration — `wraps.py` requires its declared reads to be exactly `fn`'s
+  parameters, and a static field is neither a read nor a parameter — so the static form
+  is what keeps a node from collapsing to `fn` + reads + outputs. The arm-count worry
+  that motivated the old bullet assumed each arm restates the family's reads; it does
+  not.
+
+  A static field is still right for **trace-time structure** that is not a choice
+  between behaviours: an array shape (`n_plasma_profile_elements`), a lookup table
+  (`den_helium_at_nodes`), a preset record (`machine_config`), a sample grid point.
+  `VarPath` is for values flowing along graph edges; those are neither.
 
 Every switch's audit record (`_audit/unit_registry.md` → per-switch rows) must say which
 of these two it is, with the reads-set diff as justification — see

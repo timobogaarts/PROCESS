@@ -58,10 +58,29 @@ explanation. Verified state at creation
 (rebuilt 2026-08-18 after the env was lost): `process 0.0.1.dev1186+g769950de1`,
 `cottax 0.1.0`, `jax` **0.11.0** (recorded here as 0.11.1 until 2026-09-06, when the env
 was checked directly and read 0.11.0; CPU — no CUDA jaxlib, and jax warns about that on every
-import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;
-`~/jaxgraph` → 740 passed, 3 skipped.** If either number moves without you having
-changed something, suspect the env before the code. The rebuild reproduced both numbers exactly, so the
-`jax` 0.11.0 → 0.11.1 drift is inert as far as either suite can see.
+import; harmless), `numpy 2.5.3`, `scipy 1.18.1`, `pytest 9.1.1`. **`tests/unit` → 846
+passed; `~/jaxgraph` → 740 passed, 3 skipped.** If either number moves without you having
+changed something, suspect the env before the code.
+
+**2026-09-09: that instruction earned itself.** The env was found on `jax`/`jaxlib`
+0.11.1 — nobody recorded moving it off 0.11.0 — and every *computation* segfaulted while
+imports and array construction succeeded: `jnp.array([1.0])` fine, `+ 1.0` SIGSEGV, 5 runs
+out of 5, with 61 GB free and a load average under 1. So it was neither the documented
+0.11.0 nor a resource limit, and the earlier note that the 0.11.0 → 0.11.1 drift "is
+inert" held only for as long as the install stayed coherent. Restored with
+
+```bash
+$PY -m pip install --force-reinstall --no-cache-dir "jax==0.11.0" "jaxlib==0.11.0"
+```
+
+which fixed it (3/3 computations) and dragged `numpy` 2.5.2 → 2.5.3 and `scipy`
+1.18.0 → 1.18.1 along as collateral — the versions above are updated to match. Symptom to
+recognise next time: a `pytest` run that dies with a bare "Extension modules: …" dump and
+no test summary is this, not a test failure.
+
+`functional_process/tests` was **3752 passed + 3347 skipped** when this file was written
+and is **7804 passed + 8218 skipped** as of 2026-09-09; the tree has roughly doubled since.
+Prefer measuring it to trusting either number.
 
 ### `process_port_gpu` — the env for the Warp/GPU work
 

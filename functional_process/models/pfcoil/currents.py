@@ -926,3 +926,198 @@ def calculate_time_point_currents_no_central_solenoid_for_topology(
         1.0e-6 * ccls,
         ratio,
     )
+
+
+# ---------------------------------------------------------------------------
+# Topology-bound occupant bindings, `switch_kwarg_survey.md`'s rule applied to
+# `PFCoilTopology`: a model-choice switch must not be a static field a node reads (or a
+# `topology=...` kwarg bound at the node's *construction* site, which is the same thing
+# spelled differently). Each function below is `*_for_topology` with `topology` fixed to
+# the one constant its occupant ever uses, so the occupant's declared reads can equal the
+# target's parameters exactly and it collapses to a plain `WrapsFunction`.
+# ---------------------------------------------------------------------------
+
+
+def calculate_plasma_initiation_currents_reference(
+    rmajor,
+    rminor,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+    alfapf,
+):
+    """`PFCoilInitiationCurrents`: `calculate_plasma_initiation_currents_for_topology`
+    fixed to `REFERENCE_TOPOLOGY`.
+    """
+    return calculate_plasma_initiation_currents_for_topology(
+        rmajor=rmajor,
+        rminor=rminor,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        r_cs_middle=r_cs_middle,
+        dz_cs_full=dz_cs_full,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        alfapf=alfapf,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_plasma_initiation_currents_no_central_solenoid_bound(
+    rmajor,
+    rminor,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+):
+    """`PFCoilInitiationCurrentsNoCentralSolenoid`:
+    `calculate_plasma_initiation_currents_no_central_solenoid_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`.
+    """
+    return calculate_plasma_initiation_currents_no_central_solenoid_for_topology(
+        rmajor=rmajor,
+        rminor=rminor,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        alfapf=alfapf,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
+def calculate_equilibrium_currents_reference(
+    rmajor,
+    rminor,
+    kappa,
+    aspect,
+    plasma_current,
+    beta_poloidal_vol_avg,
+    ind_plasma_internal_norm,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+):
+    """`PFCoilEquilibriumCurrents`: `calculate_equilibrium_currents_for_topology` fixed
+    to `REFERENCE_TOPOLOGY`.
+    """
+    return calculate_equilibrium_currents_for_topology(
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        aspect=aspect,
+        plasma_current=plasma_current,
+        beta_poloidal_vol_avg=beta_poloidal_vol_avg,
+        ind_plasma_internal_norm=ind_plasma_internal_norm,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        alfapf=alfapf,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_equilibrium_currents_no_central_solenoid(
+    rmajor,
+    rminor,
+    kappa,
+    aspect,
+    plasma_current,
+    beta_poloidal_vol_avg,
+    ind_plasma_internal_norm,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+):
+    """`PFCoilEquilibriumCurrentsNoCentralSolenoid`:
+    `calculate_equilibrium_currents_for_topology` fixed to `SPHERICAL_TOKAMAK_TOPOLOGY`.
+    Same read set as `calculate_equilibrium_currents_reference` -- the ST scaling that
+    bypasses the SVD (`calculate_equilibrium_currents`'s docstring) is a different,
+    unported occupant, not this one.
+    """
+    return calculate_equilibrium_currents_for_topology(
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        aspect=aspect,
+        plasma_current=plasma_current,
+        beta_poloidal_vol_avg=beta_poloidal_vol_avg,
+        ind_plasma_internal_norm=ind_plasma_internal_norm,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        alfapf=alfapf,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
+def calculate_cs_flux_swing_reference(
+    ccls,
+    ind_pf_cs_plasma_mutual,
+    n_pf_coil_turns,
+    vs_plasma_ramp_required,
+    dr_cs_bore,
+    dr_cs,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+):
+    """`CSFluxSwing`: `calculate_cs_flux_swing_for_topology` fixed to
+    `REFERENCE_TOPOLOGY` -- the only topology this node is ever asked about, since
+    `iohcl = 0` deletes the node rather than changing it (see `CSFluxSwing`'s
+    docstring).
+    """
+    return calculate_cs_flux_swing_for_topology(
+        ccls=ccls,
+        ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+        n_pf_coil_turns=n_pf_coil_turns,
+        vs_plasma_ramp_required=vs_plasma_ramp_required,
+        dr_cs_bore=dr_cs_bore,
+        dr_cs=dr_cs,
+        dz_cs_full=dz_cs_full,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_time_point_currents_reference(
+    ccl0,
+    ccls,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+    f_j_cs_start_end_flat_top,
+):
+    """`PFCoilTimePointCurrents`: `calculate_time_point_currents_for_topology` fixed to
+    `REFERENCE_TOPOLOGY`.
+    """
+    return calculate_time_point_currents_for_topology(
+        ccl0=ccl0,
+        ccls=ccls,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        f_j_cs_start_end_flat_top=f_j_cs_start_end_flat_top,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_time_point_currents_no_central_solenoid_bound(
+    ccl0,
+    ccls,
+    f_j_cs_start_pulse_end_flat_top,
+):
+    """`PFCoilTimePointCurrentsNoCentralSolenoid`:
+    `calculate_time_point_currents_no_central_solenoid_for_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`.
+    """
+    return calculate_time_point_currents_no_central_solenoid_for_topology(
+        ccl0=ccl0,
+        ccls=ccls,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )

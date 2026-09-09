@@ -19,6 +19,7 @@ from functional_process.models.pfcoil import (
     NFXF,
     NGC2,
     REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
     PFLocation,
 )
 from functional_process.models.safe_math import safe_sqrt
@@ -575,4 +576,89 @@ def calculate_pf_coil_placement_for_topology(
         rref=rref,
         topology=topology,
         r_pf_outside_tf_is_constant=r_pf_outside_tf_is_constant,
+    )
+
+
+def calculate_pf_coil_placement_reference(
+    r_tf_outboard_out,
+    dr_pf_tf_outboard_out_offset,
+    rmajor,
+    rminor,
+    triang,
+    rpf2,
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    zref,
+):
+    """`PFCoilPlacement`: `calculate_pf_coil_placement_for_topology` fixed to
+    `REFERENCE_TOPOLOGY` and `r_pf_outside_tf_is_constant = False` (the D-shaped TF
+    curve, `i_tf_shape != PICTURE_FRAME` and `i_r_pf_outside_tf_placement != 1` on the
+    reference run) -- with `rref = None`, since no `REFERENCE_TOPOLOGY` group is
+    `GENERALLY_PLACED`. Bakes both of `PFCoilPlacement`'s former static fields so no
+    `topology`/`r_pf_outside_tf_is_constant` parameter is left over for `WrapsFunction`
+    to complain about.
+    """
+    return calculate_pf_coil_placement_for_topology(
+        r_tf_outboard_out=r_tf_outboard_out,
+        dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        rpf2=rpf2,
+        z_tf_top=z_tf_top,
+        dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+        zref=zref,
+        rref=None,
+        topology=REFERENCE_TOPOLOGY,
+        r_pf_outside_tf_is_constant=False,
+    )
+
+
+def calculate_pf_coil_placement_no_central_solenoid(
+    r_tf_outboard_out,
+    dr_pf_tf_outboard_out_offset,
+    rmajor,
+    rminor,
+    triang,
+    rpf2,
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    zref,
+    rref,
+):
+    """`PFCoilPlacementSphericalTokamak`: `calculate_pf_coil_placement_for_topology`
+    fixed to `SPHERICAL_TOKAMAK_TOPOLOGY` and `r_pf_outside_tf_is_constant = True` (the
+    picture-frame/stacked arm) -- with `rref` read, since `SPHERICAL_TOKAMAK_TOPOLOGY`
+    has a `GENERALLY_PLACED` group.
+    """
+    return calculate_pf_coil_placement_for_topology(
+        r_tf_outboard_out=r_tf_outboard_out,
+        dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        rpf2=rpf2,
+        z_tf_top=z_tf_top,
+        dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+        zref=zref,
+        rref=rref,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+        r_pf_outside_tf_is_constant=True,
+    )
+
+
+def calculate_pf_coil_positions_no_central_solenoid(
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+):
+    """`PFCoilPositionsNoCentralSolenoid`: `calculate_pf_coil_positions_for_topology`
+    fixed to `SPHERICAL_TOKAMAK_TOPOLOGY`, with `r_cs_middle = None` since this
+    topology has no CS slot to append -- see `calculate_pf_coil_positions_from_elements`
+    for the `REFERENCE_TOPOLOGY` counterpart.
+    """
+    return calculate_pf_coil_positions_for_topology(
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        r_cs_middle=None,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
     )

@@ -102,6 +102,61 @@ def calculate_pf_volt_seconds_no_central_solenoid(
     return vs_burn, vs_ramp + vs_burn
 
 
+def calculate_pf_coil_turn_currents_reference(
+    f_c_pf_cs_peak_time_array,
+    c_pf_coil_turn_peak_input,
+    c_pf_cs_coils_peak_ma,
+    plasma_current,
+):
+    """`PFCoilTurnCurrents`: `calculate_pf_coil_turn_currents` fixed to
+    `REFERENCE_TOPOLOGY`, with no `topology` parameter left over for `WrapsFunction`
+    to complain about.
+    """
+    return calculate_pf_coil_turn_currents(
+        f_c_pf_cs_peak_time_array=f_c_pf_cs_peak_time_array,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        plasma_current=plasma_current,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_pf_coil_turn_currents_no_central_solenoid(
+    f_c_pf_cs_peak_time_array,
+    c_pf_coil_turn_peak_input,
+    c_pf_cs_coils_peak_ma,
+    plasma_current,
+):
+    """`PFCoilTurnCurrentsNoCentralSolenoid`: `calculate_pf_coil_turn_currents` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`. Same reads and output as
+    `calculate_pf_coil_turn_currents_reference` -- only which row is the plasma's
+    differs.
+    """
+    return calculate_pf_coil_turn_currents(
+        f_c_pf_cs_peak_time_array=f_c_pf_cs_peak_time_array,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        plasma_current=plasma_current,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+
+def calculate_pf_volt_seconds_no_central_solenoid_bound(
+    ind_pf_cs_plasma_mutual,
+    c_pf_coil_turn,
+):
+    """`PFCoilVoltSecondsNoCentralSolenoid`:
+    `calculate_pf_volt_seconds_no_central_solenoid` at its own default
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with no `topology` parameter left over for
+    `WrapsFunction` to complain about (a keyword-only parameter counts as a declared read
+    whether or not it has a default).
+    """
+    return calculate_pf_volt_seconds_no_central_solenoid(
+        ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+        c_pf_coil_turn=c_pf_coil_turn,
+    )
+
+
 def calculate_pf_cs_volt_seconds(ind_pf_cs_plasma_mutual, c_pf_coil_turn):
     """Volt-second capability of the PF/CS system linked to the plasma (Wb).
 

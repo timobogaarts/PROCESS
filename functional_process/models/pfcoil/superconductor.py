@@ -10,7 +10,7 @@ mirrors these functions, not the declarations that call them.
 
 import jax.numpy as jnp
 
-from functional_process.models.pfcoil import CS_INDEX
+from functional_process.models.pfcoil import CS_INDEX, SPHERICAL_TOKAMAK_TOPOLOGY
 from functional_process.models.physics.superconductors import (
     hijc_rebco,
     itersc,
@@ -685,4 +685,30 @@ def calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology(
         dr_hts_tape=dr_tf_hts_tape,
         dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
         dx_hts_tape_total=dx_tf_hts_tape_total,
+    )
+
+
+def calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound(
+    b_pf_coil_peak,
+    bpf2,
+    tftmp,
+    fcupfsu,
+    dr_tf_hts_tape,
+    dx_tf_hts_tape_rebco,
+    dx_tf_hts_tape_total,
+):
+    """`PFStrandCriticalCurrentDensityHazeltonZhaiRebco`:
+    `calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology` fixed to
+    `SPHERICAL_TOKAMAK_TOPOLOGY`, with no `topology` parameter left over for
+    `WrapsFunction` to complain about.
+    """
+    return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology(
+        b_pf_coil_peak=b_pf_coil_peak,
+        bpf2=bpf2,
+        tftmp=tftmp,
+        fcupfsu=fcupfsu,
+        dr_tf_hts_tape=dr_tf_hts_tape,
+        dx_tf_hts_tape_rebco=dx_tf_hts_tape_rebco,
+        dx_tf_hts_tape_total=dx_tf_hts_tape_total,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
     )
