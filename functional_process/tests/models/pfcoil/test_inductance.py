@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/inductance.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/inductance.py`.
 
 Two tier-1 contracts:
 
@@ -36,7 +36,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import (
+from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_PF_COILS,
     N_PF_GROUPS,
@@ -44,7 +44,7 @@ from functional_process.cottax.pfcoil import (
     PLASMA_INDEX,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.cottax.pfcoil.inductance import (
+from functional_process.cottax.models.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,
     calculate_pf_plasma_inductances_no_central_solenoid,
     calculate_solenoid_self_inductance,

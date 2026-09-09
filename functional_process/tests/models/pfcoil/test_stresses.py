@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/stresses.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/stresses.py`.
 
 Six tier-1 contracts, and **none of them needs an adapter**: every PROCESS function this
 module ports is either a bare `@staticmethod` on `CSCoil` or a module-level function in
@@ -19,7 +19,7 @@ from scipy.special import ellipk as scipy_ellipk
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil.stresses import (
+from functional_process.cottax.models.pfcoil.stresses import (
     _ellipe,
     _ellipk,
     calculate_cs_hoop_stress,

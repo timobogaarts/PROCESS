@@ -1,11 +1,11 @@
-"""Harness cases for `functional_process/cottax/power/tf_coil_power.py`. Fuzz-only:
+"""Harness cases for `functional_process/cottax/models/power/tf_coil_power.py`. Fuzz-only:
 no legacy points exist for either function in `tests/unit/models/test_power.py`.
 """
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.power.tf_coil_power import (
+from functional_process.cottax.models.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,
 )

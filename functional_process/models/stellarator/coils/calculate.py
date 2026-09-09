@@ -1,5 +1,5 @@
 """Pure physics functions extracted from
-`functional_process.cottax.stellarator.coils.calculate`, per `_audit/formulas_split.md`
+`functional_process.cottax.models.stellarator.coils.calculate`, per `_audit/formulas_split.md`
 step 2 phase A. The graph declarations that wrap these stay in that sibling
 module.
 """

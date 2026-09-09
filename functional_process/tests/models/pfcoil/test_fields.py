@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/fields.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/fields.py`.
 
 Three tier-1 contracts:
 
@@ -26,7 +26,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import (
+from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
     N_CS_PF_COILS,
@@ -35,7 +35,7 @@ from functional_process.cottax.pfcoil import (
     NFXF,
     NGC2,
 )
-from functional_process.cottax.pfcoil.fields import (
+from functional_process.cottax.models.pfcoil.fields import (
     calculate_b_field_at_point,
     calculate_coil_current_waveform,
     calculate_cs_bore_magnetic_field,

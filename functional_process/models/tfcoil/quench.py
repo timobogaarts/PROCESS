@@ -1,5 +1,5 @@
 """Pure functions for the TF coil quench chain, extracted from
-`functional_process/cottax/tfcoil/quench.py`.
+`functional_process/cottax/models/tfcoil/quench.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring for the CoolProp boundary and

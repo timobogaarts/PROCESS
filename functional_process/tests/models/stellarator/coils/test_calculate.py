@@ -43,7 +43,7 @@ from functional_process.cottax.paths import (
     stellarator_config,
     tfcoil,
 )
-from functional_process.cottax.stellarator.coils.calculate import (
+from functional_process.cottax.models.stellarator.coils.calculate import (
     Bi2212WindingPackIntersectInputs,
     CrocoRebcoWindingPackIntersectInputs,
     DurhamNbtiWindingPackIntersectInputs,
@@ -76,7 +76,7 @@ from functional_process.cottax.stellarator.coils.calculate import (
     winding_pack_pre_intersect,
     winding_pack_total_size,
 )
-from functional_process.cottax.stellarator.coils.coils import (
+from functional_process.cottax.models.stellarator.coils.coils import (
     Intersect,
     intersect_residual,
 )
@@ -260,7 +260,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     and `Build`'s formula is the wrong one to keep (see `build.py`'s
     `calculate_build`/`Build` docstrings and this node's own).
     """
-    from functional_process.cottax.stellarator.coils.calculate import ZTfInsideHalf
+    from functional_process.cottax.models.stellarator.coils.calculate import ZTfInsideHalf
 
     node = ZTfInsideHalf()
     graph = to_graph(node)
@@ -307,7 +307,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     boundary value. See that class's docstring for why binding it fresh (rather than
     modelling PROCESS's read-before-write as a fixed point) is the faithful choice.
     """
-    from functional_process.cottax.stellarator.coils.calculate import LenTfCoil
+    from functional_process.cottax.models.stellarator.coils.calculate import LenTfCoil
 
     node = LenTfCoil()
     graph = to_graph(node)
@@ -358,7 +358,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     for `thermal_cryo.py`'s `CryoQLoadsStep`, which reads it -- see
     `_audit/boundary_inputs_audit.md` §7 items 4 and 7.
     """
-    from functional_process.cottax.stellarator.coils.calculate import TfCryoArea
+    from functional_process.cottax.models.stellarator.coils.calculate import TfCryoArea
 
     node = TfCryoArea()
     graph = to_graph(node)

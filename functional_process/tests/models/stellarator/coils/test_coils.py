@@ -21,7 +21,7 @@ from functional_process.cottax._harness import (
 )
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import stellarator
-from functional_process.cottax.stellarator.coils.coils import (
+from functional_process.cottax.models.stellarator.coils.coils import (
     Intersect,
     IntersectBisectionNewtonPolish,
     bmax_from_awp,

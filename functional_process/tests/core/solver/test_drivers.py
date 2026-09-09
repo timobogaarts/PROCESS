@@ -22,7 +22,7 @@ from functional_process.cottax.core.solver.drivers import (
     _refuse_inert_objective,
 )
 from functional_process.cottax.paths import fwbs
-from functional_process.cottax.power.thermal_cryo import CryoQNucStep
+from functional_process.cottax.models.power.thermal_cryo import CryoQNucStep
 from functional_process.models.switch_enums import CoilNuclearHeatingModel
 from process.models.tfcoil.base import TFConductorModel
 

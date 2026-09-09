@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/power/pf_coil_power.py`.
+"""Harness cases for `functional_process/cottax/models/power/pf_coil_power.py`.
 
 **Fuzz-only**: `tests/unit/models/test_power.py` has no automatically-generated case
 for `pfpwr`, so there is no legacy point to inherit. The bounds below are anchored on
@@ -25,8 +25,8 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import NGC2
-from functional_process.cottax.power.pf_coil_power import (
+from functional_process.cottax.models.pfcoil import NGC2
+from functional_process.cottax.models.power.pf_coil_power import (
     N_PF_ACTIVE_POINTS,
     N_PF_CS_PLASMA_CIRCUITS,
     calculate_pf_coil_power_supplies,

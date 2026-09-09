@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/superconductor.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/superconductor.py`.
 
 Three tier-1 contracts, all against PROCESS's real `superconpf` -- a module-level
 function with no `self` and no `data`, so the adapters are thin: they call it with the
@@ -19,7 +19,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil.superconductor import (
+from functional_process.cottax.models.pfcoil.superconductor import (
     calculate_cs_critical_current_density_iter_nb3sn,
     calculate_cs_critical_current_density_wst_nb3sn,
     calculate_cs_strand_critical_current_density,

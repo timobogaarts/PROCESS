@@ -1,5 +1,5 @@
 """Pure functions for the TF coil in-plane force, vertical tension, and the bucked-case
-stress models, extracted from `functional_process/cottax/tfcoil/stress.py`.
+stress models, extracted from `functional_process/cottax/models/tfcoil/stress.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring for scope and the switch

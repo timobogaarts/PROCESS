@@ -12,7 +12,7 @@ never touched by either method, so `None` stands in for all of them.
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.structure import (
+from functional_process.cottax.models.stellarator.structure import (
     calculate_intercoil_mass_scaling_reference,
     calculate_structure_masses,
 )

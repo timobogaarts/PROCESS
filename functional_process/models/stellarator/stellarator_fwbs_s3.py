@@ -1,5 +1,5 @@
 """Pure physics functions extracted from
-`functional_process.cottax.stellarator.stellarator_fwbs_s3`, per `_audit/formulas_split.md`
+`functional_process.cottax.models.stellarator.stellarator_fwbs_s3`, per `_audit/formulas_split.md`
 step 2 phase A. The graph declarations that wrap these stay in that sibling
 module.
 """

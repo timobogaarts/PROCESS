@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 
 from functional_process._vendor import fluid_properties as ported
-from functional_process.cottax.tfcoil.quench import (
+from functional_process.cottax.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,
     helium_properties_at_quench_nodes,
     quench_quadrature_temperatures,

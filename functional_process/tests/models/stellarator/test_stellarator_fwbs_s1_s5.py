@@ -15,7 +15,7 @@ on `blktmodel == 1`) never runs -- confirmed by reading S1/S3/S4/S6's bodies for
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.stellarator_fwbs_s1_s5 import (
+from functional_process.cottax.models.stellarator.stellarator_fwbs_s1_s5 import (
     calculate_cryostat_and_vv_geometry,
     calculate_fw_blanket_shield_geometry,
 )

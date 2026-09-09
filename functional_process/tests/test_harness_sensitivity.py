@@ -22,7 +22,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from functional_process.cottax.physics.plasma_profiles import (
+from functional_process.cottax.models.physics.plasma_profiles import (
     calculate_pedestal_profile_values,
 )
 from functional_process.tests.models.physics import (

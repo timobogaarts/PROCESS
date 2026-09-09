@@ -1,5 +1,5 @@
 """Harness cases for the ported TF coil stress chain
-(`functional_process/cottax/tfcoil/stress.py`).
+(`functional_process/cottax/models/tfcoil/stress.py`).
 
 Six contracts: the four elasticity-smearing helpers, the `plane_stress` layer solver,
 `tf_field_and_force` and `stresscl` itself. Where PROCESS's own
@@ -29,7 +29,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.tfcoil.stress import (
+from functional_process.cottax.models.tfcoil.stress import (
     extended_plane_strain,
     eyoung_parallel,
     eyoung_parallel_array,

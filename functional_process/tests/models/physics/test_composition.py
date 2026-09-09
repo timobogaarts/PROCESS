@@ -21,7 +21,7 @@ from functional_process.cottax._harness import Tier1Contract, legacy_sample
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import PLASMA_COMPOSITION
 from functional_process.cottax.paths import impurity_radiation
-from functional_process.cottax.physics.composition import (
+from functional_process.cottax.models.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
     PlasmaCompositionNonIgnited,
     calculate_effective_charge_ionisation_profiles,

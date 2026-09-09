@@ -22,7 +22,7 @@ from cottax.spec import VarPath
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import divertor, physics
-from functional_process.cottax.physics.plasma_profiles import (
+from functional_process.cottax.models.physics.plasma_profiles import (
     PedestalProfileValues,
     calculate_ion_vol_avg_temperature,
     calculate_parabolic_gradient_lengths,

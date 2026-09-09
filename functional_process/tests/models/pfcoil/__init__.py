@@ -1,1 +1,1 @@
-"""Harness cases for `functional_process/cottax/pfcoil/`."""
+"""Harness cases for `functional_process/cottax/models/pfcoil/`."""

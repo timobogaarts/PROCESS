@@ -21,7 +21,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.neoclassics import (
+from functional_process.cottax.models.stellarator.neoclassics import (
     calculate_collision_frequency,
     calculate_drift_velocity,
     calculate_effective_thermal_diffusivity,

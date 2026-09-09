@@ -16,7 +16,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.plasma_physics import (
+from functional_process.cottax.models.stellarator.plasma_physics import (
     calculate_clipped_radiation_powers,
     calculate_fusion_power_totals_mw,
     calculate_fusion_totals_no_beam,

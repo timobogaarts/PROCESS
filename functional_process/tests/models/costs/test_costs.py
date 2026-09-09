@@ -16,7 +16,7 @@ import numpy as np
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.costs.costs import (
+from functional_process.cottax.models.costs.costs import (
     calculate_atmospheric_recovery_cost,
     calculate_auxiliary_component_cooling_cost,
     calculate_auxiliary_facility_power_cost,

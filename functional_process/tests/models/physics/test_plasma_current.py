@@ -1,7 +1,7 @@
 """Harness cases for the ported tokamak plasma-current chain.
 
 Six contracts, one per pure function in
-`functional_process/cottax/physics/plasma_current.py`.
+`functional_process/cottax/models/physics/plasma_current.py`.
 
 **Two kinds of oracle here, and the split is the point.**
 
@@ -49,7 +49,7 @@ import functools
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.plasma_current import (
+from functional_process.cottax.models.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,
     calculate_current_profile_index_wesson,

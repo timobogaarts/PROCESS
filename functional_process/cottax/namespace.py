@@ -4,7 +4,7 @@ import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
-from functional_process.cottax.build import (
+from functional_process.cottax.models.build import (
     BlktUpperThickness,
     DivertorGeometryConventional,
     DivertorGeometrySphericalTokamak,
@@ -27,7 +27,7 @@ from functional_process.cottax.build import (
     WpConductorMaxWidthSuperconducting,
     ZTfInsideHalf,
 )
-from functional_process.cottax.divertor import (
+from functional_process.cottax.models.divertor import (
     DivertorHeatFluxSplit,
     DivertorHeatLoadWade,
 )

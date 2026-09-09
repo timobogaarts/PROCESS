@@ -1,10 +1,10 @@
 """Pure functions for the PF coil sizing (turns, cross-section, edges) and the
 conductor/steel masses this pass's boundary asks for, extracted from
-`functional_process/cottax/pfcoil/masses.py`.
+`functional_process/cottax/models/pfcoil/masses.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring (and
-`functional_process/cottax/pfcoil/__init__.py`'s package docstring) for scope. The
+`functional_process/cottax/models/pfcoil/__init__.py`'s package docstring) for scope. The
 audit record is `functional_process/_audit/units/models/pfcoil/masses.md` and mirrors
 these functions, not the declarations that call them.
 """

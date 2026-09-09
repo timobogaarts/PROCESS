@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/geometry.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/geometry.py`.
 
 Four tier-1 contracts, one per unit that PROCESS exposes as a callable of its own:
 
@@ -28,8 +28,8 @@ import numpy as np
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import N_PF_GROUPS, NFXF
-from functional_process.cottax.pfcoil.geometry import (
+from functional_process.cottax.models.pfcoil import N_PF_GROUPS, NFXF
+from functional_process.cottax.models.pfcoil.geometry import (
     calculate_cs_geometry,
     calculate_cs_turn_geometry_eu_demo,
     calculate_pf_coil_group_positions,

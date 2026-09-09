@@ -1,10 +1,10 @@
 """Pure functions for the PF/CS current solve: the SVD least-squares core, the
 plasma-initiation and equilibrium currents, the CS flux swing, and the coil current
-waveforms, extracted from `functional_process/cottax/pfcoil/currents.py`.
+waveforms, extracted from `functional_process/cottax/models/pfcoil/currents.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring (and
-`functional_process/cottax/pfcoil/__init__.py`'s package docstring) for scope, the
+`functional_process/cottax/models/pfcoil/__init__.py`'s package docstring) for scope, the
 switch table and the SCC these nodes sit in. The audit record is
 `functional_process/_audit/units/models/pfcoil/currents.md` and mirrors these
 functions, not the declarations that call them.

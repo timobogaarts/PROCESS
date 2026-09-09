@@ -20,7 +20,7 @@ import pytest
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.scrape_off_layer import (
+from functional_process.cottax.models.physics.scrape_off_layer import (
     Eich2013SOLPowerDecayLength,
     Mast2014SOLPowerDecayLength1,
     Mast2014SOLPowerDecayLength2,
@@ -118,7 +118,7 @@ def _make_scrape_off_layer():
 #
 # `p_plasma_separatrix_mw_raw` is poked onto `data.physics.p_plasma_separatrix_mw`
 # directly -- PROCESS's own field has no "_raw" spelling; that is a port-side mint name
-# introduced one node earlier (`functional_process/cottax/physics/physics.py`'s
+# introduced one node earlier (`functional_process/cottax/models/physics/physics.py`'s
 # `SeparatrixPowerNonIgnited`), not a `DataStructure` field. `ScrapeOffLayer.run()`
 # reads exactly this field, before `physics.py`'s own positivity kludge would have
 # transformed it -- see the port module's docstring.

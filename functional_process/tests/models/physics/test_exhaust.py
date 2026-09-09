@@ -8,7 +8,7 @@ takes no `self.data` access at all, so no adapter is needed.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.exhaust import (
+from functional_process.cottax.models.physics.exhaust import (
     calculate_eu_demo_re_attachment_metric,
     calculate_psep_over_r_metric,
     calculate_radiation_fraction,

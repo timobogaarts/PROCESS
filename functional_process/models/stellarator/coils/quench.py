@@ -1,5 +1,5 @@
 """Pure physics functions extracted from
-`functional_process.cottax.stellarator.coils.quench`, per `_audit/formulas_split.md`
+`functional_process.cottax.models.stellarator.coils.quench`, per `_audit/formulas_split.md`
 step 2 phase A. The graph declarations that wrap these stay in that sibling
 module.
 """
@@ -166,7 +166,7 @@ def calculate_quench_protection(
     (`c_tf_total`, `n_tf_coils`) -- carrying it as a third, separately-sourced argument
     would be redundant, not a real second input. Derived internally instead, which also
     removes the only real-`data`-field gap this unit had (see the graph-node section
-    in `functional_process/cottax/stellarator/coils/quench.py` and `quench.md`'s
+    in `functional_process/cottax/models/stellarator/coils/quench.py` and `quench.md`'s
     "calls into other models" note).
 
     Parameters

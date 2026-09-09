@@ -10,7 +10,7 @@ the real PROCESS function, which still takes `coilcurrent` as an explicit argume
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.coils.quench import (
+from functional_process.cottax.models.stellarator.coils.quench import (
     calculate_quench_protection,
     calculate_quench_protection_current_density,
     max_dump_voltage,

@@ -1,5 +1,5 @@
 """Pure functions for the superconducting TF coil, extracted from
-`functional_process/cottax/tfcoil/superconducting.py`.
+`functional_process/cottax/models/tfcoil/superconducting.py`.
 
 That module still holds the graph declarations (`ExplicitFunction`/`FixedPointFunction`
 occupants) that wire these functions to `VarPath`s; read its module docstring for scope,

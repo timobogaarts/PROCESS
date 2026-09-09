@@ -9,7 +9,7 @@ in the audit record.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import data_reference
-from functional_process.cottax.stellarator.divertor import calculate_divertor
+from functional_process.cottax.models.stellarator.divertor import calculate_divertor
 from process.models.stellarator.divertor import st_div
 
 

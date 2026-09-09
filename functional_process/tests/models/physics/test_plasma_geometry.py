@@ -35,7 +35,7 @@ import functools
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.plasma_geometry import (
+from functional_process.cottax.models.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,
     calculate_minor_radius,

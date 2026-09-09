@@ -12,7 +12,7 @@ the reference -- no `DataStructure` adapter needed.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pulse import calculate_burn_time
+from functional_process.cottax.models.pulse import calculate_burn_time
 from process.models.pulse import Pulse
 
 

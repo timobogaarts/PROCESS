@@ -9,7 +9,7 @@ audit record's data-footprint table for the full trace and, in particular, the s
 self-loop findings ("The `delta_eta` self-loop" and "The `eta_turbine`/`etath_liq`/
 `temp_turbine_coolant_in`/`p_fw_div_heat_deposited_mw`/`p_fw_blkt_coolant_pump_mw`
 self-loops" sections), which is why `component_thermal_powers`'s node-level split in
-`functional_process.cottax.power.thermal_cryo` exists: `calculate_component_thermal_powers`
+`functional_process.cottax.models.power.thermal_cryo` exists: `calculate_component_thermal_powers`
 (the pure function) is unchanged, but at the node level each of the six self-references
 is owned by its own node, separate from `ComponentThermalPowers`.
 

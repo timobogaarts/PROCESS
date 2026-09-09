@@ -16,7 +16,7 @@ from functional_process.cottax._harness import (
     bounds_from_iteration_variables,
 )
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.density_limits import (
+from functional_process.cottax.models.stellarator.density_limits import (
     calculate_ecrh_density_limit,
     calculate_sudo_density_limit,
 )

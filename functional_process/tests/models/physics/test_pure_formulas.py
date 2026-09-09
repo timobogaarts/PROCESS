@@ -11,7 +11,7 @@ from functional_process.cottax._harness import (
     Tolerance,
 )
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.pure_formulas import (
+from functional_process.cottax.models.physics.pure_formulas import (
     calaculate_stored_thermal_energy,
     calculate_total_plasma_heating_power,
     fast_alpha_beta,

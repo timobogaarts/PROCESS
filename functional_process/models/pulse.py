@@ -27,7 +27,7 @@ contributes nothing to the graph):
 access -- the extraction seam is free, same shape as `density_limit.py`'s
 `calculate_density_limit`. One deviation: PROCESS's `logger.error` call on a negative
 burn time (`:306-314`) is dropped as pure reporting with no effect on the returned
-value -- same precedent as `functional_process/cottax/structure.py`'s `aintmass`
+value -- same precedent as `functional_process/cottax/models/structure.py`'s `aintmass`
 comment ("PROCESS logs and kludges ... dropped here as pure reporting"). Here there
 is not even a kludge: the negative value is returned as-is either way, so dropping the
 log changes nothing about what the function computes.
@@ -61,7 +61,7 @@ reasons, any one of which would be enough on its own:
    `.pf_coil.c_pf_cs_coils_peak_ma`, `.pf_coil.c_pf_coil_turn_peak_input`,
    `.pf_coil.rhopfbus`, `.pf_coil.ind_pf_cs_plasma_mutual`,
    `.pf_coil.n_pf_coil_turns`, and `.pf_power.vpfskv` -- every one of them a
-   `functional_process/cottax/pfcoil/**` concern, which this wave's fencing assigns to
+   `functional_process/cottax/models/pfcoil/**` concern, which this wave's fencing assigns to
    a different agent. Declaring these reads now risks binding against a producer
    another agent is mid-rewrite on.
 3. **Dynamic array indexing the naming convention does not cover.** Every PF-coil

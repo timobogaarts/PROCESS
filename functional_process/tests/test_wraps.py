@@ -22,7 +22,7 @@ from cottax.interfaces.pytree_namespace_module import (  # noqa: E402
 )
 
 from functional_process.cottax.paths import physics  # noqa: E402
-from functional_process.cottax.physics.density_limit import (  # noqa: E402
+from functional_process.cottax.models.physics.density_limit import (  # noqa: E402
     EnforcedDensityLimitGreenwald,
     GreenwaldDensityLimit,
 )

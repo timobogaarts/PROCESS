@@ -1,10 +1,10 @@
 """Pure functions for the PF/CS coil geometry: CS geometry and filament placement,
 and PF coil group/individual placement, extracted from
-`functional_process/cottax/pfcoil/geometry.py`.
+`functional_process/cottax/models/pfcoil/geometry.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring (and
-`functional_process/cottax/pfcoil/__init__.py`'s package docstring) for scope and the
+`functional_process/cottax/models/pfcoil/__init__.py`'s package docstring) for scope and the
 reference-arm switch table. The audit record is
 `functional_process/_audit/units/models/pfcoil/geometry.md` and mirrors these functions,
 not the declarations that call them.

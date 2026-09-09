@@ -55,7 +55,7 @@ from functional_process.cottax._harness.process_reference import (
     process_reference,
 )
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.vacuum.vacuum import (
+from functional_process.cottax.models.vacuum.vacuum import (
     XMULT,
     DuctDiameterRootFind,
     DuctFeasibility,

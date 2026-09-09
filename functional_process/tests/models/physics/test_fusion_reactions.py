@@ -19,7 +19,7 @@ import numpy as np
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.fusion_reactions import (
+from functional_process.cottax.models.physics.fusion_reactions import (
     alpha_power_beam,
     beam_fusion_cross_section,
     beam_slowing_down_state,

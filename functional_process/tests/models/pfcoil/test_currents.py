@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/currents.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/currents.py`.
 
 One tier-1 contract: `calculate_efc_currents` against `PFCoil.efc`
 (`process/models/pfcoil.py:1403-1506`), the only unit in this module that PROCESS exposes
@@ -33,8 +33,8 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, Tolerance
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import LROW1
-from functional_process.cottax.pfcoil.currents import calculate_efc_currents
+from functional_process.cottax.models.pfcoil import LROW1
+from functional_process.cottax.models.pfcoil.currents import calculate_efc_currents
 from process.data_structure.pfcoil_variables import (
     N_PF_GROUPS_MAX,
     NFIXMX,

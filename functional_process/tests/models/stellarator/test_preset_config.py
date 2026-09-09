@@ -26,7 +26,7 @@ from pathlib import Path
 import functional_process
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.stellarator.preset_config import (
+from functional_process.cottax.models.stellarator.preset_config import (
     STELLA_CONFIG_SCALAR_FIELDS,
     select_stellarator_config_scalars,
 )

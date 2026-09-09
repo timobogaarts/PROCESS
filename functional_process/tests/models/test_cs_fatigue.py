@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/cs_fatigue.py` -- two tier-1 contracts.
+"""Harness cases for `functional_process/cottax/models/cs_fatigue.py` -- two tier-1 contracts.
 
 `surface_stress_intensity_factor` is diffed directly against `CsFatigue`'s own
 `@staticmethod` (itself `@njit`-compiled, but numba and JAX both just run it as plain
@@ -23,7 +23,7 @@ make seven of the port's twelve arguments untested.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.cs_fatigue import (
+from functional_process.cottax.models.cs_fatigue import (
     calculate_n_cycle,
     surface_stress_intensity_factor,
 )

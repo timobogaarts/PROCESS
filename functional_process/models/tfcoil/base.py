@@ -1,5 +1,5 @@
 """Pure functions for the TF coil geometry/current/inductance base layer,
-extracted from `functional_process/cottax/tfcoil/base.py`.
+extracted from `functional_process/cottax/models/tfcoil/base.py`.
 
 That module still holds the graph declarations (`ExplicitFunction`/`FixedPointFunction`
 occupants) that wire these functions to `VarPath`s; read its module docstring for scope
@@ -602,7 +602,7 @@ def generic_tf_coil_area_and_masses(
     `process/models/tfcoil/base.py:2193-2218`. Despite the name it computes no mass at
     all on this path -- every mass in the superconducting chain is
     `superconducting_tf_coil_areas_and_masses`'s
-    (`functional_process/cottax/tfcoil/superconducting.py`). `wbtf` is a local of the
+    (`functional_process/cottax/models/tfcoil/superconducting.py`). `wbtf` is a local of the
     source too, so it stays a local here.
 
     This is the sole producer of `.tfcoil.tfcryoarea`, one of the slot's ten boundary

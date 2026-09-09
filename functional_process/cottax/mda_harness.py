@@ -494,7 +494,7 @@ EXPLAINED_DISAGREEMENTS = {
         "`VacuumOld`'s duct diameter, ~2.9e-4 high. **Not a floating-point path "
         "difference -- a deliberate, already-documented solver-tolerance difference.** "
         "This port solves the duct-diameter equation to a relative-step tolerance of "
-        "`1e-10` (`functional_process/cottax/vacuum.py:250`'s "
+        "`1e-10` (`functional_process/cottax/models/vacuum.py:250`'s "
         "`solve_duct_diameter(..., tol=1e-10)`, whose own docstring at lines 262-271 "
         "states the deviation and why); PROCESS stops the *same* Newton iteration at "
         "`dd <= 0.01`, a 1% relative-step cutoff "
@@ -505,7 +505,7 @@ EXPLAINED_DISAGREEMENTS = {
         "`DuctDiameterRootFind`. A second, independently documented deviation points "
         "the same way: PROCESS tests its fits-in-the-gap condition on the diameter "
         "*before* the Newton update, this port on the diameter actually returned "
-        "(`functional_process/cottax/vacuum.py:391-397`)."
+        "(`functional_process/cottax/models/vacuum.py:391-397`)."
     ),
     ".heat_transport.p_plant_electric_base_total_mw": (
         "**Not a port defect: PROCESS's own converged `DataStructure` is internally "

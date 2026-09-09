@@ -10,7 +10,7 @@ graph machinery at all. `~/openmdao_process` already imports those bodies, so th
 boundary has a consumer rather than only an intention.
 
 **Imports are read with `ast`, not `grep`.** Most apparent hits are docstrings naming a
-declaration module (`see \\`functional_process.cottax.stellarator.build\\``), and prose is
+declaration module (`see \\`functional_process.cottax.models.stellarator.build\\``), and prose is
 not a dependency. A grep-based version of this test would fail on ~30 files that are
 perfectly clean.
 """

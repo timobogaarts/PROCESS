@@ -21,7 +21,7 @@ import numpy as np
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.fw import (
+from functional_process.cottax.models.fw import (
     apply_first_wall_coverage_factors,
     apply_first_wall_coverage_factors_double_null,
     calculate_dshaped_first_wall_areas,

@@ -1,6 +1,6 @@
 """Pure functions for the PF/CS volt-second accounting: per-turn current waveforms
 and the CS/PF volt-seconds, extracted from
-`functional_process/cottax/pfcoil/volt_seconds.py`.
+`functional_process/cottax/models/pfcoil/volt_seconds.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring for the SCC these nodes close.

@@ -1,6 +1,6 @@
 """Pure functions for the CS coil stresses (hoop, radial, self-field axial, and the
 Tresca/von Mises combination), extracted from
-`functional_process/cottax/pfcoil/stresses.py`.
+`functional_process/cottax/models/pfcoil/stresses.py`.
 
 That module still holds the graph declaration (`ExplicitFunction` occupant) that wires
 these functions to `VarPath`s; read its module docstring for scope. The audit record is

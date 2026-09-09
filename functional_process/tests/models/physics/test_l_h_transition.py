@@ -23,7 +23,7 @@ import pytest
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.l_h_transition import (
+from functional_process.cottax.models.physics.l_h_transition import (
     Martin08AspectLowerLHThresholdPower,
     Martin08AspectNominalLHThresholdPower,
     Martin08AspectUpperLHThresholdPower,

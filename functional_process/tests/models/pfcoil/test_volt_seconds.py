@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/pfcoil/volt_seconds.py`.
+"""Harness cases for `functional_process/cottax/models/pfcoil/volt_seconds.py`.
 
 One tier-1 contract here: `calculate_pf_cs_volt_seconds` against `PFCoil.vsec`
 itself -- unlike most of the package, `vsec` *is* a separable PROCESS callable (an
@@ -23,13 +23,13 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.pfcoil import (
+from functional_process.cottax.models.pfcoil import (
     N_CS_PF_COILS,
     NGC2,
     PLASMA_INDEX,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.cottax.pfcoil.volt_seconds import (
+from functional_process.cottax.models.pfcoil.volt_seconds import (
     calculate_pf_cs_volt_seconds,
     calculate_pf_volt_seconds_no_central_solenoid,
 )

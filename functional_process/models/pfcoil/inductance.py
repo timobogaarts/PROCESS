@@ -1,5 +1,5 @@
 """Pure functions for the mutual and self inductances of the PF coils, the CS and
-the plasma, extracted from `functional_process/cottax/pfcoil/inductance.py`.
+the plasma, extracted from `functional_process/cottax/models/pfcoil/inductance.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring for the cycle this closes and

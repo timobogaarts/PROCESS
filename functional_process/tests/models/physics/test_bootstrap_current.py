@@ -1,6 +1,6 @@
 """Harness cases for the ported tokamak bootstrap-current chain.
 
-Port: `functional_process/cottax/physics/bootstrap_current.py`.
+Port: `functional_process/cottax/models/physics/bootstrap_current.py`.
 
 **Three kinds of oracle here, and the split is the point.**
 
@@ -58,7 +58,7 @@ from cottax.spec import VarPath
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import physics
-from functional_process.cottax.physics.bootstrap_current import (
+from functional_process.cottax.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
     PlasmaCurrentFractions,

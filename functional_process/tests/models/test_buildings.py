@@ -20,7 +20,7 @@ documents for `st_build`.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.buildings.buildings import (
+from functional_process.cottax.models.buildings.buildings import (
     calculate_bldgs,
     calculate_bldgs_sizes,
     calculate_shield_height,

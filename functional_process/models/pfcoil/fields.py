@@ -1,9 +1,9 @@
 """Pure functions for the PF/CS Green's-function field kernel and per-group peak
-fields, extracted from `functional_process/cottax/pfcoil/fields.py`.
+fields, extracted from `functional_process/cottax/models/pfcoil/fields.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring (and
-`functional_process/cottax/pfcoil/__init__.py`'s package docstring) for scope and the
+`functional_process/cottax/models/pfcoil/__init__.py`'s package docstring) for scope and the
 reference-arm switch table. The audit record is
 `functional_process/_audit/units/models/pfcoil/fields.md` and mirrors these functions,
 not the declarations that call them.

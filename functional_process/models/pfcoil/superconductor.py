@@ -1,9 +1,9 @@
 """Pure functions for the PF/CS superconductor critical current density and
-temperature margin, extracted from `functional_process/cottax/pfcoil/superconductor.py`.
+temperature margin, extracted from `functional_process/cottax/models/pfcoil/superconductor.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants) that wire
 these functions to `VarPath`s; read its module docstring (and
-`functional_process/cottax/pfcoil/__init__.py`'s package docstring) for scope. The
+`functional_process/cottax/models/pfcoil/__init__.py`'s package docstring) for scope. The
 audit record is `functional_process/_audit/units/models/pfcoil/superconductor.md` and
 mirrors these functions, not the declarations that call them.
 """

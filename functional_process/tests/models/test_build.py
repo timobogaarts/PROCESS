@@ -1,4 +1,4 @@
-"""Harness cases for the ported tokamak build (`functional_process/cottax/build.py`).
+"""Harness cases for the ported tokamak build (`functional_process/cottax/models/build.py`).
 
 **Every reference here is a real PROCESS call, not a re-derivation.** `build.py` has no
 `calculate_*` staticmethod for the radial or vertical build -- both are `self.data`-
@@ -31,7 +31,7 @@ import copy
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.build import (
+from functional_process.cottax.models.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,
     calculate_dr_shld_vv_gap_outboard,

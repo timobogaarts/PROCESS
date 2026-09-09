@@ -4,15 +4,15 @@ import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
-from functional_process.cottax.availability.namespace import Availability
-from functional_process.cottax.buildings.namespace import Buildings
-from functional_process.cottax.costs.namespace import Costs
+from functional_process.cottax.models.availability.namespace import Availability
+from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.costs.namespace import Costs
 from functional_process.cottax.initialisation import Initialisation
-from functional_process.cottax.physics.namespace import Physics
-from functional_process.cottax.power.namespace import Power
-from functional_process.cottax.stellarator.namespace import Stellarator
-from functional_process.cottax.tokamak.namespace import Tokamak
-from functional_process.cottax.vacuum.namespace import Vacuum
+from functional_process.cottax.models.physics.namespace import Physics
+from functional_process.cottax.models.power.namespace import Power
+from functional_process.cottax.models.stellarator.namespace import Stellarator
+from functional_process.cottax.models.tokamak.namespace import Tokamak
+from functional_process.cottax.models.vacuum.namespace import Vacuum
 
 
 class StellaratorProcess(ModelNamespace):

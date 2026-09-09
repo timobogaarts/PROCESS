@@ -663,7 +663,7 @@ def bootstrap_fraction_sauter(
     `_trapped_particle_fraction_sauter`.
 
     The three profile arrays are the ported profile nodes' outputs
-    (`functional_process/cottax/physics/profiles.py`): `radius_plasma_profile_norm` is
+    (`functional_process/cottax/models/physics/profiles.py`): `radius_plasma_profile_norm` is
     `ProfileGrid`'s, and the density/temperature pair is
     `plasma_profiles.py`'s `PedestalProfileValues` on this input
     (`i_plasma_pedestal = 1`, `large_tokamak_eval.IN.DAT:291`). Nothing is re-derived
@@ -939,7 +939,7 @@ def calculate_plasma_current_fractions(
 
     This is the **only** producer of `.physics.f_c_plasma_auxiliary` in `process/`, and
     that path is a declared boundary read of
-    `functional_process/cottax/physics/current_drive.py`'s `HcdPrimaryInjectedPower`.
+    `functional_process/cottax/models/physics/current_drive.py`'s `HcdPrimaryInjectedPower`.
 
     Both clamps are `jnp` elementwise forms of PROCESS's `if`/`min` and `max`. The
     `1e-10` floor on the inductive fraction is PROCESS's guard against a divide-by-zero

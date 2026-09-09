@@ -19,7 +19,7 @@ Like `divertor.md`'s `st_div`, no PROCESS unit test exercises this fragment dire
 """
 
 from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax.stellarator.stellarator_fwbs_s3 import (
+from functional_process.cottax.models.stellarator.stellarator_fwbs_s3 import (
     calculate_divertor_plate_mass,
 )
 

@@ -29,7 +29,7 @@ import numpy as np
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
 from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.profiles import (
+from functional_process.cottax.models.physics.profiles import (
     calculate_density_profile,
     calculate_greenwald_density_fractions,
     calculate_parabolic_on_axis_densities,

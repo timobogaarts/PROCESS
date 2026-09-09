@@ -1,4 +1,4 @@
-"""Harness cases for the ported shield model (`functional_process/cottax/shield.py`).
+"""Harness cases for the ported shield model (`functional_process/cottax/models/shield.py`).
 
 `calculate_elliptical_shield_volumes` and `calculate_dshaped_shield_volumes` are diffed
 directly against `Shield`'s own `@staticmethod`s -- they take no `self.data` access at
@@ -40,7 +40,7 @@ import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.shield import (
+from functional_process.cottax.models.shield import (
     calculate_dshaped_shield_volumes,
     calculate_elliptical_shield_volumes,
     calculate_shield_half_height_double_null,

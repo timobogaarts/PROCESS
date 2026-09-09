@@ -1,5 +1,5 @@
 """Pure physics functions extracted from
-`functional_process.cottax.stellarator.tf_nuclear_heating`, per `_audit/formulas_split.md`
+`functional_process.cottax.models.stellarator.tf_nuclear_heating`, per `_audit/formulas_split.md`
 step 2 phase A. The graph declarations that wrap these stay in that sibling
 module.
 """

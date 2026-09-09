@@ -1,5 +1,5 @@
 """Pure functions for the CroCo (cross-conductor) REBCO-tape TF coil, extracted from
-`functional_process/cottax/tfcoil/croco.py`.
+`functional_process/cottax/models/tfcoil/croco.py`.
 
 That module still holds the graph declarations (`ExplicitFunction` occupants, gathered
 into `namespace.CrocoSuperconductingTfCoil`) that wire these functions to `VarPath`s;

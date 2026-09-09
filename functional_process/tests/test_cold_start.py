@@ -394,7 +394,7 @@ def test_the_port_computes_the_same_noh_process_does_on_every_configuration():
     """
     import math
 
-    from functional_process.cottax.pfcoil.inductance import NOH_PAD, _cs_segments
+    from functional_process.cottax.models.pfcoil.inductance import NOH_PAD, _cs_segments
 
     seen = {}
     for name in CONFIGURATIONS:

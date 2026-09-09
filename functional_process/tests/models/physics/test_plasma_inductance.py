@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/physics/plasma_inductance.py`.
+"""Harness cases for `functional_process/cottax/models/physics/plasma_inductance.py`.
 
 Four tier-1 contracts. Every one of them calls PROCESS's own function **directly**:
 all four are `@staticmethod @nb.njit` on `PlasmaInductance` with explicit arguments and
@@ -13,7 +13,7 @@ there is nothing left in it to compare once the four functions below agree.
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.physics.plasma_inductance import (
+from functional_process.cottax.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
     calculate_normalised_internal_inductance_iter_3,

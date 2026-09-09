@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/cottax/power/thermal_cryo.py`.
+"""Harness cases for `functional_process/cottax/models/power/thermal_cryo.py`.
 
 The node-level tests at the bottom of this file cover the
 `DeltaEtaStep`/`ComponentThermalPowers` split -- see `DeltaEtaStep`'s own docstring
@@ -28,7 +28,7 @@ from functional_process.cottax.indat import (
     _p_fw_div_heat_deposited_arm,
     _temp_turbine_coolant_in_arm,
 )
-from functional_process.cottax.power.thermal_cryo import (
+from functional_process.cottax.models.power.thermal_cryo import (
     ComponentThermalPowers,
     Cryo,
     CryoQNucStep,
