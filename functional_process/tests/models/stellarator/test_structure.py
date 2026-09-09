@@ -10,6 +10,7 @@ never touched by either method, so `None` stands in for all of them.
 """
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.structure import (
     calculate_intercoil_mass_scaling_reference,
@@ -26,36 +27,12 @@ def _stellarator():
     return stellarator
 
 
-def _reference_structure_masses(
-    stella_config_coilsurface,
-    f_st_rmajor,
-    r_coil_minor,
-    stella_config_coil_rminor,
-    dx_tf_inboard_out_toroidal,
-    len_tf_coil,
-    n_tf_coils,
-    b_plasma_toroidal_on_axis,
-    den_steel,
-    m_tf_coils_total,
-    dewmkg,
-):
-    """Call PROCESS's `Stellarator.st_strc` through the port's signature."""
-    stellarator = _stellarator()
-    data = stellarator.data
-    data.stellarator_config.stella_config_coilsurface = stella_config_coilsurface
-    data.stellarator_config.stella_config_coil_rminor = stella_config_coil_rminor
-    data.stellarator.f_st_rmajor = f_st_rmajor
-    data.stellarator.r_coil_minor = r_coil_minor
-    data.tfcoil.dx_tf_inboard_out_toroidal = dx_tf_inboard_out_toroidal
-    data.tfcoil.len_tf_coil = len_tf_coil
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.physics.b_plasma_toroidal_on_axis = b_plasma_toroidal_on_axis
-    data.fwbs.den_steel = den_steel
-    data.tfcoil.m_tf_coils_total = m_tf_coils_total
-    data.fwbs.dewmkg = dewmkg
-
-    stellarator.st_strc(output=False)
-    return data.structure.aintmass, data.structure.clgsmass, data.structure.coldmass
+_reference_structure_masses = process_reference(
+    _stellarator,
+    "st_strc",
+    ("structure.aintmass", "structure.clgsmass", "structure.coldmass"),
+    call_args=(False,),
+)
 
 
 def _reference_intercoil_mass_scaling_reference(e_tf_magnetic_stored_total_gj):

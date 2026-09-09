@@ -13,7 +13,7 @@ formula (`a=0.00089`, `c=0.00267`). `fuzz_bounds` deliberately straddles `a == c
 for why this is safe (the discarded branch's own non-finite sub-expressions do not leak
 into the selected branch's value or gradient).
 
-`calculate_n_cycle` (added 2026-08-30) does need an adapter, and `_reference_n_cycle`
+`calculate_n_cycle` does need an adapter, and `_reference_n_cycle`
 below is where the "close the `data` back-door" claim stops being an assertion:
 `ncycle`'s seven material and safety-factor coefficients are `self.data.cs_fatigue.*`
 reads on PROCESS's side and arguments on the port's, so the adapter writes each one onto

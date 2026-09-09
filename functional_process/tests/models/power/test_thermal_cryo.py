@@ -1,14 +1,8 @@
 """Harness cases for `functional_process/cottax/power/thermal_cryo.py`.
 
-Audit record: `functional_process/_audit/units/models/power/thermal_cryo.md`. No
-legacy points exist in `tests/unit/models/test_power.py` for
-`component_thermal_powers`/`plant_thermal_efficiency`/`plant_thermal_efficiency_2`
-(fuzz-only, same situation as chunk A); `cryo` does have legacy points there, reused
-below.
-
-The node-level tests at the bottom of this file (`DeltaEtaStep`/`ComponentThermalPowers`
-split) are new -- see `thermal_cryo.md`'s "The `delta_eta` self-loop" section
-and `DeltaEtaStep`'s own docstring for the full reasoning.
+The node-level tests at the bottom of this file cover the
+`DeltaEtaStep`/`ComponentThermalPowers` split -- see `DeltaEtaStep`'s own docstring
+for the full reasoning.
 """
 
 import inspect
@@ -58,6 +52,13 @@ from process.models.power import (
     PumpingPowerModelTypes,
 )
 from process.models.tfcoil.base import TFConductorModel
+
+
+def _make_power():
+    p = Power()
+    p.data = DataStructure()
+    return p
+
 
 # ---------------------------------------------------------------------------
 # plant_thermal_efficiency

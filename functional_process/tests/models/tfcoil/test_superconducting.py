@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
     CICC_SUPERCONDUCTOR_PROPERTIES,
@@ -89,45 +90,16 @@ def _sctfcoil():
 def _reference_wp_geometry(i_tf_wp_geom):
     """`superconducting_tf_wp_geometry` for one `i_tf_wp_geom`, as a flat tuple.
 
-    PROCESS returns a `TFWPGeometry` dataclass; the fields are unpacked in the port's
-    own return order (which is the dataclass's own field order,
-    `superconducting.py:94-122`).
+    PROCESS returns a `TFWPGeometry` dataclass; `unpacked` reads it back in the
+    dataclass's own field order (`superconducting.py:94-122`), which is also the port's
+    return order, so no `fields=` override is needed.
     """
-
-    def reference(
-        r_tf_inboard_in,
-        dr_tf_nose_case,
-        dr_tf_wp_with_insulation,
-        tan_theta_coil,
-        dx_tf_side_case_min,
-        dx_tf_wp_insulation,
-        dx_tf_wp_insertion_gap,
-    ):
-        result = CICCSuperconductingTFCoil.superconducting_tf_wp_geometry(
+    return unpacked(
+        functools.partial(
+            CICCSuperconductingTFCoil.superconducting_tf_wp_geometry,
             i_tf_wp_geom=i_tf_wp_geom,
-            r_tf_inboard_in=r_tf_inboard_in,
-            dr_tf_nose_case=dr_tf_nose_case,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-            tan_theta_coil=tan_theta_coil,
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
         )
-        return (
-            result.r_tf_wp_inboard_inner,
-            result.r_tf_wp_inboard_outer,
-            result.r_tf_wp_inboard_centre,
-            result.dx_tf_wp_toroidal_min,
-            result.dr_tf_wp_no_insulation,
-            result.dx_tf_wp_primary_toroidal,
-            result.dx_tf_wp_secondary_toroidal,
-            result.dx_tf_wp_toroidal_average,
-            result.a_tf_wp_with_insulation,
-            result.a_tf_wp_no_insulation,
-            result.a_tf_wp_ground_insulation,
-        )
-
-    return reference
+    )
 
 
 _WP_GEOMETRY_SAMPLE = {
@@ -429,52 +401,35 @@ class TestPeakBTfInboardWithRippleFlatAllowance(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_cicc_averaged_turn_geometry(
-    j_tf_wp,
-    c_tf_turn,
-    dx_tf_turn_steel,
-    dx_tf_turn_insulation,
-    layer_ins,
-    a_tf_wp_no_insulation,
-    dia_tf_turn_coolant_channel,
-    f_a_tf_turn_cable_space_extra_void,
-):
-    """The both-flags-`False` arm, as a tuple in the port's return order.
-
-    `dx_tf_turn_general` and `dx_tf_turn_cable_space_general` are passed at PROCESS's
-    own test values but are *not* arguments here: on this arm the first is overwritten
-    from `sqrt(a_tf_turn)` before use and the second is never read. `c_tf_turn` is an
-    argument because it is read; it is not in the returned tuple because the port does
-    not own it (see the port module's finding 1).
-    """
-    result = CICCSuperconductingTFCoil.tf_cable_in_conduit_averaged_turn_geometry(
-        j_tf_wp=j_tf_wp,
-        dx_tf_turn_steel=dx_tf_turn_steel,
-        dx_tf_turn_insulation=dx_tf_turn_insulation,
+# The both-flags-`False` arm, as a tuple in the port's return order.
+# `dx_tf_turn_general` and `dx_tf_turn_cable_space_general` are fixed at PROCESS's own
+# test values rather than sample kwargs: on this arm the first is overwritten from
+# `sqrt(a_tf_turn)` before use and the second is never read. `c_tf_turn` stays a sample
+# kwarg because it is read; it is not in `fields=` because the port does not own it (see
+# the port module's finding 1).
+_reference_cicc_averaged_turn_geometry = unpacked(
+    functools.partial(
+        CICCSuperconductingTFCoil.tf_cable_in_conduit_averaged_turn_geometry,
         dx_tf_turn_general=0.049532469413859428,
-        c_tf_turn=c_tf_turn,
         i_dx_tf_turn_general_input=False,
         i_dx_tf_turn_cable_space_general_input=False,
         dx_tf_turn_cable_space_general=0.0,
-        layer_ins=layer_ins,
-        a_tf_wp_no_insulation=a_tf_wp_no_insulation,
-        dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-        f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-    )
-    return (
-        result.a_tf_turn_cable_space_no_void,
-        result.a_tf_turn_steel,
-        result.a_tf_turn_insulation,
-        result.n_tf_coil_turns,
-        result.dx_tf_turn_general,
-        result.dr_tf_turn,
-        result.dx_tf_turn,
-        result.dx_tf_turn_conduit_full_average,
-        result.radius_tf_turn_cable_space_corners,
-        result.dx_tf_turn_cable_space_average,
-        result.a_tf_turn_cable_space_effective,
-        result.f_a_tf_turn_cable_space_cooling,
-    )
+    ),
+    fields=(
+        "a_tf_turn_cable_space_no_void",
+        "a_tf_turn_steel",
+        "a_tf_turn_insulation",
+        "n_tf_coil_turns",
+        "dx_tf_turn_general",
+        "dr_tf_turn",
+        "dx_tf_turn",
+        "dx_tf_turn_conduit_full_average",
+        "radius_tf_turn_cable_space_corners",
+        "dx_tf_turn_cable_space_average",
+        "a_tf_turn_cable_space_effective",
+        "f_a_tf_turn_cable_space_cooling",
+    ),
+)
 
 
 class TestCiccAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
@@ -607,35 +562,14 @@ class TestCiccIntegerTurnGeometry(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_cicc_inboard_areas(**kwargs):
-    """`tf_cicc_inboard_areas_and_fractions`, as a flat tuple."""
-    result = CICCSuperconductingTFCoil.tf_cicc_inboard_areas_and_fractions(**kwargs)
-    return (
-        result.a_tf_wp_coolant_channels,
-        result.a_tf_wp_conductor,
-        result.a_tf_wp_extra_void,
-        result.a_tf_coil_wp_turn_insulation,
-        result.a_tf_wp_steel,
-        result.a_tf_coil_inboard_steel,
-        result.f_a_tf_coil_inboard_steel,
-        result.a_tf_coil_inboard_insulation,
-        result.f_a_tf_coil_inboard_insulation,
-    )
+# `SuperconTFAreasFractions`'s own field order, so no `fields=` override is needed.
+_reference_cicc_inboard_areas = unpacked(
+    CICCSuperconductingTFCoil.tf_cicc_inboard_areas_and_fractions
+)
 
 
 class TestTfCiccInboardAreasAndFractions(Tier1Contract):
-    """No switch; ten reads, nine outputs.
-
-    PROCESS has no unit test for this function, so the sample is assembled from the
-    2018-baseline numbers its neighbours' tests carry -- `n_tf_coil_turns`,
-    `a_tf_turn_steel`, `a_tf_turn_cable_space_no_void`,
-    `f_a_tf_turn_cable_space_extra_void`, `a_tf_coil_inboard_case`, `n_tf_coils` and
-    `a_tf_inboard_total` from `test_superconducting_tf_coil_area_and_masses` /
-    `test_superconducting_tf_case_geometry`, `a_tf_wp_ground_insulation` from
-    `test_superconducting_tf_wp_geometry`, and `a_tf_turn_insulation` from
-    `a_tf_coil_wp_turn_insulation / n_tf_coil_turns` in the first of those. Stated
-    rather than presented as one lifted case.
-    """
+    """No switch; ten reads, nine outputs."""
 
     audit_record = "models/tfcoil/superconducting.md"
     reference = _reference_cicc_inboard_areas
@@ -682,11 +616,9 @@ _DCOND_POISON = -1.0e9
 `i_tf_sc_mat`'s only effect in this function is which element of the nine-long density
 table `m_tf_coil_superconductor` is scaled by (`process/models/tfcoil/
 superconducting.py:2024-2036`, the sole `dcond` read) -- and **four of the nine elements
-hold 6080.0** (`tfcoil_variables.py:157-170`). So an adapter that filled `dcond`
-uniformly, as this one did until 2026-08-27, could not tell `dcond[0]` from `dcond[4]`,
-and neither could one that left the table at its defaults. That is exactly the hole the
-two occupants fell into: both baked `dcond[0]` for every value of the switch and no
-value test noticed.
+hold 6080.0** (`tfcoil_variables.py:157-170`). An adapter that filled `dcond` uniformly
+could not tell `dcond[0]` from `dcond[4]`, and neither could one that left the table at
+its defaults.
 
 Poisoning every element the occupant does not name turns a wrong-element read into a
 mass that is wrong in sign as well as magnitude, at every sample. Same technique and
@@ -1052,10 +984,9 @@ class TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco(Tier1Contract):
 
     **The value the family was built for.** `spherical_tokamak_eval.IN.DAT:355` and
     `st_regression.IN.DAT:827` both set `i_tf_sc_mat = 9`, whose density is
-    `dcond[8] == 8500.0`; both arms used to bake `dcond[0] == 6080.0`, a 40 %
-    superconductor-mass error waiting for either file to assemble. This case is that
-    claim executed: PROCESS is driven at `i_tf_sc_mat = 9`, `8500.0` sits in `dcond[8]`
-    alone, and the other eight elements are `_DCOND_POISON`.
+    `dcond[8] == 8500.0`. This case is that claim executed: PROCESS is driven at
+    `i_tf_sc_mat = 9`, `8500.0` sits in `dcond[8]` alone, and the other eight elements
+    are `_DCOND_POISON`.
 
     It is also the executable half of the **portability** argument. `indat.UNPORTED`
     refuses `i_tf_sc_mat = 9` for the stellarator's `winding_pack_intersect_inputs`,

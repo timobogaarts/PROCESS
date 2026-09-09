@@ -72,12 +72,7 @@ def _tfcoil():
 
 
 class TestCircumference(Tier1Contract):
-    """`TFCoil.circumference` -> `circumference`, unchanged.
-
-    Samples are PROCESS's own `test_circumference` parametrisation verbatim
-    (`tests/unit/models/tfcoil/test_tfcoil.py:348-353`): one from the John D. Cook blog
-    post the routine header cites, one from the 2018 baseline.
-    """
+    """`TFCoil.circumference` -> `circumference`, unchanged."""
 
     audit_record = "models/tfcoil/base.md"
     reference = staticmethod(TFCoil.circumference)
@@ -142,7 +137,7 @@ def _reference_global_geometry(i_tf_case_geom):
 
 
 class TestTfGlobalGeometryCircularCase(Tier1Contract):
-    """`i_tf_case_geom == 0`. Sample: `test_tf_global_geometry` case 1's inputs."""
+    """`i_tf_case_geom == 0`."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_global_geometry(_CIRCULAR_CASE)
@@ -154,7 +149,7 @@ class TestTfGlobalGeometryCircularCase(Tier1Contract):
 
 
 class TestTfGlobalGeometryStraightCase(Tier1Contract):
-    """`i_tf_case_geom == 1`. Sample: `test_tf_global_geometry` case 2's inputs."""
+    """`i_tf_case_geom == 1`."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_global_geometry(_STRAIGHT_CASE)
@@ -242,11 +237,9 @@ def _reference_dx_tf_side_case_min_from_fraction(
 class TestDrTfPlasmaCaseFromInput(Tier1Contract):
     """The `FixedPointFunction` arm's body: `max(entering value, geometric minimum)`.
 
-    The legacy sample is `test_tf_global_geometry` case 1's inputs, whose entering
-    `dr_tf_plasma_case` is the field default `0.0`
-    (`process/data_structure/tfcoil_variables.py:77`) -- exactly the reference run's
-    state, and a point where the clamp binds, so the gradient with respect to the
-    entering value is `0` there.
+    The legacy sample's entering `dr_tf_plasma_case` is the field default `0.0` -- a
+    point where the clamp binds, so the gradient with respect to the entering value is
+    `0` there.
     """
 
     audit_record = "models/tfcoil/base.md"
@@ -259,10 +252,7 @@ class TestDrTfPlasmaCaseFromInput(Tier1Contract):
 
 
 class TestDrTfPlasmaCaseFromFraction(Tier1Contract):
-    """The `i_f_dr_tf_plasma_case == True` arm.
-
-    Sample: `test_tf_global_geometry` case 2.
-    """
+    """The `i_f_dr_tf_plasma_case == True` arm."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_dr_tf_plasma_case_from_fraction
@@ -274,10 +264,7 @@ class TestDrTfPlasmaCaseFromFraction(Tier1Contract):
 
 
 class TestDxTfSideCaseMinFromFraction(Tier1Contract):
-    """The `tfc_sidewall_is_fraction == True` arm.
-
-    Sample: `test_tf_global_geometry` case 2.
-    """
+    """The `tfc_sidewall_is_fraction == True` arm."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_dx_tf_side_case_min_from_fraction
@@ -313,7 +300,7 @@ def _reference_r_b_tf_inboard_peak(
 
 
 class TestRBTfInboardPeak(Tier1Contract):
-    """`.tfcoil.r_b_tf_inboard_peak`. Sample: 2018-baseline build numbers."""
+    """`.tfcoil.r_b_tf_inboard_peak`."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_r_b_tf_inboard_peak
@@ -330,11 +317,7 @@ class TestRBTfInboardPeak(Tier1Contract):
 
 
 class TestTfCurrent(Tier1Contract):
-    """`TFCoil.tf_current` -> `tf_current`, unchanged.
-
-    Samples are PROCESS's own `test_tf_current` parametrisation's inputs
-    (`tests/unit/models/tfcoil/test_tfcoil.py:290-318`).
-    """
+    """`TFCoil.tf_current` -> `tf_current`, unchanged."""
 
     audit_record = "models/tfcoil/base.md"
     reference = staticmethod(TFCoil.tf_current)
@@ -375,29 +358,6 @@ _reference_shape_inner_double_null = functools.partial(
 )
 
 
-_SHAPE_SAMPLE = {
-    "r_tf_inboard_out": 4.20194118510911,
-    "rmajor": 8.8931664516129036,
-    "rminor": 2.8830645161290323,
-    "r_tf_outboard_in": 15.915405859443332,
-    "z_tf_inside_half": 9.0730900215620327,
-    "dr_tf_inboard": 1.208,
-}
-"""Reconstructed from the 2018-baseline arc coordinates PROCESS's own
-`test_tf_coil_self_inductance` carries
-(`tests/unit/models/tfcoil/test_tfcoil.py:600-640`).
-
-`tf_coil_shape_inner` has no unit test of its own, so the point is built backwards out
-of the one place a real converged coil shape is written down: `r_tf_arc[0]` and
-`r_tf_arc[2]` are `r_tf_inboard_out` and `r_tf_outboard_in` directly,
-`r_tf_arc[1] = rmajor - 0.2 * rminor` fixes the pair above (`rminor` taken from the same
-baseline, `rmajor` solved for), `z_tf_arc[3] = -z_tf_inside_half`, and
-`z_tf_arc[1] = z_tf_top - dr_tf_inboard` gives `z_tf_top` for the single-null case.
-Provenance is PROCESS's own numbers, one algebraic step removed -- stated here rather
-than presented as a directly-lifted sample.
-"""
-
-
 class TestTfCoilShapeDShapeSingleNull(Tier1Contract):
     """`i_tf_shape == 1`, `itart == 0`, `i_single_null == 1` -- the reference arm."""
 
@@ -433,21 +393,6 @@ _reference_shape_inner_picture_frame_tart = functools.partial(
 
 class TestTfCoilShapePictureFrameTart(Tier1Contract):
     """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm.
-    Added 2026-08-27, ST frontier wave 4.
-
-    The legacy point is `spherical_tokamak_eval.IN.DAT` run through PROCESS's own
-    `init_process` + `PlasmaGeometry.run()` + `Build.run()` -- one pass, not a converged
-    solve, since no converged reference for this file exists yet. That is enough to make
-    every number here PROCESS's own rather than reconstructed:
-    `r_cp_top = r_tf_inboard_out = 1.333916508197074` m (the `i_tf_sup == 1` fall-through
-    at `process/models/build.py:1813`, **not** the `i_r_cp_top = 2` fraction the file
-    sets at `:78` -- that branch is `i_tf_sup != 1` only, so `f_r_cp = 1.4` is dead on
-    this run), `z_tf_inside_half = 11.735` m, `z_tf_top = 12.635` m,
-    `r_tf_outboard_mid = 10.274594873354488` m (the same ripple-limited radius the
-    picture-frame ripple wave landed on, arrived at independently here),
-    `dr_tf_inboard = 0.9` m (the file's literal, `:345`), and
-    `r_tf_outboard_in = r_tf_outboard_mid - 0.5 * dr_tf_outboard = 9.824594873354488` m
-    with `dr_tf_outboard = 0.9` (`f_dr_tf_outboard_inboard = 1.0`, `:85`).
 
     `tfa`/`tfb` come back as exact zeros from both sides -- see the ported function's
     docstring; that is the branch never assigning them, faithfully reproduced.
@@ -510,12 +455,10 @@ _reference_self_inductance_picture_frame = functools.partial(
 class TestTfCoilSelfInductanceDShape(Tier1Contract):
     """The 100-interval numerical integration, `lax.scan`-ed.
 
-    Both samples are `test_tf_coil_self_inductance`'s D-shape cases
-    (`tests/unit/models/tfcoil/test_tfcoil.py:580-638`), generated from
-    `baseline_2018_IN.DAT`. They differ only in the entering `ind_tf_coil`, which the
-    function never reads -- so they are the same point twice, kept as two because the
-    duplication is PROCESS's own and dropping one would silently disagree with the
-    source it was lifted from.
+    The two samples differ only in the entering `ind_tf_coil`, which the function never
+    reads -- so they are the same point twice, kept as two because the duplication is
+    PROCESS's own and dropping one would silently disagree with the source it was
+    lifted from.
     """
 
     audit_record = "models/tfcoil/base.md"
@@ -526,7 +469,7 @@ class TestTfCoilSelfInductanceDShape(Tier1Contract):
 
 
 class TestTfCoilSelfInductancePictureFrame(Tier1Contract):
-    """The closed-form arm. Sample: `test_tf_coil_self_inductance`'s third case."""
+    """The closed-form arm."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_self_inductance_picture_frame
@@ -545,10 +488,9 @@ class TestTfCoilSelfInductancePictureFrame(Tier1Contract):
 class TestTfStoredMagneticEnergy(Tier1Contract):
     """`TFCoil.tf_stored_magnetic_energy` -> the same, unchanged.
 
-    Samples are PROCESS's own `test_tf_stored_magnetic_energy` parametrisation's inputs
-    (`tests/unit/models/tfcoil/test_tfcoil.py:1969`), including its two degenerate rows
-    (`ind_tf_coil == 0` and `c_tf_total == 0`), which are kept precisely because they
-    are where a mis-signed or mis-scaled port still looks right in value.
+    The samples include two degenerate rows (`ind_tf_coil == 0` and `c_tf_total == 0`),
+    kept precisely because they are where a mis-signed or mis-scaled port still looks
+    right in value.
     """
 
     audit_record = "models/tfcoil/base.md"
@@ -575,11 +517,7 @@ _reference_generic_area_and_masses = process_reference(
 
 
 class TestGenericTfCoilAreaAndMasses(Tier1Contract):
-    """Owns `.tfcoil.tfcryoarea`, one of the slot's ten boundary reads.
-
-    Sample: `test_generic_tf_coil_area_and_masses`'s single case
-    (`tests/unit/models/tfcoil/test_tfcoil.py:713-727`), from `baseline_2018_IN.DAT`.
-    """
+    """Owns `.tfcoil.tfcryoarea`, one of the slot's ten boundary reads."""
 
     audit_record = "models/tfcoil/base.md"
     reference = _reference_generic_area_and_masses

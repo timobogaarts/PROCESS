@@ -1,7 +1,6 @@
 """Harness cases for `functional_process/cottax/pfcoil/fields.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/fields.md`. Three tier-1
-contracts:
+Three tier-1 contracts:
 
 - `calculate_b_field_at_point` -> PROCESS's `@numba.njit` kernel of the same name, called
   directly with the same signature. No adapter at all: it takes no `self` and no `data`.

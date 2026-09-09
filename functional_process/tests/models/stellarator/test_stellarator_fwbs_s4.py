@@ -1,7 +1,5 @@
 """Harness cases for `st_fwbs`'s S4 component-mass block (`stellarator.py:1045-1274`).
 
-Audit record: `functional_process/_audit/units/models/stellarator/stellarator_fwbs_s4.md`.
-
 **Why these references copy the formulas from source instead of calling the real
 `st_fwbs` end to end, unlike the sibling S1/S5 cases.** Both ported functions take
 `.fwbs.vol_blkt_total` / `.fwbs.vol_shld_total` as inputs, and both of those are written

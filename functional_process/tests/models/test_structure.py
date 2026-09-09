@@ -1,9 +1,9 @@
 """Harness case for the ported subset of `process/models/structure.py`
 (`.tokamak.structure`).
 
-Audit record: `functional_process/_audit/units/models/structure.md`. One unit:
-`calculate_structure_masses`, tier-1, the `(i_tf_sup=1, i_pf_conductor=SUPERCONDUCTING)`
-occupant -- the switch combination live on `large_tokamak_eval.IN.DAT`.
+One unit: `calculate_structure_masses`, tier-1, the
+`(i_tf_sup=1, i_pf_conductor=SUPERCONDUCTING)` occupant -- the switch combination live
+on `large_tokamak_eval.IN.DAT`.
 
 `Structure.structure` is not `@staticmethod` but performs no `self`/`self.data` access
 at all when called with `output=False` (the only branch that touches `self` is the

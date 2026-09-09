@@ -1,7 +1,5 @@
 """Harness cases for `functional_process/cottax/pfcoil/volt_seconds.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/volt_seconds.md`.
-
 One tier-1 contract here: `calculate_pf_cs_volt_seconds` against `PFCoil.vsec`
 itself -- unlike most of the package, `vsec` *is* a separable PROCESS callable (an
 instance method whose whole read set is two `.pf_coil` arrays plus the baked
@@ -10,8 +8,8 @@ topology), so the adapter seeds a `DataStructure` and calls the real method.
 `calculate_pf_coil_turn_currents` is an inline block of `pfcoil()`
 (`process/models/pfcoil.py:1082-1111`) with no separable PROCESS callable, so its
 oracle is `pfcoil()` in `test_masses.py`'s whole-chain contract, which returns
-`c_pf_coil_turn` on both sides since 2026-08-27 -- the same disposition
-`test_currents.py`'s module docstring records for the other inline blocks.
+`c_pf_coil_turn` on both sides -- the same disposition `test_currents.py`'s module
+docstring records for the other inline blocks.
 
 The legacy point is `large_tokamak_eval.IN.DAT` at convergence, read off a live
 in-process `SingleRun`: the plasma row of the mutual-inductance matrix and the seven
@@ -140,8 +138,7 @@ def _ported_pf_cs_volt_seconds(ind_plasma_row, c_pf_coil_turn_rows):
 
 class TestCalculatePfCsVoltSeconds(Tier1Contract):
     """`calculate_pf_cs_volt_seconds` -> `PFCoil.vsec`
-    (`process/models/pfcoil.py:1615-1720`), `iohcl = 1` arm. Added 2026-08-27
-    (`cold_boundary.md` producer 4).
+    (`process/models/pfcoil.py:1615-1720`), `iohcl = 1` arm.
     """
 
     audit_record = "models/pfcoil/volt_seconds.md"

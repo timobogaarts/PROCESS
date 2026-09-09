@@ -1,8 +1,8 @@
 """Harness cases for the ported **tokamak** density-limit chain (`PlasmaDensityLimit`).
 
 Not the stellarator unit -- see `functional_process/cottax/physics/density_limit.py`'s
-module docstring and `_audit/units/models/physics/density_limit.md` for the distinction
-from `functional_process/cottax/stellarator/density_limits.py`.
+module docstring for the distinction from
+`functional_process/cottax/stellarator/density_limits.py`.
 
 Legacy sample values for the eight one-liner formulas are lifted verbatim from
 `tests/unit/models/physics/test_physics.py::test_calculate_density_limit`

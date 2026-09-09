@@ -1,15 +1,9 @@
-"""Harness cases for `functional_process/cottax/power/tf_coil_power.py`.
-
-Audit record: `functional_process/_audit/units/models/power/tf_coil_power.md`. No
-legacy points exist for either function in `tests/unit/models/test_power.py`
-(`tfpwr`/`tfpwcall`/
-`tfcpwr` have no automatically-generated unit test there, unlike `cryo`/`acpow`/
-`plant_electric_production` -- see `thermal_cryo.md`/`electric_production.md` for
-those) -- fuzz-only, same situation `build.md` documented for
-`st_build`.
+"""Harness cases for `functional_process/cottax/power/tf_coil_power.py`. Fuzz-only:
+no legacy points exist for either function in `tests/unit/models/test_power.py`.
 """
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.power.tf_coil_power import (
     calculate_tf_power_resistive,
@@ -19,82 +13,48 @@ from process.core.model import DataStructure
 from process.models.power import Power
 
 
-def _reference_tf_power_resistive(
-    c_tf_turn,
-    j_tf_bus,
-    rho_tf_bus,
-    len_tf_bus,
-    n_tf_coils,
-    res_tf_leg,
-    p_cp_resistive,
-    c_tf_total,
-    p_tf_joints_resistive,
-    p_tf_leg_resistive,
-    etatf,
-):
-    """Call PROCESS's `Power.tfpwr` (resistive branch) through the port's signature."""
-    data = DataStructure()
-    data.tfcoil.i_tf_sup = 0
-    data.tfcoil.c_tf_turn = c_tf_turn
-    data.tfcoil.j_tf_bus = j_tf_bus
-    data.tfcoil.rho_tf_bus = rho_tf_bus
-    data.tfcoil.len_tf_bus = len_tf_bus
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.tfcoil.res_tf_leg = res_tf_leg
-    data.tfcoil.p_cp_resistive = p_cp_resistive
-    data.tfcoil.c_tf_total = c_tf_total
-    data.tfcoil.p_tf_joints_resistive = p_tf_joints_resistive
-    data.tfcoil.p_tf_leg_resistive = p_tf_leg_resistive
-    data.heat_transport.etatf = etatf
-
+def _make_power_resistive():
     p = Power()
-    p.data = data
-    p.tfpwr(output=False)
-
-    return (
-        data.tfcoil.m_tf_bus,
-        data.tfcoil.vtfkv,
-        data.tfcoil.p_cp_resistive_mw,
-        data.tfcoil.p_tf_leg_resistive_mw,
-        data.tfcoil.p_tf_joints_resistive_mw,
-        data.tfcoil.tfcmw,
-        data.heat_transport.p_tf_electric_supplies_mw,
-    )
+    p.data = DataStructure()
+    p.data.tfcoil.i_tf_sup = 0
+    return p
 
 
-def _reference_tf_power_superconducting(
-    c_tf_turn,
-    e_tf_magnetic_stored_total_gj,
-    n_tf_coils,
-    rmajor,
-    v_tf_coil_dump_quench_kv,
-    res_tf_leg,
-    rho_tf_bus,
-    etatf,
-):
-    """Call PROCESS's `Power.tfpwr` (superconducting branch, via `tfpwcall`)."""
-    data = DataStructure()
-    data.tfcoil.i_tf_sup = 1
-    data.tfcoil.c_tf_turn = c_tf_turn
-    data.tfcoil.e_tf_magnetic_stored_total_gj = e_tf_magnetic_stored_total_gj
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.physics.rmajor = rmajor
-    data.tfcoil.v_tf_coil_dump_quench_kv = v_tf_coil_dump_quench_kv
-    data.tfcoil.res_tf_leg = res_tf_leg
-    data.tfcoil.rho_tf_bus = rho_tf_bus
-    data.heat_transport.etatf = etatf
-
+def _make_power_superconducting():
     p = Power()
-    p.data = data
-    p.tfpwr(output=False)
+    p.data = DataStructure()
+    p.data.tfcoil.i_tf_sup = 1
+    return p
 
-    return (
-        data.tfcoil.tfckw,
-        data.tfcoil.len_tf_bus,
-        data.tfcoil.drarea,
-        data.buildings.tfcbv,
-        data.heat_transport.p_tf_electric_supplies_mw,
-    )
+
+_reference_tf_power_resistive = process_reference(
+    _make_power_resistive,
+    "tfpwr",
+    (
+        "tfcoil.m_tf_bus",
+        "tfcoil.vtfkv",
+        "tfcoil.p_cp_resistive_mw",
+        "tfcoil.p_tf_leg_resistive_mw",
+        "tfcoil.p_tf_joints_resistive_mw",
+        "tfcoil.tfcmw",
+        "heat_transport.p_tf_electric_supplies_mw",
+    ),
+    call_args=(False,),
+)
+
+
+_reference_tf_power_superconducting = process_reference(
+    _make_power_superconducting,
+    "tfpwr",
+    (
+        "tfcoil.tfckw",
+        "tfcoil.len_tf_bus",
+        "tfcoil.drarea",
+        "buildings.tfcbv",
+        "heat_transport.p_tf_electric_supplies_mw",
+    ),
+    call_args=(False,),
+)
 
 
 class TestTfPowerResistive(Tier1Contract):
@@ -125,8 +85,8 @@ def _tf_power_superconducting_samples():
 
     `calculate_tf_power_superconducting`'s only real branch (inside PROCESS's own
     `tfcpwr`) is `res_tf_leg == 0.0` exactly (see the function's docstring) --
-    deliberately *not* sampled here. Verified by hand (not through this harness,
-    see `tf_coil_power.md`'s open questions) that the port agrees with
+    deliberately *not* sampled here. Verified by hand (not through this harness)
+    that the port agrees with
     PROCESS to float64 round-off at `res_tf_leg = 0.0` -- but `jax.jacfwd` produces a
     `NaN` there for *every* differentiated argument, not just `res_tf_leg` itself: the
     `jnp.sqrt(n_tf_coils * res_tf_leg * 1000.0)` term's JVP rule divides by

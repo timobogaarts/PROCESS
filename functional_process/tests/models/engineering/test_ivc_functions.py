@@ -1,12 +1,8 @@
 """Harness cases for the shared toroidal-shell helpers ported from
-`process/models/engineering/ivc_functions.py` (not a numbered registry unit — see
-`functional_process/_audit/units/models/engineering/ivc_functions.md`).
+`process/models/engineering/ivc_functions.py` (not a numbered registry unit).
 
 All four functions are already pure in `process/`, so the PROCESS reference is called
 directly with no `DataStructure` adapter needed.
-
-2026-08-27 (the D-shaped wave): `dshellarea`/`dshellvol` joined, for the five slots the
-two spherical-tokamak input files select on the D-shaped arm.
 """
 
 from functional_process.cottax._harness import Tier1Contract
@@ -36,14 +32,7 @@ class TestEshellarea(Tier1Contract):
 
 
 class TestEshellvol(Tier1Contract):
-    """`eshellvol` -> the same, unchanged.
-
-    Legacy sample borrowed from
-    `tests/unit/models/test_vacuum.py::test_elliptical_vessel_volumes`'s
-    `EllipticalVesselVolumes` point, reduced to the `(r_1, r_2, r_3, ...)` tuple that
-    `VacuumVessel.calculate_elliptical_vessel_volumes` derives from it before calling
-    `eshellvol` -- see `ivc_functions.md` § sample provenance.
-    """
+    """`eshellvol` -> the same, unchanged."""
 
     audit_record = "models/engineering/ivc_functions.md"
     reference = staticmethod(_reference_eshellvol)
@@ -57,11 +46,9 @@ class TestEshellvol(Tier1Contract):
 class TestDshellarea(Tier1Contract):
     """`dshellarea` -> the same, unchanged.
 
-    No legacy sample: `grep -rl dshellarea tests/unit` is empty, and unlike `eshellvol`
-    there is no unit test of a caller whose intermediate tuple could be reduced to one
-    (`tests/unit/models/test_vacuum.py` only covers the elliptical vessel). The fuzz box
-    below is therefore this contract's whole oracle -- which is enough, because both
-    sides are the same closed-form expression and the harness checks gradients too.
+    No legacy sample exists, so the fuzz box below is this contract's whole oracle --
+    which is enough, because both sides are the same closed-form expression and the
+    harness checks gradients too.
 
     `rminor` is the *width across the shell*, not a plasma minor radius, so its box runs
     wider than `eshellarea`'s `rmini`/`rmino`: on the D-shaped arm callers pass

@@ -64,15 +64,17 @@ def _reference_max_force_density(
     return data.tfcoil.max_force_density
 
 
-_reference_max_force_density_mnm = data_reference(lambda d: _process_forces.calculate_max_force_density_mnm(d))
+_reference_max_force_density_mnm = data_reference(
+    _process_forces.calculate_max_force_density_mnm
+)
 
 
-def _reference_maximum_stress(max_force_density, dr_tf_wp_with_insulation):
-    data = DataStructure()
-    data.tfcoil.max_force_density = max_force_density
-    data.tfcoil.dr_tf_wp_with_insulation = dr_tf_wp_with_insulation
+def _call_maximum_stress(data):
     _process_forces.calculate_maximum_stress(data)
     return data.tfcoil.sig_tf_wp
+
+
+_reference_maximum_stress = data_reference(_call_maximum_stress)
 
 
 def _reference_max_lateral_force_density(
@@ -121,99 +123,15 @@ def _reference_max_radial_force_density(
     )
 
 
-def _centering_data(
-    field_name,
-    value,
-    f_st_i_total,
-    f_st_n_coils,
-    b_tf_inboard_peak_symmetric,
-    stella_config_wp_bmax,
-    stella_config_coillength,
-    n_tf_coils,
-    len_tf_coil,
-):
-    data = DataStructure()
-    setattr(data.stellarator_config, field_name, value)
-    data.stellarator.f_st_i_total = f_st_i_total
-    data.stellarator.f_st_n_coils = f_st_n_coils
-    data.tfcoil.b_tf_inboard_peak_symmetric = b_tf_inboard_peak_symmetric
-    data.stellarator_config.stella_config_wp_bmax = stella_config_wp_bmax
-    data.stellarator_config.stella_config_coillength = stella_config_coillength
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.tfcoil.len_tf_coil = len_tf_coil
-    return data
-
-
-def _reference_centering_force_max_mn(
-    stella_config_centering_force_max_mn,
-    f_st_i_total,
-    f_st_n_coils,
-    b_tf_inboard_peak_symmetric,
-    stella_config_wp_bmax,
-    stella_config_coillength,
-    n_tf_coils,
-    len_tf_coil,
-):
-    data = _centering_data(
-        "stella_config_centering_force_max_mn",
-        stella_config_centering_force_max_mn,
-        f_st_i_total,
-        f_st_n_coils,
-        b_tf_inboard_peak_symmetric,
-        stella_config_wp_bmax,
-        stella_config_coillength,
-        n_tf_coils,
-        len_tf_coil,
-    )
-    return _process_forces.calculate_centering_force_max_mn(data)
-
-
-def _reference_centering_force_min_mn(
-    stella_config_centering_force_min_mn,
-    f_st_i_total,
-    f_st_n_coils,
-    b_tf_inboard_peak_symmetric,
-    stella_config_wp_bmax,
-    stella_config_coillength,
-    n_tf_coils,
-    len_tf_coil,
-):
-    data = _centering_data(
-        "stella_config_centering_force_min_mn",
-        stella_config_centering_force_min_mn,
-        f_st_i_total,
-        f_st_n_coils,
-        b_tf_inboard_peak_symmetric,
-        stella_config_wp_bmax,
-        stella_config_coillength,
-        n_tf_coils,
-        len_tf_coil,
-    )
-    return _process_forces.calculate_centering_force_min_mn(data)
-
-
-def _reference_centering_force_avg_mn(
-    stella_config_centering_force_avg_mn,
-    f_st_i_total,
-    f_st_n_coils,
-    b_tf_inboard_peak_symmetric,
-    stella_config_wp_bmax,
-    stella_config_coillength,
-    n_tf_coils,
-    len_tf_coil,
-):
-    data = _centering_data(
-        "stella_config_centering_force_avg_mn",
-        stella_config_centering_force_avg_mn,
-        f_st_i_total,
-        f_st_n_coils,
-        b_tf_inboard_peak_symmetric,
-        stella_config_wp_bmax,
-        stella_config_coillength,
-        n_tf_coils,
-        len_tf_coil,
-    )
-    return _process_forces.calculate_centering_force_avg_mn(data)
+_reference_centering_force_max_mn = data_reference(
+    _process_forces.calculate_centering_force_max_mn
+)
+_reference_centering_force_min_mn = data_reference(
+    _process_forces.calculate_centering_force_min_mn
+)
+_reference_centering_force_avg_mn = data_reference(
+    _process_forces.calculate_centering_force_avg_mn
+)
 
 
 class TestMaxForceDensity(Tier1Contract):

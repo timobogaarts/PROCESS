@@ -29,6 +29,7 @@ check that the sample is on the operating point and not near it.
 import functools
 
 from functional_process.cottax._harness import Tier1Contract, Tolerance
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.blankets.hcpb import (
     calculate_centrepost_angle_fraction,
@@ -74,102 +75,79 @@ def _hcpb():
 # --------------------------------------------------------------------------------------
 
 
-def _seed_magnets(model, itart, **kwargs):
-    """Seed `nuclear_heating_magnets`' twenty-two reads onto a bound `DataStructure`."""
-    data = model.data
-    data.physics.itart = itart
-    data.fwbs.radius_fw_channel = kwargs["radius_fw_channel"]
-    data.fwbs.dx_fw_module = kwargs["dx_fw_module"]
-    data.build.dr_fw_inboard = kwargs["dr_fw_inboard"]
-    data.build.dr_fw_outboard = kwargs["dr_fw_outboard"]
-    data.fwbs.den_steel = kwargs["den_steel"]
-    data.fwbs.m_blkt_total = kwargs["m_blkt_total"]
-    data.fwbs.vol_blkt_total = kwargs["vol_blkt_total"]
-    data.fwbs.whtshld = kwargs["whtshld"]
-    data.fwbs.vol_shld_total = kwargs["vol_shld_total"]
-    data.build.dr_vv_inboard = kwargs["dr_vv_inboard"]
-    data.build.dr_vv_outboard = kwargs["dr_vv_outboard"]
-    data.fwbs.m_vv = kwargs["m_vv"]
-    data.fwbs.vol_vv = kwargs["vol_vv"]
-    data.build.dr_blkt_outboard = kwargs["dr_blkt_outboard"]
-    data.build.dr_blkt_inboard = kwargs.get("dr_blkt_inboard", 0.0)
-    data.build.dr_shld_outboard = kwargs["dr_shld_outboard"]
-    data.build.dr_shld_inboard = kwargs.get("dr_shld_inboard", 0.0)
-    data.fwbs.fw_armour_thickness = kwargs["fw_armour_thickness"]
-    data.tfcoil.whttflgs = kwargs.get("whttflgs", 0.0)
-    data.tfcoil.m_tf_coils_total = kwargs.get("m_tf_coils_total", 0.0)
-    data.physics.p_fusion_total_mw = kwargs["p_fusion_total_mw"]
+_MAGNETS_OUTPUTS = (
+    "armour_density",
+    "fw_density",
+    "blanket_density",
+    "shield_density",
+    "vv_density",
+    "x_blanket",
+    "x_shield",
+    "tfc_nuc_heating",
+    "p_tf_nuclear_heat_mw",
+)
 
 
-def _read_magnets(model):
-    """The nine outputs the ported magnets functions return, in their order."""
-    data = model.data
-    return (
-        data.ccfe_hcpb.armour_density,
-        data.ccfe_hcpb.fw_density,
-        data.ccfe_hcpb.blanket_density,
-        data.ccfe_hcpb.shield_density,
-        data.ccfe_hcpb.vv_density,
-        data.ccfe_hcpb.x_blanket,
-        data.ccfe_hcpb.x_shield,
-        data.ccfe_hcpb.tfc_nuc_heating,
-        data.fwbs.p_tf_nuclear_heat_mw,
-    )
-
-
-def _reference_fw_coolant_void_fractions(radius_fw_channel, dx_fw_module, dr_fw_inboard):
-    """The two void fractions `nuclear_heating_magnets` writes at `hcpb.py:483-490`.
+def _make_magnets_fw_void_fractions():
+    """`_hcpb()` with `nuclear_heating_magnets`' other nineteen reads pinned.
 
     Driven through the whole PROCESS method rather than by re-deriving three lines: the
-    port's claim is that these two fields are *exactly* what that method writes, which is
-    what makes lifting them into their own node value-preserving.
+    port's claim is that the two void fractions are *exactly* what that method writes,
+    which is what makes lifting them into their own node value-preserving.
     """
     model = _hcpb()
-    _seed_magnets(
-        model,
-        itart=0,
-        radius_fw_channel=radius_fw_channel,
-        dx_fw_module=dx_fw_module,
-        dr_fw_inboard=dr_fw_inboard,
-        dr_fw_outboard=0.018,
-        den_steel=7800.0,
-        m_blkt_total=3.0e6,
-        vol_blkt_total=1200.0,
-        whtshld=2.4e6,
-        vol_shld_total=780.0,
-        dr_vv_inboard=0.3,
-        dr_vv_outboard=0.3,
-        m_vv=7.9e6,
-        vol_vv=1000.0,
-        dr_blkt_outboard=1.0,
-        dr_blkt_inboard=0.7,
-        dr_shld_outboard=0.8,
-        dr_shld_inboard=0.3,
-        fw_armour_thickness=0.005,
-        m_tf_coils_total=1.4e7,
-        p_fusion_total_mw=1630.0,
-    )
-    model.nuclear_heating_magnets(False)
-    return (
-        model.data.fwbs.f_a_fw_coolant_inboard,
-        model.data.fwbs.f_a_fw_coolant_outboard,
-    )
+    data = model.data
+    data.build.dr_fw_outboard = 0.018
+    data.fwbs.den_steel = 7800.0
+    data.fwbs.m_blkt_total = 3.0e6
+    data.fwbs.vol_blkt_total = 1200.0
+    data.fwbs.whtshld = 2.4e6
+    data.fwbs.vol_shld_total = 780.0
+    data.build.dr_vv_inboard = 0.3
+    data.build.dr_vv_outboard = 0.3
+    data.fwbs.m_vv = 7.9e6
+    data.fwbs.vol_vv = 1000.0
+    data.build.dr_blkt_outboard = 1.0
+    data.build.dr_blkt_inboard = 0.7
+    data.build.dr_shld_outboard = 0.8
+    data.build.dr_shld_inboard = 0.3
+    data.fwbs.fw_armour_thickness = 0.005
+    data.tfcoil.m_tf_coils_total = 1.4e7
+    data.physics.p_fusion_total_mw = 1630.0
+    return model
 
 
-def _reference_nuclear_heating_magnets_conventional(**kwargs):
-    """`nuclear_heating_magnets(False)` at `itart == 0`, less the two void fractions."""
+_reference_fw_coolant_void_fractions = process_reference(
+    _make_magnets_fw_void_fractions,
+    "nuclear_heating_magnets",
+    ("f_a_fw_coolant_inboard", "f_a_fw_coolant_outboard"),
+    call_args=(False,),
+)
+
+
+_reference_nuclear_heating_magnets_conventional = process_reference(
+    _hcpb, "nuclear_heating_magnets", _MAGNETS_OUTPUTS, call_args=(False,)
+)
+
+
+def _make_magnets_st():
+    """`_hcpb()` at `itart == 1`, `dr_blkt_inboard`/`dr_shld_inboard` pinned to zero.
+
+    Neither field exists on the spherical-tokamak side of `nuclear_heating_magnets`'
+    read set at all -- the two are always absent from this contract's samples -- but
+    `_hcpb()`'s own `DataStructure` defaults are nonzero, so they are pinned here rather
+    than left alone.
+    """
     model = _hcpb()
-    _seed_magnets(model, itart=0, **kwargs)
-    model.nuclear_heating_magnets(False)
-    return _read_magnets(model)
+    model.data.physics.itart = 1
+    model.data.build.dr_blkt_inboard = 0.0
+    model.data.build.dr_shld_inboard = 0.0
+    return model
 
 
-def _reference_nuclear_heating_magnets_spherical_tokamak(**kwargs):
-    """`nuclear_heating_magnets(False)` at `itart == 1`."""
-    model = _hcpb()
-    _seed_magnets(model, itart=1, **kwargs)
-    model.nuclear_heating_magnets(False)
-    return _read_magnets(model)
+_reference_nuclear_heating_magnets_spherical_tokamak = process_reference(
+    _make_magnets_st, "nuclear_heating_magnets", _MAGNETS_OUTPUTS, call_args=(False,)
+)
 
 
 _reference_nuclear_heating_fw = functools.partial(CCFE_HCPB.nuclear_heating_fw)
@@ -193,150 +171,86 @@ _reference_nuclear_heating_shield_spherical_tokamak = functools.partial(
 )
 
 
-def _seed_component_masses(model, **kwargs):
-    """Seed `component_masses`' reads onto a bound `DataStructure`.
-
-    `n_divertors` defaults to `1`; the double-null divertor-mass adapter passes `2`.
+def _make_divertor_masses(n_divertors=1):
+    """`_hcpb()` with `component_masses`' non-divertor reads pinned to representative
+    values, so only the divertor pair's own six inputs vary between samples.
     """
+    model = _hcpb()
     data = model.data
-    data.divertor.n_divertors = kwargs.get("n_divertors", 1)
-    data.divertor.a_div_surface_total = kwargs["a_div_surface_total"]
-    data.divertor.f_vol_div_coolant = kwargs["f_vol_div_coolant"]
-    data.divertor.dx_div_plate = kwargs["dx_div_plate"]
-    data.divertor.fdiva = kwargs.get("fdiva", 1.11)
-    data.divertor.den_div_structure = kwargs.get("den_div_structure", 10000.0)
-    data.physics.rmajor = kwargs.get("rmajor", 8.0)
-    data.physics.rminor = kwargs.get("rminor", 2.6666666666666665)
-    data.fwbs.vol_blkt_total = kwargs["vol_blkt_total"]
-    data.fwbs.f_a_blkt_cooling_channels = kwargs["f_a_blkt_cooling_channels"]
-    data.fwbs.vol_shld_total = kwargs["vol_shld_total"]
-    data.fwbs.vfshld = kwargs["vfshld"]
-    data.first_wall.a_fw_inboard = kwargs["a_fw_inboard"]
-    data.first_wall.a_fw_outboard = kwargs["a_fw_outboard"]
-    data.first_wall.a_fw_total = kwargs["a_fw_total"]
-    data.build.dr_fw_inboard = kwargs["dr_fw_inboard"]
-    data.build.dr_fw_outboard = kwargs["dr_fw_outboard"]
-    data.fwbs.f_a_fw_coolant_inboard = kwargs["f_a_fw_coolant_inboard"]
-    data.fwbs.f_a_fw_coolant_outboard = kwargs["f_a_fw_coolant_outboard"]
-    data.fwbs.den_steel = kwargs["den_steel"]
-    data.physics.a_plasma_surface = kwargs["a_plasma_surface"]
-    data.fwbs.fw_armour_thickness = kwargs["fw_armour_thickness"]
-    data.fwbs.breeder_f = kwargs["breeder_f"]
-    data.fwbs.breeder_multiplier = kwargs["breeder_multiplier"]
-    data.fwbs.vfcblkt = kwargs["vfcblkt"]
-    data.fwbs.vfpblkt = kwargs["vfpblkt"]
+    data.divertor.n_divertors = n_divertors
+    data.divertor.a_div_surface_total = 0.0
+    data.fwbs.vol_blkt_total = 1200.0
+    data.fwbs.f_a_blkt_cooling_channels = 0.25
+    data.fwbs.vol_shld_total = 780.0
+    data.fwbs.vfshld = 0.6
+    data.first_wall.a_fw_inboard = 600.0
+    data.first_wall.a_fw_outboard = 1000.0
+    data.first_wall.a_fw_total = 1600.0
+    data.build.dr_fw_inboard = 0.018
+    data.build.dr_fw_outboard = 0.018
+    data.fwbs.f_a_fw_coolant_inboard = 0.3
+    data.fwbs.f_a_fw_coolant_outboard = 0.3
+    data.fwbs.den_steel = 7800.0
+    data.physics.a_plasma_surface = 1170.0
+    data.fwbs.fw_armour_thickness = 0.005
+    data.fwbs.breeder_f = 0.5
+    data.fwbs.breeder_multiplier = 0.75
+    data.fwbs.vfcblkt = 0.05295
+    data.fwbs.vfpblkt = 0.1
+    return model
 
 
-def _reference_divertor_surface_and_plate_mass_single_null(
-    fdiva, rmajor, rminor, den_div_structure, f_vol_div_coolant, dx_div_plate
-):
-    """The divertor pair `component_masses` writes at `hcpb.py:353-367`.
+_DIVERTOR_MASS_OUTPUTS = ("a_div_surface_total", "m_div_plate")
 
-    At `n_divertors == 1`.
+# The divertor pair `component_masses` writes at `hcpb.py:353-367`; the two arms read the
+# same six fields and differ only in `n_divertors` (`:360-361`'s factor of two).
+_reference_divertor_surface_and_plate_mass_single_null = process_reference(
+    _make_divertor_masses, "component_masses", _DIVERTOR_MASS_OUTPUTS
+)
+
+_reference_divertor_surface_and_plate_mass_double_null = process_reference(
+    functools.partial(_make_divertor_masses, n_divertors=2),
+    "component_masses",
+    _DIVERTOR_MASS_OUTPUTS,
+)
+
+
+def _make_component_masses():
+    """`_hcpb()` with `n_divertors`/`rmajor`/`rminor` pinned to this contract's own
+    operating point -- none of the three is a sample kwarg here, and each differs from
+    `DataStructure`'s own default.
     """
     model = _hcpb()
-    _seed_component_masses(
-        model,
-        fdiva=fdiva,
-        rmajor=rmajor,
-        rminor=rminor,
-        den_div_structure=den_div_structure,
-        a_div_surface_total=0.0,
-        f_vol_div_coolant=f_vol_div_coolant,
-        dx_div_plate=dx_div_plate,
-        vol_blkt_total=1200.0,
-        f_a_blkt_cooling_channels=0.25,
-        vol_shld_total=780.0,
-        vfshld=0.6,
-        a_fw_inboard=600.0,
-        a_fw_outboard=1000.0,
-        a_fw_total=1600.0,
-        dr_fw_inboard=0.018,
-        dr_fw_outboard=0.018,
-        f_a_fw_coolant_inboard=0.3,
-        f_a_fw_coolant_outboard=0.3,
-        den_steel=7800.0,
-        a_plasma_surface=1170.0,
-        fw_armour_thickness=0.005,
-        breeder_f=0.5,
-        breeder_multiplier=0.75,
-        vfcblkt=0.05295,
-        vfpblkt=0.1,
-    )
-    model.component_masses()
-    return model.data.divertor.a_div_surface_total, model.data.divertor.m_div_plate
+    model.data.divertor.n_divertors = 1
+    model.data.physics.rmajor = 8.0
+    model.data.physics.rminor = 2.6666666666666665
+    return model
 
 
-def _reference_divertor_surface_and_plate_mass_double_null(
-    fdiva, rmajor, rminor, den_div_structure, f_vol_div_coolant, dx_div_plate
-):
-    """The divertor pair `component_masses` writes at `hcpb.py:353-367`.
-
-    At `n_divertors == 2` -- the same seed as the single-null adapter with the divertor
-    count changed, since the arms read the same six fields and differ only in
-    `:360-361`'s factor of two.
-    """
-    model = _hcpb()
-    _seed_component_masses(
-        model,
-        n_divertors=2,
-        fdiva=fdiva,
-        rmajor=rmajor,
-        rminor=rminor,
-        den_div_structure=den_div_structure,
-        a_div_surface_total=0.0,
-        f_vol_div_coolant=f_vol_div_coolant,
-        dx_div_plate=dx_div_plate,
-        vol_blkt_total=1200.0,
-        f_a_blkt_cooling_channels=0.25,
-        vol_shld_total=780.0,
-        vfshld=0.6,
-        a_fw_inboard=600.0,
-        a_fw_outboard=1000.0,
-        a_fw_total=1600.0,
-        dr_fw_inboard=0.018,
-        dr_fw_outboard=0.018,
-        f_a_fw_coolant_inboard=0.3,
-        f_a_fw_coolant_outboard=0.3,
-        den_steel=7800.0,
-        a_plasma_surface=1170.0,
-        fw_armour_thickness=0.005,
-        breeder_f=0.5,
-        breeder_multiplier=0.75,
-        vfcblkt=0.05295,
-        vfpblkt=0.1,
-    )
-    model.component_masses()
-    return model.data.divertor.a_div_surface_total, model.data.divertor.m_div_plate
-
-
-def _reference_component_masses(**kwargs):
-    """`component_masses()` less the divertor pair, read back in the port's order."""
-    model = _hcpb()
-    _seed_component_masses(model, **kwargs)
-    model.component_masses()
-
-    data = model.data
-    return (
-        data.fwbs.m_fw_blkt_div_coolant_total,
-        data.fwbs.fwclfr,
-        data.fwbs.whtshld,
-        data.fwbs.wpenshld,
-        data.fwbs.vol_fw_total,
-        data.fwbs.m_fw_total,
-        data.fwbs.fw_armour_vol,
-        data.fwbs.fw_armour_mass,
-        data.fwbs.f_vol_blkt_li4sio4,
-        data.fwbs.f_vol_blkt_tibe12,
-        data.fwbs.m_blkt_tibe12,
-        data.fwbs.m_blkt_li4sio4,
-        data.fwbs.m_blkt_beryllium,
-        data.fwbs.m_blkt_li2o,
-        data.fwbs.f_vol_blkt_steel,
-        data.fwbs.m_blkt_steel_total,
-        data.fwbs.m_blkt_total,
-        data.fwbs.armour_fw_bl_mass,
-    )
+_reference_component_masses = process_reference(
+    _make_component_masses,
+    "component_masses",
+    (
+        "m_fw_blkt_div_coolant_total",
+        "fwclfr",
+        "whtshld",
+        "wpenshld",
+        "vol_fw_total",
+        "m_fw_total",
+        "fw_armour_vol",
+        "fw_armour_mass",
+        "f_vol_blkt_li4sio4",
+        "f_vol_blkt_tibe12",
+        "m_blkt_tibe12",
+        "m_blkt_li4sio4",
+        "m_blkt_beryllium",
+        "m_blkt_li2o",
+        "f_vol_blkt_steel",
+        "m_blkt_steel_total",
+        "m_blkt_total",
+        "armour_fw_bl_mass",
+    ),
+)
 
 
 class _RenormalisationOnly(CCFE_HCPB):
@@ -649,82 +563,28 @@ def _reference_centrepost_neutronics_absent():
     )
 
 
-def _reference_powerflow_calc(
-    p_plasma_rad_mw,
-    f_a_fw_outboard_hcd,
-    p_div_rad_total_mw,
-    a_fw_outboard,
-    a_fw_total,
-    p_beam_orbit_loss_mw,
-    p_fw_alpha_mw,
-    p_he,
-    dp_he,
-    gamma_he,
-    t_in_bb,
-    t_out_bb,
-    etaiso,
-    f_p_fw_blkt_pump,
-    p_fw_nuclear_heat_total_mw,
-    p_blkt_nuclear_heat_total_mw,
-    f_p_shld_coolant_pump_total_heat,
-    p_shld_nuclear_heat_mw,
-    p_cp_shield_nuclear_heat_mw,
-    f_p_div_coolant_pump_total_heat,
-    p_plasma_separatrix_mw,
-    p_div_nuclear_heat_total_mw,
-):
-    """`powerflow_calc(False)` at `i_p_coolant_pumping == 3`, all seven outputs.
-
-    The prologue and the pumping arm are one adapter because they cannot be separated on
-    the PROCESS side: `powerflow_calc` **overwrites** `psurffwi`/`psurffwo`
-    (`hcpb.py:805-814`) before the pumping arm reads them, so seeding them and calling
-    the method would test nothing. The port's two functions are chained in the same order
-    and the whole seven-value result is diffed, which covers both.
-    """
+def _make_powerflow_calc():
+    """`_hcpb()` pinned to the arm `powerflow_calc(False)`'s contract exercises."""
     model = _hcpb()
-    data = model.data
+    model.data.fwbs.i_blkt_coolant_type = CoolantType.HELIUM
+    model.data.fwbs.i_p_coolant_pumping = 3
+    return model
 
-    data.fwbs.i_blkt_coolant_type = CoolantType.HELIUM
-    data.fwbs.i_p_coolant_pumping = 3
 
-    data.physics.p_plasma_rad_mw = p_plasma_rad_mw
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.fwbs.p_div_rad_total_mw = p_div_rad_total_mw
-    data.first_wall.a_fw_outboard = a_fw_outboard
-    data.first_wall.a_fw_total = a_fw_total
-    data.current_drive.p_beam_orbit_loss_mw = p_beam_orbit_loss_mw
-    data.physics.p_fw_alpha_mw = p_fw_alpha_mw
-
-    data.primary_pumping.p_he = p_he
-    data.primary_pumping.dp_he = dp_he
-    data.primary_pumping.gamma_he = gamma_he
-    data.primary_pumping.t_in_bb = t_in_bb
-    data.primary_pumping.t_out_bb = t_out_bb
-    data.primary_pumping.f_p_fw_blkt_pump = f_p_fw_blkt_pump
-    data.fwbs.etaiso = etaiso
-
-    data.fwbs.p_fw_nuclear_heat_total_mw = p_fw_nuclear_heat_total_mw
-    data.fwbs.p_blkt_nuclear_heat_total_mw = p_blkt_nuclear_heat_total_mw
-    data.heat_transport.f_p_shld_coolant_pump_total_heat = (
-        f_p_shld_coolant_pump_total_heat
-    )
-    data.fwbs.p_shld_nuclear_heat_mw = p_shld_nuclear_heat_mw
-    data.fwbs.p_cp_shield_nuclear_heat_mw = p_cp_shield_nuclear_heat_mw
-    data.heat_transport.f_p_div_coolant_pump_total_heat = f_p_div_coolant_pump_total_heat
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    data.fwbs.p_div_nuclear_heat_total_mw = p_div_nuclear_heat_total_mw
-
-    model.powerflow_calc(False)
-
-    return (
-        data.fwbs.p_fw_hcd_rad_total_mw,
-        data.fwbs.p_fw_rad_total_mw,
-        data.fwbs.psurffwo,
-        data.fwbs.psurffwi,
-        data.primary_pumping.p_fw_blkt_coolant_pump_mw,
-        data.heat_transport.p_shld_coolant_pump_mw,
-        data.heat_transport.p_div_coolant_pump_mw,
-    )
+_reference_powerflow_calc = process_reference(
+    _make_powerflow_calc,
+    "powerflow_calc",
+    (
+        "p_fw_hcd_rad_total_mw",
+        "p_fw_rad_total_mw",
+        "psurffwo",
+        "psurffwi",
+        "p_fw_blkt_coolant_pump_mw",
+        "p_shld_coolant_pump_mw",
+        "p_div_coolant_pump_mw",
+    ),
+    call_args=(False,),
+)
 
 
 def _ported_powerflow_calc(
@@ -798,26 +658,6 @@ def _ported_powerflow_calc(
 # --------------------------------------------------------------------------------------
 # contracts
 # --------------------------------------------------------------------------------------
-
-_MAGNETS_REFERENCE_RUN = {
-    "radius_fw_channel": 0.006,
-    "dx_fw_module": 0.02,
-    "dr_fw_inboard": 0.018000000000000002,
-    "dr_fw_outboard": 0.018000000000000002,
-    "den_steel": 7800.0,
-    "m_blkt_total": 3110067.3947664234,
-    "vol_blkt_total": 1241.7966910494447,
-    "whtshld": 2449818.833849217,
-    "vol_shld_total": 785.1983441824412,
-    "dr_vv_inboard": 0.3,
-    "dr_vv_outboard": 0.3,
-    "m_vv": 7938816.368934795,
-    "vol_vv": 1017.7969703762558,
-    "dr_blkt_outboard": 1.0,
-    "dr_shld_outboard": 0.8,
-    "fw_armour_thickness": 0.005,
-    "p_fusion_total_mw": 1630.323245464875,
-}
 
 _MAGNETS_FUZZ = {
     "radius_fw_channel": (0.001, 0.02),
@@ -1070,9 +910,8 @@ class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
     changes sign and the renormalisation stops meaning anything.
 
     Not reachable from either spherical-tokamak input file -- both set `itart = 1`, and
-    this slot refuses on `('itart_hcpb', 1)` first. Written because `hcpb.py:213-217` is
-    one of the double-null wave's named sites, and tested here so the arm is not merely
-    asserted to exist.
+    this slot refuses on `('itart_hcpb', 1)` first. Tested here so `hcpb.py:213-217`'s
+    arm is not merely asserted to exist.
     """
 
     audit_record = _AUDIT_RECORD
@@ -1187,8 +1026,7 @@ class TestCentrepostAngleFraction(Tier1Contract):
     (`hcpb.py:1008-1080`).
 
     The legacy point is `test_ccfe_hcpb.py::test_st_cp_angle_fraction`'s single
-    parametrised case, whose own docstring names the FNSF IN.DAT (no longer in this
-    repository); the second is `spherical_tokamak_eval.IN.DAT`'s own geometry, with
+    parametrised case; the second is `spherical_tokamak_eval.IN.DAT`'s own geometry, with
     `r_cp_top` formed the way `run():106-110` forms it.
 
     **This is the port's first `safe_sqrt` whose zero is reached on the operating
@@ -1314,9 +1152,11 @@ class TestPowerflowCalcMechanicalWithPressureDrop(Tier1Contract):
     """`FirstWallRadiationPowers` then `PumpingPowerMechanicalWithPressureDrop`
     -> `powerflow_calc(False)` at `i_p_coolant_pumping == 3`.
 
-    One contract for two nodes, because PROCESS's own method overwrites the two fields
-    that would otherwise be the seam -- see `_reference_powerflow_calc`. Legacy points
-    are `test_ccfe_hcpb.py::test_powerflow_calc`'s two parametrised cases (both
+    One contract for two nodes: PROCESS's own method **overwrites** `psurffwi`/
+    `psurffwo` (`hcpb.py:805-814`) before the pumping arm reads them, so seeding them and
+    calling the method separately would test nothing -- the whole seven-value result is
+    diffed instead, which covers both. Legacy points are
+    `test_ccfe_hcpb.py::test_powerflow_calc`'s two parametrised cases (both
     `i_p_coolant_pumping=3`, `i_blkt_coolant_type=HELIUM`) and the reference run's own.
     """
 

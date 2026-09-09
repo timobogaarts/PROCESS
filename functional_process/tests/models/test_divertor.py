@@ -2,16 +2,16 @@
 (`.tokamak.divertor`) -- **not** `process/models/stellarator/divertor.py` (registry
 unit #4, ported separately).
 
-Audit record: `functional_process/_audit/units/models/divertor.md`. Two units:
+Three units:
 
 - `TestCalculateDivertorHeatFluxSplit` -- `Divertor.run()`'s unconditional preamble.
 - `TestCalculateDivertorHeatLoadWade` -- `Divertor.divwade`, `n_divertors == 1`
   (single null) baked in.
-- `TestCalculateDivertorHeatLoadWadeDoubleNull` -- the same at `n_divertors == 2`,
-  added 2026-08-27. This one **cannot** poison its extra input: `f_p_div_lower` is the
-  arm's whole point, so the contract instead keeps every sample away from
-  `f_p_div_lower == 0.5`, where PROCESS's own `max` has a kink and no finite difference
-  and no autodiff rule can agree by construction. See the port function's docstring.
+- `TestCalculateDivertorHeatLoadWadeDoubleNull` -- the same at `n_divertors == 2`.
+  This one **cannot** poison its extra input: `f_p_div_lower` is the arm's whole
+  point, so the contract instead keeps every sample away from `f_p_div_lower == 0.5`,
+  where PROCESS's own `max` has a kink and no finite difference and no autodiff rule
+  can agree by construction. See the port function's docstring.
 """
 
 from functional_process.cottax._harness import Tier1Contract

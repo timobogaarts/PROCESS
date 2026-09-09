@@ -1,10 +1,9 @@
 """Harness case for the ported subset of `process/models/pulse.py` (`.tokamak.pulse`).
 
-Audit record: `functional_process/_audit/units/models/pulse.md`. One unit in scope:
-`calculate_burn_time` (`Pulse.calculate_burn_time`, `process/models/pulse.py:275-316`),
-tier-1, the sole occupant of `PulseBurnTime`. `tohswg`
-(`.constraints.t_current_ramp_up_min`) is deliberately not ported -- see the port's
-module docstring and the audit record's "Not ported" section.
+One unit in scope: `calculate_burn_time` (`Pulse.calculate_burn_time`,
+`process/models/pulse.py:275-316`), tier-1, the sole occupant of `PulseBurnTime`.
+`tohswg` (`.constraints.t_current_ramp_up_min`) is deliberately not ported -- see the
+port's module docstring.
 
 `calculate_burn_time` is already a bare `@staticmethod` with no `self.data` access
 (same shape as `confinement_time.py`'s 48 scaling laws), so it is called directly as

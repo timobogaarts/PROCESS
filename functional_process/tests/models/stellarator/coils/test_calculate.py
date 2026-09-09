@@ -34,6 +34,7 @@ from cottax.spec import VarPath
 from cottax.tools.path import path_map
 
 from functional_process.cottax._harness import Sample, Tier1Contract, Tier2Contract
+from functional_process.cottax._harness.process_reference import data_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import (
     build,
@@ -85,15 +86,12 @@ from process.models.stellarator.preset_config import load_stellarator_config
 from process.models.superconductors import SuperconductorModel
 
 
-def _reference_coil_toroidal_thickness(
-    dx_tf_wp_primary_toroidal, dx_tf_side_case_min, dx_tf_wp_insulation
-):
-    data = DataStructure()
-    data.tfcoil.dx_tf_wp_primary_toroidal = dx_tf_wp_primary_toroidal
-    data.tfcoil.dx_tf_side_case_min = dx_tf_side_case_min
-    data.tfcoil.dx_tf_wp_insulation = dx_tf_wp_insulation
+def _call_coil_toroidal_thickness(data):
     process_calculate.calculate_coil_toroidal_thickness(data)
     return data.tfcoil.dx_tf_inboard_out_toroidal
+
+
+_reference_coil_toroidal_thickness = data_reference(_call_coil_toroidal_thickness)
 
 
 class TestCoilToroidalThickness(Tier1Contract):
@@ -108,16 +106,12 @@ class TestCoilToroidalThickness(Tier1Contract):
     }
 
 
-def _reference_coil_radial_thickness(
-    dr_tf_nose_case, dr_tf_wp_with_insulation, dr_tf_plasma_case, dx_tf_wp_insulation
-):
-    data = DataStructure()
-    data.tfcoil.dr_tf_nose_case = dr_tf_nose_case
-    data.tfcoil.dr_tf_wp_with_insulation = dr_tf_wp_with_insulation
-    data.tfcoil.dr_tf_plasma_case = dr_tf_plasma_case
-    data.tfcoil.dx_tf_wp_insulation = dx_tf_wp_insulation
+def _call_coil_radial_thickness(data):
     process_calculate.calculate_coil_radial_thickness(data)
     return data.build.dr_tf_inboard
+
+
+_reference_coil_radial_thickness = data_reference(_call_coil_radial_thickness)
 
 
 class TestCoilRadialThickness(Tier1Contract):
@@ -155,11 +149,12 @@ class TestCoilCrossSectionalArea(Tier1Contract):
     }
 
 
-def _reference_coil_half_widths(dx_tf_inboard_out_toroidal):
-    data = DataStructure()
-    data.tfcoil.dx_tf_inboard_out_toroidal = dx_tf_inboard_out_toroidal
+def _call_coil_half_widths(data):
     process_calculate.calculate_coil_half_widths(data)
     return data.tfcoil.tfocrn, data.tfcoil.tficrn
+
+
+_reference_coil_half_widths = data_reference(_call_coil_half_widths)
 
 
 class TestCoilHalfWidths(Tier1Contract):
@@ -170,15 +165,12 @@ class TestCoilHalfWidths(Tier1Contract):
     fuzz_bounds = {"dx_tf_inboard_out_toroidal": (0.05, 2.0)}
 
 
-def _reference_plasma_facing_coil_area(
-    n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil
-):
-    data = DataStructure()
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.tfcoil.dx_tf_inboard_out_toroidal = dx_tf_inboard_out_toroidal
-    data.tfcoil.len_tf_coil = len_tf_coil
+def _call_plasma_facing_coil_area(data):
     process_calculate.calculate_plasma_facing_coil_area(data)
     return data.tfcoil.tfsai, data.tfcoil.tfsao
+
+
+_reference_plasma_facing_coil_area = data_reference(_call_plasma_facing_coil_area)
 
 
 class TestPlasmaFacingCoilArea(Tier1Contract):
@@ -264,9 +256,8 @@ class TestZTfInsideHalf(Tier1Contract):
 def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     """`ZTfInsideHalf` -- the actual point of extracting this formula into its own
     node: it must assemble via `to_graph` and own `.build.z_tf_inside_half`, not
-    `Build` (which used to, until the block-by-block MDA-vs-PROCESS comparison
-    harness found `.build.z_tf_inside_half` has two independent real PROCESS
-    producers and `Build`'s formula was the wrong one to keep -- see `build.py`'s
+    `Build` -- `.build.z_tf_inside_half` has two independent real PROCESS producers,
+    and `Build`'s formula is the wrong one to keep (see `build.py`'s
     `calculate_build`/`Build` docstrings and this node's own).
     """
     from functional_process.cottax.stellarator.coils.calculate import ZTfInsideHalf
@@ -474,15 +465,12 @@ class TestStoredMagneticEnergy(Tier1Contract):
     }
 
 
-def _reference_winding_pack_geometry(
-    dx_tf_turn_general, dx_tf_turn_steel, dx_tf_turn_insulation
-):
-    data = DataStructure()
-    data.tfcoil.dx_tf_turn_general = dx_tf_turn_general
-    data.tfcoil.dx_tf_turn_steel = dx_tf_turn_steel
-    data.tfcoil.dx_tf_turn_insulation = dx_tf_turn_insulation
+def _call_winding_pack_geometry(data):
     process_calculate.calculate_winding_pack_geometry(data)
     return data.tfcoil.a_tf_turn_cable_space_no_void, data.tfcoil.a_tf_turn_steel
+
+
+_reference_winding_pack_geometry = data_reference(_call_winding_pack_geometry)
 
 
 class TestWindingPackGeometry(Tier1Contract):
@@ -500,14 +488,12 @@ class TestWindingPackGeometry(Tier1Contract):
     }
 
 
-def _reference_current(f_st_b, stella_config_i0, f_st_rmajor, f_st_n_coils):
-    data = DataStructure()
-    data.stellarator.f_st_b = f_st_b
-    data.stellarator_config.stella_config_i0 = stella_config_i0
-    data.stellarator.f_st_rmajor = f_st_rmajor
-    data.stellarator.f_st_n_coils = f_st_n_coils
+def _call_current(data):
     coilcurrent = process_calculate.calculate_current(data)
     return coilcurrent, data.stellarator.f_st_i_total
+
+
+_reference_current = data_reference(_call_current)
 
 
 class TestCurrent(Tier1Contract):
@@ -523,11 +509,12 @@ class TestCurrent(Tier1Contract):
     }
 
 
-def _reference_casing(dr_tf_nose_case):
-    data = DataStructure()
-    data.tfcoil.dr_tf_nose_case = dr_tf_nose_case
+def _call_casing(data):
     process_calculate.calculate_casing(data)
     return data.tfcoil.dr_tf_plasma_case, data.tfcoil.dx_tf_side_case_min
+
+
+_reference_casing = data_reference(_call_casing)
 
 
 class TestCasing(Tier1Contract):
@@ -538,21 +525,16 @@ class TestCasing(Tier1Contract):
     fuzz_bounds = {"dr_tf_nose_case": (0.01, 0.5)}
 
 
-def _reference_vertical_ports(
-    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
-):
-    data = DataStructure()
-    data.stellarator_config.stella_config_max_portsize_width = (
-        stella_config_max_portsize_width
-    )
-    data.stellarator.f_st_rmajor = f_st_rmajor
-    data.stellarator.f_st_n_coils = f_st_n_coils
+def _call_vertical_ports(data):
     process_calculate.calculate_vertical_ports(data)
     return (
         data.stellarator.vporttmax,
         data.stellarator.vportpmax,
         data.stellarator.vportamax,
     )
+
+
+_reference_vertical_ports = data_reference(_call_vertical_ports)
 
 
 class TestVerticalPorts(Tier1Contract):
@@ -567,21 +549,16 @@ class TestVerticalPorts(Tier1Contract):
     }
 
 
-def _reference_horizontal_ports(
-    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
-):
-    data = DataStructure()
-    data.stellarator_config.stella_config_max_portsize_width = (
-        stella_config_max_portsize_width
-    )
-    data.stellarator.f_st_rmajor = f_st_rmajor
-    data.stellarator.f_st_n_coils = f_st_n_coils
+def _call_horizontal_ports(data):
     process_calculate.calculate_horizontal_ports(data)
     return (
         data.stellarator.hporttmax,
         data.stellarator.hportpmax,
         data.stellarator.hportamax,
     )
+
+
+_reference_horizontal_ports = data_reference(_call_horizontal_ports)
 
 
 class TestHorizontalPorts(Tier1Contract):
@@ -599,19 +576,14 @@ class TestHorizontalPorts(Tier1Contract):
 def _helias5b_winding_pack_base():
     """Realistic HELIAS5B-like base point for `winding_pack_total_size`'s samples.
 
-    No PROCESS unit test exists for this function to lift a literal point from (checked
-    by grep), so this is built by hand: `load_stellarator_config`'s real `istell=1`
-    preset (the same configuration `TestBmaxFromAwp`'s legacy sample above is drawn
-    from -- `stella_config_a1=0.688`/`stella_config_a2=0.025` match) supplies the
-    `stellarator_config` fields, and the geometry/current
-    (`r_coil_major`/`r_coil_minor`/`coilcurrent`/`n_tf_coils`) is exactly that same
-    legacy sample's point. The rest are typical ITER-Nb3Sn (`i_tf_sc_mat=1`) material
-    constants. Verified while writing this port (running PROCESS's own
-    `winding_pack_total_size` directly at this point) to converge well inside the
-    domain: the found `wp_width_r_min` comes out ~0.51 m, comfortably clear of the
-    turn-size floor clamp at `dx_tf_turn_general**2 = 0.056**2 = 0.0031 m` -- so
-    `intersect`'s bisection finds a genuine curve crossing rather than the clamp
-    overriding it, keeping `test_ported_residual_small` meaningful.
+    No PROCESS unit test exists for this function to lift a literal point from, so this
+    is built by hand: `load_stellarator_config`'s real `istell=1` preset supplies the
+    `stellarator_config` fields, and the rest are typical ITER-Nb3Sn (`i_tf_sc_mat=1`)
+    material constants. The point converges well inside the domain: the found
+    `wp_width_r_min` comes out ~0.51 m, comfortably clear of the turn-size floor clamp
+    at `dx_tf_turn_general**2 = 0.056**2 = 0.0031 m` -- so `intersect`'s bisection finds
+    a genuine curve crossing rather than the clamp overriding it, keeping
+    `test_ported_residual_small` meaningful.
     """
     config = DataStructure()
     load_stellarator_config(1, None, config)
@@ -805,14 +777,14 @@ class TestWindingPackTotalSize(Tier2Contract):
     (`temp <= 20`, `6 <= b <= 104`) is narrow enough that the 200-point sweep runs well
     outside it for most of its range, and it also depends on the stale-`j_tf_wp` input
     (see `winding_pack_total_size`'s own docstring) -- both real fragilities of this
-    branch, not exercised here; see the record's JAX-difficulty flags.
+    branch, not exercised here.
     `i_tf_sc_mat == 6` (REBCO) is excluded from the *reference* comparison, not from the
     port: PROCESS's own `coils.py:136` call to `jcrit_rebco` passes an extra positional
     argument that the real `jcrit_rebco` does not accept, so PROCESS's own
     `winding_pack_total_size` raises `TypeError` outright whenever `i_tf_sc_mat == 6`
-    (confirmed directly while writing this port -- see the record's "real PROCESS bugs
-    found"). The port's own REBCO branch (`_critical_current_density_by_material`) works
-    fine on its own terms; there is simply no PROCESS answer to compare it against.
+    (confirmed directly while writing this port). The port's own REBCO branch
+    (`_critical_current_density_by_material`) works fine on its own terms; there is
+    simply no PROCESS answer to compare it against.
     """
 
 
@@ -961,7 +933,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.is_acyclic
     (block,) = [b for b in graph.scc_blocks if b.declared]
-    assert shape_of(block[block.problem]) == 'root-find'
+    assert shape_of(block[block.problem]) == "root-find"
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():

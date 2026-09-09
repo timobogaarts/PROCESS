@@ -1,8 +1,7 @@
 """Harness cases for the ported tokamak plasma-current chain.
 
 Six contracts, one per pure function in
-`functional_process/cottax/physics/plasma_current.py`. Audit record:
-`functional_process/_audit/units/models/physics/plasma_current.md`.
+`functional_process/cottax/physics/plasma_current.py`.
 
 **Two kinds of oracle here, and the split is the point.**
 
@@ -48,6 +47,7 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 import functools
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
@@ -104,19 +104,15 @@ _reference_plasma_current_fiesta = functools.partial(
 )
 
 
-def _reference_ind_plasma_internal_norm_wesson(alphaj):
-    """`PlasmaInductance.run()` at `i_ind_plasma_internal_norm = 1`, on a real `data`.
-
-    Runs the whole method -- including the two scalings the Wesson arm does not select
-    and the three reporting fields the port does not carry -- and reads back only
-    `.physics.ind_plasma_internal_norm`. `kappa`, `plasma_current`, `vol_plasma`,
-    `rmajor` and `b_plasma_surface_poloidal_average` are pinned to plausible non-zero
-    values purely so `calculate_normalised_internal_inductance_iter_3`
-    (`physics.py:4940-4945`, which divides by `c_plasma**2 * rmajor`) does not divide by
-    zero on the way past; none of them reaches the selected value.
+def _make_plasma_inductance_wesson():
+    """A real `PlasmaInductance` at `i_ind_plasma_internal_norm = 1`, `kappa`,
+    `plasma_current`, `vol_plasma`, `rmajor` and `b_plasma_surface_poloidal_average`
+    pinned to plausible non-zero values purely so
+    `calculate_normalised_internal_inductance_iter_3` (`physics.py:4940-4945`, which
+    divides by `c_plasma**2 * rmajor`) does not divide by zero on the way past; none of
+    them reaches the selected value. `alphaj` is left for the reference call to poke.
     """
     data = DataStructure()
-    data.physics.alphaj = alphaj
     data.physics.kappa = 1.85
     data.physics.plasma_current = 1.8398455678867526e7
     data.physics.vol_plasma = 1888.0
@@ -126,8 +122,15 @@ def _reference_ind_plasma_internal_norm_wesson(alphaj):
 
     inductance = PlasmaInductance()
     inductance.data = data
-    inductance.run()
-    return data.physics.ind_plasma_internal_norm
+    return inductance
+
+
+# Runs the whole method -- including the two scalings the Wesson arm does not select
+# and the three reporting fields the port does not carry -- and reads back only
+# `.physics.ind_plasma_internal_norm`.
+_reference_ind_plasma_internal_norm_wesson = process_reference(
+    _make_plasma_inductance_wesson, "run", "ind_plasma_internal_norm"
+)
 
 
 class TestCalculateCyclindricalPlasmaCurrent(Tier1Contract):

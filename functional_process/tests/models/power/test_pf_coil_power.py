@@ -1,14 +1,9 @@
 """Harness cases for `functional_process/cottax/power/pf_coil_power.py`.
 
-Audit record: `functional_process/_audit/units/models/power/pf_coil_power.md`.
-
-**Fuzz-only, for the same reason chunk A is**: `tests/unit/models/test_power.py` has no
-automatically-generated case for `pfpwr` (unlike `cryo`/`acpow`/
-`plant_electric_production`), so there is no legacy point to inherit. The bounds below
-are anchored on `tests/regression/input_files/large_tokamak_nof.IN.DAT`'s converged
-values rather than invented -- that run is where the four missing producers were
-measured, and where the port was checked against PROCESS at `rtol=1e-12` on all eleven
-outputs before this file existed (see the record's § "agreement").
+**Fuzz-only**: `tests/unit/models/test_power.py` has no automatically-generated case
+for `pfpwr`, so there is no legacy point to inherit. The bounds below are anchored on
+`tests/regression/input_files/large_tokamak_nof.IN.DAT`'s converged values rather than
+invented.
 
 **The arrays are eight-wide, not `NGC2`-wide, and that is the contract.** `pfpwr` reads
 circuits `0..7` -- six PF coils, the CS, and the plasma -- and nothing above; the port's

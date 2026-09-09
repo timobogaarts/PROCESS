@@ -15,6 +15,7 @@ The arguments belonging to the dropped half are held at the sample's own values,
 projection is a slice and not a different point.
 """
 
+import functools
 import pathlib
 
 import jax
@@ -23,6 +24,7 @@ import numpy as np
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
     CROCO_SUPERCONDUCTOR_PROPERTIES,
@@ -68,44 +70,31 @@ def _croco():
 # ---------------------------------------------------------------------------
 
 
-def _reference_croco_averaged_turn_geometry(
-    j_tf_wp,
-    c_tf_turn,
-    dx_tf_turn_steel,
-    dx_tf_turn_insulation,
-    layer_ins,
-    a_tf_wp_no_insulation,
-):
-    """The both-flags-`False` arm, sliced to the seven outputs the port owns.
-
-    `a_tf_turn_cable_space_no_void` and `a_tf_turn_steel` are dropped: PROCESS returns
-    the first straight back off `data` (`superconducting.py:4379`) and computes the
-    second from it (`:4374-4376`), and `run` overwrites both from
-    `tf_turn_croco_cable_space_properties` before any reader
-    (`:3849`, `:3855`). `c_tf_turn` is an argument because it is read; it is not in the
-    tuple because on this arm PROCESS returns it unchanged.
-    """
-    result = _croco().tf_croco_averaged_turn_geometry(
-        j_tf_wp=j_tf_wp,
-        dx_tf_turn_steel=dx_tf_turn_steel,
-        dx_tf_turn_insulation=dx_tf_turn_insulation,
+# The both-flags-`False` arm, sliced to the seven outputs the port owns.
+# `a_tf_turn_cable_space_no_void` and `a_tf_turn_steel` are dropped: PROCESS returns
+# the first straight back off `data` (`superconducting.py:4379`) and computes the second
+# from it (`:4374-4376`), and `run` overwrites both from
+# `tf_turn_croco_cable_space_properties` before any reader (`:3849`, `:3855`).
+# `c_tf_turn` is an argument because it is read; it is not in the tuple because on this
+# arm PROCESS returns it unchanged.
+_reference_croco_averaged_turn_geometry = unpacked(
+    functools.partial(
+        _croco().tf_croco_averaged_turn_geometry,
         dx_tf_turn_general=0.0,
-        c_tf_turn=c_tf_turn,
         i_dx_tf_turn_general_input=False,
         i_dx_tf_turn_cable_space_general_input=False,
         dx_tf_turn_cable_space_general=0.0,
-        layer_ins=layer_ins,
-        a_tf_wp_no_insulation=a_tf_wp_no_insulation,
-    )
-    return (
-        result.a_tf_turn_insulation,
-        result.n_tf_coil_turns,
-        result.dx_tf_turn_general,
-        result.dr_tf_turn,
-        result.dx_tf_turn,
-        result.dx_tf_turn_conduit_full_average,
-        result.dx_tf_turn_cable_space_average,
-    )
+    ),
+    fields=(
+        "a_tf_turn_insulation",
+        "n_tf_coil_turns",
+        "dx_tf_turn_general",
+        "dr_tf_turn",
+        "dx_tf_turn",
+        "dx_tf_turn_conduit_full_average",
+        "dx_tf_turn_cable_space_average",
+    ),
+)
 
 
 class TestCrocoAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
@@ -127,23 +116,18 @@ class TestCrocoAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_croco_cable_space_properties(
-    dx_tf_turn_conduit_full_average, dx_tf_turn_steel
-):
-    """Sliced to four of five: `f_a_tf_turn_cable_space_cooling` is overwritten by
-    `run`'s inline block (`superconducting.py:3948`) before any reader, and is an area
-    on this line where its replacement is a fraction.
-    """
-    result = CROCOSuperconductingTFCoil.tf_turn_croco_cable_space_properties(
-        dx_tf_turn_conduit_full_average=dx_tf_turn_conduit_full_average,
-        dx_tf_turn_steel=dx_tf_turn_steel,
-    )
-    return (
-        result.dia_tf_turn_croco_cable,
-        result.a_tf_turn_cable_space_no_void,
-        result.a_tf_turn_cable_space_effective,
-        result.a_tf_turn_steel,
-    )
+# Sliced to four of five: `f_a_tf_turn_cable_space_cooling` is overwritten by `run`'s
+# inline block (`superconducting.py:3948`) before any reader, and is an area on this
+# line where its replacement is a fraction.
+_reference_croco_cable_space_properties = unpacked(
+    CROCOSuperconductingTFCoil.tf_turn_croco_cable_space_properties,
+    fields=(
+        "dia_tf_turn_croco_cable",
+        "a_tf_turn_cable_space_no_void",
+        "a_tf_turn_cable_space_effective",
+        "a_tf_turn_steel",
+    ),
+)
 
 
 class TestCrocoCableSpaceProperties(Tier1Contract):
@@ -163,35 +147,9 @@ class TestCrocoCableSpaceProperties(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_croco_cable_geometry(
-    dia_croco_strand,
-    dx_croco_strand_copper,
-    dx_hts_tape_rebco,
-    dx_hts_tape_copper,
-    dx_hts_tape_hastelloy,
-):
-    """PROCESS's dataclass unpacked in `run`'s own write order
-    (`superconducting.py:3866-3888`), which is also the dataclass's field order.
-    """
-    result = calculate_croco_cable_geometry(
-        dia_croco_strand=dia_croco_strand,
-        dx_croco_strand_copper=dx_croco_strand_copper,
-        dx_hts_tape_rebco=dx_hts_tape_rebco,
-        dx_hts_tape_copper=dx_hts_tape_copper,
-        dx_hts_tape_hastelloy=dx_hts_tape_hastelloy,
-    )
-    return (
-        result.dia_croco_strand_tape_region,
-        result.n_croco_strand_hts_tapes,
-        result.a_croco_strand_copper_total,
-        result.a_croco_strand_hastelloy,
-        result.a_croco_strand_solder,
-        result.a_croco_strand_rebco,
-        result.a_croco_strand,
-        result.dr_hts_tape,
-        result.dx_hts_tape_total,
-        result.dx_croco_strand_tape_stack,
-    )
+# PROCESS's dataclass unpacked in `run`'s own write order (`superconducting.py:
+# 3866-3888`), which is also the dataclass's field order.
+_reference_croco_cable_geometry = unpacked(calculate_croco_cable_geometry)
 
 
 class TestCrocoCableGeometry(Tier1Contract):
@@ -215,9 +173,6 @@ class TestCrocoCableGeometry(Tier1Contract):
     PROCESS's own function to between **1.0e-10 and 4.0e-9 relative** across all five
     inputs and all ten outputs. `test_croco_cable_geometry_gradient_within_one_step`
     below is that measurement, kept as a test rather than as a claim in prose.
-
-    Legacy samples are `test_calculate_croco_cable_geometry`'s two parametrised cases
-    verbatim, plus the strand the ST input files actually describe.
     """
 
     audit_record = "models/tfcoil/croco.md"
@@ -257,42 +212,10 @@ def test_croco_turn_cable_space_extra_void_is_zero():
 # ---------------------------------------------------------------------------
 
 
-def _reference_croco_inboard_areas_and_fractions(
-    a_tf_turn_cable_space_no_void,
-    n_tf_coil_turns,
-    f_a_tf_turn_cable_space_extra_void,
-    a_tf_turn_insulation,
-    a_tf_turn_steel,
-    a_tf_coil_inboard_case,
-    n_tf_coils,
-    a_tf_inboard_total,
-    a_tf_wp_ground_insulation,
-    a_tf_croco_strand,
-):
-    """PROCESS's `SuperconTFAreasFractions`, unpacked whole -- no slice here."""
-    result = CROCOSuperconductingTFCoil.tf_croco_inboard_areas_and_fractions(
-        a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
-        n_tf_coil_turns=n_tf_coil_turns,
-        f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-        a_tf_turn_insulation=a_tf_turn_insulation,
-        a_tf_turn_steel=a_tf_turn_steel,
-        a_tf_coil_inboard_case=a_tf_coil_inboard_case,
-        n_tf_coils=n_tf_coils,
-        a_tf_inboard_total=a_tf_inboard_total,
-        a_tf_wp_ground_insulation=a_tf_wp_ground_insulation,
-        a_tf_croco_strand=a_tf_croco_strand,
-    )
-    return (
-        result.a_tf_wp_coolant_channels,
-        result.a_tf_wp_conductor,
-        result.a_tf_wp_extra_void,
-        result.a_tf_coil_wp_turn_insulation,
-        result.a_tf_wp_steel,
-        result.a_tf_coil_inboard_steel,
-        result.f_a_tf_coil_inboard_steel,
-        result.a_tf_coil_inboard_insulation,
-        result.f_a_tf_coil_inboard_insulation,
-    )
+# PROCESS's `SuperconTFAreasFractions`, unpacked whole -- no slice here.
+_reference_croco_inboard_areas_and_fractions = unpacked(
+    CROCOSuperconductingTFCoil.tf_croco_inboard_areas_and_fractions
+)
 
 
 class TestCrocoInboardAreasAndFractions(Tier1Contract):
@@ -545,10 +468,9 @@ def test_every_unwritten_croco_material_is_refused_with_a_reason(slot):
 def test_a_croco_machine_refuses_an_unwritten_tape_material(tmp_path):
     """A CroCo machine asking for `i_tf_sc_mat = 8` stops, and says which slot.
 
-    The end-to-end half of the trade above, and the check that the *CroCo* registries are
-    the ones a CroCo machine consults: before this wave the same file was refused by the
-    cable-in-conduit slot's `_SC_TAPE_REASON`, which was catching the two ST files by
-    accident (`indat._refuse_unported_switch`'s docstring records that history).
+    The end-to-end half of the trade above, and the check that the *CroCo* registries
+    are the ones a CroCo machine consults rather than the cable-in-conduit slot's
+    `_SC_TAPE_REASON` catching the file by accident.
     """
     from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
 
@@ -655,15 +577,9 @@ def test_croco_nodes_own_the_tape_stack(tmp_path):
 def test_the_two_tracked_spherical_tokamaks_assemble():
     """Both ST files build a machine and a graph -- the CroCo cluster's whole point.
 
-    **This assertion has been strengthened twice and the history is the reason it is
-    written this way.** When the CroCo wave landed it could only check the *content* of
-    a refusal, because five PF dimensions and `i_tf_stress_model` still blocked
-    assembly; the previous version of this test asserted the files still raised and
-    listed the three switch names that had left the message. Both later blockers closed
-    (`_audit/units/models/tfcoil/stress.md`, the `extended_plane_strain` section), so
-    that version would now fail for the best possible reason -- which is exactly what a
-    test written around a refusal does when the refusal expires. Asserting that they
-    assemble is the claim that cannot rot in that direction.
+    Written as "they assemble" rather than as an assertion about a refusal's content:
+    a test written around a refusal fails for the best possible reason when the refusal
+    expires, and asserting assembly is the claim that cannot rot in that direction.
     """
     from functional_process.cottax.indat import graph_for
 

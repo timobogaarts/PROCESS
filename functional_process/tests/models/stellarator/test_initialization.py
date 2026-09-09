@@ -6,42 +6,33 @@ whole-function gate) and the six duration fields the port reads.
 """
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import data_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.initialization import (
     calculate_pulse_durations,
 )
-from process.core.model import DataStructure
 from process.models.stellarator.initialization import st_init
 
 
-def _reference_pulse_durations(
-    t_plant_pulse_coil_precharge,
-    t_plant_pulse_plasma_current_ramp_up,
-    t_plant_pulse_burn,
-    t_plant_pulse_plasma_current_ramp_down,
-    t_plant_pulse_fusion_ramp,
-    t_plant_pulse_dwell,
-):
+def _call_pulse_durations(data):
     """Call PROCESS's `st_init` and read back its three summed duration writes.
 
     `st_init` overwrites `t_plant_pulse_coil_precharge`/`_ramp_up`/`_burn`/`_ramp_down`
-    itself (device-preset literals, see the audit record) rather than reading them, so
-    those four sample arguments are set on `data` only for documentation of the port's
-    signature -- they are not actually consulted by `st_init`. `t_plant_pulse_fusion_ramp`
-    and `t_plant_pulse_dwell` genuinely are read, so those two are load-bearing.
+    itself (device-preset literals, see the audit record) regardless of what is poked
+    onto `data` beforehand, so those four sample arguments have no effect on the
+    output -- only `t_plant_pulse_fusion_ramp` and `t_plant_pulse_dwell` are genuinely
+    read and load-bearing.
     """
-    data = DataStructure()
     data.stellarator.istell = 1
-    data.times.t_plant_pulse_fusion_ramp = t_plant_pulse_fusion_ramp
-    data.times.t_plant_pulse_dwell = t_plant_pulse_dwell
-
     st_init(data)
-
     return (
         data.times.t_plant_pulse_plasma_present,
         data.times.t_plant_pulse_no_burn,
         data.times.t_plant_pulse_total,
     )
+
+
+_reference_pulse_durations = data_reference(_call_pulse_durations)
 
 
 class TestPulseDurations(Tier1Contract):

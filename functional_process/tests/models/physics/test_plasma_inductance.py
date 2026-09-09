@@ -1,7 +1,5 @@
 """Harness cases for `functional_process/cottax/physics/plasma_inductance.py`.
 
-Audit record: `functional_process/_audit/units/models/physics/plasma_inductance.md`.
-
 Four tier-1 contracts. Every one of them calls PROCESS's own function **directly**:
 all four are `@staticmethod @nb.njit` on `PlasmaInductance` with explicit arguments and
 no `self.data` access, so there is no adapter to write and no `DataStructure` back door

@@ -1,7 +1,6 @@
 """Harness cases for the ported tokamak bootstrap-current chain.
 
-Port: `functional_process/cottax/physics/bootstrap_current.py`. Audit record:
-`functional_process/_audit/units/models/physics/bootstrap_current.md`.
+Port: `functional_process/cottax/physics/bootstrap_current.py`.
 
 **Three kinds of oracle here, and the split is the point.**
 

@@ -161,11 +161,9 @@ class TestPlasmaComposition(Tier1Contract):
     # tests/unit/models/physics/test_physics.py::test_plasma_composition
     # (generated from large_tokamak_nof.IN.DAT) -- the first exercises
     # `fusden_alpha_total == 0` ("not yet calculated" branch), the second the opposite.
-    # Both originally also exercised `first_call`'s two branches in PROCESS itself; the
-    # port no longer has a `first_call` branch to exercise (see `plasma_composition`'s
-    # docstring), so both points now go through the reference adapter's forced
-    # `first_call = 0` (real-profile `pc`) path -- the sample names are kept as-is since
-    # they still identify the underlying PROCESS legacy points, not the branch tested.
+    # Sample names still identify the underlying PROCESS legacy points, not
+    # `first_call`, which the reference adapter forces to 0 regardless (see its
+    # docstring).
     samples = [
         legacy_sample(
             "large_tokamak_nof-first_call",
@@ -411,13 +409,12 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
 # other apparent self-loop in this unit, `.physics.first_call`, was never a genuine
 # cycle at all -- see `plasma_composition`'s own docstring -- so it is not ported and
 # there is no `FixedPointFunction`/`Cut` here for it.
-# `.physics.first_call` above, flagged but *not* resolved by an earlier pass (see
-# `composition.md`'s "cottax node" section). It is resolved here, not via
-# `FixedPointFunction` like `first_call`, but by addressing the field at index
-# granularity: the read range (2:13) and the write range (0/1) are disjoint, so once
-# each index is its own `VarPath` (`SequenceKey`-addressed, matching the real
-# `DataStructure` field's own `list[float]` storage) there is no overlap left to
-# conflict. `PlasmaComposition` now owns indices 0/1 outright.
+#
+# The array's self-loop is resolved by addressing it at index granularity instead: the
+# read range (2:13) and the write range (0/1) are disjoint, so once each index is its
+# own `VarPath` (`SequenceKey`-addressed, matching the real `DataStructure` field's own
+# `list[float]` storage) there is no overlap left to conflict. `PlasmaComposition` now
+# owns indices 0/1 outright.
 
 
 def _pure_function_kwargs_to_node_kwargs(kwargs):

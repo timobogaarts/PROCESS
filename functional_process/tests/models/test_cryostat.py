@@ -1,11 +1,9 @@
 """Harness cases for `process/models/cryostat.py` (`.tokamak.cryostat`).
 
-Audit record: `functional_process/_audit/units/models/cryostat.md`. Two tier-1
-contracts: `calculate_r_cryostat_inboard`, the method's first line, and
-`calculate_external_cryo_geometry`, the whole of it (added 2026-08-30 with the other
-five fields). The first is not subsumed by the second -- PROCESS's first line is a
-genuine sub-expression of the rest, the port calls it as one, and it has its own legacy
-point. **Not** the stellarator's cryostat
+Two tier-1 contracts: `calculate_r_cryostat_inboard`, the method's first line, and
+`calculate_external_cryo_geometry`, the whole of it. The first is not subsumed by the
+second -- PROCESS's first line is a genuine sub-expression of the rest, the port calls
+it as one, and it has its own legacy point. **Not** the stellarator's cryostat
 (`process/models/stellarator/stellarator.py:1282-1330`, already ported).
 
 Both reference adapters drive PROCESS's `external_cryo_geometry` through a bound
@@ -18,6 +16,7 @@ set gets checked against PROCESS's rather than asserted.
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.cryostat import (
     calculate_external_cryo_geometry,
@@ -25,6 +24,14 @@ from functional_process.cottax.cryostat import (
 )
 from process.core.model import DataStructure
 from process.models.cryostat import Cryostat
+
+
+def _cryostat():
+    """A `Cryostat` instance with a fresh `DataStructure` attached."""
+    model = Cryostat()
+    model.data = DataStructure()
+    return model
+
 
 R_PF_COIL_OUTER = np.array([
     6.1290994712971543,
@@ -44,22 +51,13 @@ unused tail of the `NGC2`-wide array, kept so the array has the shape PROCESS gi
 """
 
 
-def _reference_r_cryostat_inboard(r_pf_coil_outer, dr_pf_cryostat):
-    """Call PROCESS's `Cryostat.external_cryo_geometry` through the port's signature.
-
-    Every field downstream of `r_cryostat_inboard` in `external_cryo_geometry` is left
-    at its `DataStructure` default -- harmless (no division by an unset zero occurs
-    downstream on the default state) and irrelevant, since only `r_cryostat_inboard`
-    itself is read back.
-    """
-    data = DataStructure()
-    data.pf_coil.r_pf_coil_outer = np.asarray(r_pf_coil_outer, dtype=float)
-    data.fwbs.dr_pf_cryostat = dr_pf_cryostat
-
-    c = Cryostat()
-    c.data = data
-    c.external_cryo_geometry()
-    return c.data.fwbs.r_cryostat_inboard
+_reference_r_cryostat_inboard = process_reference(
+    _cryostat, "external_cryo_geometry", "fwbs.r_cryostat_inboard"
+)
+"""Every field downstream of `r_cryostat_inboard` in `external_cryo_geometry` is left
+at its `DataStructure` default -- harmless (no division by an unset zero occurs
+downstream on the default state) and irrelevant, since only `r_cryostat_inboard`
+itself is read back."""
 
 
 class TestCalculateRCryostatInboard(Tier1Contract):
@@ -81,46 +79,24 @@ class TestCalculateRCryostatInboard(Tier1Contract):
     }
 
 
-def _reference_external_cryo_geometry(
-    r_pf_coil_outer,
-    dr_pf_cryostat,
-    f_z_cryostat,
-    z_pf_coil_upper,
-    z_tf_inside_half,
-    dr_tf_inboard,
-    dr_cryostat,
-    vol_vv,
-    den_steel,
-):
-    """`Cryostat.external_cryo_geometry` whole, through the port's signature.
+_reference_external_cryo_geometry = process_reference(
+    _cryostat,
+    "external_cryo_geometry",
+    (
+        "fwbs.r_cryostat_inboard",
+        "blanket.dz_pf_cryostat",
+        "fwbs.z_cryostat_half_inside",
+        "buildings.dz_tf_cryostat",
+        "fwbs.vol_cryostat_internal",
+        "fwbs.vol_cryostat",
+        "fwbs.dewmkg",
+    ),
+)
+"""`Cryostat.external_cryo_geometry` whole, through the port's signature.
 
-    Nine writes onto a fresh `DataStructure` and seven reads back, in the port's return
-    order. Every field the method reads is set from the sample, so no default can stand
-    in for a read the port declares -- which is the check this adapter exists to make.
-    """
-    data = DataStructure()
-    data.pf_coil.r_pf_coil_outer = np.asarray(r_pf_coil_outer, dtype=float)
-    data.pf_coil.z_pf_coil_upper = np.asarray(z_pf_coil_upper, dtype=float)
-    data.fwbs.dr_pf_cryostat = dr_pf_cryostat
-    data.fwbs.vol_vv = vol_vv
-    data.fwbs.den_steel = den_steel
-    data.build.f_z_cryostat = f_z_cryostat
-    data.build.z_tf_inside_half = z_tf_inside_half
-    data.build.dr_tf_inboard = dr_tf_inboard
-    data.build.dr_cryostat = dr_cryostat
-
-    c = Cryostat()
-    c.data = data
-    c.external_cryo_geometry()
-    return (
-        data.fwbs.r_cryostat_inboard,
-        data.blanket.dz_pf_cryostat,
-        data.fwbs.z_cryostat_half_inside,
-        data.buildings.dz_tf_cryostat,
-        data.fwbs.vol_cryostat_internal,
-        data.fwbs.vol_cryostat,
-        data.fwbs.dewmkg,
-    )
+Nine pokes onto a fresh `DataStructure` and seven reads back, in the port's return
+order. Every field the method reads is set from the sample, so no default can stand in
+for a read the port declares -- which is the check this adapter exists to make."""
 
 
 class TestCalculateExternalCryoGeometry(Tier1Contract):

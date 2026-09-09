@@ -1,17 +1,7 @@
-"""Harness cases for `functional_process/cottax/power/electric_production.py`.
-
-Audit record: `functional_process/_audit/units/models/power/electric_production.md`.
-Legacy points exist in `tests/unit/models/test_power.py` for `acpow`
-(`test_acpow`, 2 points) and `plant_electric_production`
-(`test_plant_electric_production`, 2 points) -- reused below.
-`power_profiles_over_time` has no dedicated PROCESS unit test (it is exercised
-indirectly through `test_plant_electric_production`, whose legacy points also
-exercise this port's own composed `calculate_plant_electric_production`) --
-fuzz-only, verified by hand against `Power.power_profiles_over_time` while building
-this port (see `electric_production.md`).
-"""
+"""Harness cases for `functional_process/cottax/power/electric_production.py`."""
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.power.electric_production import (
     calculate_acpow,
@@ -22,41 +12,23 @@ from process.core.model import DataStructure
 from process.models.power import Power
 from process.models.pulse import PulseTimings
 
+
+def _make_power():
+    p = Power()
+    p.data = DataStructure()
+    return p
+
+
 # ---------------------------------------------------------------------------
 # acpow
 # ---------------------------------------------------------------------------
 
-
-def _reference_acpow(
-    p_tf_electric_supplies_mw,
-    srcktpm,
-    peakmva,
-    i_pf_energy_storage_source,
-    p_hcd_electric_total_mw,
-    p_cryo_plant_electric_mw,
-    vachtmw,
-    p_coolant_pump_elec_total_mw,
-    p_tritium_plant_electric_mw,
-    p_plant_electric_base_total_mw,
-    fmgdmw,
-):
-    data = DataStructure()
-    data.heat_transport.p_tf_electric_supplies_mw = p_tf_electric_supplies_mw
-    data.pf_power.srcktpm = srcktpm
-    data.heat_transport.peakmva = peakmva
-    data.pf_power.i_pf_energy_storage_source = i_pf_energy_storage_source
-    data.heat_transport.p_hcd_electric_total_mw = p_hcd_electric_total_mw
-    data.heat_transport.p_cryo_plant_electric_mw = p_cryo_plant_electric_mw
-    data.heat_transport.vachtmw = vachtmw
-    data.heat_transport.p_coolant_pump_elec_total_mw = p_coolant_pump_elec_total_mw
-    data.heat_transport.p_tritium_plant_electric_mw = p_tritium_plant_electric_mw
-    data.heat_transport.p_plant_electric_base_total_mw = p_plant_electric_base_total_mw
-    data.heat_transport.fmgdmw = fmgdmw
-
-    p = Power()
-    p.data = data
-    p.acpow(output=False)
-    return data.heat_transport.pacpmw, data.heat_transport.tlvpmw
+_reference_acpow = process_reference(
+    _make_power,
+    "acpow",
+    ("heat_transport.pacpmw", "heat_transport.tlvpmw"),
+    call_args=(False,),
+)
 
 
 def _acpow_samples():
@@ -191,88 +163,35 @@ _PEP_STATIC_ARGNAMES = (
 )
 
 
-def _reference_plant_electric_production(**kwargs):
-    data = DataStructure()
-    data.physics.itart = kwargs["itart"]
-    data.tfcoil.i_tf_sup = kwargs["i_tf_sup"]
-    data.tfcoil.p_cp_coolant_pump_elec = kwargs["p_cp_coolant_pump_elec"]
-    data.heat_transport.p_plant_electric_base = kwargs["p_plant_electric_base"]
-    data.buildings.a_plant_floor_effective = kwargs["a_plant_floor_effective"]
-    data.heat_transport.pflux_plant_floor_electric = kwargs["pflux_plant_floor_electric"]
-    data.heat_transport.p_cryo_plant_electric_mw = kwargs["p_cryo_plant_electric_mw"]
-    data.heat_transport.p_tf_electric_supplies_mw = kwargs["p_tf_electric_supplies_mw"]
-    data.heat_transport.p_tritium_plant_electric_mw = kwargs[
-        "p_tritium_plant_electric_mw"
-    ]
-    data.heat_transport.vachtmw = kwargs["vachtmw"]
-    data.pf_coil.p_pf_electric_supplies_mw = kwargs["p_pf_electric_supplies_mw"]
-    data.heat_transport.p_hcd_electric_loss_mw = kwargs["p_hcd_electric_loss_mw"]
-    data.heat_transport.p_coolant_pump_loss_total_mw = kwargs[
-        "p_coolant_pump_loss_total_mw"
-    ]
-    data.heat_transport.p_div_secondary_heat_mw = kwargs["p_div_secondary_heat_mw"]
-    data.heat_transport.p_shld_secondary_heat_mw = kwargs["p_shld_secondary_heat_mw"]
-    data.heat_transport.p_hcd_secondary_heat_mw = kwargs["p_hcd_secondary_heat_mw"]
-    data.fwbs.p_tf_nuclear_heat_mw = kwargs["p_tf_nuclear_heat_mw"]
-    data.costs.ireactor = kwargs["ireactor"]
-    data.fwbs.i_blkt_dual_coolant = kwargs["i_blkt_dual_coolant"]
-    data.fwbs.i_p_coolant_pumping = kwargs["i_p_coolant_pumping"]
-    data.heat_transport.p_plant_primary_heat_mw = kwargs["p_plant_primary_heat_mw"]
-    data.power.p_blkt_liquid_breeder_heat_deposited_mw = kwargs[
-        "p_blkt_liquid_breeder_heat_deposited_mw"
-    ]
-    data.heat_transport.eta_turbine = kwargs["eta_turbine"]
-    data.heat_transport.etath_liq = kwargs["etath_liq"]
-    data.heat_transport.p_hcd_electric_total_mw = kwargs["p_hcd_electric_total_mw"]
-    data.heat_transport.p_coolant_pump_elec_total_mw = kwargs[
-        "p_coolant_pump_elec_total_mw"
-    ]
-    data.heat_transport.p_plant_electric_gross_mw = kwargs["p_plant_electric_gross_mw"]
-    data.power.p_turbine_loss_mw = kwargs["p_turbine_loss_mw"]
-    data.heat_transport.p_plant_electric_recirc_mw = kwargs["p_plant_electric_recirc_mw"]
-    data.heat_transport.p_plant_electric_net_mw = kwargs["p_plant_electric_net_mw"]
-    data.heat_transport.f_p_plant_electric_recirc = kwargs["f_p_plant_electric_recirc"]
-    data.physics.p_fusion_total_mw = kwargs["p_fusion_total_mw"]
-    data.times.t_plant_pulse_coil_precharge = kwargs["t_plant_pulse_coil_precharge"]
-    data.times.t_plant_pulse_plasma_current_ramp_up = kwargs[
-        "t_plant_pulse_plasma_current_ramp_up"
-    ]
-    data.times.t_plant_pulse_fusion_ramp = kwargs["t_plant_pulse_fusion_ramp"]
-    data.times.t_plant_pulse_burn = kwargs["t_plant_pulse_burn"]
-    data.times.t_plant_pulse_plasma_current_ramp_down = kwargs[
-        "t_plant_pulse_plasma_current_ramp_down"
-    ]
-    data.times.t_plant_pulse_dwell = kwargs["t_plant_pulse_dwell"]
-
-    p = Power()
-    p.data = data
-    p.plant_electric_production()
-
-    return (
-        data.power.p_cp_coolant_pump_elec_mw,
-        data.heat_transport.p_plant_electric_base_total_mw,
-        data.heat_transport.fachtmw,
-        data.power.p_plant_core_systems_elec_mw,
-        data.heat_transport.p_plant_secondary_heat_mw,
-        data.heat_transport.p_plant_electric_gross_mw,
-        data.power.p_turbine_loss_mw,
-        data.heat_transport.p_plant_electric_recirc_mw,
-        data.heat_transport.p_plant_electric_net_mw,
-        data.heat_transport.f_p_plant_electric_recirc,
-        data.power.e_plant_net_electric_pulse_kwh,
-        data.power.e_plant_net_electric_pulse_mj,
-        data.power.p_plant_electric_base_total_profile_mw,
-        data.power.p_plant_electric_gross_profile_mw,
-        data.power.p_plant_electric_net_profile_mw,
-        data.power.p_hcd_electric_total_profile_mw,
-        data.power.p_coolant_pump_elec_total_profile_mw,
-        data.power.p_tf_electric_supplies_profile_mw,
-        data.power.p_pf_electric_supplies_profile_mw,
-        data.power.vachtmw_profile_mw,
-        data.power.p_tritium_plant_electric_profile_mw,
-        data.power.p_cryo_plant_electric_profile_mw,
-        data.power.p_fusion_total_profile_mw,
-    )
+_reference_plant_electric_production = process_reference(
+    _make_power,
+    "plant_electric_production",
+    (
+        "power.p_cp_coolant_pump_elec_mw",
+        "heat_transport.p_plant_electric_base_total_mw",
+        "heat_transport.fachtmw",
+        "power.p_plant_core_systems_elec_mw",
+        "heat_transport.p_plant_secondary_heat_mw",
+        "heat_transport.p_plant_electric_gross_mw",
+        "power.p_turbine_loss_mw",
+        "heat_transport.p_plant_electric_recirc_mw",
+        "heat_transport.p_plant_electric_net_mw",
+        "heat_transport.f_p_plant_electric_recirc",
+        "power.e_plant_net_electric_pulse_kwh",
+        "power.e_plant_net_electric_pulse_mj",
+        "power.p_plant_electric_base_total_profile_mw",
+        "power.p_plant_electric_gross_profile_mw",
+        "power.p_plant_electric_net_profile_mw",
+        "power.p_hcd_electric_total_profile_mw",
+        "power.p_coolant_pump_elec_total_profile_mw",
+        "power.p_tf_electric_supplies_profile_mw",
+        "power.p_pf_electric_supplies_profile_mw",
+        "power.vachtmw_profile_mw",
+        "power.p_tritium_plant_electric_profile_mw",
+        "power.p_cryo_plant_electric_profile_mw",
+        "power.p_fusion_total_profile_mw",
+    ),
+)
 
 
 def _plant_electric_production_legacy(label, **overrides):

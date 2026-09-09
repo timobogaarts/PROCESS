@@ -1,7 +1,5 @@
 """Harness cases for `st_fwbs`'s S3 fragment (`stellarator.py:1030-1043`).
 
-Audit record: `functional_process/_audit/units/models/stellarator/stellarator_fwbs_s3.md`.
-
 `st_fwbs` (`process/models/stellarator/stellarator.py:481-1682`) is one 1200-line method;
 S3 is a 14-line fragment inside it, not a separately callable `Stellarator` method the
 way `st_strc`/`sc_tf_coil_nuclear_heating_iter90` are for the sibling

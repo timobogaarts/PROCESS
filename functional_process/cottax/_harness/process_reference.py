@@ -56,6 +56,24 @@ def data_reference(call, *, areas=None):
     return reference
 
 
+def unpacked(fn, *, fields=None):
+    """A `reference` callable: `fn(**kwargs)`, its dataclass result as a tuple.
+
+    Fields come out in declaration order — the convention every port's tuple follows.
+    `fields` names a different order or subset where a port deviates.
+    """
+
+    def reference(**kwargs):
+        result = fn(**kwargs)
+        names = fields or [f.name for f in dataclasses.fields(result)]
+        out = tuple(getattr(result, name) for name in names)
+        return out[0] if len(out) == 1 else out
+
+    reference.__name__ = f"reference_{getattr(fn, '__name__', 'unpacked')}"
+    reference.__doc__ = f"PROCESS's `{getattr(fn, '__name__', fn)}`, unpacked."
+    return reference
+
+
 def process_reference(factory, method: str, outputs, *, call_args=(), areas=None):
     """A `reference` callable: keyword arguments in, `outputs` out."""
     outputs = (outputs,) if isinstance(outputs, str) else tuple(outputs)

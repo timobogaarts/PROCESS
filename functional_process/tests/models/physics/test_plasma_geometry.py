@@ -5,16 +5,15 @@
 against `PlasmaGeom`'s own `@staticmethod`s -- they take no `self.data` access at all,
 so no adapter is needed and `reference = staticmethod(PlasmaGeom.<name>)` is exact.
 
-`calculate_minor_radius`, `calculate_shape_ipdg89_x_point` and
-`calculate_geometry_double_arc` have no PROCESS function of the same shape (`run()`'s
-preamble, one `i_plasma_geometry` branch and the double-arc arm are each inline code,
-not standalone methods), so each is diffed against a small adapter
-(`_run_plasma_geom`) that builds a real `DataStructure` with `large_tokamak_eval.
-IN.DAT`'s own switch values (`i_plasma_geometry=0`, `i_plasma_wall_gap=1`,
-`i_plasma_current=4`, `i_plasma_shape=0`), calls the real, bound `PlasmaGeom.run()`,
-and reads the relevant fields back -- the "close the `data` backdoor" technique used
-throughout this harness, and the strongest oracle available here: it validates against
-the actual stateful method, not a transcription of it.
+`calculate_minor_radius`, `calculate_shape_ipdg89_x_point`,
+`calculate_shape_create_data_eu_demo_x_point` and `calculate_geometry_double_arc` have
+no PROCESS function of the same shape (`run()`'s preamble, two `i_plasma_geometry`
+branches and the double-arc arm are each inline code, not standalone methods), so each
+is diffed against `_make_plasma_geom`, a factory that builds a real `DataStructure`
+with `large_tokamak_eval.IN.DAT`'s own switch values, calls the real, bound
+`PlasmaGeom.run()`, and reads the relevant fields back -- the "close the `data`
+backdoor" technique used throughout this harness, and the strongest oracle available
+here: it validates against the actual stateful method, not a transcription of it.
 
 Legacy sample values for `plasma_angles_arcs`/`plasma_surface_area`/`plasma_volume`/
 `plasma_cross_section` are lifted from `tests/unit/models/physics/test_plasma_geom.py`.
@@ -31,7 +30,10 @@ fuzz bound below is chosen to keep `kappa` comfortably above `1 + triang` (worst
 least `0.3`).
 """
 
+import functools
+
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.plasma_geometry import (
     calculate_geometry_double_arc,
@@ -54,87 +56,71 @@ from process.models.physics.plasma_geometry import (
 )
 
 
-def _run_plasma_geom(rmajor, aspect, kappa, triang, f_vol_plasma=1.0):
-    """Build a `DataStructure`, run the real `PlasmaGeom.run()` and return `data`.
-
-    Switch values match `large_tokamak_eval.IN.DAT`: `i_plasma_geometry=0`
-    (`IPDG89_X_POINT`), `i_plasma_wall_gap=1` (no build fields touched),
-    `i_plasma_current=4`, `i_plasma_shape=0` (`PROCESS_ORIGINAL`, so the double-arc arm
-    of the compound Sauter switch is taken).
+def _make_plasma_geom(
+    i_plasma_geometry=PlasmaGeometryModelType.IPDG89_X_POINT, **physics
+):
+    """A real `PlasmaGeom`, `large_tokamak_eval.IN.DAT`'s switch values
+    (`i_plasma_wall_gap=1`, `i_plasma_current=4`, `i_plasma_shape=0` so the double-arc
+    arm of the compound Sauter switch is taken), plus whatever fixed physics fields a
+    caller needs that aren't among the reference's own kwargs.
     """
     data = DataStructure()
-    data.physics.rmajor = rmajor
-    data.physics.aspect = aspect
-    data.physics.kappa = kappa
-    data.physics.triang = triang
-    data.physics.f_vol_plasma = f_vol_plasma
-    data.physics.i_plasma_geometry = PlasmaGeometryModelType.IPDG89_X_POINT
+    data.physics.i_plasma_geometry = i_plasma_geometry
     data.physics.i_plasma_wall_gap = 1
     data.physics.i_plasma_current = 4
     data.physics.i_plasma_shape = PlasmaShapeModelType.PROCESS_ORIGINAL
-
+    for name, value in physics.items():
+        setattr(data.physics, name, value)
     pg = PlasmaGeom()
     pg.data = data
-    pg.run()
-    return data
+    return pg
 
 
-def _run_plasma_geom_create_data_eu_demo(aspect, m_s_limit, triang):
-    """Build a `DataStructure`, run the real `PlasmaGeom.run()` under
-    `i_plasma_geometry = 10`, and return `data`.
-
-    Switch values match `low_aspect_ratio_DEMO.IN.DAT` (the value-10 regression input):
-    `i_plasma_geometry = 10` (`CREATE_DATA_EU_DEMO_X_POINT`, `:372`),
-    `i_plasma_current = 4` (`:352`), `i_plasma_wall_gap` and `i_plasma_shape` unset
-    (defaults `1` and `0`). `rmajor` is held at the file's own `8.6` (`:164`) -- it
-    feeds only `rminor`/`eps`, not this branch's three outputs. The input file's
-    `kappa = 1.848` initial value is deliberately *not* set: value 10 overwrites
-    `kappa`, which is exactly the ownership this occupant claims.
-    """
-    data = DataStructure()
-    data.physics.rmajor = 8.6
-    data.physics.aspect = aspect
-    data.physics.m_s_limit = m_s_limit
-    data.physics.triang = triang
-    data.physics.i_plasma_geometry = PlasmaGeometryModelType.CREATE_DATA_EU_DEMO_X_POINT
-    data.physics.i_plasma_wall_gap = 1
-    data.physics.i_plasma_current = 4
-    data.physics.i_plasma_shape = PlasmaShapeModelType.PROCESS_ORIGINAL
-
-    pg = PlasmaGeom()
-    pg.data = data
-    pg.run()
-    return data
+_reference_calculate_minor_radius = process_reference(
+    functools.partial(_make_plasma_geom, kappa=1.7, triang=0.4),
+    "run",
+    ("rminor", "eps"),
+)
 
 
-def _reference_calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang):
-    data = _run_plasma_geom_create_data_eu_demo(
-        aspect=aspect, m_s_limit=m_s_limit, triang=triang
-    )
-    return data.physics.kappa95, data.physics.kappa, data.physics.triang95
+_reference_calculate_shape_ipdg89_x_point = process_reference(
+    functools.partial(_make_plasma_geom, rmajor=8.0, aspect=3.2),
+    "run",
+    ("kappa95", "triang95"),
+)
 
 
-def _reference_calculate_minor_radius(rmajor, aspect):
-    data = _run_plasma_geom(rmajor=rmajor, aspect=aspect, kappa=1.7, triang=0.4)
-    return data.physics.rminor, data.physics.eps
-
-
-def _reference_calculate_shape_ipdg89_x_point(kappa, triang):
-    data = _run_plasma_geom(rmajor=8.0, aspect=3.2, kappa=kappa, triang=triang)
-    return data.physics.kappa95, data.physics.triang95
+# Switch values match `low_aspect_ratio_DEMO.IN.DAT` (the value-10 regression input):
+# `i_plasma_geometry = 10` (`CREATE_DATA_EU_DEMO_X_POINT`, `:372`), `rmajor` held at the
+# file's own `8.6` (`:164`) -- it feeds only `rminor`/`eps`, not this branch's three
+# outputs. The input file's `kappa = 1.848` initial value is deliberately *not* set:
+# value 10 overwrites `kappa`, which is exactly the ownership this occupant claims.
+_reference_calculate_shape_create_data_eu_demo_x_point = process_reference(
+    functools.partial(
+        _make_plasma_geom,
+        i_plasma_geometry=PlasmaGeometryModelType.CREATE_DATA_EU_DEMO_X_POINT,
+        rmajor=8.6,
+    ),
+    "run",
+    ("kappa95", "kappa", "triang95"),
+)
 
 
 def _reference_calculate_geometry_double_arc(
     rmajor, rminor, kappa, triang, f_vol_plasma
 ):
-    aspect = rmajor / rminor
-    data = _run_plasma_geom(
+    """`aspect = rmajor / rminor` is folded in here: `calculate_geometry_double_arc`
+    takes `rminor` directly and has no `aspect` kwarg of its own.
+    """
+    pg = _make_plasma_geom(
         rmajor=rmajor,
-        aspect=aspect,
+        aspect=rmajor / rminor,
         kappa=kappa,
         triang=triang,
         f_vol_plasma=f_vol_plasma,
     )
+    pg.run()
+    data = pg.data
     return (
         data.physics.len_plasma_poloidal,
         data.physics.vol_plasma,
@@ -271,7 +257,7 @@ class TestCalculateGeometrySauter(Tier1Contract):
 class TestCalculateMinorRadius(Tier1Contract):
     """`calculate_minor_radius` -> `PlasmaGeom.run()`'s unconditional preamble.
 
-    No standalone PROCESS function of this shape; diffed against `_run_plasma_geom`,
+    No standalone PROCESS function of this shape; diffed against `_make_plasma_geom`,
     which calls the real, bound `run()` and reads `.physics.rminor`/`.physics.eps` back.
     """
 
@@ -288,7 +274,7 @@ class TestCalculateShapeIpdg89XPoint(Tier1Contract):
     """`calculate_shape_ipdg89_x_point` -> `i_plasma_geometry == IPDG89_X_POINT` (0).
 
     No standalone PROCESS function of this shape (it is 2 lines of `run()`'s dispatch);
-    diffed against `_run_plasma_geom`, reading `.physics.kappa95`/`.physics.triang95`
+    diffed against `_make_plasma_geom`, reading `.physics.kappa95`/`.physics.triang95`
     back after the real `run()` call.
     """
 
@@ -305,9 +291,9 @@ class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
     """`calculate_shape_create_data_eu_demo_x_point` -> `i_plasma_geometry == 10`.
 
     No standalone PROCESS function of this shape (the branch is inline in `run()`'s
-    dispatch, `plasma_geometry.py:362-397`); diffed against
-    `_run_plasma_geom_create_data_eu_demo`, which calls the real, bound `run()` under
-    `i_plasma_geometry = 10` and reads `.physics.kappa95`/`.kappa`/`.triang95` back.
+    dispatch, `plasma_geometry.py:362-397`); diffed against `_make_plasma_geom`, which
+    calls the real, bound `run()` under `i_plasma_geometry = 10` and reads
+    `.physics.kappa95`/`.kappa`/`.triang95` back.
 
     Two legacy points, one per arm of the branch's own `if kappa95 > 1.77:` (the C0-
     but-not-C1 corner fudge, audit record **D6**): the first is
@@ -338,7 +324,7 @@ class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
 class TestCalculateGeometryDoubleArc(Tier1Contract):
     """`calculate_geometry_double_arc` -> the geometry-model arm's double-arc arm.
 
-    No standalone PROCESS function of this shape; diffed against `_run_plasma_geom`
+    No standalone PROCESS function of this shape; diffed against `_make_plasma_geom`
     (whose switch configuration always takes the double-arc arm), reading
     `.physics.len_plasma_poloidal`/`.vol_plasma`/`.a_plasma_poloidal`/`.a_plasma_surface`
     back after the real `run()` call. This is the node that owns three of the slot's

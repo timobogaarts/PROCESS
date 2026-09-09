@@ -27,12 +27,11 @@ dr_shld_inboard`, `r_3 = r_shld_outboard_outer - r_1 - dr_shld_outboard`) -- sam
 provenance class `plasma_geometry.md`'s `sauter_geometry`/`plasma_poloidal_perimeter`
 samples used.
 
-2026-08-27 (the D-shaped wave): `TestCalculateShieldVolumesDshaped` joined, giving the
-D-shaped arm its own end-to-end diff against a real `Shield.run()` now that it has an
-occupant (`DShapedShieldVolumes`). Its adapter **poisons** `.physics.rmajor`,
-`.physics.triang` and `.build.r_shld_outboard_outer` with `nan`: the D-shaped arm of
-`Shield.run()` reads none of the three, in either the volume block or the area block
-alongside it, and a `nan` executes that claim rather than asserting it.
+`TestCalculateShieldVolumesDshaped` is the D-shaped arm's own end-to-end diff against a
+real `Shield.run()`, what `DShapedShieldVolumes` wraps. Its adapter **poisons**
+`.physics.rmajor`, `.physics.triang` and `.build.r_shld_outboard_outer` with `nan`: the
+D-shaped arm of `Shield.run()` reads none of the three, in either the volume block or
+the area block alongside it, and a `nan` executes that claim rather than asserting it.
 """
 
 import functools

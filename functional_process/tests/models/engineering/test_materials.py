@@ -1,6 +1,5 @@
 """Harness case for `eurofer97_thermal_conductivity`, ported from
-`process/models/engineering/materials.py` -- see
-`functional_process/_audit/units/models/engineering/materials.md`.
+`process/models/engineering/materials.py`.
 
 One class, not three: `calculate_tresca_stress` and `calculate_von_mises_stress` live in
 the same PROCESS module but were ported into the stress packages

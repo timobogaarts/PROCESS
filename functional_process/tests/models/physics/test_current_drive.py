@@ -17,6 +17,7 @@ the one the port can reach without also porting `profiles.py` (see
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.current_drive import (
     HcdElectricTotalIgnited,
@@ -48,52 +49,45 @@ _OUT_OF_CLOSURE = {
 }
 
 
-def _reference_current_drive(**kwargs):
-    """Call PROCESS's `CurrentDrive.current_drive` through the port's signature.
+_OUTPUTS = (
+    "current_drive.eta_cd_hcd_primary",
+    "current_drive.c_hcd_secondary_driven",
+    "current_drive.f_c_plasma_hcd_secondary",
+    "current_drive.p_hcd_primary_injected_mw",
+    "current_drive.p_hcd_ecrh_injected_total_mw",
+    "current_drive.p_hcd_ecrh_electric_mw",
+    "current_drive.eta_hcd_primary_injector_wall_plug",
+    "heat_transport.p_hcd_primary_electric_mw",
+    "current_drive.p_hcd_injected_total_mw",
+    "heat_transport.p_hcd_electric_total_mw",
+)
 
-    Returns the same 10-tuple the port does, read back off `data` in the port's order.
+
+def _make_current_drive_ecrh_primary():
+    """A `CurrentDrive` fixed on the `i_hcd_primary = 10` / `i_hcd_secondary = 0` arm.
+
+    The five sub-model constructor arguments are `None`. That is not a shortcut: on
+    this arm `hcd_models` (`current_drive.py:1697-1771`) is a dict of *lambdas*, only
+    one of which is ever called, and model 10's is `eta_cd_norm_ecrh / (dene20 *
+    rmajor)` -- it touches no sub-model at all. Passing `None` is what proves it, and
+    it is why this arm is the one the port can reach without also porting
+    `profiles.py` (see `current_drive.md` § "A live PROCESS bug in two sibling arms").
     """
     data = DataStructure()
-
     data.current_drive.i_hcd_primary = 10
     data.current_drive.i_hcd_secondary = 0
     data.current_drive.i_hcd_calculations = 1
-
-    data.current_drive.eta_cd_norm_ecrh = kwargs["eta_cd_norm_ecrh"]
-    data.current_drive.eta_ecrh_injector_wall_plug = kwargs[
-        "eta_ecrh_injector_wall_plug"
-    ]
-    data.current_drive.p_hcd_primary_extra_heat_mw = kwargs[
-        "p_hcd_primary_extra_heat_mw"
-    ]
-    data.current_drive.p_hcd_secondary_injected_mw = kwargs[
-        "p_hcd_secondary_injected_mw"
-    ]
-
-    data.physics.i_plasma_ignited = kwargs["i_plasma_ignited"]
-    data.physics.nd_plasma_electrons_vol_avg = kwargs["nd_plasma_electrons_vol_avg"]
-    data.physics.rmajor = kwargs["rmajor"]
-    data.physics.plasma_current = kwargs["plasma_current"]
-    data.physics.f_c_plasma_auxiliary = kwargs["f_c_plasma_auxiliary"]
     for name, value in _OUT_OF_CLOSURE.items():
         setattr(data.physics, name, value)
 
     model = CurrentDrive(None, None, None, None, None, None)
     model.data = data
-    model.current_drive()
+    return model
 
-    return (
-        data.current_drive.eta_cd_hcd_primary,
-        data.current_drive.c_hcd_secondary_driven,
-        data.current_drive.f_c_plasma_hcd_secondary,
-        data.current_drive.p_hcd_primary_injected_mw,
-        data.current_drive.p_hcd_ecrh_injected_total_mw,
-        data.current_drive.p_hcd_ecrh_electric_mw,
-        data.current_drive.eta_hcd_primary_injector_wall_plug,
-        data.heat_transport.p_hcd_primary_electric_mw,
-        data.current_drive.p_hcd_injected_total_mw,
-        data.heat_transport.p_hcd_electric_total_mw,
-    )
+
+_reference_current_drive = process_reference(
+    _make_current_drive_ecrh_primary, "current_drive", _OUTPUTS
+)
 
 
 # `large_tokamak_eval.IN.DAT`'s own values wherever the file states one:
@@ -153,70 +147,36 @@ class TestCurrentDriveEcrhPrimaryNoSecondary(Tier1Contract):
     }
 
 
-def _reference_current_drive_freethy(**kwargs):
-    """Call PROCESS's `CurrentDrive.current_drive` on the `i_hcd_primary = 13` arm.
+def _make_current_drive_freethy():
+    """A `CurrentDrive` fixed on the `i_hcd_primary = 13` arm.
 
-    Same technique as `_reference_current_drive`, two differences: the switch is `13`
-    and the second constructor argument is a real `ElectronCyclotron` -- model 13's
-    lambda calls `self.electron_cyclotron.electron_cyclotron_freethy(...)`
+    Same technique as `_make_current_drive_ecrh_primary`, two differences: the switch
+    is `13` and the second constructor argument is a real `ElectronCyclotron` --
+    model 13's lambda calls `self.electron_cyclotron.electron_cyclotron_freethy(...)`
     (`current_drive.py:1759-1770`), a `@staticmethod` reached *through the attribute*,
     so `None` would `AttributeError` before the static nature of the method could save
     it. `ElectronCyclotron(None)` is still the proof that no profile machinery is
     touched: its `plasma_profile` is `None` and the Freethy model never reaches it.
+
+    `temp_plasma_electron_vol_avg_kev` is a real input on this arm (the Freethy
+    efficiency reads it), unlike arm 10's `_OUT_OF_CLOSURE` treatment; only the two
+    `big_q_plasma` feeds stay out-of-closure here.
     """
     data = DataStructure()
-
     data.current_drive.i_hcd_primary = 13
     data.current_drive.i_hcd_secondary = 0
     data.current_drive.i_hcd_calculations = 1
-    data.current_drive.i_ecrh_wave_mode = kwargs["i_ecrh_wave_mode"]
-
-    data.current_drive.n_ecrh_harmonic = kwargs["n_ecrh_harmonic"]
-    data.current_drive.feffcd = kwargs["feffcd"]
-    data.current_drive.eta_ecrh_injector_wall_plug = kwargs[
-        "eta_ecrh_injector_wall_plug"
-    ]
-    data.current_drive.p_hcd_primary_extra_heat_mw = kwargs[
-        "p_hcd_primary_extra_heat_mw"
-    ]
-    data.current_drive.p_hcd_secondary_injected_mw = kwargs[
-        "p_hcd_secondary_injected_mw"
-    ]
-
-    data.physics.i_plasma_ignited = kwargs["i_plasma_ignited"]
-    data.physics.temp_plasma_electron_vol_avg_kev = kwargs[
-        "temp_plasma_electron_vol_avg_kev"
-    ]
-    data.physics.n_charge_plasma_effective_vol_avg = kwargs[
-        "n_charge_plasma_effective_vol_avg"
-    ]
-    data.physics.nd_plasma_electrons_vol_avg = kwargs["nd_plasma_electrons_vol_avg"]
-    data.physics.rmajor = kwargs["rmajor"]
-    data.physics.b_plasma_toroidal_on_axis = kwargs["b_plasma_toroidal_on_axis"]
-    data.physics.plasma_current = kwargs["plasma_current"]
-    data.physics.f_c_plasma_auxiliary = kwargs["f_c_plasma_auxiliary"]
-    # `temp_plasma_electron_vol_avg_kev` is a real input on this arm (the Freethy
-    # efficiency reads it), unlike arm 10's `_OUT_OF_CLOSURE` treatment; only the two
-    # `big_q_plasma` feeds stay out-of-closure here.
     data.physics.p_fusion_total_mw = _OUT_OF_CLOSURE["p_fusion_total_mw"]
     data.physics.p_plasma_ohmic_mw = _OUT_OF_CLOSURE["p_plasma_ohmic_mw"]
 
     model = CurrentDrive(None, ElectronCyclotron(None), None, None, None, None)
     model.data = data
-    model.current_drive()
+    return model
 
-    return (
-        data.current_drive.eta_cd_hcd_primary,
-        data.current_drive.c_hcd_secondary_driven,
-        data.current_drive.f_c_plasma_hcd_secondary,
-        data.current_drive.p_hcd_primary_injected_mw,
-        data.current_drive.p_hcd_ecrh_injected_total_mw,
-        data.current_drive.p_hcd_ecrh_electric_mw,
-        data.current_drive.eta_hcd_primary_injector_wall_plug,
-        data.heat_transport.p_hcd_primary_electric_mw,
-        data.current_drive.p_hcd_injected_total_mw,
-        data.heat_transport.p_hcd_electric_total_mw,
-    )
+
+_reference_current_drive_freethy = process_reference(
+    _make_current_drive_freethy, "current_drive", _OUTPUTS
+)
 
 
 # `spherical_tokamak_eval.IN.DAT`'s own values wherever the file states one:

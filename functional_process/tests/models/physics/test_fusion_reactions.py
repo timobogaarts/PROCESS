@@ -17,6 +17,7 @@ even though it has no cottax node yet.
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.fusion_reactions import (
     alpha_power_beam,
@@ -150,35 +151,7 @@ def _reference_alpha_power_beam(beam_target_reaction_rate_value):
     return reactions.alpha_power_beam(beam_target_reaction_rate_value)
 
 
-def _reference_beam_slowing_down_state(
-    e_beam_kev,
-    critical_energy_deuterium,
-    critical_energy_tritium,
-    t_beam_slow,
-    f_beam_tritium,
-    c_beam_total,
-    vol_plasma,
-):
-    """Call PROCESS's `beam_slowing_down_state` through the port's signature,
-    flattening its `BeamSlowingDownState` dataclass return into a plain tuple.
-    """
-    state = reactions.beam_slowing_down_state(
-        e_beam_kev,
-        critical_energy_deuterium,
-        critical_energy_tritium,
-        t_beam_slow,
-        f_beam_tritium,
-        c_beam_total,
-        vol_plasma,
-    )
-    return (
-        state.deuterium_beam_density,
-        state.tritium_beam_density,
-        state.deuterium_critical_energy_speed,
-        state.tritium_critical_energy_speed,
-        state.nd_beam_hot,
-        state.e_beam_deposited_kev,
-    )
+_reference_beam_slowing_down_state = unpacked(reactions.beam_slowing_down_state)
 
 
 class TestDeuteriumBranchingTrit(Tier1Contract):

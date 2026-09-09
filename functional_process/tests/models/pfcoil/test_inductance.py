@@ -1,7 +1,5 @@
 """Harness cases for `functional_process/cottax/pfcoil/inductance.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/inductance.md`.
-
 Two tier-1 contracts:
 
 - `calculate_solenoid_self_inductance` -> `PFCoil.selfinductance`, a `@staticmethod`

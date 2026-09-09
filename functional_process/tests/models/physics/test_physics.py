@@ -1,7 +1,5 @@
 """Harness cases for the ported tokamak arm of `process/models/physics/physics.py`.
 
-Audit record: `functional_process/_audit/units/models/physics/physics.md`.
-
 Three of the eight ported functions have a PROCESS `@staticmethod`/method to diff
 against directly (`PlasmaFields.calculate_surface_averaged_poloidal_field`,
 `PlasmaExhaust.calculate_separatrix_power`,
@@ -11,12 +9,10 @@ here in `numpy`, with the source lines named -- the same convention
 `test_plasma_physics.py`'s `_reference_clipped_radiation_powers` established for
 `st_phys`'s inline blocks.
 
-**Sample provenance.** Two of the units have real legacy points lifted from
+Two of the units have real legacy points lifted from
 `tests/unit/models/physics/test_physics.py` (marked in each case). The rest have no
 PROCESS unit test at all, so their `legacy_sample`s are hand-built at
-`large_tokamak_eval`-scale operating values and the real coverage is the fuzz draws --
-recorded as this unit's weak point in the audit record's "tier signal", not papered
-over.
+`large_tokamak_eval`-scale operating values and the real coverage is the fuzz draws.
 """
 
 import functools
@@ -286,8 +282,7 @@ def _ported_plasma_ohmic_heating(
 
 
 class TestPlasmaOhmicHeating(Tier1Contract):
-    """`plasma_ohmic_heating` -> `Physics.plasma_ohmic_heating`
-    (`physics.py:1605-1697`), added 2026-08-27 (`cold_boundary.md` producer 3).
+    """`plasma_ohmic_heating` -> `Physics.plasma_ohmic_heating` (`physics.py:1605-1697`).
 
     The legacy point is `large_tokamak_eval` at convergence, read off a live
     `SingleRun` -- where PROCESS's chained-comparison defect (`2.5 >= A <= 4.0`, i.e.
@@ -309,11 +304,10 @@ class TestPlasmaOhmicHeating(Tier1Contract):
 
 # =========================================================== `PlasmaBeta.run`'s limits
 #
-# The constraint-24 trio and the normalised limit that feeds it, added 2026-08-27 for
-# `optimise_design.md` §11.5. Two of the four have a PROCESS `@staticmethod` to diff
-# against; the other two are inline assignments in `PlasmaBeta.run` and are transcribed
-# here in `numpy` with their source lines named, the same convention
-# `_reference_unclipped_radiation_powers` above uses.
+# The constraint-24 trio and the normalised limit that feeds it. Two of the four have a
+# PROCESS `@staticmethod` to diff against; the other two are inline assignments in
+# `PlasmaBeta.run` and are transcribed here in `numpy` with their source lines named,
+# the same convention `_reference_unclipped_radiation_powers` above uses.
 
 
 def _reference_toroidal_beta(

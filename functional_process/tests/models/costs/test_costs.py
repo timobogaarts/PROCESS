@@ -483,8 +483,8 @@ class TestHeatRejectionCost(Tier1Contract):
 
 
 # --------------------------------------------------------------------------------------
-# Second porting wave: the `.costs.coe` chain (18 further `Costs` methods plus the two
-# accumulations `Costs.run()` performs inline). See `costs.md`'s coverage map.
+# The `.costs.coe` chain: 18 further `Costs` methods plus the two accumulations
+# `Costs.run()` performs inline. See `costs.md`'s coverage map.
 #
 # Several of these methods are *accumulators* that call their own sub-accounts before
 # summing (`acc221`, `acc222`, `acc225`, `acc22`) or live inline in `Costs.run()`
@@ -561,77 +561,28 @@ def _reference_reactor_cost(c2211, c2212, c2213, c2214, c2215):
     return costs.data.costs.c221
 
 
-def _reference_tf_magnet_cost_superconducting(
-    supercond_cost_model,
-    lsa,
-    ucsc,
-    i_tf_sc_mat,
-    m_tf_coil_superconductor,
-    len_tf_coil,
-    n_tf_coil_turns,
-    sc_mat_cost_0,
-    j_crit_str_0,
-    j_crit_str_tf,
-    uccu,
-    m_tf_coil_copper,
-    cconshtf,
-    cconfix,
-    n_tf_coils,
-    ucwindtf,
-    m_tf_coil_case,
-    uccase,
-    aintmass,
-    UCINT,
-    clgsmass,
-    UCGSS,
-    fkind,
-):
+def _make_costs_tf_superconducting():
     costs = _make_costs()
     costs.data.tfcoil.i_tf_sup = 1  # TFConductorModel.SUPERCONDUCTING
-    costs.data.costs.supercond_cost_model = supercond_cost_model
-    costs.data.costs.lsa = lsa
-    costs.data.costs.ucsc = ucsc
-    costs.data.tfcoil.i_tf_sc_mat = i_tf_sc_mat
-    costs.data.tfcoil.m_tf_coil_superconductor = m_tf_coil_superconductor
-    costs.data.tfcoil.len_tf_coil = len_tf_coil
-    costs.data.tfcoil.n_tf_coil_turns = n_tf_coil_turns
-    costs.data.costs.sc_mat_cost_0 = sc_mat_cost_0
-    costs.data.tfcoil.j_crit_str_0 = j_crit_str_0
-    costs.data.tfcoil.j_crit_str_tf = j_crit_str_tf
-    costs.data.costs.uccu = uccu
-    costs.data.tfcoil.m_tf_coil_copper = m_tf_coil_copper
-    costs.data.costs.cconshtf = cconshtf
-    costs.data.costs.cconfix = cconfix
-    costs.data.tfcoil.n_tf_coils = n_tf_coils
-    costs.data.costs.ucwindtf = ucwindtf
-    costs.data.tfcoil.m_tf_coil_case = m_tf_coil_case
-    costs.data.costs.uccase = uccase
-    costs.data.structure.aintmass = aintmass
-    costs.data.costs.UCINT = UCINT
-    costs.data.structure.clgsmass = clgsmass
-    costs.data.costs.UCGSS = UCGSS
-    costs.data.costs.fkind = fkind
-    costs.acc2221()
-    c = costs.data.costs
-    return c.c22211, c.c22212, c.c22213, c.c22214, c.c22215, c.c2221
+    return costs
 
 
-def _reference_tf_magnet_cost_resistive(
-    lsa, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
-):
+_reference_tf_magnet_cost_superconducting = process_reference(
+    _make_costs_tf_superconducting,
+    "acc2221",
+    ("c22211", "c22212", "c22213", "c22214", "c22215", "c2221"),
+)
+
+
+def _make_costs_tf_resistive():
     costs = _make_costs()
     costs.data.tfcoil.i_tf_sup = 0  # resistive copper
-    costs.data.costs.lsa = lsa
-    costs.data.tfcoil.whtcp = whtcp
-    costs.data.costs.uccpcl1 = uccpcl1
-    costs.data.tfcoil.whttflgs = whttflgs
-    costs.data.costs.uccpclb = uccpclb
-    costs.data.physics.itart = itart
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.data.costs.fkind = fkind
-    costs.acc2221()
-    c = costs.data.costs
-    return c.c22211, c.c22212, c.c2221, c.cpstcst
+    return costs
+
+
+_reference_tf_magnet_cost_resistive = process_reference(
+    _make_costs_tf_resistive, "acc2221", ("c22211", "c22212", "c2221", "cpstcst")
+)
 
 
 def _reference_pf_magnet_cost(

@@ -1,8 +1,5 @@
 """Harness cases for `functional_process/cottax/pfcoil/superconductor.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/fields.md` § "2026-08-27 --
-the CS chain" (this module is owed a registry row of its own; see its own docstring).
-
 Three tier-1 contracts, all against PROCESS's real `superconpf` -- a module-level
 function with no `self` and no `data`, so the adapters are thin: they call it with the
 arm's `isumat`, take the two of its four returns `ohcalc` uses, and apply `ohcalc`'s own

@@ -1,8 +1,5 @@
 """Harness cases for `functional_process/cottax/pfcoil/stresses.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/fields.md` § "2026-08-27 --
-the CS chain" (this module is owed a registry row of its own; see its own docstring).
-
 Six tier-1 contracts, and **none of them needs an adapter**: every PROCESS function this
 module ports is either a bare `@staticmethod` on `CSCoil` or a module-level function in
 `process/models/engineering/materials.py`, and none touches `self.data`. The whole

@@ -1,8 +1,6 @@
 """Harness cases for the ported TF coil stress chain
 (`functional_process/cottax/tfcoil/stress.py`).
 
-Audit record: `functional_process/_audit/units/models/tfcoil/stress.md`.
-
 Six contracts: the four elasticity-smearing helpers, the `plane_stress` layer solver,
 `tf_field_and_force` and `stresscl` itself. Where PROCESS's own
 `tests/unit/models/tfcoil/test_tfcoil.py` has a parametrisation on the ported arm, the

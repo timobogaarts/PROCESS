@@ -129,9 +129,7 @@ _reference_constraint_1 = data_reference(lambda d: _evaluate(1, d))
 
 
 class TestConstraint1(Tier1Contract):
-    """`constraint_equation_1` -> `constraint_1`. `Compare`-shaped -- see the audit
-    record's note that this is the first constraint of that shape ported.
-    """
+    """`constraint_equation_1` -> `constraint_1`. `Compare`-shaped."""
 
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_1
@@ -405,7 +403,7 @@ class TestConstraint11(Tier1Contract):
 def _reference_constraint_12(vs_cs_pf_total_pulse, vs_plasma_total_required):
     """`vs_cs_pf_total_pulse` here is the port's already-sign-flipped argument --
     negate it back before writing to `data`, since PROCESS's own source stores the
-    negative value and flips the sign at its own call site (see `batch1.md`).
+    negative value and flips the sign at its own call site.
     """
     data = DataStructure()
     data.pf_coil.vs_cs_pf_total_pulse = -vs_cs_pf_total_pulse
@@ -902,13 +900,12 @@ class TestConstraint42(Tier1Contract):
     fuzz = True
 
 
-def _reference_constraint_43(i_tf_sup, temp_cp_average, tcpav2):
-    data = DataStructure()
+def _configure_constraint_43(data):
     data.physics.itart = 1  # required by PROCESS's own misuse guard, not a port param
-    data.tfcoil.i_tf_sup = i_tf_sup
-    data.tfcoil.temp_cp_average = temp_cp_average
-    data.tfcoil.tcpav2 = tcpav2
     return _evaluate(43, data)
+
+
+_reference_constraint_43 = data_reference(_configure_constraint_43)
 
 
 class TestConstraint43(Tier1Contract):
@@ -926,13 +923,12 @@ class TestConstraint43(Tier1Contract):
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
 
 
-def _reference_constraint_44(i_tf_sup, temp_cp_max, temp_cp_peak):
-    data = DataStructure()
+def _configure_constraint_44(data):
     data.physics.itart = 1  # required by PROCESS's own misuse guard, not a port param
-    data.tfcoil.i_tf_sup = i_tf_sup
-    data.tfcoil.temp_cp_max = temp_cp_max
-    data.tfcoil.temp_cp_peak = temp_cp_peak
     return _evaluate(44, data)
+
+
+_reference_constraint_44 = data_reference(_configure_constraint_44)
 
 
 class TestConstraint44(Tier1Contract):

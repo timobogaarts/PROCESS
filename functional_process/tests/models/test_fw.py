@@ -1,7 +1,7 @@
 """Harness cases for the ported subset of `process/models/fw.py`
 (`.tokamak.first_wall`).
 
-Audit record: `functional_process/_audit/units/models/fw.md`. Four units:
+Four units:
 
 - `TestCalculateFirstWallHalfHeight`, `TestCalculateEllipticalFirstWallAreas`,
   `TestApplyFirstWallCoverageFactors` -- each a real PROCESS `@staticmethod`, diffed
@@ -12,22 +12,6 @@ Audit record: `functional_process/_audit/units/models/fw.md`. Four units:
   isolated PROCESS function of their own (same shape as `confinement_time.md`'s
   `plasma_power_loss_mw`), so this composite is their only diff against real PROCESS,
   not a standalone contract.
-
-2026-08-27: three `n_divertors == 2` contracts joined -- the half-height, the coverage
-factors and the composite. Both double-null adapters **poison** the two inputs that arm
-does not read (`z_plasma_xpoint_upper`, `dz_fw_plasma_gap`) with `nan` rather than
-zeroing them, so "PROCESS does not look at these" is executed rather than asserted: were
-the branch not taken, the reference would return `nan` and the value comparison would
-fail instead of quietly agreeing on a zero. The composite can do it too because
-`process/models/fw.py` reads both fields in exactly one place -- `:51-52`, the arguments
-of the half-height call -- so a `nan` in `.build` reaches nothing else in `run()`.
-
-2026-08-27 (the D-shaped wave): two more contracts --
-`TestCalculateDshapedFirstWallAreas` (a bare PROCESS staticmethod, no adapter) and
-`TestCalculateFirstWallOutputsDshapedDoubleNull` (the D-shaped double-null composite,
-what `FirstWallDShapedDoubleNull` wraps and what both spherical-tokamak input files
-select). The composite's adapter poisons a *third* field, `.physics.triang`, which
-`fw.py` reads at `:82` only, inside the elliptical area call.
 """
 
 import functools
@@ -35,6 +19,7 @@ import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.fw import (
     apply_first_wall_coverage_factors,
@@ -188,75 +173,43 @@ class TestApplyFirstWallCoverageFactorsDoubleNull(Tier1Contract):
     }
 
 
-def _reference_first_wall_outputs(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    z_plasma_xpoint_upper,
-    dz_fw_plasma_gap,
-    dr_fw_inboard,
-    dr_fw_outboard,
-    rmajor,
-    rminor,
-    triang,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    p_alpha_total_mw,
-    f_p_alpha_plasma_deposited,
-    ffwal,
-    pflux_plasma_surface_neutron_avg_mw,
-):
-    """Call PROCESS's real `FirstWall.run()` through the port's signature, at the one
-    switch combination the port bakes in (`itart=0`, `i_fw_blkt_vv_shape=2` --
-    both already PROCESS defaults; `n_divertors=1`, `i_pflux_fw_neutron=1` -- the
-    latter also already the default).
+def _fw():
+    """A `FirstWall` instance with a fresh `DataStructure` attached."""
+    model = FirstWall()
+    model.data = DataStructure()
+    return model
+
+
+def _fw_single_null():
+    """`FirstWall`, at the one switch combination the port bakes in (`itart=0`,
+    `i_fw_blkt_vv_shape=2` -- both already PROCESS defaults; `n_divertors=1`,
+    `i_pflux_fw_neutron=1` -- the latter also already the default).
+
+    `.physics.a_plasma_surface` is a plain nonzero value: `run()` unconditionally
+    computes `pflux_fw_rad_mw` (out of this unit's scope, `fw.md` § scope discipline)
+    immediately after the lines this test cares about, dividing by it, so it must not
+    be left at its zero default.
     """
-    data = DataStructure()
-    data.build.z_plasma_xpoint_lower = z_plasma_xpoint_lower
-    data.build.dz_xpoint_divertor = dz_xpoint_divertor
-    data.divertor.dz_divertor = dz_divertor
-    data.build.dz_blkt_upper = dz_blkt_upper
-    data.build.z_plasma_xpoint_upper = z_plasma_xpoint_upper
-    data.build.dz_fw_plasma_gap = dz_fw_plasma_gap
-    data.divertor.n_divertors = 1
-    data.build.dr_fw_inboard = dr_fw_inboard
-    data.build.dr_fw_outboard = dr_fw_outboard
-    data.physics.itart = 0
-    data.fwbs.i_fw_blkt_vv_shape = 2
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.triang = triang
-    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
-    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
-    data.fwbs.f_ster_div_single = f_ster_div_single
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.physics.p_alpha_total_mw = p_alpha_total_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.i_pflux_fw_neutron = 1
-    data.physics.ffwal = ffwal
-    data.physics.pflux_plasma_surface_neutron_avg_mw = (
-        pflux_plasma_surface_neutron_avg_mw
-    )
-    # `run()` unconditionally computes `pflux_fw_rad_mw` (out of this unit's scope,
-    # `fw.md` § scope discipline) immediately after the lines this test cares about,
-    # dividing by `a_plasma_surface` -- give it a nonzero value so that unrelated line
-    # does not crash before the target outputs are read back.
-    data.physics.a_plasma_surface = 1000.0
+    model = _fw()
+    model.data.divertor.n_divertors = 1
+    model.data.physics.itart = 0
+    model.data.fwbs.i_fw_blkt_vv_shape = 2
+    model.data.physics.i_pflux_fw_neutron = 1
+    model.data.physics.a_plasma_surface = 1000.0
+    return model
 
-    fw = FirstWall()
-    fw.data = data
-    fw.run()
 
-    return (
-        fw.data.first_wall.a_fw_inboard,
-        fw.data.first_wall.a_fw_outboard,
-        fw.data.first_wall.a_fw_total,
-        fw.data.physics.p_fw_alpha_mw,
-        fw.data.physics.pflux_fw_neutron_mw,
-    )
+_reference_first_wall_outputs = process_reference(
+    _fw_single_null,
+    "run",
+    (
+        "first_wall.a_fw_inboard",
+        "first_wall.a_fw_outboard",
+        "first_wall.a_fw_total",
+        "physics.p_fw_alpha_mw",
+        "physics.pflux_fw_neutron_mw",
+    ),
+)
 
 
 class TestCalculateFirstWallOutputs(Tier1Contract):
@@ -296,73 +249,38 @@ class TestCalculateFirstWallOutputs(Tier1Contract):
     }
 
 
-def _reference_first_wall_outputs_double_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    dr_fw_inboard,
-    dr_fw_outboard,
-    rmajor,
-    rminor,
-    triang,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    p_alpha_total_mw,
-    f_p_alpha_plasma_deposited,
-    ffwal,
-    pflux_plasma_surface_neutron_avg_mw,
-):
-    """Real `FirstWall.run()` at `n_divertors = 2`, otherwise the same configuration as
-    `_reference_first_wall_outputs`.
+def _fw_double_null():
+    """`FirstWall` at `n_divertors = 2`, otherwise the same configuration as
+    `_fw_single_null`.
 
     `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` are seeded with `nan`,
     not left at their defaults: `process/models/fw.py` reads them at `:51-52` only, as
     arguments of the half-height call, so on this arm nothing may touch them and a `nan`
     proves it.
     """
-    data = DataStructure()
-    data.build.z_plasma_xpoint_lower = z_plasma_xpoint_lower
-    data.build.dz_xpoint_divertor = dz_xpoint_divertor
-    data.divertor.dz_divertor = dz_divertor
-    data.build.dz_blkt_upper = dz_blkt_upper
-    data.build.z_plasma_xpoint_upper = np.nan
-    data.build.dz_fw_plasma_gap = np.nan
-    data.divertor.n_divertors = 2
-    data.build.dr_fw_inboard = dr_fw_inboard
-    data.build.dr_fw_outboard = dr_fw_outboard
-    data.physics.itart = 0
-    data.fwbs.i_fw_blkt_vv_shape = 2
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.triang = triang
-    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
-    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
-    data.fwbs.f_ster_div_single = f_ster_div_single
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.physics.p_alpha_total_mw = p_alpha_total_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.i_pflux_fw_neutron = 1
-    data.physics.ffwal = ffwal
-    data.physics.pflux_plasma_surface_neutron_avg_mw = (
-        pflux_plasma_surface_neutron_avg_mw
-    )
-    # Same out-of-scope `pflux_fw_rad_mw` division as the single-null adapter.
-    data.physics.a_plasma_surface = 1000.0
+    model = _fw()
+    model.data.build.z_plasma_xpoint_upper = np.nan
+    model.data.build.dz_fw_plasma_gap = np.nan
+    model.data.divertor.n_divertors = 2
+    model.data.physics.itart = 0
+    model.data.fwbs.i_fw_blkt_vv_shape = 2
+    model.data.physics.i_pflux_fw_neutron = 1
+    # Same out-of-scope `pflux_fw_rad_mw` division as the single-null factory.
+    model.data.physics.a_plasma_surface = 1000.0
+    return model
 
-    fw = FirstWall()
-    fw.data = data
-    fw.run()
 
-    return (
-        fw.data.first_wall.a_fw_inboard,
-        fw.data.first_wall.a_fw_outboard,
-        fw.data.first_wall.a_fw_total,
-        fw.data.physics.p_fw_alpha_mw,
-        fw.data.physics.pflux_fw_neutron_mw,
-    )
+_reference_first_wall_outputs_double_null = process_reference(
+    _fw_double_null,
+    "run",
+    (
+        "first_wall.a_fw_inboard",
+        "first_wall.a_fw_outboard",
+        "first_wall.a_fw_total",
+        "physics.p_fw_alpha_mw",
+        "physics.pflux_fw_neutron_mw",
+    ),
+)
 
 
 class TestCalculateFirstWallOutputsDoubleNull(Tier1Contract):
@@ -407,26 +325,13 @@ class TestCalculateFirstWallOutputsDoubleNull(Tier1Contract):
     }
 
 
-def _reference_set_fw_geometry(radius_fw_channel, dr_fw_wall):
-    """PROCESS's real `FirstWall.set_fw_geometry`, through the `data` back-door -- it
-    is an instance method with no arguments, so the inputs go in as fields and the
-    answers come back off `.build`.
-    """
-    data = DataStructure()
-    data.fwbs.radius_fw_channel = radius_fw_channel
-    data.fwbs.dr_fw_wall = dr_fw_wall
-    fw = FirstWall()
-    fw.data = data
-    fw.set_fw_geometry()
-    return fw.data.build.dr_fw_inboard, fw.data.build.dr_fw_outboard
+_reference_set_fw_geometry = process_reference(
+    _fw, "set_fw_geometry", ("build.dr_fw_inboard", "build.dr_fw_outboard")
+)
 
 
 class TestSetFwGeometry(Tier1Contract):
-    """`set_fw_geometry` -> `FirstWall.set_fw_geometry` (`fw.py:347-352`), added
-    2026-08-27 (`cold_boundary.md` producer 1). The legacy point is the reference
-    run's two dataclass defaults, whose sum `0.018` is the value `sr.run()`
-    reproduces exactly (`cold_boundary.md` Task A).
-    """
+    """`set_fw_geometry` -> `FirstWall.set_fw_geometry` (`fw.py:347-352`)."""
 
     audit_record = "models/fw.md"
     reference = _reference_set_fw_geometry
@@ -459,29 +364,12 @@ class TestCalculateDshapedFirstWallAreas(Tier1Contract):
     }
 
 
-def _reference_first_wall_outputs_dshaped_double_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    dr_fw_inboard,
-    dr_fw_outboard,
-    rmajor,
-    rminor,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    p_alpha_total_mw,
-    f_p_alpha_plasma_deposited,
-    ffwal,
-    pflux_plasma_surface_neutron_avg_mw,
-):
-    """Real `FirstWall.run()` at `n_divertors = 2` **and** the D-shaped shape arm --
+def _fw_dshaped_double_null():
+    """`FirstWall` at `n_divertors = 2` **and** the D-shaped shape arm --
     `spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`'s own configuration.
 
-    **Three fields are poisoned with `nan`**, one more than the elliptical double-null
-    adapter: `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` (read at
+    **Three fields are poisoned with `nan`**, one more than `_fw_double_null`:
+    `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` (read at
     `process/models/fw.py:51-52` only, as arguments of the half-height call, which this
     arm's branch does not use) and now `.physics.triang` as well, which `fw.py` reads at
     `:82` only, as an argument of the *elliptical* area call. On this arm nothing may
@@ -490,46 +378,30 @@ def _reference_first_wall_outputs_dshaped_double_null(
     `itart = 1` **and** `i_fw_blkt_vv_shape = D_SHAPED` are both set, as both ST files
     set both; either alone selects the same arm.
     """
-    data = DataStructure()
-    data.build.z_plasma_xpoint_lower = z_plasma_xpoint_lower
-    data.build.dz_xpoint_divertor = dz_xpoint_divertor
-    data.divertor.dz_divertor = dz_divertor
-    data.build.dz_blkt_upper = dz_blkt_upper
-    data.build.z_plasma_xpoint_upper = np.nan
-    data.build.dz_fw_plasma_gap = np.nan
-    data.divertor.n_divertors = 2
-    data.build.dr_fw_inboard = dr_fw_inboard
-    data.build.dr_fw_outboard = dr_fw_outboard
-    data.physics.itart = 1
-    data.fwbs.i_fw_blkt_vv_shape = 1
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.triang = np.nan
-    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
-    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
-    data.fwbs.f_ster_div_single = f_ster_div_single
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.physics.p_alpha_total_mw = p_alpha_total_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.i_pflux_fw_neutron = 1
-    data.physics.ffwal = ffwal
-    data.physics.pflux_plasma_surface_neutron_avg_mw = (
-        pflux_plasma_surface_neutron_avg_mw
-    )
-    # Same out-of-scope `pflux_fw_rad_mw` division as the other two adapters.
-    data.physics.a_plasma_surface = 1000.0
+    model = _fw()
+    model.data.build.z_plasma_xpoint_upper = np.nan
+    model.data.build.dz_fw_plasma_gap = np.nan
+    model.data.divertor.n_divertors = 2
+    model.data.physics.itart = 1
+    model.data.fwbs.i_fw_blkt_vv_shape = 1
+    model.data.physics.triang = np.nan
+    model.data.physics.i_pflux_fw_neutron = 1
+    # Same out-of-scope `pflux_fw_rad_mw` division as the other two factories.
+    model.data.physics.a_plasma_surface = 1000.0
+    return model
 
-    fw = FirstWall()
-    fw.data = data
-    fw.run()
 
-    return (
-        fw.data.first_wall.a_fw_inboard,
-        fw.data.first_wall.a_fw_outboard,
-        fw.data.first_wall.a_fw_total,
-        fw.data.physics.p_fw_alpha_mw,
-        fw.data.physics.pflux_fw_neutron_mw,
-    )
+_reference_first_wall_outputs_dshaped_double_null = process_reference(
+    _fw_dshaped_double_null,
+    "run",
+    (
+        "first_wall.a_fw_inboard",
+        "first_wall.a_fw_outboard",
+        "first_wall.a_fw_total",
+        "physics.p_fw_alpha_mw",
+        "physics.pflux_fw_neutron_mw",
+    ),
+)
 
 
 class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
@@ -572,25 +444,20 @@ class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
     }
 
 
-def _reference_radiated_wall_load_scaled_plasma_surface(
-    ffwal, p_plasma_rad_mw, a_plasma_surface, f_fw_rad_max
-):
-    """Real `FirstWall.run()` at `i_pflux_fw_neutron == 1`, read back off `data`.
-
-    `fw.py:130-144` has no `calculate_*` staticmethod of its own -- it is four lines
-    inside `run()` -- so this is the same "close the `data` back-door" adapter the three
-    composites above use, and for the same reason. The geometry is fixed at the
-    D-shaped double-null spherical-tokamak point (both tracked ST files' arm, and the
-    one whose `.constraints.pflux_fw_rad_max_mw` was the frozen boundary path); the four
-    fields the ported function actually reads are the only ones that vary.
+def _fw_radiated_wall_load():
+    """`FirstWall`, fixed at the D-shaped double-null spherical-tokamak point (both
+    tracked ST files' arm, and the one whose `.constraints.pflux_fw_rad_max_mw` was the
+    frozen boundary path) so `run()` reaches `fw.py:130-144` -- four lines inside
+    `run()` with no `calculate_*` staticmethod of their own.
 
     **Nothing in this contract depends on the geometry being right**, and that is the
     useful property: `run()` computes `.first_wall.a_fw_total` from all of it and the
     `i_pflux_fw_neutron == 1` arm of these four lines then reads *none* of it -- only
-    `ffwal`, `p_plasma_rad_mw` and `a_plasma_surface`. The geometry is here to let
+    `ffwal`, `p_plasma_rad_mw` and `a_plasma_surface`. The geometry is here only to let
     `run()` reach line 130 at all.
     """
-    data = DataStructure()
+    model = _fw()
+    data = model.data
     data.build.z_plasma_xpoint_lower = 4.0
     data.build.dz_xpoint_divertor = 0.5
     data.divertor.dz_divertor = 0.4
@@ -613,17 +480,14 @@ def _reference_radiated_wall_load_scaled_plasma_surface(
     data.physics.f_p_alpha_plasma_deposited = 0.95
     data.physics.pflux_plasma_surface_neutron_avg_mw = 1.0
     data.physics.i_pflux_fw_neutron = 1
+    return model
 
-    data.physics.ffwal = ffwal
-    data.physics.p_plasma_rad_mw = p_plasma_rad_mw
-    data.physics.a_plasma_surface = a_plasma_surface
-    data.constraints.f_fw_rad_max = f_fw_rad_max
 
-    fw = FirstWall()
-    fw.data = data
-    fw.run()
-
-    return fw.data.physics.pflux_fw_rad_mw, fw.data.constraints.pflux_fw_rad_max_mw
+_reference_radiated_wall_load_scaled_plasma_surface = process_reference(
+    _fw_radiated_wall_load,
+    "run",
+    ("physics.pflux_fw_rad_mw", "constraints.pflux_fw_rad_max_mw"),
+)
 
 
 class TestRadiatedWallLoadScaledPlasmaSurface(Tier1Contract):

@@ -1,8 +1,6 @@
 """Harness cases for the ported subset of `process/models/physics/scrape_off_layer.py`
 (`ScrapeOffLayer`, would-be `.tokamak.scrape_off_layer`).
 
-Audit record: `functional_process/_audit/units/models/physics/scrape_off_layer.md`.
-
 - Four `TestCalculate*` classes -- `ScrapeOffLayer`'s own `@staticmethod`s, diffed
   directly against them (no adapter needed: they take plain floats, no `self.data`
   access at all). Legacy samples are
@@ -20,6 +18,7 @@ Audit record: `functional_process/_audit/units/models/physics/scrape_off_layer.m
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.scrape_off_layer import (
     Eich2013SOLPowerDecayLength,
@@ -106,52 +105,38 @@ class TestCalculateUpstreamSolOutboardParallelArea(Tier1Contract):
     fuzz = True
 
 
-def _reference_scrape_off_layer(
-    p_plasma_separatrix_mw_raw,
-    rmajor,
-    rminor,
-    b_plasma_surface_poloidal_average,
-    b_plasma_outboard_total,
-    aspect,
-    plasma_current,
-    i_len_sol_outboard_power_decay,
-):
-    """Call the real `ScrapeOffLayer.run()` through the composite's own signature,
-    closing the `self.data` back door -- same technique as `test_divertor.py`'s
-    `_reference_divertor_heat_load_wade` and `test_confinement_time.py`'s
-    `_reference_calculate_confinement_time`.
-
-    `p_plasma_separatrix_mw_raw` is written onto `data.physics.p_plasma_separatrix_mw`
-    directly -- PROCESS's own field has no "_raw" spelling; that is a port-side mint
-    name introduced one node earlier (`functional_process/cottax/physics/physics.py`'s
-    `SeparatrixPowerNonIgnited`), not a `DataStructure` field. `ScrapeOffLayer.run()`
-    reads exactly this field, before `physics.py`'s own positivity kludge would have
-    transformed it -- see the port module's docstring.
-    """
-    data = DataStructure()
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw_raw
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.b_plasma_surface_poloidal_average = b_plasma_surface_poloidal_average
-    data.physics.b_plasma_outboard_total = b_plasma_outboard_total
-    data.physics.aspect = aspect
-    data.physics.plasma_current = plasma_current
-    data.physics.i_len_sol_outboard_power_decay = i_len_sol_outboard_power_decay
-
+def _make_scrape_off_layer():
     sol = ScrapeOffLayer()
-    sol.data = data
-    sol.run()
+    sol.data = DataStructure()
+    return sol
 
-    return (
-        data.physics.len_plasma_sol_eich13_power_decay,
-        data.physics.len_plasma_sol_mast14_power_decay_1,
-        data.physics.len_plasma_sol_mast14_power_decay_2,
-        data.physics.len_sol_outboard_power_decay,
-        data.physics.a_plasma_outboard_sol_parallel,
-        data.physics.a_plasma_outboard_sol_eich13_parallel,
-        data.physics.pflux_plasma_outboard_sol_parallel_mw,
-        data.physics.pflux_plasma_outboard_sol_eich13_parallel_mw,
-    )
+
+# Calls the real `ScrapeOffLayer.run()` through the composite's own signature, closing
+# the `self.data` back door -- same technique as `test_divertor.py`'s
+# `_reference_divertor_heat_load_wade` and `test_confinement_time.py`'s
+# `_reference_calculate_confinement_time`.
+#
+# `p_plasma_separatrix_mw_raw` is poked onto `data.physics.p_plasma_separatrix_mw`
+# directly -- PROCESS's own field has no "_raw" spelling; that is a port-side mint name
+# introduced one node earlier (`functional_process/cottax/physics/physics.py`'s
+# `SeparatrixPowerNonIgnited`), not a `DataStructure` field. `ScrapeOffLayer.run()`
+# reads exactly this field, before `physics.py`'s own positivity kludge would have
+# transformed it -- see the port module's docstring.
+_reference_scrape_off_layer = process_reference(
+    _make_scrape_off_layer,
+    "run",
+    (
+        "len_plasma_sol_eich13_power_decay",
+        "len_plasma_sol_mast14_power_decay_1",
+        "len_plasma_sol_mast14_power_decay_2",
+        "len_sol_outboard_power_decay",
+        "a_plasma_outboard_sol_parallel",
+        "a_plasma_outboard_sol_eich13_parallel",
+        "pflux_plasma_outboard_sol_parallel_mw",
+        "pflux_plasma_outboard_sol_eich13_parallel_mw",
+    ),
+    areas={"p_plasma_separatrix_mw_raw": "physics.p_plasma_separatrix_mw"},
+)
 
 
 class TestScrapeOffLayer(Tier1Contract):

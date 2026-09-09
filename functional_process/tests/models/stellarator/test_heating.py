@@ -13,6 +13,7 @@ the `_stellarator()` adapter, so value/gradient agreement is genuine, not assume
 """
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import data_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.stellarator.heating import (
     calculate_beam_current,
@@ -33,13 +34,11 @@ def _stellarator():
     return stellarator
 
 
-def _reference_ecrh_heating(p_hcd_primary_extra_heat_mw, eta_ecrh_injector_wall_plug):
+def _call_ecrh_heating(data):
     """Call PROCESS's `st_heat` (`isthtr == 1`) through the port's signature."""
     stellarator = _stellarator()
-    data = stellarator.data
+    stellarator.data = data
     data.stellarator.isthtr = 1
-    data.current_drive.p_hcd_primary_extra_heat_mw = p_hcd_primary_extra_heat_mw
-    data.current_drive.eta_ecrh_injector_wall_plug = eta_ecrh_injector_wall_plug
 
     st_heat(stellarator, False, data)
 
@@ -52,15 +51,14 @@ def _reference_ecrh_heating(p_hcd_primary_extra_heat_mw, eta_ecrh_injector_wall_
     )
 
 
-def _reference_lowhyb_heating(
-    p_hcd_primary_extra_heat_mw, eta_lowhyb_injector_wall_plug
-):
+_reference_ecrh_heating = data_reference(_call_ecrh_heating)
+
+
+def _call_lowhyb_heating(data):
     """Call PROCESS's `st_heat` (`isthtr == 2`) through the port's signature."""
     stellarator = _stellarator()
-    data = stellarator.data
+    stellarator.data = data
     data.stellarator.isthtr = 2
-    data.current_drive.p_hcd_primary_extra_heat_mw = p_hcd_primary_extra_heat_mw
-    data.current_drive.eta_lowhyb_injector_wall_plug = eta_lowhyb_injector_wall_plug
 
     st_heat(stellarator, False, data)
 
@@ -71,6 +69,9 @@ def _reference_lowhyb_heating(
         data.current_drive.eta_hcd_primary_injector_wall_plug,
         data.heat_transport.p_hcd_electric_total_mw,
     )
+
+
+_reference_lowhyb_heating = data_reference(_call_lowhyb_heating)
 
 
 def _reference_injected_power_total(p_hcd_injected_electrons_mw, p_hcd_injected_ions_mw):

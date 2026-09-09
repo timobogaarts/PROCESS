@@ -387,8 +387,8 @@ def test_pedestal_profile_values_assembles_alone():
 
 
 def test_pedestal_profile_values_owns_cross_area_prn1():
-    """`.divertor.prn1` is this unit's only cross-area write (audit record's open
-    question 5). Checking `to_graph` succeeds is only half the proof -- a node could
+    """`.divertor.prn1` is this unit's only cross-area write. Checking `to_graph`
+    succeeds is only half the proof -- a node could
     assemble while silently declaring `prn1` as a read, or omitting it, or landing it
     under `.physics` by a naming slip. This checks the exact `VarPath` the node owns
     lands in `.divertor`, alongside the four fields `_audit/tokamak_boundary.md` §

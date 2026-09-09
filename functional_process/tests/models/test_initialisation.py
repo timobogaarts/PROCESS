@@ -182,10 +182,9 @@ SEED_FIELDS = {
 literal (`StellaratorSolenoidAbsent`, `StellaratorPulseTimes`) are checked separately,
 and the node that reads the graph (`DoubleNullUpperBuild`) is checked by its inputs.
 
-**Was `{slot: {node field: place}}` and is now `{slot: {place}}`** (`_audit/
-optimise_design.md` §34). There is no node field left to name: an occupant states its
-outputs and reads them at `^stated.<the place>`, so the place *is* the address on both
-sides and the value is `indat.STATED_VALUES`'."""
+There is no node field to name: an occupant states its outputs and reads them at
+`^stated.<the place>`, so the place *is* the address on both sides and the value is
+`indat.STATED_VALUES`'."""
 
 ST_INIT_LITERALS = {
     "stellarator_solenoid_absent": {

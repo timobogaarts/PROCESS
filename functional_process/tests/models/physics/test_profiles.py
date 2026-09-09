@@ -22,9 +22,12 @@ the finding: it runs the *same* port against a reference pinned to the *other* s
 value, because `NeProfile.calculate_profile_y`'s parabolic branch is dead code.
 """
 
+import functools
+
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.physics.profiles import (
     calculate_density_profile,
@@ -461,53 +464,22 @@ class TestTcore(Tier1Contract):
 # --------------------------------------------------------------------- on-axis values
 
 
-def _on_axis_densities_reference(i_plasma_pedestal, pedestal_arguments):
-    """`NeProfile.set_physics_variables`, one arm, read back off `data`."""
-    if pedestal_arguments:
+_ON_AXIS_DENSITIES = (
+    "physics.nd_plasma_electron_on_axis",
+    "physics.nd_plasma_ions_on_axis",
+)
 
-        def reference(
-            radius_plasma_pedestal_density_norm,
-            nd_plasma_pedestal_electron,
-            nd_plasma_separatrix_electron,
-            nd_plasma_electrons_vol_avg,
-            nd_plasma_ions_total_vol_avg,
-            alphan,
-        ):
-            obj = _profile(
-                NeProfile,
-                i_plasma_pedestal=i_plasma_pedestal,
-                radius_plasma_pedestal_density_norm=(
-                    radius_plasma_pedestal_density_norm
-                ),
-                nd_plasma_pedestal_electron=nd_plasma_pedestal_electron,
-                nd_plasma_separatrix_electron=nd_plasma_separatrix_electron,
-                nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
-                nd_plasma_ions_total_vol_avg=nd_plasma_ions_total_vol_avg,
-                alphan=alphan,
-            )
-            obj.set_physics_variables()
-            return (
-                obj.data.physics.nd_plasma_electron_on_axis,
-                obj.data.physics.nd_plasma_ions_on_axis,
-            )
+_reference_parabolic_on_axis_densities = process_reference(
+    functools.partial(_profile, NeProfile, i_plasma_pedestal=0),
+    "set_physics_variables",
+    _ON_AXIS_DENSITIES,
+)
 
-        return reference
-
-    def reference(nd_plasma_electrons_vol_avg, nd_plasma_ions_total_vol_avg, alphan):
-        obj = _profile(
-            NeProfile,
-            i_plasma_pedestal=i_plasma_pedestal,
-            nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
-            nd_plasma_ions_total_vol_avg=nd_plasma_ions_total_vol_avg,
-            alphan=alphan,
-        )
-        obj.set_physics_variables()
-        return (
-            obj.data.physics.nd_plasma_electron_on_axis,
-            obj.data.physics.nd_plasma_ions_on_axis,
-        )
-
-    return reference
+_reference_pedestal_on_axis_densities = process_reference(
+    functools.partial(_profile, NeProfile, i_plasma_pedestal=1),
+    "set_physics_variables",
+    _ON_AXIS_DENSITIES,
+)
 
 
 class TestParabolicOnAxisDensities(Tier1Contract):
@@ -518,7 +490,7 @@ class TestParabolicOnAxisDensities(Tier1Contract):
     """
 
     audit_record = "models/physics/profiles.md"
-    reference = _on_axis_densities_reference(0, pedestal_arguments=False)
+    reference = _reference_parabolic_on_axis_densities
     ported = calculate_parabolic_on_axis_densities
 
     samples = FROM_FILE
@@ -534,7 +506,7 @@ class TestPedestalOnAxisDensities(Tier1Contract):
     """
 
     audit_record = "models/physics/profiles.md"
-    reference = _on_axis_densities_reference(1, pedestal_arguments=True)
+    reference = _reference_pedestal_on_axis_densities
     ported = calculate_pedestal_on_axis_densities
 
     samples = FROM_FILE
@@ -543,60 +515,29 @@ class TestPedestalOnAxisDensities(Tier1Contract):
     """Same clear-of-the-floor reasoning as `TestNcore`."""
 
 
-def _on_axis_temperatures_reference(i_plasma_pedestal, pedestal_arguments):
-    """`TeProfile.set_physics_variables`, one arm, read back off `data`."""
-    if pedestal_arguments:
+_ON_AXIS_TEMPERATURES = (
+    "physics.temp_plasma_electron_on_axis_kev",
+    "physics.temp_plasma_ion_on_axis_kev",
+)
 
-        def reference(
-            radius_plasma_pedestal_temp_norm,
-            temp_plasma_pedestal_kev,
-            temp_plasma_separatrix_kev,
-            temp_plasma_electron_vol_avg_kev,
-            temp_plasma_ion_vol_avg_kev,
-            alphat,
-            tbeta,
-        ):
-            obj = _profile(
-                TeProfile,
-                i_plasma_pedestal=i_plasma_pedestal,
-                radius_plasma_pedestal_temp_norm=radius_plasma_pedestal_temp_norm,
-                temp_plasma_pedestal_kev=temp_plasma_pedestal_kev,
-                temp_plasma_separatrix_kev=temp_plasma_separatrix_kev,
-                temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
-                temp_plasma_ion_vol_avg_kev=temp_plasma_ion_vol_avg_kev,
-                alphat=alphat,
-                tbeta=tbeta,
-            )
-            obj.set_physics_variables()
-            return (
-                obj.data.physics.temp_plasma_electron_on_axis_kev,
-                obj.data.physics.temp_plasma_ion_on_axis_kev,
-            )
+_reference_parabolic_on_axis_temperatures = process_reference(
+    functools.partial(_profile, TeProfile, i_plasma_pedestal=0),
+    "set_physics_variables",
+    _ON_AXIS_TEMPERATURES,
+)
 
-        return reference
-
-    def reference(temp_plasma_electron_vol_avg_kev, temp_plasma_ion_vol_avg_kev, alphat):
-        obj = _profile(
-            TeProfile,
-            i_plasma_pedestal=i_plasma_pedestal,
-            temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
-            temp_plasma_ion_vol_avg_kev=temp_plasma_ion_vol_avg_kev,
-            alphat=alphat,
-        )
-        obj.set_physics_variables()
-        return (
-            obj.data.physics.temp_plasma_electron_on_axis_kev,
-            obj.data.physics.temp_plasma_ion_on_axis_kev,
-        )
-
-    return reference
+_reference_pedestal_on_axis_temperatures = process_reference(
+    functools.partial(_profile, TeProfile, i_plasma_pedestal=1),
+    "set_physics_variables",
+    _ON_AXIS_TEMPERATURES,
+)
 
 
 class TestParabolicOnAxisTemperatures(Tier1Contract):
     """`TeProfile.set_physics_variables`, parabolic arm."""
 
     audit_record = "models/physics/profiles.md"
-    reference = _on_axis_temperatures_reference(0, pedestal_arguments=False)
+    reference = _reference_parabolic_on_axis_temperatures
     ported = calculate_parabolic_on_axis_temperatures
 
     samples = FROM_FILE
@@ -612,7 +553,7 @@ class TestPedestalOnAxisTemperatures(Tier1Contract):
     """
 
     audit_record = "models/physics/profiles.md"
-    reference = _on_axis_temperatures_reference(1, pedestal_arguments=True)
+    reference = _reference_pedestal_on_axis_temperatures
     ported = calculate_pedestal_on_axis_temperatures
 
     samples = FROM_FILE
@@ -623,58 +564,30 @@ class TestPedestalOnAxisTemperatures(Tier1Contract):
 # --------------------------------------------------------- pedestal/separatrix densities
 
 
-def _reference_greenwald_density_fractions(
-    nd_plasma_pedestal_electron,
-    nd_plasma_separatrix_electron,
-    plasma_current,
-    rminor,
-):
-    """`NeProfile.set_pedestal_and_separatrix_values`, `USER_INPUT` arm.
+_reference_greenwald_density_fractions = process_reference(
+    functools.partial(_profile, NeProfile, i_nd_plasma_pedestal_separatrix=0),
+    "set_pedestal_and_separatrix_values",
+    (
+        "physics.f_nd_plasma_pedestal_greenwald",
+        "physics.f_nd_plasma_separatrix_greenwald",
+    ),
+)
+
+_reference_pedestal_separatrix_densities = process_reference(
+    functools.partial(_profile, NeProfile, i_nd_plasma_pedestal_separatrix=1),
+    "set_pedestal_and_separatrix_values",
+    ("physics.nd_plasma_pedestal_electron", "physics.nd_plasma_separatrix_electron"),
+)
+
+
+class TestGreenwaldDensityFractions(Tier1Contract):
+    """`set_pedestal_and_separatrix_values`, `i_nd_plasma_pedestal_separatrix == 0`.
 
     Goes through the real method, so the call into
     `PlasmaDensityLimit.calculate_greenwald_density_limit` is the real one -- which is
     what makes this case the check on `profiles._greenwald_limit` being a faithful
     inline of it.
     """
-    obj = _profile(
-        NeProfile,
-        i_nd_plasma_pedestal_separatrix=0,
-        nd_plasma_pedestal_electron=nd_plasma_pedestal_electron,
-        nd_plasma_separatrix_electron=nd_plasma_separatrix_electron,
-        plasma_current=plasma_current,
-        rminor=rminor,
-    )
-    obj.set_pedestal_and_separatrix_values()
-    return (
-        obj.data.physics.f_nd_plasma_pedestal_greenwald,
-        obj.data.physics.f_nd_plasma_separatrix_greenwald,
-    )
-
-
-def _reference_pedestal_separatrix_densities(
-    f_nd_plasma_pedestal_greenwald,
-    f_nd_plasma_separatrix_greenwald,
-    plasma_current,
-    rminor,
-):
-    """`NeProfile.set_pedestal_and_separatrix_values`, `GREENWALD_FRACTION` arm."""
-    obj = _profile(
-        NeProfile,
-        i_nd_plasma_pedestal_separatrix=1,
-        f_nd_plasma_pedestal_greenwald=f_nd_plasma_pedestal_greenwald,
-        f_nd_plasma_separatrix_greenwald=f_nd_plasma_separatrix_greenwald,
-        plasma_current=plasma_current,
-        rminor=rminor,
-    )
-    obj.set_pedestal_and_separatrix_values()
-    return (
-        obj.data.physics.nd_plasma_pedestal_electron,
-        obj.data.physics.nd_plasma_separatrix_electron,
-    )
-
-
-class TestGreenwaldDensityFractions(Tier1Contract):
-    """`set_pedestal_and_separatrix_values`, `i_nd_plasma_pedestal_separatrix == 0`."""
 
     audit_record = "models/physics/profiles.md"
     reference = _reference_greenwald_density_fractions

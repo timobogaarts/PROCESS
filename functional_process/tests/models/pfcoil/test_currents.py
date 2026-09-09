@@ -1,7 +1,6 @@
 """Harness cases for `functional_process/cottax/pfcoil/currents.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/currents.md`. One tier-1
-contract: `calculate_efc_currents` against `PFCoil.efc`
+One tier-1 contract: `calculate_efc_currents` against `PFCoil.efc`
 (`process/models/pfcoil.py:1403-1506`), the only unit in this module that PROCESS exposes
 as a callable. It carries `fixb`, `mtrx`, `PFCoil.solv` and `rsid` with it, so the SVD
 and the whole matrix assembly are compared here rather than only through the chain.

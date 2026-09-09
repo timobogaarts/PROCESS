@@ -1,7 +1,5 @@
 """Harness cases for the ported tokamak build (`functional_process/cottax/build.py`).
 
-Audit record: `functional_process/_audit/units/models/build.md`.
-
 **Every reference here is a real PROCESS call, not a re-derivation.** `build.py` has no
 `calculate_*` staticmethod for the radial or vertical build -- both are `self.data`-
 mutating methods hundreds of lines long -- so the adapters below build a real
@@ -16,7 +14,7 @@ transcription.
 The baseline is `tests/regression/input_files/large_tokamak_eval.IN.DAT` at convergence,
 read off a live `SingleRun` once and written down here as literals -- no cached solve, so
 the suite stays fast. `BASELINE` therefore also *is* the evidence for every "the live
-value is X" claim in the audit record.
+value is X" claim made below.
 
 **Two contracts are composites of several ported functions.**
 `TestOutboardBuildChain` and `TestRippleSuperconducting` exist because PROCESS draws its
@@ -31,6 +29,7 @@ finer split the nodes use -- exactly the trade `models/physics/confinement_time.
 import copy
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.build import (
     calculate_divertor_geometry_conventional,
@@ -201,9 +200,12 @@ def _vertical(**overrides):
 # ---------------------------------------------------------------------------
 
 
-def _reference_z_plasma_xpoint(rminor, kappa):
-    data = _vertical(physics__rminor=rminor, physics__kappa=kappa)
-    return data.build.z_plasma_xpoint_upper, data.build.z_plasma_xpoint_lower
+_reference_z_plasma_xpoint = process_reference(
+    _build,
+    "calculate_vertical_build",
+    ("build.z_plasma_xpoint_upper", "build.z_plasma_xpoint_lower"),
+    call_args=(False,),
+)
 
 
 class TestZPlasmaXpoint(Tier1Contract):
@@ -214,33 +216,6 @@ class TestZPlasmaXpoint(Tier1Contract):
     ported = calculate_z_plasma_xpoint
 
     samples = FROM_FILE
-
-    fuzz = True
-
-
-def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
-    """`Build.calculate_radial_build:1665-1667`, read back off `data`.
-
-    A radial-build line reached through `_radial`, not `_vertical`, despite writing a
-    vertical thickness -- PROCESS puts it there and the adapter follows the source
-    rather than the field's name.
-    """
-    return _radial(
-        build__dr_blkt_inboard=dr_blkt_inboard,
-        build__dr_blkt_outboard=dr_blkt_outboard,
-    ).build.dz_blkt_upper
-
-
-class TestDzBlktUpper(Tier1Contract):
-    """`calculate_dz_blkt_upper` vs `Build.calculate_radial_build:1665-1667`."""
-
-    audit_record = "models/build.md"
-    reference = _reference_dz_blkt_upper
-    ported = calculate_dz_blkt_upper
-
-    samples = FROM_FILE
-    """`BASELINE`'s own two blanket thicknesses -- both are run inputs at
-    `blktmodel == 0`, which is the arm every tracked tokamak takes."""
 
     fuzz = True
 
@@ -533,15 +508,12 @@ class TestTfTopHeightDoubleNull(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
-    """`calculate_radial_build:1664-1667`. Unconditional -- `blktmodel = 0` in
-    `BASELINE`, so neither operand is rewritten above it.
-    """
-    data = _radial(
-        build__dr_blkt_inboard=dr_blkt_inboard,
-        build__dr_blkt_outboard=dr_blkt_outboard,
-    )
-    return data.build.dz_blkt_upper
+_reference_dz_blkt_upper = process_reference(
+    _build, "calculate_radial_build", "build.dz_blkt_upper", call_args=(False,)
+)
+"""`calculate_radial_build:1664-1667`. Unconditional -- `blktmodel = 0` in `BASELINE`,
+so neither operand is rewritten above it.
+"""
 
 
 class TestDzBlktUpper(Tier1Contract):
@@ -556,15 +528,12 @@ class TestDzBlktUpper(Tier1Contract):
     fuzz = True
 
 
-def _reference_dr_tf_wp_with_insulation(
-    dr_tf_inboard, dr_tf_plasma_case, dr_tf_nose_case
-):
-    data = _radial(
-        build__dr_tf_inboard=dr_tf_inboard,
-        tfcoil__dr_tf_plasma_case=dr_tf_plasma_case,
-        tfcoil__dr_tf_nose_case=dr_tf_nose_case,
-    )
-    return data.tfcoil.dr_tf_wp_with_insulation
+_reference_dr_tf_wp_with_insulation = process_reference(
+    _build,
+    "calculate_radial_build",
+    "tfcoil.dr_tf_wp_with_insulation",
+    call_args=(False,),
+)
 
 
 class TestDrTfWpWithInsulation(Tier1Contract):
@@ -619,37 +588,24 @@ class TestDrTfInboardFromWindingPack(Tier1Contract):
     fuzz = True
 
 
-def _reference_tf_inboard_radii(
-    dr_bore,
-    dr_cs,
-    fseppc,
-    fcspc,
-    sigallpc,
-    dr_cs_tf_gap,
-    dr_tf_inboard,
-):
-    data = _radial(
-        build__dr_bore=dr_bore,
-        build__dr_cs=dr_cs,
-        build__fseppc=fseppc,
-        build__fcspc=fcspc,
-        build__sigallpc=sigallpc,
-        build__dr_cs_tf_gap=dr_cs_tf_gap,
-        build__dr_tf_inboard=dr_tf_inboard,
-    )
-    return (
-        data.build.dr_cs_bore,
-        data.build.dr_cs_precomp,
-        data.build.r_tf_inboard_in,
-        data.build.r_tf_inboard_mid,
-        data.build.r_tf_inboard_out,
-    )
+_reference_tf_inboard_radii = process_reference(
+    _build,
+    "calculate_radial_build",
+    (
+        "build.dr_cs_bore",
+        "build.dr_cs_precomp",
+        "build.r_tf_inboard_in",
+        "build.r_tf_inboard_mid",
+        "build.r_tf_inboard_out",
+    ),
+    call_args=(False,),
+)
 
 
 class TestTfInboardRadii(Tier1Contract):
     """`calculate_r_tf_inboard_radii_tf_outside_cs` vs
     `calculate_radial_build:1691-1735` at `(i_tf_inside_cs, i_cs_precomp) = (0, 1)`
-    (both baked into `BASELINE`). Added 2026-08-27, `cold_boundary.md` producer 2.
+    (both baked into `BASELINE`).
     """
 
     audit_record = "models/build.md"
@@ -661,46 +617,39 @@ class TestTfInboardRadii(Tier1Contract):
     fuzz = True
 
 
-def _reference_tf_inboard_radii_no_precomp(
-    dr_bore,
-    dr_cs,
-    dr_cs_tf_gap,
-    dr_tf_inboard,
-):
-    """`calculate_radial_build` at `i_cs_precomp = 0` (the `BASELINE` value flipped).
+def _build_no_cs_precomp():
+    """`_build`, with `i_cs_precomp = 0` (the `BASELINE` value flipped).
 
     `fseppc`/`fcspc`/`sigallpc` stay at their `BASELINE` values deliberately: PROCESS
     must not read them on this arm, and leaving them nonzero means a wrong arm would
     show up as a value disagreement, not a division error.
     """
-    data = _radial(
-        build__i_cs_precomp=0,
-        build__dr_bore=dr_bore,
-        build__dr_cs=dr_cs,
-        build__dr_cs_tf_gap=dr_cs_tf_gap,
-        build__dr_tf_inboard=dr_tf_inboard,
-    )
-    return (
-        data.build.dr_cs_bore,
-        data.build.dr_cs_precomp,
-        data.build.r_tf_inboard_in,
-        data.build.r_tf_inboard_mid,
-        data.build.r_tf_inboard_out,
-    )
+    return _build(build__i_cs_precomp=0)
+
+
+_reference_tf_inboard_radii_no_precomp = process_reference(
+    _build_no_cs_precomp,
+    "calculate_radial_build",
+    (
+        "build.dr_cs_bore",
+        "build.dr_cs_precomp",
+        "build.r_tf_inboard_in",
+        "build.r_tf_inboard_mid",
+        "build.r_tf_inboard_out",
+    ),
+    call_args=(False,),
+)
 
 
 class TestTfInboardRadiiNoCsPrecomp(Tier1Contract):
     """`calculate_r_tf_inboard_radii_no_cs_precomp` vs
     `calculate_radial_build:1691-1735` at `(i_tf_inside_cs, i_cs_precomp) = (0, 0)` --
-    the live cell on both tracked spherical-tokamak files
-    (`spherical_tokamak_eval.IN.DAT:70-71`, `st_regression.IN.DAT:1811`/`:1845`).
-    Added 2026-08-27, ST frontier wave.
+    the live cell on both tracked spherical-tokamak files.
 
-    The legacy point is `spherical_tokamak_eval.IN.DAT`'s input radial build
-    (`dr_bore`, `:61`; `dr_cs_tf_gap = 0.0`, `:67`; `dr_cs`, `:77`;
-    `dr_tf_inboard = 0.9`, `:345` -- the file's literals) -- input values, not
-    converged ones, since no converged reference for this cell has been solved yet.
-    `dr_cs_tf_gap = 0.0` is the file's actual value and exercises the zero-gap edge.
+    The legacy point is `spherical_tokamak_eval.IN.DAT`'s own input radial build
+    literals -- input values, not converged ones, since no converged reference for this
+    cell has been solved yet. `dr_cs_tf_gap = 0.0` is the file's actual value and
+    exercises the zero-gap edge.
     """
 
     audit_record = "models/build.md"
@@ -712,23 +661,9 @@ class TestTfInboardRadiiNoCsPrecomp(Tier1Contract):
     fuzz = True
 
 
-def _reference_r_shld_inboard_inner(
-    rmajor,
-    rminor,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_inboard,
-    dr_blkt_inboard,
-    dr_shld_inboard,
-):
-    data = _radial(
-        physics__rmajor=rmajor,
-        physics__rminor=rminor,
-        build__dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
-        build__dr_fw_inboard=dr_fw_inboard,
-        build__dr_blkt_inboard=dr_blkt_inboard,
-        build__dr_shld_inboard=dr_shld_inboard,
-    )
-    return data.build.r_shld_inboard_inner
+_reference_r_shld_inboard_inner = process_reference(
+    _build, "calculate_radial_build", "build.r_shld_inboard_inner", call_args=(False,)
+)
 
 
 class TestRShldInboardInner(Tier1Contract):
@@ -846,52 +781,19 @@ def _ported_outboard_build(
     )
 
 
-def _reference_outboard_build(
-    rmajor,
-    rminor,
-    dr_fw_plasma_gap_outboard,
-    dr_fw_outboard,
-    dr_blkt_outboard,
-    dr_shld_outboard,
-    dr_shld_blkt_gap,
-    dr_vv_outboard,
-    gapomin,
-    dr_shld_thermal_outboard,
-    dr_tf_shld_gap,
-    dr_tf_inboard,
-    ripple_b_tf_plasma_edge_max,
-    n_tf_coils,
-    dx_tf_wp_primary_toroidal,
-    dx_tf_wp_insulation,
-    dx_tf_wp_insertion_gap,
-):
-    data = _radial(
-        physics__rmajor=rmajor,
-        physics__rminor=rminor,
-        build__dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
-        build__dr_fw_outboard=dr_fw_outboard,
-        build__dr_blkt_outboard=dr_blkt_outboard,
-        build__dr_shld_outboard=dr_shld_outboard,
-        build__dr_shld_blkt_gap=dr_shld_blkt_gap,
-        build__dr_vv_outboard=dr_vv_outboard,
-        build__gapomin=gapomin,
-        build__dr_shld_thermal_outboard=dr_shld_thermal_outboard,
-        build__dr_tf_shld_gap=dr_tf_shld_gap,
-        build__dr_tf_inboard=dr_tf_inboard,
-        tfcoil__ripple_b_tf_plasma_edge_max=ripple_b_tf_plasma_edge_max,
-        tfcoil__n_tf_coils=n_tf_coils,
-        tfcoil__dx_tf_wp_primary_toroidal=dx_tf_wp_primary_toroidal,
-        tfcoil__dx_tf_wp_insulation=dx_tf_wp_insulation,
-        tfcoil__dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-    )
-    return (
-        data.build.r_shld_outboard_outer,
-        data.build.dr_tf_outboard,
-        data.build.r_tf_outboard_mid,
-        data.build.dr_shld_vv_gap_outboard,
-        data.tfcoil.ripple_b_tf_plasma_edge,
-        data.build.dr_tf_inner_bore,
-    )
+_reference_outboard_build = process_reference(
+    _build,
+    "calculate_radial_build",
+    (
+        "build.r_shld_outboard_outer",
+        "build.dr_tf_outboard",
+        "build.r_tf_outboard_mid",
+        "build.dr_shld_vv_gap_outboard",
+        "tfcoil.ripple_b_tf_plasma_edge",
+        "build.dr_tf_inner_bore",
+    ),
+    call_args=(False,),
+)
 
 
 class TestOutboardBuildChain(Tier1Contract):
@@ -1069,7 +971,7 @@ class TestRipplePictureFrame(Tier1Contract):
 
 
 # ---------------------------------------------------------------------------
-# Inboard vacuum vessel and neutronic shield (2026-08-29)
+# Inboard vacuum vessel and neutronic shield
 # ---------------------------------------------------------------------------
 
 

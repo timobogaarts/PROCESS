@@ -1,10 +1,9 @@
 """Harness cases for `functional_process/cottax/pfcoil/geometry.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/geometry.md`. Four tier-1
-contracts, one per unit that PROCESS exposes as a callable of its own:
+Four tier-1 contracts, one per unit that PROCESS exposes as a callable of its own:
 
-- `calculate_cs_geometry` -> `CSCoil.calculate_cs_geometry` (a `@staticmethod`, called
-  directly; the adapter only unpacks its `CSGeometry` dataclass into the port's tuple).
+- `calculate_cs_geometry` -> `CSCoil.calculate_cs_geometry` (a `@staticmethod`, its
+  `CSGeometry` dataclass unpacked in declaration order).
 - `place_cs_filaments` -> `CSCoil.place_cs_filaments` (likewise, plus the `[:NFXF]` trim
   the port documents).
 - `calculate_cs_turn_geometry_eu_demo` -> `CSCoil.calculate_cs_turn_geometry_eu_demo`
@@ -27,6 +26,7 @@ oracle. See `geometry.md` § tier signal.
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import unpacked
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.pfcoil import N_PF_GROUPS, NFXF
 from functional_process.cottax.pfcoil.geometry import (
@@ -37,29 +37,6 @@ from functional_process.cottax.pfcoil.geometry import (
 )
 from process.core.model import DataStructure
 from process.models.pfcoil import CSCoil, PFCoil
-
-
-def _reference_cs_geometry(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bore):
-    """`CSCoil.calculate_cs_geometry`, its dataclass unpacked in declaration order."""
-    g = CSCoil.calculate_cs_geometry(
-        z_tf_inside_half=z_tf_inside_half,
-        f_z_cs_tf_internal=f_z_cs_tf_internal,
-        dr_cs=dr_cs,
-        dr_cs_bore=dr_cs_bore,
-    )
-    return (
-        g.z_cs_coil_upper,
-        g.z_cs_coil_lower,
-        g.r_cs_coil_middle,
-        g.r_cs_middle,
-        g.z_cs_coil_middle,
-        g.r_cs_coil_outer,
-        g.r_cs_coil_inner,
-        g.a_cs_poloidal,
-        g.a_cs_toroidal,
-        g.dz_cs_full,
-        g.dr_cs_full,
-    )
 
 
 def _reference_cs_turn_geometry_eu_demo(
@@ -182,7 +159,7 @@ class TestCalculateCsGeometry(Tier1Contract):
     """`calculate_cs_geometry` -> `CSCoil.calculate_cs_geometry`."""
 
     audit_record = "models/pfcoil/geometry.md"
-    reference = _reference_cs_geometry
+    reference = unpacked(CSCoil.calculate_cs_geometry)
     ported = calculate_cs_geometry
 
     # Read off a converged PROCESS run of `large_tokamak_eval.IN.DAT`, in-process.

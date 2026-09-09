@@ -1,6 +1,6 @@
 """Harness cases for the ported subset of `process/models/vacuum.py` (registry #16).
 
-Audit record: `functional_process/_audit/units/models/vacuum.md`. Three units:
+Three units:
 
 - `TestVacuumPumpingSimple` -- `Vacuum.vacuum_simple`, tier-1.
 - `TestSolveDuctDiameter` -- `Vacuum._newton_method_duct_diameter`'s inner Newton loop
@@ -10,15 +10,12 @@ Audit record: `functional_process/_audit/units/models/vacuum.md`. Three units:
   `Vacuum.run()`'s rounding step, tier-2.
 
 `VacuumVessel` is out of scope on the stellarator (unreached from `Stellarator.run()`)
-but reached on the tokamak (`caller.py:331`) -- wave-1 tokamak dispatch adds two more
-units here:
+but reached on the tokamak (`caller.py:331`), which adds two more units here:
 
 - `TestCalculateVesselHalfHeight` -- `VacuumVessel.calculate_vessel_half_height`,
   `n_divertors == 1` baked, tier-1.
 - `TestCalculateEllipticalVesselVolumes` -- `VacuumVessel.
   calculate_elliptical_vessel_volumes`, tier-1.
-
-See `vacuum.md`'s tokamak-scope addendum.
 """
 
 from types import MappingProxyType
@@ -37,11 +34,11 @@ from cottax import (
     Start,
 )
 from cottax.blocking import Blocking
-from cottax.problem import is_feasibility, is_root_find
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.problem import is_feasibility, is_root_find
 from cottax.rewrites import Assign
-from cottax.spec import NodePath, Implemented
+from cottax.spec import Implemented, NodePath
 from cottax.tools.path import path_map
 from jax.tree_util import DictKey
 
@@ -53,6 +50,10 @@ from functional_process.cottax._harness import (
     legacy_sample,
 )
 from functional_process.cottax._harness import path as vpath
+from functional_process.cottax._harness.process_reference import (
+    data_reference,
+    process_reference,
+)
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.vacuum.vacuum import (
     XMULT,
@@ -79,36 +80,14 @@ from process.core.model import DataStructure
 from process.models.vacuum import Vacuum, VacuumVessel
 
 
-def _reference_vacuum_pumping_simple(
-    molflow_plasma_fuelling_required,
-    molflow_vac_pumps,
-    volflow_vac_pumps_max,
-    f_a_vac_pump_port_plasma_surface,
-    f_volflow_vac_pumps_impedance,
-    a_plasma_surface,
-    n_tf_coils,
-    outgasfactor,
-    pres_vv_chamber_base,
-    outgasindex,
-    t_plant_pulse_dwell,
-):
+def _call_vacuum_pumping_simple(data):
     """Call PROCESS's `Vacuum.vacuum_simple` through the port's signature."""
-    data = DataStructure()
-    data.physics.molflow_plasma_fuelling_required = molflow_plasma_fuelling_required
-    data.vacuum.molflow_vac_pumps = molflow_vac_pumps
-    data.vacuum.volflow_vac_pumps_max = volflow_vac_pumps_max
-    data.vacuum.f_a_vac_pump_port_plasma_surface = f_a_vac_pump_port_plasma_surface
-    data.vacuum.f_volflow_vac_pumps_impedance = f_volflow_vac_pumps_impedance
-    data.physics.a_plasma_surface = a_plasma_surface
-    data.tfcoil.n_tf_coils = n_tf_coils
-    data.vacuum.outgasfactor = outgasfactor
-    data.vacuum.pres_vv_chamber_base = pres_vv_chamber_base
-    data.vacuum.outgasindex = outgasindex
-    data.times.t_plant_pulse_dwell = t_plant_pulse_dwell
-
     v = Vacuum()
     v.data = data
     return v.vacuum_simple(output=False)
+
+
+_reference_vacuum_pumping_simple = data_reference(_call_vacuum_pumping_simple)
 
 
 class TestVacuumPumpingSimple(Tier1Contract):
@@ -157,10 +136,10 @@ def _duct_diameter_samples():
 
     `tests/unit/models/test_vacuum.py::TestVacuum::test_old_model`'s helium-species
     (`i=2`) Newton solve -- extracted by instrumenting
-    `Vacuum._newton_method_duct_diameter` directly, see `vacuum.md`'s worked example
-    for the full derivation and why PROCESS's own reported diameter at that point does
-    *not* zero this residual (its `0.01` step tolerance stops one iteration before the
-    true root -- exactly the discrepancy this port's tighter default `tol` closes).
+    `Vacuum._newton_method_duct_diameter` directly. PROCESS's own reported diameter at
+    that point does *not* zero this residual (its `0.01` step tolerance stops one
+    iteration before the true root -- exactly the discrepancy this port's tighter
+    default `tol` closes).
     """
     rng = np.random.default_rng(20260818)
     n = 24
@@ -201,9 +180,8 @@ class TestSolveDuctDiameter(Tier2Contract):
 
     No value-agreement test by construction (`Tier2Contract`) -- PROCESS's own
     `0.01`-relative-step stopping criterion is not a considered accuracy target (see
-    `solve_duct_diameter`'s docstring and `vacuum.md`'s worked example), so its answer
-    is not ground truth here any more than `intersect`'s 100-iteration fixed-Newton
-    answer was for `coils.py`.
+    `solve_duct_diameter`'s docstring), so its answer is not ground truth here any more
+    than `intersect`'s 100-iteration fixed-Newton answer was for `coils.py`.
     """
 
     audit_record = "models/vacuum.md"
@@ -271,9 +249,9 @@ def _duct_diameter_env(kw):
 
 
 # `vacuum.DuctDiameterRootFind`: the structural `ImplicitFunction` counterpart to
-# `solve_duct_diameter`, per `vacuum.md`'s discussion. Not a `Tier1Contract`/
-# `Tier2Contract` case -- there is no PROCESS reference for a node PROCESS itself
-# doesn't have -- so three narrower checks instead: the graph it declares assembles
+# `solve_duct_diameter`. Not a `Tier1Contract`/`Tier2Contract` case -- there is no
+# PROCESS reference for a node PROCESS itself doesn't have -- so three narrower checks
+# instead: the graph it declares assembles
 # (`to_graph`), driving it with `_NewtonRootFindDriver` (the same algorithm
 # `solve_duct_diameter` uses) reaches the same answer `solve_duct_diameter` does on
 # every sample `TestSolveDuctDiameter` already exercises, and that converged answer
@@ -424,6 +402,7 @@ class _MeritFunctionFeasibilityDriver(AbstractDriver):
     """
 
     accepts = staticmethod(is_feasibility)
+
     def __call__(self, conditions, data):
         start = data.get(Start)
         x0 = (
@@ -544,11 +523,11 @@ def _reference_vacuum_pumping_old(
     `Vacuum._newton_method_duct_diameter` (bound on this one instance, restored
     implicitly when the instance is discarded) to record its `(i, ceff[i])` on every
     call -- the last call before `vacuum()` returns is exactly the one that produced
-    the final `dimax`/`imax`, same reasoning as `vacuum.md`'s worked example.
+    the final `dimax`/`imax`.
 
     `nplasma`/`temp_vv_chamber_gas_burn_end` are fixed, arbitrary values here (`1e20`
     K, `300` K) -- proven not to affect any of `vacuum()`'s five outputs, see
-    `calculate_vacuum_pumping_old`'s docstring and `vacuum.md`.
+    `calculate_vacuum_pumping_old`'s docstring.
     `temp_plasma_electron_vol_avg_kev` is set but never actually read on this path
     (only reachable through a non-convergence log message this instrumentation never
     triggers in-sample).
@@ -627,9 +606,7 @@ def _vacuum_pumping_old_samples():
     sample set). Geometry bounds are centred on `test_old_model`'s own scale
     (`rmajor~8`, `rminor~3.3`, `n_tf_coils~18`) with enough spread to exercise more
     than one governing species (`imax`), verified empirically not to hit the
-    "space limited" (`nflag = 1`) regime PROCESS's own duct-sizing model can enter --
-    see `vacuum.md`'s open questions for why that regime is excluded here rather than
-    exercised.
+    "space limited" (`nflag = 1`) regime PROCESS's own duct-sizing model can enter.
     """
     bounds = {
         "p_fusion_total_mw": (500.0, 4000.0),
@@ -692,9 +669,9 @@ def _vacuum_pumping_old_samples():
 class TestVacuumPumpingOld(Tier2Contract):
     """`Vacuum.vacuum` (+ `Vacuum.run()`'s rounding) -> `_solve_vacuum_pumping_old`.
 
-    No value-agreement test by construction. `vacuum.md`'s worked example shows
-    PROCESS's own reported `dimax`, on the exact `test_old_model` legacy point, does
-    not itself zero this unit's defining equation -- `duct_conductance(dimax, ...)`
+    No value-agreement test by construction. PROCESS's own reported `dimax`, on the
+    exact `test_old_model` legacy point, does not itself zero this unit's defining
+    equation -- `duct_conductance(dimax, ...)`
     comes out ~0.16% away from the `ceff` it was meant to solve for, purely because
     PROCESS's own `0.01` relative-step stopping criterion exits one Newton step early.
     `calculate_vacuum_pumping_old` (the audited, five-output public function this
@@ -860,10 +837,7 @@ class TestVacuumPumpingOldFromFields(Tier2Contract):
 
 
 # ---------------------------------------------------------------------------
-# `VacuumVessel` -- reached on the tokamak, not the stellarator (see module docstring
-# and `vacuum.md`'s tokamak-scope addendum). Both are already real PROCESS
-# `@staticmethod`s, so no `DataStructure` adapter is needed -- they are diffed against
-# `VacuumVessel`'s own methods directly.
+# `VacuumVessel` -- reached on the tokamak, not the stellarator (see module docstring).
 # ---------------------------------------------------------------------------
 
 
@@ -940,68 +914,31 @@ class TestCalculateEllipticalVesselVolumes(Tier1Contract):
     fuzz = True
 
 
-def _reference_vacuum_vessel_outputs(
-    z_tf_inside_half,
-    dz_shld_vv_gap,
-    dz_vv_lower,
-    dz_blkt_upper,
-    dz_shld_upper,
-    z_plasma_xpoint_upper,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    dr_fw_inboard,
-    dr_fw_outboard,
-    rmajor,
-    rminor,
-    triang,
-    r_shld_inboard_inner,
-    r_shld_outboard_outer,
-    dr_vv_inboard,
-    dr_vv_outboard,
-    dz_vv_upper,
-    fvoldw,
-    den_steel,
-):
-    """Call PROCESS's real `VacuumVessel.run()` through the port's signature, at the
-    one switch combination the port bakes in (`itart=0`, `i_fw_blkt_vv_shape=2` --
-    both already PROCESS defaults; `n_divertors=1`).
+_VACUUM_VESSEL_OUTPUTS = (
+    "blanket.dz_vv_half",
+    "blanket.vol_vv_inboard",
+    "blanket.vol_vv_outboard",
+    "fwbs.vol_vv",
+    "fwbs.m_vv",
+)
+
+
+def _make_vacuum_vessel():
+    """A `VacuumVessel` at the one switch combination the port bakes in
+    (`itart=0`, `i_fw_blkt_vv_shape=2` -- both already PROCESS defaults;
+    `n_divertors=1`).
     """
-    data = DataStructure()
-    data.build.z_tf_inside_half = z_tf_inside_half
-    data.build.dz_shld_vv_gap = dz_shld_vv_gap
-    data.build.dz_vv_lower = dz_vv_lower
-    data.divertor.n_divertors = 1
-    data.build.dz_blkt_upper = dz_blkt_upper
-    data.build.dz_shld_upper = dz_shld_upper
-    data.build.z_plasma_xpoint_upper = z_plasma_xpoint_upper
-    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
-    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
-    data.build.dr_fw_inboard = dr_fw_inboard
-    data.build.dr_fw_outboard = dr_fw_outboard
-    data.physics.itart = 0
-    data.fwbs.i_fw_blkt_vv_shape = 2
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.triang = triang
-    data.build.r_shld_inboard_inner = r_shld_inboard_inner
-    data.build.r_shld_outboard_outer = r_shld_outboard_outer
-    data.build.dr_vv_inboard = dr_vv_inboard
-    data.build.dr_vv_outboard = dr_vv_outboard
-    data.build.dz_vv_upper = dz_vv_upper
-    data.fwbs.fvoldw = fvoldw
-    data.fwbs.den_steel = den_steel
-
     vv = VacuumVessel()
-    vv.data = data
-    vv.run()
+    vv.data = DataStructure()
+    vv.data.divertor.n_divertors = 1
+    vv.data.physics.itart = 0
+    vv.data.fwbs.i_fw_blkt_vv_shape = 2
+    return vv
 
-    return (
-        vv.data.blanket.dz_vv_half,
-        vv.data.blanket.vol_vv_inboard,
-        vv.data.blanket.vol_vv_outboard,
-        vv.data.fwbs.vol_vv,
-        vv.data.fwbs.m_vv,
-    )
+
+_reference_vacuum_vessel_outputs = process_reference(
+    _make_vacuum_vessel, "run", _VACUUM_VESSEL_OUTPUTS
+)
 
 
 class TestCalculateVacuumVesselOutputs(Tier1Contract):
@@ -1038,65 +975,33 @@ class TestCalculateVacuumVesselOutputs(Tier1Contract):
     }
 
 
-def _reference_vacuum_vessel_outputs_double_null(
-    z_tf_inside_half,
-    dz_shld_vv_gap,
-    dz_vv_lower,
-    rmajor,
-    rminor,
-    triang,
-    r_shld_inboard_inner,
-    r_shld_outboard_outer,
-    dr_vv_inboard,
-    dr_vv_outboard,
-    dz_vv_upper,
-    fvoldw,
-    den_steel,
-):
-    """Real `VacuumVessel.run()` at `n_divertors = 2`, otherwise the same configuration
-    as `_reference_vacuum_vessel_outputs`.
+def _make_vacuum_vessel_double_null():
+    """A `VacuumVessel` at `n_divertors = 2`, otherwise the same configuration as
+    `_make_vacuum_vessel`.
 
     The seven `.build` fields this arm does not read are seeded with `nan`.
     `process/models/vacuum.py` reads every one of them in exactly one place --
     `:744-756`, the arguments of the half-height call -- so on this arm nothing may touch
     them, and a `nan` proves it rather than a zero hiding it.
     """
-    data = DataStructure()
-    data.build.z_tf_inside_half = z_tf_inside_half
-    data.build.dz_shld_vv_gap = dz_shld_vv_gap
-    data.build.dz_vv_lower = dz_vv_lower
-    data.divertor.n_divertors = 2
-    data.build.dz_blkt_upper = np.nan
-    data.build.dz_shld_upper = np.nan
-    data.build.z_plasma_xpoint_upper = np.nan
-    data.build.dr_fw_plasma_gap_inboard = np.nan
-    data.build.dr_fw_plasma_gap_outboard = np.nan
-    data.build.dr_fw_inboard = np.nan
-    data.build.dr_fw_outboard = np.nan
-    data.physics.itart = 0
-    data.fwbs.i_fw_blkt_vv_shape = 2
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.physics.triang = triang
-    data.build.r_shld_inboard_inner = r_shld_inboard_inner
-    data.build.r_shld_outboard_outer = r_shld_outboard_outer
-    data.build.dr_vv_inboard = dr_vv_inboard
-    data.build.dr_vv_outboard = dr_vv_outboard
-    data.build.dz_vv_upper = dz_vv_upper
-    data.fwbs.fvoldw = fvoldw
-    data.fwbs.den_steel = den_steel
-
     vv = VacuumVessel()
-    vv.data = data
-    vv.run()
+    vv.data = DataStructure()
+    vv.data.divertor.n_divertors = 2
+    vv.data.build.dz_blkt_upper = np.nan
+    vv.data.build.dz_shld_upper = np.nan
+    vv.data.build.z_plasma_xpoint_upper = np.nan
+    vv.data.build.dr_fw_plasma_gap_inboard = np.nan
+    vv.data.build.dr_fw_plasma_gap_outboard = np.nan
+    vv.data.build.dr_fw_inboard = np.nan
+    vv.data.build.dr_fw_outboard = np.nan
+    vv.data.physics.itart = 0
+    vv.data.fwbs.i_fw_blkt_vv_shape = 2
+    return vv
 
-    return (
-        vv.data.blanket.dz_vv_half,
-        vv.data.blanket.vol_vv_inboard,
-        vv.data.blanket.vol_vv_outboard,
-        vv.data.fwbs.vol_vv,
-        vv.data.fwbs.m_vv,
-    )
+
+_reference_vacuum_vessel_outputs_double_null = process_reference(
+    _make_vacuum_vessel_double_null, "run", _VACUUM_VESSEL_OUTPUTS
+)
 
 
 class TestCalculateVacuumVesselOutputsDoubleNull(Tier1Contract):
@@ -1154,19 +1059,8 @@ class TestCalculateDshapedVesselVolumes(Tier1Contract):
     the nonsense, so this keeps the draws physical rather than hiding a disagreement."""
 
 
-def _reference_vacuum_vessel_outputs_dshaped_double_null(
-    z_tf_inside_half,
-    dz_shld_vv_gap,
-    dz_vv_lower,
-    r_shld_inboard_inner,
-    r_shld_outboard_outer,
-    dr_vv_inboard,
-    dr_vv_outboard,
-    dz_vv_upper,
-    fvoldw,
-    den_steel,
-):
-    """Real `VacuumVessel.run()` at `n_divertors = 2` **and** the D-shaped shape arm --
+def _make_vacuum_vessel_dshaped_double_null():
+    """A `VacuumVessel` at `n_divertors = 2` **and** the D-shaped shape arm --
     `spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`'s own configuration.
 
     **Ten fields are poisoned with `nan`** -- the seven the double-null half-height does
@@ -1178,42 +1072,27 @@ def _reference_vacuum_vessel_outputs_dshaped_double_null(
     `itart = 1` **and** `i_fw_blkt_vv_shape = D_SHAPED` are both set, as both ST files
     set both.
     """
-    data = DataStructure()
-    data.build.z_tf_inside_half = z_tf_inside_half
-    data.build.dz_shld_vv_gap = dz_shld_vv_gap
-    data.build.dz_vv_lower = dz_vv_lower
-    data.divertor.n_divertors = 2
-    data.build.dz_blkt_upper = np.nan
-    data.build.dz_shld_upper = np.nan
-    data.build.z_plasma_xpoint_upper = np.nan
-    data.build.dr_fw_plasma_gap_inboard = np.nan
-    data.build.dr_fw_plasma_gap_outboard = np.nan
-    data.build.dr_fw_inboard = np.nan
-    data.build.dr_fw_outboard = np.nan
-    data.physics.itart = 1
-    data.fwbs.i_fw_blkt_vv_shape = 1
-    data.physics.rmajor = np.nan
-    data.physics.rminor = np.nan
-    data.physics.triang = np.nan
-    data.build.r_shld_inboard_inner = r_shld_inboard_inner
-    data.build.r_shld_outboard_outer = r_shld_outboard_outer
-    data.build.dr_vv_inboard = dr_vv_inboard
-    data.build.dr_vv_outboard = dr_vv_outboard
-    data.build.dz_vv_upper = dz_vv_upper
-    data.fwbs.fvoldw = fvoldw
-    data.fwbs.den_steel = den_steel
-
     vv = VacuumVessel()
-    vv.data = data
-    vv.run()
+    vv.data = DataStructure()
+    vv.data.divertor.n_divertors = 2
+    vv.data.build.dz_blkt_upper = np.nan
+    vv.data.build.dz_shld_upper = np.nan
+    vv.data.build.z_plasma_xpoint_upper = np.nan
+    vv.data.build.dr_fw_plasma_gap_inboard = np.nan
+    vv.data.build.dr_fw_plasma_gap_outboard = np.nan
+    vv.data.build.dr_fw_inboard = np.nan
+    vv.data.build.dr_fw_outboard = np.nan
+    vv.data.physics.itart = 1
+    vv.data.fwbs.i_fw_blkt_vv_shape = 1
+    vv.data.physics.rmajor = np.nan
+    vv.data.physics.rminor = np.nan
+    vv.data.physics.triang = np.nan
+    return vv
 
-    return (
-        vv.data.blanket.dz_vv_half,
-        vv.data.blanket.vol_vv_inboard,
-        vv.data.blanket.vol_vv_outboard,
-        vv.data.fwbs.vol_vv,
-        vv.data.fwbs.m_vv,
-    )
+
+_reference_vacuum_vessel_outputs_dshaped_double_null = process_reference(
+    _make_vacuum_vessel_dshaped_double_null, "run", _VACUUM_VESSEL_OUTPUTS
+)
 
 
 class TestCalculateVacuumVesselOutputsDshapedDoubleNull(Tier1Contract):

@@ -21,6 +21,7 @@ import numpy as np
 
 import process.models.stellarator.stellarator as stellarator_module
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax.stellarator.geometry import (
     calculate_default_aspect_ratio,
     calculate_stellarator_plasma_geometry,
@@ -140,29 +141,17 @@ def _reference_stellarator_scaling_factors(
     )
 
 
-def _reference_stellarator_plasma_geometry(
-    f_st_rmajor,
-    f_st_rminor,
-    rminor,
-    stella_config_vol_plasma,
-    stella_config_plasma_surface,
-):
-    """Call PROCESS's `st_geom` through the port's signature. No switches, no calls out."""
-    stellarator = _stellarator()
-    data = stellarator.data
-    data.stellarator.f_st_rmajor = f_st_rmajor
-    data.stellarator.f_st_rminor = f_st_rminor
-    data.physics.rminor = rminor
-    data.stellarator_config.stella_config_vol_plasma = stella_config_vol_plasma
-    data.stellarator_config.stella_config_plasma_surface = stella_config_plasma_surface
-
-    stellarator.st_geom()
-    return (
-        data.physics.vol_plasma,
-        data.physics.a_plasma_surface,
-        data.physics.a_plasma_poloidal,
-        data.physics.a_plasma_surface_outboard,
-    )
+_reference_stellarator_plasma_geometry = process_reference(
+    _stellarator,
+    "st_geom",
+    (
+        "physics.vol_plasma",
+        "physics.a_plasma_surface",
+        "physics.a_plasma_poloidal",
+        "physics.a_plasma_surface_outboard",
+    ),
+)
+"""Call PROCESS's `st_geom` through the port's signature. No switches, no calls out."""
 
 
 class TestDefaultAspectRatio(Tier1Contract):

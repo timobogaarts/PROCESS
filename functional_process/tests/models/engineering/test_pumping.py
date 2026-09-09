@@ -1,11 +1,8 @@
 """Harness cases for the coolant-hydraulics leaf formulas ported from
-`process/models/engineering/pumping.py` -- see
-`functional_process/_audit/units/models/engineering/pumping.md`.
+`process/models/engineering/pumping.py`.
 
 All three are already pure in `process/` (module-level `def`s, no `self.data`), so the
-PROCESS reference is called directly with no `DataStructure` adapter needed. Every
-legacy sample below is lifted verbatim from `tests/unit/models/engineering/
-test_pumping.py`, which is the only free oracle any of the three has.
+PROCESS reference is called directly with no `DataStructure` adapter needed.
 
 These validate arithmetic behind `.fwbs.i_p_coolant_pumping == 2`, an arm no tracked
 regression input selects and which `indat.py` still refuses on CoolProp grounds. Nothing

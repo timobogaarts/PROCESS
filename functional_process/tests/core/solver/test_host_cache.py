@@ -44,12 +44,9 @@ def _unravel():
     return ravel_pytree((jnp.asarray(1.0),))[1]
 
 
-# **There is no `_empty_memo` fixture any more** (`_audit/optimise_design.md` §37).
-# It existed because `_BOUND` was module state shared with every other test in the
-# process, so a memo left populated made a later test's `len(_BOUND)` assertion depend on
-# collection order. `bind` holds no state now -- jax's own cache does -- and the tests
-# below assert compile counts and program identity instead of memo lengths, neither of
-# which any other test can perturb.
+# `bind` holds no state -- jax's own cache does -- so the tests below assert compile
+# counts and program identity instead of memo lengths, neither of which any other test
+# can perturb.
 
 
 def test_the_cheap_key_agrees_with_the_partition():

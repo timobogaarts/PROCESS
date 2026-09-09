@@ -86,11 +86,7 @@ from process.models.physics.plasma_geometry import PlasmaGeom
 
 
 class TestNeoAlcatorConfinementTime(Tier1Contract):
-    """`neo_alcator_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`neo_alcator_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.neo_alcator_confinement_time)
@@ -102,11 +98,7 @@ class TestNeoAlcatorConfinementTime(Tier1Contract):
 
 
 class TestMirnovConfinementTime(Tier1Contract):
-    """`mirnov_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`mirnov_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.mirnov_confinement_time)
@@ -118,11 +110,7 @@ class TestMirnovConfinementTime(Tier1Contract):
 
 
 class TestMerezhkinMuhkovatovConfinementTime(Tier1Contract):
-    """`merezhkin_muhkovatov_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`merezhkin_muhkovatov_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.merezhkin_muhkovatov_confinement_time)
@@ -134,11 +122,7 @@ class TestMerezhkinMuhkovatovConfinementTime(Tier1Contract):
 
 
 class TestShimomuraConfinementTime(Tier1Contract):
-    """`shimomura_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`shimomura_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.shimomura_confinement_time)
@@ -150,11 +134,7 @@ class TestShimomuraConfinementTime(Tier1Contract):
 
 
 class TestKayeGoldstonConfinementTime(Tier1Contract):
-    """`kaye_goldston_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`kaye_goldston_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.kaye_goldston_confinement_time)
@@ -166,11 +146,7 @@ class TestKayeGoldstonConfinementTime(Tier1Contract):
 
 
 class TestIter89pConfinementTime(Tier1Contract):
-    """`iter_89p_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_89p_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_89p_confinement_time)
@@ -182,11 +158,7 @@ class TestIter89pConfinementTime(Tier1Contract):
 
 
 class TestIter890ConfinementTime(Tier1Contract):
-    """`iter_89_0_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_89_0_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_89_0_confinement_time)
@@ -198,11 +170,7 @@ class TestIter890ConfinementTime(Tier1Contract):
 
 
 class TestRebutLalliaConfinementTime(Tier1Contract):
-    """`rebut_lallia_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`rebut_lallia_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.rebut_lallia_confinement_time)
@@ -214,11 +182,7 @@ class TestRebutLalliaConfinementTime(Tier1Contract):
 
 
 class TestGoldstonConfinementTime(Tier1Contract):
-    """`goldston_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`goldston_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.goldston_confinement_time)
@@ -230,11 +194,7 @@ class TestGoldstonConfinementTime(Tier1Contract):
 
 
 class TestT10ConfinementTime(Tier1Contract):
-    """`t10_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`t10_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.t10_confinement_time)
@@ -246,11 +206,7 @@ class TestT10ConfinementTime(Tier1Contract):
 
 
 class TestJaeriConfinementTime(Tier1Contract):
-    """`jaeri_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`jaeri_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.jaeri_confinement_time)
@@ -262,11 +218,7 @@ class TestJaeriConfinementTime(Tier1Contract):
 
 
 class TestKayeBigConfinementTime(Tier1Contract):
-    """`kaye_big_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`kaye_big_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.kaye_big_confinement_time)
@@ -278,11 +230,7 @@ class TestKayeBigConfinementTime(Tier1Contract):
 
 
 class TestIterH90PConfinementTime(Tier1Contract):
-    """`iter_h90_p_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_h90_p_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_h90_p_confinement_time)
@@ -294,11 +242,7 @@ class TestIterH90PConfinementTime(Tier1Contract):
 
 
 class TestRiedelLConfinementTime(Tier1Contract):
-    """`riedel_l_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`riedel_l_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.riedel_l_confinement_time)
@@ -310,11 +254,7 @@ class TestRiedelLConfinementTime(Tier1Contract):
 
 
 class TestChristiansenConfinementTime(Tier1Contract):
-    """`christiansen_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`christiansen_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.christiansen_confinement_time)
@@ -326,11 +266,7 @@ class TestChristiansenConfinementTime(Tier1Contract):
 
 
 class TestLacknerGottardiConfinementTime(Tier1Contract):
-    """`lackner_gottardi_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`lackner_gottardi_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.lackner_gottardi_confinement_time)
@@ -342,11 +278,7 @@ class TestLacknerGottardiConfinementTime(Tier1Contract):
 
 
 class TestNeoKayeConfinementTime(Tier1Contract):
-    """`neo_kaye_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`neo_kaye_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.neo_kaye_confinement_time)
@@ -358,11 +290,7 @@ class TestNeoKayeConfinementTime(Tier1Contract):
 
 
 class TestRiedelHConfinementTime(Tier1Contract):
-    """`riedel_h_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`riedel_h_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.riedel_h_confinement_time)
@@ -374,11 +302,7 @@ class TestRiedelHConfinementTime(Tier1Contract):
 
 
 class TestIterH90PAmendedConfinementTime(Tier1Contract):
-    """`iter_h90_p_amended_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_h90_p_amended_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_h90_p_amended_confinement_time)
@@ -390,11 +314,7 @@ class TestIterH90PAmendedConfinementTime(Tier1Contract):
 
 
 class TestSudoEtAlConfinementTime(Tier1Contract):
-    """`sudo_et_al_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`sudo_et_al_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.sudo_et_al_confinement_time)
@@ -406,11 +326,7 @@ class TestSudoEtAlConfinementTime(Tier1Contract):
 
 
 class TestGyroReducedBohmConfinementTime(Tier1Contract):
-    """`gyro_reduced_bohm_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`gyro_reduced_bohm_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.gyro_reduced_bohm_confinement_time)
@@ -422,11 +338,7 @@ class TestGyroReducedBohmConfinementTime(Tier1Contract):
 
 
 class TestLacknerGottardiStellaratorConfinementTime(Tier1Contract):
-    """`lackner_gottardi_stellarator_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`lackner_gottardi_stellarator_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(
@@ -440,11 +352,7 @@ class TestLacknerGottardiStellaratorConfinementTime(Tier1Contract):
 
 
 class TestIter93hConfinementTime(Tier1Contract):
-    """`iter_93h_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_93h_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_93h_confinement_time)
@@ -456,11 +364,7 @@ class TestIter93hConfinementTime(Tier1Contract):
 
 
 class TestIterH97pConfinementTime(Tier1Contract):
-    """`iter_h97p_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_h97p_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_h97p_confinement_time)
@@ -472,11 +376,7 @@ class TestIterH97pConfinementTime(Tier1Contract):
 
 
 class TestIterH97pElmyConfinementTime(Tier1Contract):
-    """`iter_h97p_elmy_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_h97p_elmy_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_h97p_elmy_confinement_time)
@@ -488,11 +388,7 @@ class TestIterH97pElmyConfinementTime(Tier1Contract):
 
 
 class TestIter96pConfinementTime(Tier1Contract):
-    """`iter_96p_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_96p_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_96p_confinement_time)
@@ -504,11 +400,7 @@ class TestIter96pConfinementTime(Tier1Contract):
 
 
 class TestValovicElmyConfinementTime(Tier1Contract):
-    """`valovic_elmy_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`valovic_elmy_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.valovic_elmy_confinement_time)
@@ -520,11 +412,7 @@ class TestValovicElmyConfinementTime(Tier1Contract):
 
 
 class TestKayeConfinementTime(Tier1Contract):
-    """`kaye_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`kaye_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.kaye_confinement_time)
@@ -536,11 +424,7 @@ class TestKayeConfinementTime(Tier1Contract):
 
 
 class TestIterPb98pyConfinementTime(Tier1Contract):
-    """`iter_pb98py_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_pb98py_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_pb98py_confinement_time)
@@ -552,11 +436,7 @@ class TestIterPb98pyConfinementTime(Tier1Contract):
 
 
 class TestIterIpb98yConfinementTime(Tier1Contract):
-    """`iter_ipb98y_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_ipb98y_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y_confinement_time)
@@ -568,11 +448,7 @@ class TestIterIpb98yConfinementTime(Tier1Contract):
 
 
 class TestIterIpb98y1ConfinementTime(Tier1Contract):
-    """`iter_ipb98y1_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_ipb98y1_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y1_confinement_time)
@@ -584,11 +460,7 @@ class TestIterIpb98y1ConfinementTime(Tier1Contract):
 
 
 class TestIterIpb98y2ConfinementTime(Tier1Contract):
-    """`iter_ipb98y2_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_ipb98y2_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y2_confinement_time)
@@ -600,11 +472,7 @@ class TestIterIpb98y2ConfinementTime(Tier1Contract):
 
 
 class TestIterIpb98y3ConfinementTime(Tier1Contract):
-    """`iter_ipb98y3_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_ipb98y3_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y3_confinement_time)
@@ -616,11 +484,7 @@ class TestIterIpb98y3ConfinementTime(Tier1Contract):
 
 
 class TestIterIpb98y4ConfinementTime(Tier1Contract):
-    """`iter_ipb98y4_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iter_ipb98y4_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iter_ipb98y4_confinement_time)
@@ -632,11 +496,7 @@ class TestIterIpb98y4ConfinementTime(Tier1Contract):
 
 
 class TestIss95StellaratorConfinementTime(Tier1Contract):
-    """`iss95_stellarator_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iss95_stellarator_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iss95_stellarator_confinement_time)
@@ -648,11 +508,7 @@ class TestIss95StellaratorConfinementTime(Tier1Contract):
 
 
 class TestIss04StellaratorConfinementTime(Tier1Contract):
-    """`iss04_stellarator_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`iss04_stellarator_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.iss04_stellarator_confinement_time)
@@ -664,11 +520,7 @@ class TestIss04StellaratorConfinementTime(Tier1Contract):
 
 
 class TestDs03ConfinementTime(Tier1Contract):
-    """`ds03_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`ds03_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.ds03_confinement_time)
@@ -680,11 +532,7 @@ class TestDs03ConfinementTime(Tier1Contract):
 
 
 class TestMurariConfinementTime(Tier1Contract):
-    """`murari_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`murari_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.murari_confinement_time)
@@ -696,11 +544,7 @@ class TestMurariConfinementTime(Tier1Contract):
 
 
 class TestPetty08ConfinementTime(Tier1Contract):
-    """`petty08_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`petty08_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.petty08_confinement_time)
@@ -712,11 +556,7 @@ class TestPetty08ConfinementTime(Tier1Contract):
 
 
 class TestLangHighDensityConfinementTime(Tier1Contract):
-    """`lang_high_density_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`lang_high_density_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.lang_high_density_confinement_time)
@@ -728,11 +568,7 @@ class TestLangHighDensityConfinementTime(Tier1Contract):
 
 
 class TestHubbardNominalConfinementTime(Tier1Contract):
-    """`hubbard_nominal_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`hubbard_nominal_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.hubbard_nominal_confinement_time)
@@ -744,11 +580,7 @@ class TestHubbardNominalConfinementTime(Tier1Contract):
 
 
 class TestHubbardLowerConfinementTime(Tier1Contract):
-    """`hubbard_lower_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`hubbard_lower_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.hubbard_lower_confinement_time)
@@ -760,11 +592,7 @@ class TestHubbardLowerConfinementTime(Tier1Contract):
 
 
 class TestHubbardUpperConfinementTime(Tier1Contract):
-    """`hubbard_upper_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`hubbard_upper_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.hubbard_upper_confinement_time)
@@ -776,11 +604,7 @@ class TestHubbardUpperConfinementTime(Tier1Contract):
 
 
 class TestMenardNstxConfinementTime(Tier1Contract):
-    """`menard_nstx_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`menard_nstx_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.menard_nstx_confinement_time)
@@ -792,11 +616,7 @@ class TestMenardNstxConfinementTime(Tier1Contract):
 
 
 class TestMenardNstxPetty08HybridConfinementTime(Tier1Contract):
-    """`menard_nstx_petty08_hybrid_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`menard_nstx_petty08_hybrid_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(
@@ -810,11 +630,7 @@ class TestMenardNstxPetty08HybridConfinementTime(Tier1Contract):
 
 
 class TestNstxGyroBohmConfinementTime(Tier1Contract):
-    """`nstx_gyro_bohm_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`nstx_gyro_bohm_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.nstx_gyro_bohm_confinement_time)
@@ -826,11 +642,7 @@ class TestNstxGyroBohmConfinementTime(Tier1Contract):
 
 
 class TestItpa20ConfinementTime(Tier1Contract):
-    """`itpa20_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`itpa20_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.itpa20_confinement_time)
@@ -842,11 +654,7 @@ class TestItpa20ConfinementTime(Tier1Contract):
 
 
 class TestItpa20IlConfinementTime(Tier1Contract):
-    """`itpa20_il_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`itpa20_il_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.itpa20_il_confinement_time)
@@ -858,11 +666,7 @@ class TestItpa20IlConfinementTime(Tier1Contract):
 
 
 class TestNcstConfinementTime(Tier1Contract):
-    """`ncst_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`ncst_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.ncst_confinement_time)
@@ -874,11 +678,7 @@ class TestNcstConfinementTime(Tier1Contract):
 
 
 class TestPazSoldanNtConfinementTime(Tier1Contract):
-    """`paz_soldan_nt_confinement_time` -> the same, unchanged.
-
-    Sample is PROCESS's own `test_confinement_time.py::test_confinement_time`'s
-    all-ones case for this scaling law, verbatim -- genuinely legacy.
-    """
+    """`paz_soldan_nt_confinement_time` -> the same, unchanged."""
 
     audit_record = "models/physics/confinement_time.md"
     reference = staticmethod(PlasmaConfinementTime.paz_soldan_nt_confinement_time)

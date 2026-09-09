@@ -1,8 +1,6 @@
 """Harness cases for `functional_process/cottax/pfcoil/masses.py`, and for every inline
 block of `PFCoil.pfcoil()` the package ports.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/masses.md`.
-
 **One contract, whose reference is `PFCoil.pfcoil()` itself.** Most of what this package
 ports is not a PROCESS function: `pfcoil()` is a single 1023-line routine, and the
 coil-position flattening, the plasma-initiation and equilibrium current blocks, the CS
@@ -531,9 +529,8 @@ def _reference_pf_coil_chain(**inputs):
 
 
 def _reference_pf_coil_chain_cs_wst_nb3sn(**inputs):
-    """`low_aspect_ratio_DEMO.IN.DAT`'s pair (`:806`, `:845`): `i_cs_superconductor
-    = 5` (WST Nb3Sn), CS density from `dcond[4]` -- arm 1,
-    `masses.PFCoilMassesCsWstNb3Sn`'s binding.
+    """`low_aspect_ratio_DEMO.IN.DAT`'s pair: `i_cs_superconductor = 5` (WST Nb3Sn),
+    CS density from `dcond[4]` -- arm 1, `masses.PFCoilMassesCsWstNb3Sn`'s binding.
     """
     return _run_reference_pf_coil_chain(5, 4, **inputs)
 
@@ -1065,8 +1062,8 @@ _LEGACY_SPHERICAL_TOKAMAK = {
 naming.
 
 `rmajor`, `aspect`, `kappa`, `triang`, `rpf2`, `zref` and `rref` are
-`spherical_tokamak_eval.IN.DAT`'s own (`:239-244`, `:260`, `:285`, `:291`, `:296`); the
-build quantities the PF system reads (`z_tf_top`, `dz_tf_upper_lower_midplane`,
+`spherical_tokamak_eval.IN.DAT`'s own; the build quantities the PF system reads
+(`z_tf_top`, `dz_tf_upper_lower_midplane`,
 `r_tf_outboard_out`) are chosen consistent with a 4.5 m machine, because neither ST file
 converges through this port yet -- both are still refused on the CroCo TF turn -- and
 there is therefore no converged run to read them off.

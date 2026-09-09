@@ -10,10 +10,9 @@ picked to exercise a realistic operating regime (still run through the real PROC
 function, so agreement is genuine).
 
 `calculate_redun_vac` has **no contract here**: it is plain Python (`math.floor`), not
-`jnp`, so it cannot be `jacfwd`'d -- see the audit record's JAX-difficulty flags. It is
-still exercised indirectly: every `TestAvail2`/`TestAvailSt` sample's `redun_vac` value
-was computed by calling it, so a regression in its output would show up as a value
-mismatch downstream.
+`jnp`, so it cannot be `jacfwd`'d. It is still exercised indirectly: every
+`TestAvail2`/`TestAvailSt` sample's `redun_vac` value was computed by calling it, so a
+regression in its output would show up as a value mismatch downstream.
 """
 
 import functools
@@ -21,9 +20,13 @@ import functools
 import pytest
 from cottax.interfaces.pytree_namespace_module import Output, to_graph
 from cottax.problem import FixedPoint, is_fixed_point
-from cottax.spec import ImplementedFunction, Implemented
+from cottax.spec import Implemented, ImplementedFunction
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import (
+    data_reference,
+    process_reference,
+)
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.availability.availability import (
     Avail2,
@@ -72,6 +75,15 @@ def _availability():
     return a
 
 
+def _bind(data):
+    """An `Availability` bound to `data` -- for `data_reference` callables, whose
+    `call` receives a poked `DataStructure` rather than a model instance.
+    """
+    a = Availability()
+    a.data = data
+    return a
+
+
 # ---------------------------------------------------------------------------
 # Leaf helpers
 # ---------------------------------------------------------------------------
@@ -100,12 +112,9 @@ class TestDpaPerFpy(Tier1Contract):
     fuzz = True
 
 
-def _reference_divertor_lifetime(adivflnc, pflux_div_heat_load_mw, life_plant):
-    a = _availability()
-    a.data.costs.adivflnc = adivflnc
-    a.data.divertor.pflux_div_heat_load_mw = pflux_div_heat_load_mw
-    a.data.costs.life_plant = life_plant
-    return a.divertor_lifetime()
+_reference_divertor_lifetime = data_reference(
+    lambda data: _bind(data).divertor_lifetime()
+)
 
 
 class TestDivertorLifetime(Tier1Contract):
@@ -119,15 +128,14 @@ class TestDivertorLifetime(Tier1Contract):
     fuzz = True
 
 
-def _reference_cp_lifetime_superconducting(
-    neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-):
-    a = _availability()
-    a.data.tfcoil.i_tf_sup = 1
-    a.data.fwbs.neut_flux_cp = neut_flux_cp
-    a.data.constraints.flu_tf_neutron_fast_max = flu_tf_neutron_fast_max
-    a.data.costs.life_plant = life_plant
-    return a.cp_lifetime()
+def _call_cp_lifetime_superconducting(data):
+    data.tfcoil.i_tf_sup = 1
+    return _bind(data).cp_lifetime()
+
+
+_reference_cp_lifetime_superconducting = data_reference(
+    _call_cp_lifetime_superconducting
+)
 
 
 class TestCpLifetimeSuperconducting(Tier1Contract):
@@ -141,13 +149,12 @@ class TestCpLifetimeSuperconducting(Tier1Contract):
     fuzz = True
 
 
-def _reference_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant):
-    a = _availability()
-    a.data.tfcoil.i_tf_sup = 0
-    a.data.costs.cpstflnc = cpstflnc
-    a.data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
-    a.data.costs.life_plant = life_plant
-    return a.cp_lifetime()
+def _call_cp_lifetime_resistive(data):
+    data.tfcoil.i_tf_sup = 0
+    return _bind(data).cp_lifetime()
+
+
+_reference_cp_lifetime_resistive = data_reference(_call_cp_lifetime_resistive)
 
 
 class TestCpLifetimeResistive(Tier1Contract):
@@ -161,20 +168,9 @@ class TestCpLifetimeResistive(Tier1Contract):
     fuzz = True
 
 
-def _reference_u_unplanned_magnets(
-    temp_tf_superconductor_margin_min,
-    temp_cs_superconductor_margin_min,
-    t_plant_operational_total_yrs,
-    conf_mag,
-    temp_margin,
-):
-    a = _availability()
-    a.data.costs.t_plant_operational_total_yrs = t_plant_operational_total_yrs
-    a.data.costs.conf_mag = conf_mag
-    a.data.tfcoil.temp_cs_superconductor_margin_min = temp_cs_superconductor_margin_min
-    a.data.tfcoil.temp_tf_superconductor_margin_min = temp_tf_superconductor_margin_min
-    a.data.tfcoil.temp_margin = temp_margin
-    return a.calc_u_unplanned_magnets(output=False)
+_reference_u_unplanned_magnets = data_reference(
+    lambda data: _bind(data).calc_u_unplanned_magnets(output=False)
+)
 
 
 class TestUUnplannedMagnets(Tier1Contract):
@@ -188,17 +184,9 @@ class TestUUnplannedMagnets(Tier1Contract):
     fuzz = True
 
 
-def _reference_u_unplanned_divertor(
-    life_div_fpy, t_plant_pulse_total, div_prob_fail, div_umain_time, div_nu, div_nref
-):
-    a = _availability()
-    a.data.times.t_plant_pulse_total = t_plant_pulse_total
-    a.data.costs.life_div_fpy = life_div_fpy
-    a.data.costs.div_prob_fail = div_prob_fail
-    a.data.costs.div_umain_time = div_umain_time
-    a.data.costs.div_nu = div_nu
-    a.data.costs.div_nref = div_nref
-    return a.calc_u_unplanned_divertor(output=False)
+_reference_u_unplanned_divertor = data_reference(
+    lambda data: _bind(data).calc_u_unplanned_divertor(output=False)
+)
 
 
 class TestUUnplannedDivertor(Tier1Contract):
@@ -220,22 +208,9 @@ class TestUUnplannedDivertor(Tier1Contract):
     }
 
 
-def _reference_u_unplanned_fwbs(
-    life_blkt_fpy,
-    t_plant_pulse_total,
-    fwbs_prob_fail,
-    fwbs_umain_time,
-    fwbs_nu,
-    fwbs_nref,
-):
-    a = _availability()
-    a.data.times.t_plant_pulse_total = t_plant_pulse_total
-    a.data.fwbs.life_blkt_fpy = life_blkt_fpy
-    a.data.costs.fwbs_prob_fail = fwbs_prob_fail
-    a.data.costs.fwbs_umain_time = fwbs_umain_time
-    a.data.costs.fwbs_nu = fwbs_nu
-    a.data.costs.fwbs_nref = fwbs_nref
-    return a.calc_u_unplanned_fwbs(output=False)
+_reference_u_unplanned_fwbs = data_reference(
+    lambda data: _bind(data).calc_u_unplanned_fwbs(output=False)
+)
 
 
 class TestUUnplannedFwbs(Tier1Contract):
@@ -257,10 +232,9 @@ class TestUUnplannedFwbs(Tier1Contract):
     }
 
 
-def _reference_u_unplanned_bop(t_plant_operational_total_yrs):
-    a = _availability()
-    a.data.costs.t_plant_operational_total_yrs = t_plant_operational_total_yrs
-    return a.calc_u_unplanned_bop(output=False)
+_reference_u_unplanned_bop = data_reference(
+    lambda data: _bind(data).calc_u_unplanned_bop(output=False)
+)
 
 
 class TestUUnplannedBop(Tier1Contract):
@@ -287,20 +261,9 @@ class TestUUnplannedHcd(Tier1Contract):
     samples = FROM_FILE
 
 
-def _reference_u_unplanned_vacuum(
-    t_plant_operational_total_yrs,
-    life_plant,
-    num_rh_systems,
-    n_vac_pumps_high,
-    redun_vac,
-):
-    a = _availability()
-    a.data.costs.t_plant_operational_total_yrs = t_plant_operational_total_yrs
-    a.data.costs.life_plant = life_plant
-    a.data.costs.num_rh_systems = num_rh_systems
-    a.data.vacuum.n_vac_pumps_high = n_vac_pumps_high
-    a.data.costs.redun_vac = redun_vac
-    return a.calc_u_unplanned_vacuum(output=False)
+_reference_u_unplanned_vacuum = data_reference(
+    lambda data: _bind(data).calc_u_unplanned_vacuum(output=False)
+)
 
 
 class TestUUnplannedVacuum(Tier1Contract):
@@ -384,30 +347,21 @@ class TestBlanketLifetimeFpySimple(Tier1Contract):
     fuzz_fixed = {"ibkt_life": 0}
 
 
-def _reference_u_planned(
-    p_fusion_total_mw,
-    abktflnc,
-    pflux_fw_neutron_mw,
-    life_dpa,
-    adivflnc,
-    pflux_div_heat_load_mw,
-    life_plant,
-    num_rh_systems,
-    *,
-    ibkt_life,
-):
-    a = _availability()
-    a.data.physics.p_fusion_total_mw = p_fusion_total_mw
-    a.data.costs.abktflnc = abktflnc
-    a.data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
-    a.data.costs.life_dpa = life_dpa
-    a.data.costs.adivflnc = adivflnc
-    a.data.divertor.pflux_div_heat_load_mw = pflux_div_heat_load_mw
-    a.data.costs.life_plant = life_plant
-    a.data.costs.num_rh_systems = num_rh_systems
-    a.data.costs.ibkt_life = ibkt_life
-    a.data.physics.itart = 0  # cplife ownership out of scope here, see `Avail2`/record
-    return a.calc_u_planned(output=False)
+def _call_u_planned(data):
+    """`u_planned` plus the three lifetime fields `calc_u_planned` also writes --
+    `itart` fixed at `0`: `cplife` ownership is out of scope here, see `Avail2`/record.
+    """
+    data.physics.itart = 0
+    u_planned = _bind(data).calc_u_planned(output=False)
+    return (
+        u_planned,
+        data.fwbs.life_blkt_fpy,
+        data.costs.life_div_fpy,
+        data.costs.life_hcd_fpy,
+    )
+
+
+_reference_u_planned = data_reference(_call_u_planned)
 
 
 class TestUPlanned(Tier1Contract):
@@ -422,27 +376,7 @@ class TestUPlanned(Tier1Contract):
     audit_record = "models/availability.md"
     static_argnames = ("ibkt_life",)
 
-    @staticmethod
-    def reference(**kwargs):
-        a = _availability()
-        a.data.physics.p_fusion_total_mw = kwargs["p_fusion_total_mw"]
-        a.data.costs.abktflnc = kwargs["abktflnc"]
-        a.data.physics.pflux_fw_neutron_mw = kwargs["pflux_fw_neutron_mw"]
-        a.data.costs.life_dpa = kwargs["life_dpa"]
-        a.data.costs.adivflnc = kwargs["adivflnc"]
-        a.data.divertor.pflux_div_heat_load_mw = kwargs["pflux_div_heat_load_mw"]
-        a.data.costs.life_plant = kwargs["life_plant"]
-        a.data.costs.num_rh_systems = kwargs["num_rh_systems"]
-        a.data.costs.ibkt_life = kwargs["ibkt_life"]
-        a.data.physics.itart = 0
-        u_planned = a.calc_u_planned(output=False)
-        return (
-            u_planned,
-            a.data.fwbs.life_blkt_fpy,
-            a.data.costs.life_div_fpy,
-            a.data.costs.life_hcd_fpy,
-        )
-
+    reference = _reference_u_planned
     ported = calculate_u_planned
 
     samples = FROM_FILE
@@ -467,8 +401,7 @@ def _reference_ward_taylor_availability(
     """Reproduce `avail`'s WARD_TAYLOR block directly (see module docstring: the source
     computes `life_div_fpy`/`life_blkt_fpy` itself earlier in the same call, so this
     unit cannot be exercised through `avail()` without also fixing those upstream
-    values; verified against `avail()` with real upstream inputs during porting -- see
-    the audit record).
+    values).
     """
     a = _availability()
     a.data.costs.life_div_fpy = life_div_fpy
@@ -724,7 +657,7 @@ class TestAvail2(Tier1Contract):
         # is O(1) year) -- rather than letting an independent draw of each put a
         # near-zero lifetime through `calc_u_planned`'s `u_planned`, which otherwise
         # saturates `f_t_plant_available` to exactly `0.0` on a real, if minority,
-        # fraction of draws. See the audit record's PROCESS-bug-adjacent note.
+        # fraction of draws.
         "abktflnc": (10.0, 20.0),
         "pflux_fw_neutron_mw": (0.5, 1.0),
         "life_dpa": (10.0, 60.0),
@@ -751,8 +684,7 @@ class TestAvail2(Tier1Contract):
         # Fixed rather than fuzzed: `calc_u_unplanned_divertor`/`_fwbs`'s cycle count
         # `n = life_*_fpy * YEAR_SECONDS / t_plant_pulse_total` must stay well below
         # `div_nref`/`fwbs_nref` for `life_*_fpy` up to `life_plant`'s ~40-year fuzz
-        # bound, or every draw saturates into the "100% failure" branch -- see the
-        # audit record's PROCESS-bug-adjacent note on this contract's own history.
+        # bound, or every draw saturates into the "100% failure" branch.
         "t_plant_pulse_total": 5.0e5,
         "cplife": 11.0,
         "ibkt_life": 0,
@@ -839,9 +771,8 @@ class TestAvailSt(Tier1Contract):
     """`Availability.avail_st` (ST, `i_plant_availability == 3`) -> `calculate_avail_st`.
 
     Reachable on the stellarator pipeline only through `Stellarator.output()`'s final
-    report-writing call; see the audit record's `itart`/reachability finding. `cplife`
-    is supplied via `calculate_cp_lifetime_resistive` here (the reference sets
-    `.tfcoil.i_tf_sup = 0` to match).
+    report-writing call. `cplife` is supplied via `calculate_cp_lifetime_resistive` here
+    (the reference sets `.tfcoil.i_tf_sup = 0` to match).
     """
 
     audit_record = "models/availability.md"
@@ -975,41 +906,14 @@ class TestCplifeLifetimeAdjustment(Tier1Contract):
     fuzz = True
 
 
-def _reference_cplife_next(
-    cplife,
-    neut_flux_cp,
-    flu_tf_neutron_fast_max,
-    cpstflnc,
-    pflux_fw_neutron_mw,
-    life_plant,
-    f_t_plant_available,
-    *,
-    i_tf_sup,
-    itart,
-):
-    """Reproduce `.costs.cplife`'s value after one real `avail()` call, isolating just
-    the centrepost-lifetime handling `CplifeAvail` ports. `i_plant_availability = 0`
-    (USER_INPUT) so `f_t_plant_available` is a genuinely free input -- `avail()` never
-    touches it on that branch (see the module docstring) -- unlike `avail_st()`, where
-    it is derived internally; see `_reference_cplife_avail_st_next`'s docstring for why
-    that one is not a `Tier1Contract`. `ibkt_life = 1` (DEMO) so the unrelated
-    blanket-lifetime block does not also depend on `pflux_fw_neutron_mw`, which this
-    contract varies for the resistive centrepost formula.
+def _make_cplife_next_avail():
+    """An `avail()`-bound model, fixed away from every field but the nine dynamic
+    `calculate_cplife_next` ports -- see `TestCplifeNext`'s docstring for why
+    `i_plant_availability = 0` (USER_INPUT) and `ibkt_life = 1` (DEMO) matter.
     """
     a = _availability()
     a.data.ife.ife = 0
     a.data.costs.i_plant_availability = 0
-    a.data.costs.f_t_plant_available = f_t_plant_available
-    a.data.physics.itart = itart
-    a.data.tfcoil.i_tf_sup = i_tf_sup
-    a.data.fwbs.neut_flux_cp = neut_flux_cp
-    a.data.constraints.flu_tf_neutron_fast_max = flu_tf_neutron_fast_max
-    a.data.costs.cpstflnc = cpstflnc
-    a.data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
-    a.data.costs.life_plant = life_plant
-    a.data.costs.cplife = cplife
-    # Everything else `avail()` touches, fixed away from any domain edge -- unrelated to
-    # what this contract checks.
     a.data.physics.p_fusion_total_mw = 4.0e3
     a.data.fwbs.life_fw_fpy = 1.0
     a.data.costs.life_dpa = 40.0
@@ -1018,8 +922,18 @@ def _reference_cplife_next(
     a.data.costs.adivflnc = 8.0
     a.data.times.t_plant_pulse_total = 5.0e3
     a.data.times.t_plant_pulse_burn = 500.0
-    a.avail(output=False)
-    return a.data.costs.cplife
+    return a
+
+
+_reference_cplife_next = process_reference(
+    _make_cplife_next_avail, "avail", "costs.cplife", call_args=(False,)
+)
+"""Reproduce `.costs.cplife`'s value after one real `avail()` call, isolating just the
+centrepost-lifetime handling `CplifeAvail` ports. `f_t_plant_available` is a genuinely
+free input here -- `avail()` never touches it on the USER_INPUT branch (see the module
+docstring) -- unlike `avail_st()`, where it is derived internally; see
+`_reference_cplife_avail_st_next`'s docstring for why that one is not a `Tier1Contract`.
+"""
 
 
 class TestCplifeNext(Tier1Contract):
@@ -1051,25 +965,8 @@ class TestCplifeNext(Tier1Contract):
     }
 
 
-def _reference_cplife_avail_st_next(*, i_tf_sup, itart):
-    """Reproduce `.costs.cplife`'s value after one real `avail_st()` call, for a fixed
-    set of inputs (`_AVAIL_ST_FIXED_INPUTS` below).
-
-    **Not a `Tier1Contract`, deliberately**, unlike `TestCplifeNext`: `avail_st()`
-    computes `.costs.f_t_plant_available` *internally* (from `u_planned`/`u_unplanned`,
-    which themselves depend on `cplife` through `shortest_lifetime` -- see `AvailSt`'s
-    docstring), so it is not a free input the way it is in `avail()`'s USER_INPUT branch.
-    `calculate_cplife_avail_st_next` takes it as a plain argument regardless (matching
-    real PROCESS's own call order: `f_t_plant_available` is computed once, earlier in
-    `avail_st()`, then used for the later cplife adjustment). A `Tier1Contract`
-    differentiates every argument independently, including `f_t_plant_available`; doing
-    that against this reference would compare the port's real partial derivative to a
-    finite difference that also captures `f_t_plant_available`'s *own* dependence on the
-    perturbed argument -- not the same quantity, and a guaranteed spurious disagreement,
-    not a bug in either side. The value-level check below (`test_cplife_avail_st_next_*`)
-    still verifies the port against a real `avail_st()` run for both `i_tf_sup`
-    alternatives and both `itart` values.
-    """
+def _make_cplife_avail_st_next():
+    """An `avail_st()`-bound model, fixed away from every field but `i_tf_sup`/`itart`."""
     a = _availability()
     a.data.costs.ibkt_life = 0
     a.data.costs.abktflnc = 10.0
@@ -1090,13 +987,35 @@ def _reference_cplife_avail_st_next(*, i_tf_sup, itart):
     a.data.costs.u_unplanned_cp = 0.05
     a.data.times.t_plant_pulse_burn = 5.0
     a.data.times.t_plant_pulse_total = 5.0e5
-    a.data.physics.itart = itart
-    a.data.tfcoil.i_tf_sup = i_tf_sup
     a.data.fwbs.neut_flux_cp = 5.0e14
     a.data.constraints.flu_tf_neutron_fast_max = 1.0e23
     a.data.costs.cpstflnc = 20.0
-    a.avail_st(output=False)
-    return a.data.costs.cplife, a.data.costs.f_t_plant_available
+    return a
+
+
+_reference_cplife_avail_st_next = process_reference(
+    _make_cplife_avail_st_next,
+    "avail_st",
+    ("costs.cplife", "costs.f_t_plant_available"),
+    call_args=(False,),
+)
+"""Reproduce `.costs.cplife`'s value after one real `avail_st()` call.
+
+**Not a `Tier1Contract`, deliberately**, unlike `TestCplifeNext`: `avail_st()` computes
+`.costs.f_t_plant_available` *internally* (from `u_planned`/`u_unplanned`, which
+themselves depend on `cplife` through `shortest_lifetime` -- see `AvailSt`'s docstring),
+so it is not a free input the way it is in `avail()`'s USER_INPUT branch.
+`calculate_cplife_avail_st_next` takes it as a plain argument regardless (matching real
+PROCESS's own call order: `f_t_plant_available` is computed once, earlier in
+`avail_st()`, then used for the later cplife adjustment). A `Tier1Contract`
+differentiates every argument independently, including `f_t_plant_available`; doing that
+against this reference would compare the port's real partial derivative to a finite
+difference that also captures `f_t_plant_available`'s *own* dependence on the perturbed
+argument -- not the same quantity, and a guaranteed spurious disagreement, not a bug in
+either side. The value-level check below (`test_cplife_avail_st_next_*`) still verifies
+the port against a real `avail_st()` run for both `i_tf_sup` alternatives and both
+`itart` values.
+"""
 
 
 @pytest.mark.parametrize("i_tf_sup", [1, 0])

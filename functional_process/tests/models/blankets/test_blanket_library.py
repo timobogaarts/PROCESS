@@ -1,8 +1,7 @@
 """Harness cases for the ported subset of `blankets/blanket_library.py`.
 
 The four functions of the `component_volumes` chain that lie on the minimal closure
-producing `.tokamak.ccfe_hcpb`'s boundary variables -- see
-`functional_process/_audit/units/models/blankets/blanket_library.md`.
+producing `.tokamak.ccfe_hcpb`'s boundary variables.
 
 Every reference is PROCESS's own callable, driven in-process (the point of the
 `process_port` env). Three of the four are `@staticmethod`s on `BlanketLibrary` and need
@@ -15,20 +14,17 @@ they were generated from `large_tokamak.IN.DAT`/`large_tokamak_eval.IN.DAT` -- t
 reference run `_audit/tokamak_call_surface.md` traced, so they are on the operating point
 this port targets rather than near it.
 
-2026-08-27: the two `n_divertors == 2` occupants joined
-(`TestBlktHalfHeightDoubleNull`, `TestApplyCoverageFactorsDoubleNull`). The half-height
-adapter **poisons** the five parameters the double-null arm does not read with `nan`
-rather than zeroing them, so "PROCESS does not look at these" is executed rather than
-asserted: were the branch not taken, the reference would return `nan` and the value
-comparison would fail instead of quietly agreeing on a zero.
+The half-height adapter for `n_divertors == 2` (`TestBlktHalfHeightDoubleNull`)
+**poisons** the five parameters that arm does not read with `nan` rather than zeroing
+them, so "PROCESS does not look at these" is executed rather than asserted: were the
+branch not taken, the reference would return `nan` and the value comparison would fail
+instead of quietly agreeing on a zero.
 
-2026-08-27 (the D-shaped wave): `TestDshapedBlktAreas` and `TestDshapedBlktVolumes`
-joined, making both shape slots total. Their references are `@staticmethod`s like the
-elliptical pair's, so they need no adapter -- and they need no `nan` poisoning either,
-because the D-shaped arm takes a *different signature* rather than a subset of the same
-one: `triang`, `rmajor` and the two outboard shield radii are absent from the PROCESS
-staticmethod's own parameter list, so there is nothing to poison. That is a stronger
-guarantee than a poisoned argument, not a weaker one.
+The D-shaped pair (`TestDshapedBlktAreas`, `TestDshapedBlktVolumes`) needs no `nan`
+poisoning: their `@staticmethod` references take a *different signature* rather than a
+subset of the elliptical arm's -- `triang`, `rmajor` and the two outboard shield radii
+are absent from the parameter list entirely, so there is nothing to poison. That is a
+stronger guarantee than a poisoned argument, not a weaker one.
 """
 
 import functools
@@ -36,6 +32,7 @@ import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract
+from functional_process.cottax._harness.process_reference import process_reference
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.blankets.blanket_library import (
     apply_coverage_factors_double_null,
@@ -155,83 +152,38 @@ _reference_elliptical_blkt_areas = CCFE_HCPB.calculate_elliptical_blkt_areas
 _reference_elliptical_blkt_volumes = CCFE_HCPB.calculate_elliptical_blkt_volumes
 
 
-def _reference_apply_coverage_factors_single_null(
-    a_blkt_total_surface_full_coverage,
-    a_blkt_inboard_surface_full_coverage,
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    vol_blkt_total_full_coverage,
-    vol_blkt_inboard_full_coverage,
-):
-    """Bind a `DataStructure` and call `apply_coverage_factors()` at `n_divertors == 1`.
-
-    Writing this adapter is where the audit's "close the `data` back-door" claim gets
-    tested rather than asserted: if the port read a field this seeds nothing into, the
-    two would disagree.
-    """
+def _make_blanket_library(n_divertors):
     model = _blanket_library()
-    data = model.data
-
-    data.divertor.n_divertors = 1
-    data.build.a_blkt_total_surface_full_coverage = a_blkt_total_surface_full_coverage
-    data.build.a_blkt_inboard_surface_full_coverage = (
-        a_blkt_inboard_surface_full_coverage
-    )
-    data.fwbs.f_ster_div_single = f_ster_div_single
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.fwbs.vol_blkt_total_full_coverage = vol_blkt_total_full_coverage
-    data.fwbs.vol_blkt_inboard_full_coverage = vol_blkt_inboard_full_coverage
-
-    model.apply_coverage_factors()
-
-    return (
-        data.build.a_blkt_outboard_surface,
-        data.build.a_blkt_total_surface,
-        data.fwbs.vol_blkt_outboard,
-        data.fwbs.vol_blkt_inboard,
-        data.build.a_blkt_inboard_surface,
-        data.fwbs.vol_blkt_total,
-    )
+    model.data.divertor.n_divertors = n_divertors
+    return model
 
 
-def _reference_apply_coverage_factors_double_null(
-    a_blkt_total_surface_full_coverage,
-    a_blkt_inboard_surface_full_coverage,
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    vol_blkt_total_full_coverage,
-    vol_blkt_inboard_full_coverage,
-):
-    """Bind a `DataStructure` and call `apply_coverage_factors()` at `n_divertors == 2`.
+_COVERAGE_OUTPUTS = (
+    "a_blkt_outboard_surface",
+    "a_blkt_total_surface",
+    "vol_blkt_outboard",
+    "vol_blkt_inboard",
+    "a_blkt_inboard_surface",
+    "vol_blkt_total",
+)
 
-    Same six fields as the single-null adapter -- the arms differ by a literal, not by a
-    read -- so this is where PROCESS's areas-doubled/volumes-not asymmetry gets executed
-    rather than argued about: if the port had "fixed" the volume line, the two would
-    disagree here.
-    """
-    model = _blanket_library()
-    data = model.data
+# Writing these two adapters is where the audit's "close the `data` back-door" claim gets
+# tested rather than asserted: if the port read a field this seeds nothing into, the two
+# would disagree. Same six fields for both arms -- they differ by `n_divertors` alone --
+# so this is also where PROCESS's areas-doubled/volumes-not asymmetry gets executed
+# rather than argued about: if the port had "fixed" the volume line, the two would
+# disagree here.
+_reference_apply_coverage_factors_single_null = process_reference(
+    functools.partial(_make_blanket_library, 1),
+    "apply_coverage_factors",
+    _COVERAGE_OUTPUTS,
+)
 
-    data.divertor.n_divertors = 2
-    data.build.a_blkt_total_surface_full_coverage = a_blkt_total_surface_full_coverage
-    data.build.a_blkt_inboard_surface_full_coverage = (
-        a_blkt_inboard_surface_full_coverage
-    )
-    data.fwbs.f_ster_div_single = f_ster_div_single
-    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
-    data.fwbs.vol_blkt_total_full_coverage = vol_blkt_total_full_coverage
-    data.fwbs.vol_blkt_inboard_full_coverage = vol_blkt_inboard_full_coverage
-
-    model.apply_coverage_factors()
-
-    return (
-        data.build.a_blkt_outboard_surface,
-        data.build.a_blkt_total_surface,
-        data.fwbs.vol_blkt_outboard,
-        data.fwbs.vol_blkt_inboard,
-        data.build.a_blkt_inboard_surface,
-        data.fwbs.vol_blkt_total,
-    )
+_reference_apply_coverage_factors_double_null = process_reference(
+    functools.partial(_make_blanket_library, 2),
+    "apply_coverage_factors",
+    _COVERAGE_OUTPUTS,
+)
 
 
 class TestBlktHalfHeightSingleNull(Tier1Contract):

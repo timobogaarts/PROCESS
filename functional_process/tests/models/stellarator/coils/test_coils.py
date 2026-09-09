@@ -357,8 +357,7 @@ def _legacy_intersect_case():
 def _crossing_curve_case(rng, n, x_span=(0.05, 5.0), y_scale=(1.0, 5.0)):
     """A pair of tabulated curves on a shared x-grid, guaranteed to cross once.
 
-    `intersect`'s two real unknowns are whole arrays (`coils.md` flags this as the
-    reason it wasn't ported the first pass this file went through) -- `fuzz_bounds`
+    `intersect`'s two real unknowns are whole arrays -- `fuzz_bounds`
     handles array-valued arguments fine (each component drawn independently, see
     `_harness/sampling.py`), but independent per-component draws give no reason for two
     *independent* random curves to actually cross anywhere in their shared domain. A
@@ -471,7 +470,7 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     assert len(graph.definitions) == 2
     assert not graph.is_acyclic
     assert graph.declared == (node.problem_name,)
-    assert shape_of(graph[graph.problem]) == 'root-find'
+    assert shape_of(graph[graph.problem]) == "root-find"
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():

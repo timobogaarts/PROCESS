@@ -1,12 +1,11 @@
 """Harness cases for the ported subset of `process/models/physics/plasma_fields.py`
 (`PlasmaFields`, `.tokamak.plasma_fields`).
 
-Audit record: `functional_process/_audit/units/models/physics/plasma_fields.md`. Read it
-first for the "already ported" section (this file's `TotalMagneticField` node and the
-imported `calculate_total_field` formula predate this pass and are not re-tested here --
-that node has its own harness-free rationale documented at the top of the port module)
-and for "a genuine PROCESS ordering bug" (why `TotalMagneticFieldInboard`/`Outboard`
-deliberately do *not* reproduce `Physics.run()`'s one-call-stale read).
+This file's `TotalMagneticField` node and the imported `calculate_total_field` formula
+predate this pass and are not re-tested here -- that node has its own harness-free
+rationale documented at the top of the port module. `TotalMagneticFieldInboard`/
+`Outboard` deliberately do *not* reproduce `Physics.run()`'s one-call-stale read, a
+genuine PROCESS ordering bug.
 
 No `tests/unit/models/physics/test_plasma_fields.py` exists in `process/` to lift a
 legacy sample from -- checked, the file is absent. Legacy samples here instead call
