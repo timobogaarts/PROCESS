@@ -2,8 +2,8 @@
 
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
+    FromExactly,
     OutputInto,
 )
 
@@ -37,17 +37,13 @@ class SudoDensityLimit(WrapsFunction):
     nd_plasma_electrons_max = OutputInto(physics)
 
 
-class EcrhDensityLimit(ExplicitFunction):
+class EcrhDensityLimit(WrapsFunction):
     """cottax node: `calculate_ecrh_density_limit_parabolic`, ports declared."""
+
+    fn = calculate_ecrh_density_limit_parabolic
+
+    gyro_frequency_max = FromExactly(stellarator.max_gyrotron_frequency)
+    b_plasma_toroidal_on_axis = From(physics)
 
     dlimit_ecrh = OutputInto(stellarator)
     bt_max_ecrh = OutputInto(stellarator)
-
-    def __call__(
-        self,
-        max_gyrotron_frequency=From(stellarator),
-        b_plasma_toroidal_on_axis=From(physics),
-    ):
-        return calculate_ecrh_density_limit_parabolic(
-            max_gyrotron_frequency, b_plasma_toroidal_on_axis
-        )

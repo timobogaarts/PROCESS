@@ -3,6 +3,7 @@
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.paths import physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.l_h_transition import (
     calculate_hubbard2012_lower,
     calculate_hubbard2012_nominal,
@@ -62,127 +63,82 @@ class LHThresholdPower(ExplicitFunction):
     """The family that owns `.physics.p_l_h_threshold_mw`: one occupant per arm."""
 
 
-class Martin08NominalLHThresholdPower(LHThresholdPower):
+class Martin08NominalLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 6`."""
 
+    fn = calculate_martin08_nominal_threshold_power
+
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+
     p_l_h_threshold_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-    ):
-        return calculate_martin08_nominal_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-        )
 
-
-class Martin08UpperLHThresholdPower(LHThresholdPower):
+class Martin08UpperLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 7`."""
 
+    fn = calculate_martin08_upper_threshold_power
+
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+
     p_l_h_threshold_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-    ):
-        return calculate_martin08_upper_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-        )
 
-
-class Martin08LowerLHThresholdPower(LHThresholdPower):
+class Martin08LowerLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 8`."""
 
+    fn = calculate_martin08_lower_threshold_power
+
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+
     p_l_h_threshold_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-    ):
-        return calculate_martin08_lower_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-        )
 
-
-class Martin08AspectNominalLHThresholdPower(LHThresholdPower):
+class Martin08AspectNominalLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 19` -- the reference arm on `large_tokamak_eval.IN.DAT`."""
 
+    fn = calculate_martin08_aspect_nominal_threshold_power
+
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+    aspect = From(physics)
+
     p_l_h_threshold_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-        aspect=From(physics),
-    ):
-        return calculate_martin08_aspect_nominal_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-            aspect,
-        )
 
-
-class Martin08AspectUpperLHThresholdPower(LHThresholdPower):
+class Martin08AspectUpperLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 20`."""
 
+    fn = calculate_martin08_aspect_upper_threshold_power
+
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+    aspect = From(physics)
+
     p_l_h_threshold_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-        aspect=From(physics),
-    ):
-        return calculate_martin08_aspect_upper_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-            aspect,
-        )
 
-
-class Martin08AspectLowerLHThresholdPower(LHThresholdPower):
+class Martin08AspectLowerLHThresholdPower(LHThresholdPower, WrapsFunction):
     """`i_l_h_threshold == 21`."""
 
-    p_l_h_threshold_mw = OutputInto(physics)
+    fn = calculate_martin08_aspect_lower_threshold_power
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        a_plasma_surface=From(physics),
-        m_ions_total_amu=From(physics),
-        aspect=From(physics),
-    ):
-        return calculate_martin08_aspect_lower_threshold_power(
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            a_plasma_surface,
-            m_ions_total_amu,
-            aspect,
-        )
+    nd_plasma_electron_line = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    a_plasma_surface = From(physics)
+    m_ions_total_amu = From(physics)
+    aspect = From(physics)
+
+    p_l_h_threshold_mw = OutputInto(physics)

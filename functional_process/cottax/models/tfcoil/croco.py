@@ -5,6 +5,7 @@
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
+    FromExactly,
     OutputInto,
 )
 
@@ -13,6 +14,7 @@ from functional_process.cottax.models.tfcoil.superconducting import (
 )
 from functional_process.cottax.paths import superconducting_tfcoil, tfcoil
 from functional_process.cottax.stated import StatesValues
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.croco import (
     calculate_hazelton_zhai_rebco_croco_temperature_margin,
     croco_averaged_turn_geometry_from_current_per_turn,
@@ -34,11 +36,20 @@ class CrocoTurnGeometry(ExplicitFunction):
     """The family that owns the CroCo winding-pack turn geometry."""
 
 
-class CrocoAveragedTurnGeometryFromCurrentPerTurn(CrocoTurnGeometry):
+class CrocoAveragedTurnGeometryFromCurrentPerTurn(CrocoTurnGeometry, WrapsFunction):
     """Both turn-dimension input flags `False`.
 
     PROCESS's default and both ST files'.
     """
+
+    fn = croco_averaged_turn_geometry_from_current_per_turn
+
+    j_tf_wp = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    dx_tf_turn_steel = From(tfcoil)
+    dx_tf_turn_insulation = From(tfcoil)
+    layer_ins = From(tfcoil)
+    a_tf_wp_no_insulation = From(superconducting_tfcoil)
 
     a_tf_turn_insulation = OutputInto(tfcoil)
     n_tf_coil_turns = OutputInto(tfcoil)
@@ -48,46 +59,33 @@ class CrocoAveragedTurnGeometryFromCurrentPerTurn(CrocoTurnGeometry):
     dx_tf_turn_conduit_full_average = OutputInto(tfcoil)
     dx_tf_turn_cable_space_average = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        j_tf_wp=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        layer_ins=From(tfcoil),
-        a_tf_wp_no_insulation=From(superconducting_tfcoil),
-    ):
-        return croco_averaged_turn_geometry_from_current_per_turn(
-            j_tf_wp=j_tf_wp,
-            c_tf_turn=c_tf_turn,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            layer_ins=layer_ins,
-            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
-        )
 
-
-class CrocoCableSpaceProperties(ExplicitFunction):
+class CrocoCableSpaceProperties(WrapsFunction):
     """cottax node: `tf_turn_croco_cable_space_properties`."""
+
+    fn = croco_cable_space_properties
+
+    dx_tf_turn_conduit_full_average = From(tfcoil)
+    dx_tf_turn_steel = From(tfcoil)
 
     dia_tf_turn_croco_cable = OutputInto(superconducting_tfcoil)
     a_tf_turn_cable_space_no_void = OutputInto(tfcoil)
     a_tf_turn_cable_space_effective = OutputInto(superconducting_tfcoil)
     a_tf_turn_steel = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_turn_conduit_full_average=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-    ):
-        return croco_cable_space_properties(
-            dx_tf_turn_conduit_full_average=dx_tf_turn_conduit_full_average,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-        )
 
-
-class CrocoCableGeometry(ExplicitFunction):
+class CrocoCableGeometry(WrapsFunction):
     """cottax node: `superconductors.calculate_croco_cable_geometry`."""
+
+    fn = croco_cable_geometry
+
+    dia_croco_strand = FromExactly(superconducting_tfcoil.dia_tf_turn_croco_cable)
+    dx_croco_strand_copper = FromExactly(
+        superconducting_tfcoil.dx_tf_croco_strand_copper
+    )
+    dx_hts_tape_rebco = FromExactly(superconducting_tfcoil.dx_tf_hts_tape_rebco)
+    dx_hts_tape_copper = FromExactly(superconducting_tfcoil.dx_tf_hts_tape_copper)
+    dx_hts_tape_hastelloy = FromExactly(superconducting_tfcoil.dx_tf_hts_tape_hastelloy)
 
     dia_tf_croco_strand_tape_region = OutputInto(superconducting_tfcoil)
     n_tf_croco_strand_hts_tapes = OutputInto(superconducting_tfcoil)
@@ -99,22 +97,6 @@ class CrocoCableGeometry(ExplicitFunction):
     dr_tf_hts_tape = OutputInto(superconducting_tfcoil)
     dx_tf_hts_tape_total = OutputInto(superconducting_tfcoil)
     dx_tf_croco_strand_tape_stack = OutputInto(superconducting_tfcoil)
-
-    def __call__(
-        self,
-        dia_tf_turn_croco_cable=From(superconducting_tfcoil),
-        dx_tf_croco_strand_copper=From(superconducting_tfcoil),
-        dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
-        dx_tf_hts_tape_copper=From(superconducting_tfcoil),
-        dx_tf_hts_tape_hastelloy=From(superconducting_tfcoil),
-    ):
-        return croco_cable_geometry(
-            dia_croco_strand=dia_tf_turn_croco_cable,
-            dx_croco_strand_copper=dx_tf_croco_strand_copper,
-            dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
-            dx_hts_tape_copper=dx_tf_hts_tape_copper,
-            dx_hts_tape_hastelloy=dx_tf_hts_tape_hastelloy,
-        )
 
 
 class CrocoTurnCableSpaceExtraVoid(StatesValues):
@@ -131,8 +113,21 @@ class CrocoTurnCableSpaceExtraVoid(StatesValues):
     """
 
 
-class CrocoInboardAreasAndFractions(ExplicitFunction):
+class CrocoInboardAreasAndFractions(WrapsFunction):
     """cottax node: `tf_croco_inboard_areas_and_fractions`. No switch."""
+
+    fn = croco_inboard_areas_and_fractions
+
+    a_tf_turn_cable_space_no_void = From(tfcoil)
+    n_tf_coil_turns = From(tfcoil)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
+    a_tf_turn_insulation = From(tfcoil)
+    a_tf_turn_steel = From(tfcoil)
+    a_tf_coil_inboard_case = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    a_tf_inboard_total = From(tfcoil)
+    a_tf_wp_ground_insulation = From(superconducting_tfcoil)
+    a_tf_croco_strand = From(superconducting_tfcoil)
 
     a_tf_wp_coolant_channels = OutputInto(tfcoil)
     a_tf_wp_conductor = OutputInto(tfcoil)
@@ -144,49 +139,18 @@ class CrocoInboardAreasAndFractions(ExplicitFunction):
     a_tf_coil_inboard_insulation = OutputInto(superconducting_tfcoil)
     f_a_tf_coil_inboard_insulation = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        a_tf_turn_insulation=From(tfcoil),
-        a_tf_turn_steel=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        a_tf_inboard_total=From(tfcoil),
-        a_tf_wp_ground_insulation=From(superconducting_tfcoil),
-        a_tf_croco_strand=From(superconducting_tfcoil),
-    ):
-        return croco_inboard_areas_and_fractions(
-            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
-            n_tf_coil_turns=n_tf_coil_turns,
-            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-            a_tf_turn_insulation=a_tf_turn_insulation,
-            a_tf_turn_steel=a_tf_turn_steel,
-            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
-            n_tf_coils=n_tf_coils,
-            a_tf_inboard_total=a_tf_inboard_total,
-            a_tf_wp_ground_insulation=a_tf_wp_ground_insulation,
-            a_tf_croco_strand=a_tf_croco_strand,
-        )
 
-
-class CrocoTurnCableSpaceCoolingFraction(ExplicitFunction):
+class CrocoTurnCableSpaceCoolingFraction(WrapsFunction):
     """cottax node: the one live line of `run`'s inline copper block
     (`superconducting.py:3947-3955`).
     """
 
-    f_a_tf_turn_cable_space_cooling = OutputInto(superconducting_tfcoil)
+    fn = croco_turn_cable_space_cooling_fraction
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        a_tf_croco_strand=From(superconducting_tfcoil),
-    ):
-        return croco_turn_cable_space_cooling_fraction(
-            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
-            a_tf_croco_strand=a_tf_croco_strand,
-        )
+    a_tf_turn_cable_space_no_void = From(tfcoil)
+    a_tf_croco_strand = From(superconducting_tfcoil)
+
+    f_a_tf_turn_cable_space_cooling = OutputInto(superconducting_tfcoil)
 
 
 class CrocoSuperconductorProperties(ExplicitFunction):
@@ -206,53 +170,35 @@ class CrocoSuperconductorProperties(ExplicitFunction):
     )
 
 
-class HazeltonZhaiRebcoCrocoSuperconductorProperties(CrocoSuperconductorProperties):
+class HazeltonZhaiRebcoCrocoSuperconductorProperties(
+    CrocoSuperconductorProperties, WrapsFunction
+):
     """`i_tf_sc_mat == 9` *(live on both tracked ST files)*."""
 
-    def __call__(
-        self,
-        a_tf_turn=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        tftmp=From(tfcoil),
-        dr_tf_hts_tape=From(superconducting_tfcoil),
-        dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
-        dx_tf_hts_tape_total=From(superconducting_tfcoil),
-        a_tf_croco_strand=From(superconducting_tfcoil),
-    ):
-        return croco_superconductor_properties_hijc_rebco(
-            a_tf_turn=a_tf_turn,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            cur_tf_turn=c_tf_turn,
-            temp_tf_peak=tftmp,
-            dr_tf_hts_tape=dr_tf_hts_tape,
-            dx_tf_hts_tape_rebco=dx_tf_hts_tape_rebco,
-            dx_tf_hts_tape_total=dx_tf_hts_tape_total,
-            a_tf_croco_strand=a_tf_croco_strand,
-        )
+    fn = croco_superconductor_properties_hijc_rebco
+
+    a_tf_turn = From(tfcoil)
+    b_tf_inboard_peak = FromExactly(tfcoil.b_tf_inboard_peak_with_ripple)
+    cur_tf_turn = FromExactly(tfcoil.c_tf_turn)
+    temp_tf_peak = FromExactly(tfcoil.tftmp)
+    dr_tf_hts_tape = From(superconducting_tfcoil)
+    dx_tf_hts_tape_rebco = From(superconducting_tfcoil)
+    dx_tf_hts_tape_total = From(superconducting_tfcoil)
+    a_tf_croco_strand = From(superconducting_tfcoil)
 
 
-class HazeltonZhaiRebcoCrocoTemperatureMargin(TfSuperconductorTemperatureMargin):
+class HazeltonZhaiRebcoCrocoTemperatureMargin(
+    TfSuperconductorTemperatureMargin, WrapsFunction
+):
     """`i_tf_sc_mat == 9` -- constraint 36's read on a CroCo machine."""
 
-    def __call__(
-        self,
-        j_tf_superconductor=From(superconducting_tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        b_tf_superconductor_critical_zero_temp_strain=From(superconducting_tfcoil),
-        temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
-        dr_tf_hts_tape=From(superconducting_tfcoil),
-        dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
-        dx_tf_hts_tape_total=From(superconducting_tfcoil),
-        tftmp=From(tfcoil),
-    ):
-        return calculate_hazelton_zhai_rebco_croco_temperature_margin(
-            j_tf_superconductor,
-            b_tf_inboard_peak_with_ripple,
-            b_tf_superconductor_critical_zero_temp_strain,
-            temp_tf_superconductor_critical_zero_field_strain,
-            dr_tf_hts_tape,
-            dx_tf_hts_tape_rebco,
-            dx_tf_hts_tape_total,
-            tftmp,
-        )
+    fn = calculate_hazelton_zhai_rebco_croco_temperature_margin
+
+    j_tf_superconductor = From(superconducting_tfcoil)
+    b_tf_inboard_peak_with_ripple = From(tfcoil)
+    b_tf_superconductor_critical_zero_temp_strain = From(superconducting_tfcoil)
+    temp_tf_superconductor_critical_zero_field_strain = From(superconducting_tfcoil)
+    dr_tf_hts_tape = From(superconducting_tfcoil)
+    dx_tf_hts_tape_rebco = From(superconducting_tfcoil)
+    dx_tf_hts_tape_total = From(superconducting_tfcoil)
+    tftmp = From(tfcoil)

@@ -5,7 +5,6 @@
 import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
     FromExactly,
     ModelNamespace,
@@ -39,13 +38,15 @@ __all__ = [
 ]
 
 
-class GreenwaldDensityLimit(ExplicitFunction):
+class GreenwaldDensityLimit(WrapsFunction):
     """Unconditional producer of `.physics.nd_plasma_electron_max_array[6]`."""
 
-    nd_plasma_electron_max_array_7 = Output(physics.nd_plasma_electron_max_array[6])
+    fn = calculate_greenwald_density_limit
 
-    def __call__(self, plasma_current=From(physics), rminor=From(physics)):
-        return calculate_greenwald_density_limit(c_plasma=plasma_current, rminor=rminor)
+    c_plasma = FromExactly(physics.plasma_current)
+    rminor = From(physics)
+
+    nd_plasma_electron_max_array_7 = Output(physics.nd_plasma_electron_max_array[6])
 
 
 class EnforcedDensityLimitGreenwald(WrapsFunction):

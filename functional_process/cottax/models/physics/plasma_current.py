@@ -10,6 +10,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.paths import physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,
@@ -32,95 +33,68 @@ class PlasmaCurrentScaling(ExplicitFunction):
     """The family that owns `.physics.plasma_current` under `i_plasma_current`."""
 
 
-class Ipdg89PlasmaCurrent(PlasmaCurrentScaling):
+class Ipdg89PlasmaCurrent(PlasmaCurrentScaling, WrapsFunction):
     """`i_plasma_current == IPDG89_SCALING` (4) -- the arm `large_tokamak_eval` takes."""
+
+    fn = calculate_plasma_current_ipdg89
+
+    eps = From(physics)
+    kappa95 = From(physics)
+    triang95 = From(physics)
+    rminor = From(physics)
+    rmajor = From(physics)
+    q95 = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
 
     plasma_current = OutputInto(physics)
 
-    def __call__(
-        self,
-        eps=From(physics),
-        kappa95=From(physics),
-        triang95=From(physics),
-        rminor=From(physics),
-        rmajor=From(physics),
-        q95=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-    ):
-        return calculate_plasma_current_ipdg89(
-            eps=eps,
-            kappa95=kappa95,
-            triang95=triang95,
-            rminor=rminor,
-            rmajor=rmajor,
-            q95=q95,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-        )
 
-
-class FiestaStPlasmaCurrent(PlasmaCurrentScaling):
+class FiestaStPlasmaCurrent(PlasmaCurrentScaling, WrapsFunction):
     """`i_plasma_current == FIESTA_ST_SCALING` (9) -- the arm both tracked spherical
     tokamaks take (`spherical_tokamak_eval.IN.DAT:288`, `st_regression.IN.DAT`).
     """
 
+    fn = calculate_plasma_current_fiesta
+
+    eps = From(physics)
+    kappa = From(physics)
+    triang = From(physics)
+    rminor = From(physics)
+    rmajor = From(physics)
+    q95 = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+
     plasma_current = OutputInto(physics)
 
-    def __call__(
-        self,
-        eps=From(physics),
-        kappa=From(physics),
-        triang=From(physics),
-        rminor=From(physics),
-        rmajor=From(physics),
-        q95=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-    ):
-        return calculate_plasma_current_fiesta(
-            eps=eps,
-            kappa=kappa,
-            triang=triang,
-            rminor=rminor,
-            rmajor=rmajor,
-            q95=q95,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-        )
 
-
-class PlasmaCylindricalSafetyFactor(ExplicitFunction):
+class PlasmaCylindricalSafetyFactor(WrapsFunction):
     """cottax node: `qstar`, ports declared."""
 
-    qstar = OutputInto(physics)
+    fn = calculate_cylindrical_safety_factor
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        plasma_current=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        kappa95=From(physics),
-        triang95=From(physics),
-    ):
-        return calculate_cylindrical_safety_factor(
-            rmajor=rmajor,
-            rminor=rminor,
-            plasma_current=plasma_current,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-            kappa95=kappa95,
-            triang95=triang95,
-        )
+    rmajor = From(physics)
+    rminor = From(physics)
+    plasma_current = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    kappa95 = From(physics)
+    triang95 = From(physics)
+
+    qstar = OutputInto(physics)
 
 
 class CurrentProfileIndexScaling(ExplicitFunction):
     """The family that owns `.physics.alphaj` under `i_alphaj` (`physics.py:334-348`)."""
 
 
-class WessonCurrentProfileIndex(CurrentProfileIndexScaling):
+class WessonCurrentProfileIndex(CurrentProfileIndexScaling, WrapsFunction):
     """`i_alphaj == WESSON` (1) -- `large_tokamak_eval.IN.DAT:275`."""
 
-    alphaj = OutputInto(physics)
+    fn = calculate_current_profile_index_wesson
 
-    def __call__(self, qstar=From(physics), q0=From(physics)):
-        return calculate_current_profile_index_wesson(qstar, q0)
+    qstar = From(physics)
+    q0 = From(physics)
+
+    alphaj = OutputInto(physics)
 
 
 class NormalisedInternalInductanceScaling(ExplicitFunction):
@@ -129,13 +103,14 @@ class NormalisedInternalInductanceScaling(ExplicitFunction):
     """
 
 
-class WessonInternalInductance(NormalisedInternalInductanceScaling):
+class WessonInternalInductance(NormalisedInternalInductanceScaling, WrapsFunction):
     """`i_ind_plasma_internal_norm == WESSON` (1) -- `large_tokamak_eval.IN.DAT:311`."""
 
-    ind_plasma_internal_norm = OutputInto(physics)
+    fn = calculate_internal_inductance_wesson
 
-    def __call__(self, alphaj=From(physics)):
-        return calculate_internal_inductance_wesson(alphaj)
+    alphaj = From(physics)
+
+    ind_plasma_internal_norm = OutputInto(physics)
 
 
 class TokamakPlasmaCurrent(ModelNamespace):

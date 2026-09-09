@@ -14,6 +14,7 @@ from functional_process.cottax.models.pfcoil import (
     PFCoilTopology,
 )
 from functional_process.cottax.paths import pf_coil, superconducting_tfcoil, tfcoil
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.superconductor import (
     calculate_cs_critical_current_densities,
     calculate_cs_critical_current_density_iter_nb3sn,
@@ -107,24 +108,17 @@ class CSTemperatureMarginWstNb3Sn(CSTemperatureMarginIterNb3Sn):
     _critical_surface = staticmethod(calculate_cs_temperature_margin_wst_nb3sn)
 
 
-class PFStrandCriticalCurrentDensity(ExplicitFunction):
+class PFStrandCriticalCurrentDensity(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.strand_critical_current`."""
 
-    j_crit_str_pf = OutputInto(pf_coil)
+    fn = calculate_pf_strand_critical_current_density
 
-    def __call__(
-        self,
-        b_pf_coil_peak_last=FromExactly(pf_coil.b_pf_coil_peak[N_PF_COILS - 1]),
-        bpf2_last=FromExactly(pf_coil.bpf2[N_PF_COILS - 1]),
-        tftmp=From(tfcoil),
-        fcupfsu=From(pf_coil),
-    ):
-        return calculate_pf_strand_critical_current_density(
-            b_pf_coil_peak=b_pf_coil_peak_last,
-            bpf2=bpf2_last,
-            temp_pf_peak_field=tftmp,
-            fcupfsu=fcupfsu,
-        )
+    b_pf_coil_peak = FromExactly(pf_coil.b_pf_coil_peak[N_PF_COILS - 1])
+    bpf2 = FromExactly(pf_coil.bpf2[N_PF_COILS - 1])
+    temp_pf_peak_field = FromExactly(tfcoil.tftmp)
+    fcupfsu = From(pf_coil)
+
+    j_crit_str_pf = OutputInto(pf_coil)
 
 
 class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(ExplicitFunction):

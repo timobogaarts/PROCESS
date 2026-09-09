@@ -3,6 +3,7 @@
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
+    FromExactly,
     OutputInto,
 )
 
@@ -32,20 +33,15 @@ class SurfaceAveragedPoloidalField(ExplicitFunction):
     """The family that owns `.physics.b_plasma_surface_poloidal_average`."""
 
 
-class SurfaceAveragedPoloidalFieldAmperes(SurfaceAveragedPoloidalField):
+class SurfaceAveragedPoloidalFieldAmperes(SurfaceAveragedPoloidalField, WrapsFunction):
     """`i_plasma_current != PENG_DIVERTOR_SCALING`: Ampere's law over the perimeter."""
 
-    b_plasma_surface_poloidal_average = OutputInto(physics)
+    fn = calculate_surface_averaged_poloidal_field_amperes
 
-    def __call__(
-        self,
-        plasma_current=From(physics),
-        len_plasma_poloidal=From(physics),
-    ):
-        return calculate_surface_averaged_poloidal_field_amperes(
-            plasma_current,
-            len_plasma_poloidal,
-        )
+    cur_plasma = FromExactly(physics.plasma_current)
+    len_plasma_poloidal = From(physics)
+
+    b_plasma_surface_poloidal_average = OutputInto(physics)
 
 
 class UnclippedRadiationPowers(WrapsFunction):
@@ -133,57 +129,37 @@ class PulseRampTimesContinuousDefault(PulseRampTimes, WrapsFunction):
     t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
 
 
-class PlasmaEnergyFromBeta(ExplicitFunction):
+class PlasmaEnergyFromBeta(WrapsFunction):
     """cottax node: `calculate_plasma_energy_from_beta`, total-beta binding."""
+
+    fn = calculate_plasma_energy_from_beta
+
+    beta = FromExactly(physics.beta_total_vol_avg)
+    b_field = FromExactly(physics.b_plasma_total)
+    vol_plasma = From(physics)
 
     e_plasma_beta = OutputInto(physics)
 
-    def __call__(
-        self,
-        beta_total_vol_avg=From(physics),
-        b_plasma_total=From(physics),
-        vol_plasma=From(physics),
-    ):
-        return calculate_plasma_energy_from_beta(
-            beta_total_vol_avg,
-            b_plasma_total,
-            vol_plasma,
-        )
 
-
-class PlasmaOhmicHeating(ExplicitFunction):
+class PlasmaOhmicHeating(WrapsFunction):
     """cottax node: `plasma_ohmic_heating`."""
+
+    fn = plasma_ohmic_heating
+
+    f_c_plasma_inductive = From(physics)
+    kappa95 = From(physics)
+    plasma_current = From(physics)
+    rmajor = From(physics)
+    rminor = From(physics)
+    temp_plasma_electron_density_weighted_kev = From(physics)
+    vol_plasma = From(physics)
+    zeff = FromExactly(physics.n_charge_plasma_effective_vol_avg)
+    plasma_res_factor = From(physics)
 
     pden_plasma_ohmic_mw = OutputInto(physics)
     p_plasma_ohmic_mw = OutputInto(physics)
     f_res_plasma_neo = OutputInto(physics)
     res_plasma = OutputInto(physics)
-
-    def __call__(
-        self,
-        f_c_plasma_inductive=From(physics),
-        kappa95=From(physics),
-        plasma_current=From(physics),
-        rmajor=From(physics),
-        rminor=From(physics),
-        temp_plasma_electron_density_weighted_kev=From(physics),
-        vol_plasma=From(physics),
-        n_charge_plasma_effective_vol_avg=From(physics),
-        plasma_res_factor=From(physics),
-    ):
-        return plasma_ohmic_heating(
-            f_c_plasma_inductive=f_c_plasma_inductive,
-            kappa95=kappa95,
-            plasma_current=plasma_current,
-            rmajor=rmajor,
-            rminor=rminor,
-            temp_plasma_electron_density_weighted_kev=(
-                temp_plasma_electron_density_weighted_kev
-            ),
-            vol_plasma=vol_plasma,
-            zeff=n_charge_plasma_effective_vol_avg,
-            plasma_res_factor=plasma_res_factor,
-        )
 
 
 class CoulombLogarithmIonElectron(WrapsFunction):
@@ -243,22 +219,16 @@ class ToroidalBeta(WrapsFunction):
     beta_toroidal_vol_avg = OutputInto(physics)
 
 
-class PoloidalBeta(ExplicitFunction):
+class PoloidalBeta(WrapsFunction):
     """cottax node: `calculate_poloidal_beta`."""
 
-    beta_poloidal_vol_avg = OutputInto(physics)
+    fn = calculate_poloidal_beta
 
-    def __call__(
-        self,
-        b_plasma_total=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-        beta_total_vol_avg=From(physics),
-    ):
-        return calculate_poloidal_beta(
-            b_plasma_total,
-            b_plasma_surface_poloidal_average,
-            beta_total_vol_avg,
-        )
+    b_plasma_total = From(physics)
+    b_plasma_poloidal_average = FromExactly(physics.b_plasma_surface_poloidal_average)
+    beta = FromExactly(physics.beta_total_vol_avg)
+
+    beta_poloidal_vol_avg = OutputInto(physics)
 
 
 class ThermalBeta(WrapsFunction):

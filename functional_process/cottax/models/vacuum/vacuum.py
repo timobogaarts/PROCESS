@@ -22,6 +22,7 @@ from functional_process.cottax.paths import (
     times,
     vacuum,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
@@ -50,38 +51,24 @@ from functional_process.models.vacuum.vacuum import (
 )
 
 
-class VacuumPumpingSimple(ExplicitFunction):
+class VacuumPumpingSimple(WrapsFunction):
     """cottax node: `calculate_vacuum_pumping_simple`'s combined pump count."""
 
-    n_iter_vacuum_pumps = OutputInto(vacuum)
+    fn = calculate_vacuum_pumping_simple
 
-    def __call__(
-        self,
-        molflow_plasma_fuelling_required=From(physics),
-        molflow_vac_pumps=From(vacuum),
-        volflow_vac_pumps_max=From(vacuum),
-        f_a_vac_pump_port_plasma_surface=From(vacuum),
-        f_volflow_vac_pumps_impedance=From(vacuum),
-        a_plasma_surface=From(physics),
-        n_tf_coils=From(tfcoil),
-        outgasfactor=From(vacuum),
-        pres_vv_chamber_base=From(vacuum),
-        outgasindex=From(vacuum),
-        t_plant_pulse_dwell=From(times),
-    ):
-        return calculate_vacuum_pumping_simple(
-            molflow_plasma_fuelling_required,
-            molflow_vac_pumps,
-            volflow_vac_pumps_max,
-            f_a_vac_pump_port_plasma_surface,
-            f_volflow_vac_pumps_impedance,
-            a_plasma_surface,
-            n_tf_coils,
-            outgasfactor,
-            pres_vv_chamber_base,
-            outgasindex,
-            t_plant_pulse_dwell,
-        )
+    molflow_plasma_fuelling_required = From(physics)
+    molflow_vac_pumps = From(vacuum)
+    volflow_vac_pumps_max = From(vacuum)
+    f_a_vac_pump_port_plasma_surface = From(vacuum)
+    f_volflow_vac_pumps_impedance = From(vacuum)
+    a_plasma_surface = From(physics)
+    n_tf_coils = From(tfcoil)
+    outgasfactor = From(vacuum)
+    pres_vv_chamber_base = From(vacuum)
+    outgasindex = From(vacuum)
+    t_plant_pulse_dwell = From(times)
+
+    n_iter_vacuum_pumps = OutputInto(vacuum)
 
 
 class DuctDiameterRootFind(ImplicitFunction):
@@ -101,20 +88,18 @@ class DuctDiameterRootFind(ImplicitFunction):
         return duct_diameter_residual(d_duct, l1, l2, l3, xmult_i, ceff_i)
 
 
-class DuctFeasibilityConditions(ExplicitFunction):
+class DuctFeasibilityConditions(WrapsFunction):
     """cottax node: the two inequality residuals `DuctFeasibility` (below) reads."""
+
+    fn = calculate_duct_feasibility_conditions
+
+    d_duct = From(vacuum)
+    a1max = From(vacuum)
+    ceff_i = From(vacuum)
+    s_i = From(vacuum)
 
     duct_fits_residual = OutputInto(vacuum)
     pumping_speed_floor_residual = OutputInto(vacuum)
-
-    def __call__(
-        self,
-        d_duct=From(vacuum),
-        a1max=From(vacuum),
-        ceff_i=From(vacuum),
-        s_i=From(vacuum),
-    ):
-        return calculate_duct_feasibility_conditions(d_duct, a1max, ceff_i, s_i)
 
 
 DuctFeasibility = Feasibility(
@@ -198,10 +183,33 @@ class VacuumVesselElliptical(ExplicitFunction):
     """
 
 
-class VacuumVesselEllipticalSingleNull(VacuumVesselElliptical):
+class VacuumVesselEllipticalSingleNull(VacuumVesselElliptical, WrapsFunction):
     """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 1` -- the
     combination live on `large_tokamak_eval.IN.DAT` (see module comment above).
     """
+
+    fn = calculate_vacuum_vessel_outputs
+
+    z_tf_inside_half = From(build)
+    dz_shld_vv_gap = From(build)
+    dz_vv_lower = From(build)
+    dz_blkt_upper = From(build)
+    dz_shld_upper = From(build)
+    z_plasma_xpoint_upper = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_outboard = From(build)
+    rmajor = From(physics)
+    rminor = From(physics)
+    triang = From(physics)
+    r_shld_inboard_inner = From(build)
+    r_shld_outboard_outer = From(build)
+    dr_vv_inboard = From(build)
+    dr_vv_outboard = From(build)
+    dz_vv_upper = From(build)
+    fvoldw = From(fwbs)
+    den_steel = From(fwbs)
 
     dz_vv_half = OutputInto(blanket)
     vol_vv_inboard = OutputInto(blanket)
@@ -209,133 +217,58 @@ class VacuumVesselEllipticalSingleNull(VacuumVesselElliptical):
     vol_vv = OutputInto(fwbs)
     m_vv = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        dz_shld_vv_gap=From(build),
-        dz_vv_lower=From(build),
-        dz_blkt_upper=From(build),
-        dz_shld_upper=From(build),
-        z_plasma_xpoint_upper=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_outboard=From(build),
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_vv_inboard=From(build),
-        dr_vv_outboard=From(build),
-        dz_vv_upper=From(build),
-        fvoldw=From(fwbs),
-        den_steel=From(fwbs),
-    ):
-        return calculate_vacuum_vessel_outputs(
-            z_tf_inside_half=z_tf_inside_half,
-            dz_shld_vv_gap=dz_shld_vv_gap,
-            dz_vv_lower=dz_vv_lower,
-            dz_blkt_upper=dz_blkt_upper,
-            dz_shld_upper=dz_shld_upper,
-            z_plasma_xpoint_upper=z_plasma_xpoint_upper,
-            dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
-            dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
-            dr_fw_inboard=dr_fw_inboard,
-            dr_fw_outboard=dr_fw_outboard,
-            rmajor=rmajor,
-            rminor=rminor,
-            triang=triang,
-            r_shld_inboard_inner=r_shld_inboard_inner,
-            r_shld_outboard_outer=r_shld_outboard_outer,
-            dr_vv_inboard=dr_vv_inboard,
-            dr_vv_outboard=dr_vv_outboard,
-            dz_vv_upper=dz_vv_upper,
-            fvoldw=fvoldw,
-            den_steel=den_steel,
-        )
 
-
-class VacuumVesselEllipticalDoubleNull(VacuumVesselElliptical):
+class VacuumVesselEllipticalDoubleNull(VacuumVesselElliptical, WrapsFunction):
     """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 2` -- the
     value `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` derive from
     `i_single_null = 0`.
     """
 
+    fn = calculate_vacuum_vessel_outputs_double_null
+
+    z_tf_inside_half = From(build)
+    dz_shld_vv_gap = From(build)
+    dz_vv_lower = From(build)
+    rmajor = From(physics)
+    rminor = From(physics)
+    triang = From(physics)
+    r_shld_inboard_inner = From(build)
+    r_shld_outboard_outer = From(build)
+    dr_vv_inboard = From(build)
+    dr_vv_outboard = From(build)
+    dz_vv_upper = From(build)
+    fvoldw = From(fwbs)
+    den_steel = From(fwbs)
+
     dz_vv_half = OutputInto(blanket)
     vol_vv_inboard = OutputInto(blanket)
     vol_vv_outboard = OutputInto(blanket)
     vol_vv = OutputInto(fwbs)
     m_vv = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        dz_shld_vv_gap=From(build),
-        dz_vv_lower=From(build),
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_vv_inboard=From(build),
-        dr_vv_outboard=From(build),
-        dz_vv_upper=From(build),
-        fvoldw=From(fwbs),
-        den_steel=From(fwbs),
-    ):
-        return calculate_vacuum_vessel_outputs_double_null(
-            z_tf_inside_half=z_tf_inside_half,
-            dz_shld_vv_gap=dz_shld_vv_gap,
-            dz_vv_lower=dz_vv_lower,
-            rmajor=rmajor,
-            rminor=rminor,
-            triang=triang,
-            r_shld_inboard_inner=r_shld_inboard_inner,
-            r_shld_outboard_outer=r_shld_outboard_outer,
-            dr_vv_inboard=dr_vv_inboard,
-            dr_vv_outboard=dr_vv_outboard,
-            dz_vv_upper=dz_vv_upper,
-            fvoldw=fvoldw,
-            den_steel=den_steel,
-        )
 
-
-class VacuumVesselDShapedDoubleNull(VacuumVesselElliptical):
+class VacuumVesselDShapedDoubleNull(VacuumVesselElliptical, WrapsFunction):
     """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 2` **and** the
     D-shaped shape arm -- the configuration live on `spherical_tokamak_eval.IN.DAT` and
     `st_regression.IN.DAT` (`i_single_null = 0`; `itart = 1` and `i_fw_blkt_vv_shape =
     1`, either of which alone selects the D-shaped arm).
     """
 
+    fn = calculate_vacuum_vessel_outputs_dshaped_double_null
+
+    z_tf_inside_half = From(build)
+    dz_shld_vv_gap = From(build)
+    dz_vv_lower = From(build)
+    r_shld_inboard_inner = From(build)
+    r_shld_outboard_outer = From(build)
+    dr_vv_inboard = From(build)
+    dr_vv_outboard = From(build)
+    dz_vv_upper = From(build)
+    fvoldw = From(fwbs)
+    den_steel = From(fwbs)
+
     dz_vv_half = OutputInto(blanket)
     vol_vv_inboard = OutputInto(blanket)
     vol_vv_outboard = OutputInto(blanket)
     vol_vv = OutputInto(fwbs)
     m_vv = OutputInto(fwbs)
-
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        dz_shld_vv_gap=From(build),
-        dz_vv_lower=From(build),
-        r_shld_inboard_inner=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_vv_inboard=From(build),
-        dr_vv_outboard=From(build),
-        dz_vv_upper=From(build),
-        fvoldw=From(fwbs),
-        den_steel=From(fwbs),
-    ):
-        return calculate_vacuum_vessel_outputs_dshaped_double_null(
-            z_tf_inside_half=z_tf_inside_half,
-            dz_shld_vv_gap=dz_shld_vv_gap,
-            dz_vv_lower=dz_vv_lower,
-            r_shld_inboard_inner=r_shld_inboard_inner,
-            r_shld_outboard_outer=r_shld_outboard_outer,
-            dr_vv_inboard=dr_vv_inboard,
-            dr_vv_outboard=dr_vv_outboard,
-            dz_vv_upper=dz_vv_upper,
-            fvoldw=fvoldw,
-            den_steel=den_steel,
-        )

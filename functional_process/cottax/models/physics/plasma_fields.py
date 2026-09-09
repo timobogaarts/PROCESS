@@ -5,8 +5,8 @@ field `Physics.run` derives from them.
 import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
+    FromExactly,
     ModelNamespace,
     OutputInto,
 )
@@ -63,34 +63,26 @@ class PlasmaOutboardToroidalField(WrapsFunction):
     b_plasma_outboard_toroidal = OutputInto(physics)
 
 
-class TotalMagneticFieldInboard(ExplicitFunction):
+class TotalMagneticFieldInboard(WrapsFunction):
     """`physics.py:386-392`, the inboard total field."""
+
+    fn = calculate_total_field
+
+    b_plasma_toroidal_on_axis = FromExactly(physics.b_plasma_inboard_toroidal)
+    b_plasma_surface_poloidal_average = From(physics)
 
     b_plasma_inboard_total = OutputInto(physics)
 
-    def __call__(
-        self,
-        b_plasma_inboard_toroidal=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-    ):
-        return calculate_total_field(
-            b_plasma_inboard_toroidal, b_plasma_surface_poloidal_average
-        )
 
-
-class TotalMagneticFieldOutboard(ExplicitFunction):
+class TotalMagneticFieldOutboard(WrapsFunction):
     """`physics.py:378-384`, the outboard total field."""
 
-    b_plasma_outboard_total = OutputInto(physics)
+    fn = calculate_total_field
 
-    def __call__(
-        self,
-        b_plasma_outboard_toroidal=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-    ):
-        return calculate_total_field(
-            b_plasma_outboard_toroidal, b_plasma_surface_poloidal_average
-        )
+    b_plasma_toroidal_on_axis = FromExactly(physics.b_plasma_outboard_toroidal)
+    b_plasma_surface_poloidal_average = From(physics)
+
+    b_plasma_outboard_total = OutputInto(physics)
 
 
 class PlasmaFields(ModelNamespace):

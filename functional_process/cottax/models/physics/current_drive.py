@@ -8,6 +8,7 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.cottax.paths import current_drive, heat_transport, physics
 from functional_process.cottax.stated import StatesValues
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.current_drive import (
     calculate_current_drive_ecrh_primary_no_secondary,
     calculate_current_drive_freethy_ecrh_primary_no_secondary,
@@ -32,22 +33,16 @@ class HcdPrimaryEfficiency(ExplicitFunction):
     """The family that owns `.current_drive.eta_cd_hcd_primary`: one occupant per model."""
 
 
-class HcdPrimaryEfficiencyUserInputEcrh(HcdPrimaryEfficiency):
+class HcdPrimaryEfficiencyUserInputEcrh(HcdPrimaryEfficiency, WrapsFunction):
     """`i_hcd_primary == 10` (`USER_INPUT_ELECTRON_CYCLOTRON`)."""
 
-    eta_cd_hcd_primary = OutputInto(current_drive)
+    fn = user_input_electron_cyclotron_efficiency
 
-    def __call__(
-        self,
-        eta_cd_norm_ecrh=From(current_drive),
-        nd_plasma_electrons_vol_avg=From(physics),
-        rmajor=From(physics),
-    ):
-        return user_input_electron_cyclotron_efficiency(
-            eta_cd_norm_ecrh=eta_cd_norm_ecrh,
-            nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
-            rmajor=rmajor,
-        )
+    eta_cd_norm_ecrh = From(current_drive)
+    nd_plasma_electrons_vol_avg = From(physics)
+    rmajor = From(physics)
+
+    eta_cd_hcd_primary = OutputInto(current_drive)
 
 
 class HcdPrimaryEfficiencyFreethyEcrhOMode(HcdPrimaryEfficiency):
@@ -89,43 +84,30 @@ class HcdSecondaryHeatingNone(HcdSecondaryHeating, StatesValues):
     p_hcd_secondary_electric_mw = OutputInto(heat_transport)
 
 
-class HcdSecondaryDrivenCurrent(ExplicitFunction):
+class HcdSecondaryDrivenCurrent(WrapsFunction):
     """cottax node: `hcd_secondary_driven_current`, ports declared."""
+
+    fn = hcd_secondary_driven_current
+
+    eta_cd_hcd_secondary = From(current_drive)
+    p_hcd_secondary_injected_mw = From(current_drive)
+    plasma_current = From(physics)
 
     c_hcd_secondary_driven = OutputInto(current_drive)
     f_c_plasma_hcd_secondary = OutputInto(current_drive)
 
-    def __call__(
-        self,
-        eta_cd_hcd_secondary=From(current_drive),
-        p_hcd_secondary_injected_mw=From(current_drive),
-        plasma_current=From(physics),
-    ):
-        return hcd_secondary_driven_current(
-            eta_cd_hcd_secondary=eta_cd_hcd_secondary,
-            p_hcd_secondary_injected_mw=p_hcd_secondary_injected_mw,
-            plasma_current=plasma_current,
-        )
 
-
-class HcdPrimaryInjectedPower(ExplicitFunction):
+class HcdPrimaryInjectedPower(WrapsFunction):
     """cottax node: `hcd_primary_injected_power_mw`, ports declared."""
 
-    p_hcd_primary_injected_mw = OutputInto(current_drive)
+    fn = hcd_primary_injected_power_mw
 
-    def __call__(
-        self,
-        f_c_plasma_auxiliary=From(physics),
-        f_c_plasma_hcd_secondary=From(current_drive),
-        plasma_current=From(physics),
-        eta_cd_hcd_primary=From(current_drive),
-    ):
-        return hcd_primary_injected_power_mw(
-            f_c_plasma_auxiliary=f_c_plasma_auxiliary,
-            f_c_plasma_hcd_secondary=f_c_plasma_hcd_secondary,
-            plasma_current=plasma_current,
-            eta_cd_hcd_primary=eta_cd_hcd_primary,
-        )
+    f_c_plasma_auxiliary = From(physics)
+    f_c_plasma_hcd_secondary = From(current_drive)
+    plasma_current = From(physics)
+    eta_cd_hcd_primary = From(current_drive)
+
+    p_hcd_primary_injected_mw = OutputInto(current_drive)
 
 
 class HcdPrimaryPowers(ExplicitFunction):
@@ -157,24 +139,17 @@ class HcdPrimaryPowersElectronCyclotronNoSecondary(HcdPrimaryPowers):
         )
 
 
-class HcdInjectedPowerTotal(ExplicitFunction):
+class HcdInjectedPowerTotal(WrapsFunction):
     """cottax node: `hcd_injected_power_total_mw`, ports declared. Switch independent."""
 
-    p_hcd_injected_total_mw = OutputInto(current_drive)
+    fn = hcd_injected_power_total_mw
 
-    def __call__(
-        self,
-        p_hcd_primary_injected_mw=From(current_drive),
-        p_hcd_primary_extra_heat_mw=From(current_drive),
-        p_hcd_secondary_injected_mw=From(current_drive),
-        p_hcd_secondary_extra_heat_mw=From(current_drive),
-    ):
-        return hcd_injected_power_total_mw(
-            p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
-            p_hcd_primary_extra_heat_mw=p_hcd_primary_extra_heat_mw,
-            p_hcd_secondary_injected_mw=p_hcd_secondary_injected_mw,
-            p_hcd_secondary_extra_heat_mw=p_hcd_secondary_extra_heat_mw,
-        )
+    p_hcd_primary_injected_mw = From(current_drive)
+    p_hcd_primary_extra_heat_mw = From(current_drive)
+    p_hcd_secondary_injected_mw = From(current_drive)
+    p_hcd_secondary_extra_heat_mw = From(current_drive)
+
+    p_hcd_injected_total_mw = OutputInto(current_drive)
 
 
 class HcdElectricTotal(ExplicitFunction):
@@ -214,21 +189,14 @@ class HcdElectricTotalIgnited(HcdElectricTotal):
         )
 
 
-class FusionGain(ExplicitFunction):
+class FusionGain(WrapsFunction):
     """cottax node: `fusion_gain`, ports declared."""
 
-    big_q_plasma = OutputInto(current_drive)
+    fn = fusion_gain
 
-    def __call__(
-        self,
-        p_fusion_total_mw=From(physics),
-        p_hcd_injected_total_mw=From(current_drive),
-        p_beam_orbit_loss_mw=From(current_drive),
-        p_plasma_ohmic_mw=From(physics),
-    ):
-        return fusion_gain(
-            p_fusion_total_mw=p_fusion_total_mw,
-            p_hcd_injected_total_mw=p_hcd_injected_total_mw,
-            p_beam_orbit_loss_mw=p_beam_orbit_loss_mw,
-            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
-        )
+    p_fusion_total_mw = From(physics)
+    p_hcd_injected_total_mw = From(current_drive)
+    p_beam_orbit_loss_mw = From(current_drive)
+    p_plasma_ohmic_mw = From(physics)
+
+    big_q_plasma = OutputInto(current_drive)

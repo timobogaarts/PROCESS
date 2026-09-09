@@ -1265,106 +1265,69 @@ class IterNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
         )
 
 
-class UserDefinedNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
+class UserDefinedNb3snCiccSuperconductorProperties(
+    CiccSuperconductorProperties, WrapsFunction
+):
     """`i_tf_sc_mat == 4` -- the ITER fit with `(bcritsc, tcritsc)` read from input."""
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
-        a_tf_turn=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        str_wp=From(tfcoil),
-        tftmp=From(tfcoil),
-        bcritsc=From(tfcoil),
-        tcritsc=From(tfcoil),
-    ):
-        return cicc_superconductor_properties_itersc(
-            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
-            a_tf_turn=a_tf_turn,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            c_tf_turn=c_tf_turn,
-            strain=str_wp,
-            temp_tf_coolant_peak_field=tftmp,
-            b_c20max=bcritsc,
-            temp_c0max=tcritsc,
-        )
+    fn = cicc_superconductor_properties_itersc
+
+    a_tf_turn_cable_space_effective = From(superconducting_tfcoil)
+    a_tf_turn = From(tfcoil)
+    b_tf_inboard_peak = FromExactly(tfcoil.b_tf_inboard_peak_with_ripple)
+    f_a_tf_turn_cable_copper = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    strain = FromExactly(tfcoil.str_wp)
+    temp_tf_coolant_peak_field = FromExactly(tfcoil.tftmp)
+    b_c20max = FromExactly(tfcoil.bcritsc)
+    temp_c0max = FromExactly(tfcoil.tcritsc)
 
 
-class WstNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
+class WstNb3snCiccSuperconductorProperties(CiccSuperconductorProperties, WrapsFunction):
     """`i_tf_sc_mat == 5` -- `low_aspect_ratio_DEMO.IN.DAT:910`'s arm."""
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
-        a_tf_turn=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        str_wp=From(tfcoil),
-        tftmp=From(tfcoil),
-    ):
-        return cicc_superconductor_properties_wst_nb3sn(
-            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
-            a_tf_turn=a_tf_turn,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            c_tf_turn=c_tf_turn,
-            strain=str_wp,
-            temp_tf_coolant_peak_field=tftmp,
-        )
+    fn = cicc_superconductor_properties_wst_nb3sn
+
+    a_tf_turn_cable_space_effective = From(superconducting_tfcoil)
+    a_tf_turn = From(tfcoil)
+    b_tf_inboard_peak = FromExactly(tfcoil.b_tf_inboard_peak_with_ripple)
+    f_a_tf_turn_cable_copper = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    strain = FromExactly(tfcoil.str_wp)
+    temp_tf_coolant_peak_field = FromExactly(tfcoil.tftmp)
 
 
-class OldLubellNbtiCiccSuperconductorProperties(CiccSuperconductorProperties):
+class OldLubellNbtiCiccSuperconductorProperties(
+    CiccSuperconductorProperties, WrapsFunction
+):
     """`i_tf_sc_mat == 3` -- and the arm that reads **no strain**."""
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
-        a_tf_turn=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        tftmp=From(tfcoil),
-    ):
-        return cicc_superconductor_properties_lubell_nbti(
-            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
-            a_tf_turn=a_tf_turn,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            c_tf_turn=c_tf_turn,
-            temp_tf_coolant_peak_field=tftmp,
-        )
+    fn = cicc_superconductor_properties_lubell_nbti
+
+    a_tf_turn_cable_space_effective = From(superconducting_tfcoil)
+    a_tf_turn = From(tfcoil)
+    b_tf_inboard_peak = FromExactly(tfcoil.b_tf_inboard_peak_with_ripple)
+    f_a_tf_turn_cable_copper = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    temp_tf_coolant_peak_field = FromExactly(tfcoil.tftmp)
 
 
-class DurhamNbtiCiccSuperconductorProperties(CiccSuperconductorProperties):
+class DurhamNbtiCiccSuperconductorProperties(
+    CiccSuperconductorProperties, WrapsFunction
+):
     """`i_tf_sc_mat == 7` -- Durham Ginzburg-Landau NbTi."""
 
-    def __call__(
-        self,
-        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
-        a_tf_turn=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        str_wp=From(tfcoil),
-        tftmp=From(tfcoil),
-        b_crit_upper_nbti=From(tfcoil),
-        t_crit_nbti=From(tfcoil),
-    ):
-        return cicc_superconductor_properties_durham_nbti(
-            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
-            a_tf_turn=a_tf_turn,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            c_tf_turn=c_tf_turn,
-            strain=str_wp,
-            temp_tf_coolant_peak_field=tftmp,
-            b_crit_upper_nbti=b_crit_upper_nbti,
-            t_crit_nbti=t_crit_nbti,
-        )
+    fn = cicc_superconductor_properties_durham_nbti
+
+    a_tf_turn_cable_space_effective = From(superconducting_tfcoil)
+    a_tf_turn = From(tfcoil)
+    b_tf_inboard_peak = FromExactly(tfcoil.b_tf_inboard_peak_with_ripple)
+    f_a_tf_turn_cable_copper = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    strain = FromExactly(tfcoil.str_wp)
+    temp_tf_coolant_peak_field = FromExactly(tfcoil.tftmp)
+    b_crit_upper_nbti = From(tfcoil)
+    t_crit_nbti = From(tfcoil)
 
 
 class TfSuperconductorTemperatureMargin(ExplicitFunction):

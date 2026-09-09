@@ -6,6 +6,7 @@ import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
+    FromExactly,
     OutputInto,
 )
 
@@ -153,29 +154,20 @@ class CoilCoilToroidalGap(WrapsFunction):
     toroidalgap = OutputInto(tfcoil)
 
 
-class CoilsSummaryVariables(ExplicitFunction):
+class CoilsSummaryVariables(WrapsFunction):
+    fn = calculate_coils_summary_variables
+
+    n_tf_coils = From(tfcoil)
+    a_tf_leg_outboard = From(tfcoil)
+    coilcurrent = From(stellarator)
+    r_coil_major = From(stellarator)
+    r_coil_minor = From(stellarator)
+    awp_rad = FromExactly(tfcoil.dr_tf_wp_with_insulation)
+
     a_tf_inboard_total = OutputInto(tfcoil)
     c_tf_total = OutputInto(tfcoil)
     j_tf_coil_full_area = OutputInto(tfcoil)
     r_b_tf_inboard_peak_symmetric = OutputInto(tfcoil)
-
-    def __call__(
-        self,
-        n_tf_coils=From(tfcoil),
-        a_tf_leg_outboard=From(tfcoil),
-        coilcurrent=From(stellarator),
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        dr_tf_wp_with_insulation=From(tfcoil),
-    ):
-        return calculate_coils_summary_variables(
-            n_tf_coils,
-            a_tf_leg_outboard,
-            coilcurrent,
-            r_coil_major,
-            r_coil_minor,
-            dr_tf_wp_with_insulation,
-        )
 
 
 class StoredMagneticEnergy(WrapsFunction):

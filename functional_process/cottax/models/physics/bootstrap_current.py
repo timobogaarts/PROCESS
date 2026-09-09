@@ -1,7 +1,12 @@
 """Pure-functional port of the tokamak bootstrap-current chain."""
 
 import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    FromExactly,
+    OutputInto,
+)
 
 from functional_process.cottax.paths import current_drive, physics
 from functional_process.cottax.stated import StatesValues
@@ -113,18 +118,16 @@ class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, StatesValues):
     """
 
 
-class SceneDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
+class SceneDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, WrapsFunction):
     """`i_diamagnetic_current == SCENE_FIT` (2) -- both tracked spherical tokamaks."""
 
-    f_c_plasma_diamagnetic = OutputInto(current_drive)
+    fn = diamagnetic_fraction_scene
 
-    def __call__(
-        self,
-        beta_total_vol_avg=From(physics),
-        q95=From(physics),
-        q0=From(physics),
-    ):
-        return diamagnetic_fraction_scene(beta=beta_total_vol_avg, q95=q95, q0=q0)
+    beta = FromExactly(physics.beta_total_vol_avg)
+    q95 = From(physics)
+    q0 = From(physics)
+
+    f_c_plasma_diamagnetic = OutputInto(current_drive)
 
 
 class PlasmaPfirschSchluterCurrentFraction(ExplicitFunction):
@@ -142,13 +145,14 @@ class NoPfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction, StatesValue
     """
 
 
-class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):
+class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction, WrapsFunction):
     """`i_pfirsch_schluter_current == 1` -- both tracked spherical tokamaks."""
 
-    f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
+    fn = ps_fraction_scene
 
-    def __call__(self, beta_total_vol_avg=From(physics)):
-        return ps_fraction_scene(beta=beta_total_vol_avg)
+    beta = FromExactly(physics.beta_total_vol_avg)
+
+    f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
 
 
 class PlasmaCurrentFractions(WrapsFunction):

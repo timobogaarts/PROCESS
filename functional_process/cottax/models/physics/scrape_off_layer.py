@@ -7,6 +7,7 @@ import dataclasses
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
+    FromExactly,
     ModelNamespace,
     OutputInto,
 )
@@ -29,36 +30,28 @@ __all__ = [
 ]
 
 
-class Eich2013SOLPowerDecayLength(ExplicitFunction):
+class Eich2013SOLPowerDecayLength(WrapsFunction):
     """cottax node: `calculate_eich2013_sol_power_decay_length`, unconditional."""
+
+    fn = calculate_eich2013_sol_power_decay_length
+
+    p_plasma_separatrix_mw = FromExactly(physics.p_plasma_separatrix_mw_raw)
+    rmajor = From(physics)
+    b_plasma_surface_poloidal_average = From(physics)
+    aspect = From(physics)
 
     len_plasma_sol_eich13_power_decay = OutputInto(physics)
 
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-        rmajor=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-        aspect=From(physics),
-    ):
-        return calculate_eich2013_sol_power_decay_length(
-            p_plasma_separatrix_mw_raw, rmajor, b_plasma_surface_poloidal_average, aspect
-        )
 
-
-class Mast2014SOLPowerDecayLength1(ExplicitFunction):
+class Mast2014SOLPowerDecayLength1(WrapsFunction):
     """cottax node: `calculate_mast2014_sol_power_decay_length_1`, unconditional."""
 
-    len_plasma_sol_mast14_power_decay_1 = OutputInto(physics)
+    fn = calculate_mast2014_sol_power_decay_length_1
 
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-    ):
-        return calculate_mast2014_sol_power_decay_length_1(
-            p_plasma_separatrix_mw_raw, b_plasma_surface_poloidal_average
-        )
+    p_plasma_separatrix_mw = FromExactly(physics.p_plasma_separatrix_mw_raw)
+    b_plasma_surface_poloidal_average = From(physics)
+
+    len_plasma_sol_mast14_power_decay_1 = OutputInto(physics)
 
 
 class Mast2014SOLPowerDecayLength2(ExplicitFunction):
@@ -95,52 +88,36 @@ class OutboardSOLPowerDecayLengthEich2013(OutboardSOLPowerDecayLength, WrapsFunc
     len_sol_outboard_power_decay = OutputInto(physics)
 
 
-class UpstreamSOLOutboardParallelArea(ExplicitFunction):
+class UpstreamSOLOutboardParallelArea(WrapsFunction):
     """cottax node: `calculate_upstream_sol_outboard_parallel_area` at the
     switch-selected length -> `.physics.a_plasma_outboard_sol_parallel`.
     """
 
+    fn = calculate_upstream_sol_outboard_parallel_area
+
+    rmajor = From(physics)
+    rminor = From(physics)
+    len_plasma_sol_power_decay = FromExactly(physics.len_sol_outboard_power_decay)
+    b_plasma_outboard_total = From(physics)
+    b_plasma_surface_poloidal_average = From(physics)
+
     a_plasma_outboard_sol_parallel = OutputInto(physics)
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        len_sol_outboard_power_decay=From(physics),
-        b_plasma_outboard_total=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-    ):
-        return calculate_upstream_sol_outboard_parallel_area(
-            rmajor,
-            rminor,
-            len_sol_outboard_power_decay,
-            b_plasma_outboard_total,
-            b_plasma_surface_poloidal_average,
-        )
 
-
-class UpstreamSOLOutboardEich13ParallelArea(ExplicitFunction):
+class UpstreamSOLOutboardEich13ParallelArea(WrapsFunction):
     """cottax node: `calculate_upstream_sol_outboard_parallel_area` at the Eich 2013
     length specifically -> `.physics.a_plasma_outboard_sol_eich13_parallel`.
     """
 
-    a_plasma_outboard_sol_eich13_parallel = OutputInto(physics)
+    fn = calculate_upstream_sol_outboard_parallel_area
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        len_plasma_sol_eich13_power_decay=From(physics),
-        b_plasma_outboard_total=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-    ):
-        return calculate_upstream_sol_outboard_parallel_area(
-            rmajor,
-            rminor,
-            len_plasma_sol_eich13_power_decay,
-            b_plasma_outboard_total,
-            b_plasma_surface_poloidal_average,
-        )
+    rmajor = From(physics)
+    rminor = From(physics)
+    len_plasma_sol_power_decay = FromExactly(physics.len_plasma_sol_eich13_power_decay)
+    b_plasma_outboard_total = From(physics)
+    b_plasma_surface_poloidal_average = From(physics)
+
+    a_plasma_outboard_sol_eich13_parallel = OutputInto(physics)
 
 
 class OutboardSOLParallelPowerFlux(WrapsFunction):
