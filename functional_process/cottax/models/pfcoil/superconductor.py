@@ -71,8 +71,7 @@ class CSCriticalCurrentDensitiesWstNb3Sn(CSCriticalCurrentDensitiesIterNb3Sn):
 
 
 class CSTemperatureMarginIterNb3Sn(ExplicitFunction):
-    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 1`.
-    """
+    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 1`."""
 
     temp_cs_superconductor_margin = OutputInto(pf_coil)
 
@@ -103,8 +102,7 @@ class CSTemperatureMarginIterNb3Sn(ExplicitFunction):
 
 
 class CSTemperatureMarginWstNb3Sn(CSTemperatureMarginIterNb3Sn):
-    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 5`.
-    """
+    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 5`."""
 
     _critical_surface = staticmethod(calculate_cs_temperature_margin_wst_nb3sn)
 

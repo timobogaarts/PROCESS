@@ -8,11 +8,11 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.cottax.stated import StatesValues
 from functional_process.cottax.models.tfcoil.superconducting import (
     TfSuperconductorTemperatureMargin,
 )
 from functional_process.cottax.paths import superconducting_tfcoil, tfcoil
+from functional_process.cottax.stated import StatesValues
 from functional_process.models.tfcoil.croco import (
     calculate_hazelton_zhai_rebco_croco_temperature_margin,
     croco_averaged_turn_geometry_from_current_per_turn,
@@ -35,7 +35,9 @@ class CrocoTurnGeometry(ExplicitFunction):
 
 
 class CrocoAveragedTurnGeometryFromCurrentPerTurn(CrocoTurnGeometry):
-    """Both turn-dimension input flags `False` -- PROCESS's default and both ST files'.
+    """Both turn-dimension input flags `False`.
+
+    PROCESS's default and both ST files'.
     """
 
     a_tf_turn_insulation = OutputInto(tfcoil)

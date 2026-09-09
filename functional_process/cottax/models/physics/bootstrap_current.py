@@ -3,8 +3,9 @@
 import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.cottax.stated import StatesValues
 from functional_process.cottax.paths import current_drive, physics
+from functional_process.cottax.stated import StatesValues
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.bootstrap_current import (
     _beta_poloidal_sauter,
     _beta_poloidal_total_sauter,
@@ -150,23 +151,16 @@ class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):
         return ps_fraction_scene(beta=beta_total_vol_avg)
 
 
-class PlasmaCurrentFractions(ExplicitFunction):
+class PlasmaCurrentFractions(WrapsFunction):
     """cottax node: `calculate_plasma_current_fractions`, ports declared."""
+
+    fn = calculate_plasma_current_fractions
+
+    f_c_plasma_bootstrap = From(current_drive)
+    f_c_plasma_diamagnetic = From(current_drive)
+    f_c_plasma_pfirsch_schluter = From(current_drive)
+    f_c_plasma_non_inductive = From(physics)
 
     f_c_plasma_internal = OutputInto(current_drive)
     f_c_plasma_auxiliary = OutputInto(physics)
     f_c_plasma_inductive = OutputInto(physics)
-
-    def __call__(
-        self,
-        f_c_plasma_bootstrap=From(current_drive),
-        f_c_plasma_diamagnetic=From(current_drive),
-        f_c_plasma_pfirsch_schluter=From(current_drive),
-        f_c_plasma_non_inductive=From(physics),
-    ):
-        return calculate_plasma_current_fractions(
-            f_c_plasma_bootstrap=f_c_plasma_bootstrap,
-            f_c_plasma_diamagnetic=f_c_plasma_diamagnetic,
-            f_c_plasma_pfirsch_schluter=f_c_plasma_pfirsch_schluter,
-            f_c_plasma_non_inductive=f_c_plasma_non_inductive,
-        )

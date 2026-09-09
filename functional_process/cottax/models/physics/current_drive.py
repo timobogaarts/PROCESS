@@ -1,5 +1,4 @@
-"""Pure-functional port of `process/models/physics/current_drive.py`'s `CurrentDrive`.
-"""
+"""Pure-functional port of `process/models/physics/current_drive.py`'s `CurrentDrive`."""
 
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -7,8 +6,8 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.cottax.stated import StatesValues
 from functional_process.cottax.paths import current_drive, heat_transport, physics
+from functional_process.cottax.stated import StatesValues
 from functional_process.models.physics.current_drive import (
     calculate_current_drive_ecrh_primary_no_secondary,
     calculate_current_drive_freethy_ecrh_primary_no_secondary,
@@ -30,8 +29,7 @@ __all__ = [
 
 
 class HcdPrimaryEfficiency(ExplicitFunction):
-    """The family that owns `.current_drive.eta_cd_hcd_primary`: one occupant per model.
-    """
+    """The family that owns `.current_drive.eta_cd_hcd_primary`: one occupant per model."""
 
 
 class HcdPrimaryEfficiencyUserInputEcrh(HcdPrimaryEfficiency):
@@ -135,7 +133,9 @@ class HcdPrimaryPowers(ExplicitFunction):
 
 
 class HcdPrimaryPowersElectronCyclotronNoSecondary(HcdPrimaryPowers):
-    """Primary method `ELECTRON_CYCLOTRON` (`i_hcd_primary` 3, 7, 10, 13), secondary 0.
+    """Primary method `ELECTRON_CYCLOTRON`.
+
+    `i_hcd_primary` 3, 7, 10, 13), secondary 0.
     """
 
     p_hcd_ecrh_injected_total_mw = OutputInto(current_drive)
@@ -182,7 +182,9 @@ class HcdElectricTotal(ExplicitFunction):
 
 
 class HcdElectricTotalNonIgnited(HcdElectricTotal):
-    """`i_plasma_ignited == 0` (`NON_IGNITED`): the sum of the two systems' wall plugs.
+    """`i_plasma_ignited == 0`.
+
+    `NON_IGNITED`): the sum of the two systems' wall plugs.
     """
 
     p_hcd_electric_total_mw = OutputInto(heat_transport)

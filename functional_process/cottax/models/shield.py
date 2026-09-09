@@ -9,11 +9,12 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
 )
-from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
 from functional_process.models.shield import (
     apply_shield_volume_coverage_factors,  # noqa: F401
     calculate_dshaped_shield_volumes,  # noqa: F401
@@ -35,52 +36,36 @@ class ShieldHalfHeight(ExplicitFunction):
     """
 
 
-class DoubleNullShieldHalfHeight(ShieldHalfHeight):
+class DoubleNullShieldHalfHeight(ShieldHalfHeight, WrapsFunction):
     """`n_divertors == 2`. Not live on `large_tokamak_eval.IN.DAT` (`n_divertors=1`)."""
+
+    fn = calculate_shield_half_height_double_null
+
+    z_plasma_xpoint_lower = From(build)
+    dz_xpoint_divertor = From(build)
+    dz_divertor = From(divertor)
 
     dz_shld_half = OutputInto(blanket)
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-    ):
-        return calculate_shield_half_height_double_null(
-            z_plasma_xpoint_lower, dz_xpoint_divertor, dz_divertor
-        )
 
-
-class SingleNullShieldHalfHeight(ShieldHalfHeight):
+class SingleNullShieldHalfHeight(ShieldHalfHeight, WrapsFunction):
     """`n_divertors != 2` -- the arm `large_tokamak_eval.IN.DAT` takes
     (`n_divertors=1`).
     """
 
-    dz_shld_half = OutputInto(blanket)
+    fn = calculate_shield_half_height_single_null
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        z_plasma_xpoint_upper=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_outboard=From(build),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_shield_half_height_single_null(
-            z_plasma_xpoint_lower,
-            dz_xpoint_divertor,
-            dz_divertor,
-            z_plasma_xpoint_upper,
-            dr_fw_plasma_gap_inboard,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_inboard,
-            dr_fw_outboard,
-            dz_blkt_upper,
-        )
+    z_plasma_xpoint_lower = From(build)
+    dz_xpoint_divertor = From(build)
+    dz_divertor = From(divertor)
+    z_plasma_xpoint_upper = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_outboard = From(build)
+    dz_blkt_upper = From(build)
+
+    dz_shld_half = OutputInto(blanket)
 
 
 class ShieldVolumes(ExplicitFunction):
@@ -90,87 +75,56 @@ class ShieldVolumes(ExplicitFunction):
     """
 
 
-class EllipticalShieldVolumes(ShieldVolumes):
+class EllipticalShieldVolumes(ShieldVolumes, WrapsFunction):
     """`itart != 1 and i_fw_blkt_vv_shape != D_SHAPED` -- the arm
     `large_tokamak_eval.IN.DAT` takes.
     """
+
+    fn = calculate_shield_volumes_elliptical
+
+    r_shld_inboard_inner = From(build)
+    r_shld_outboard_outer = From(build)
+    rmajor = From(physics)
+    triang = From(physics)
+    dr_shld_inboard = From(build)
+    rminor = From(physics)
+    dz_shld_half = From(blanket)
+    dr_shld_outboard = From(build)
+    dz_shld_upper = From(build)
+    fvolsi = From(fwbs)
+    fvolso = From(fwbs)
 
     vol_shld_inboard = OutputInto(blanket)
     vol_shld_outboard = OutputInto(blanket)
     vol_shld_total = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        r_shld_outboard_outer=From(build),
-        rmajor=From(physics),
-        triang=From(physics),
-        dr_shld_inboard=From(build),
-        rminor=From(physics),
-        dz_shld_half=From(blanket),
-        dr_shld_outboard=From(build),
-        dz_shld_upper=From(build),
-        fvolsi=From(fwbs),
-        fvolso=From(fwbs),
-    ):
-        return calculate_shield_volumes_elliptical(
-            r_shld_inboard_inner,
-            r_shld_outboard_outer,
-            rmajor,
-            triang,
-            dr_shld_inboard,
-            rminor,
-            dz_shld_half,
-            dr_shld_outboard,
-            dz_shld_upper,
-            fvolsi,
-            fvolso,
-        )
 
-
-class DShapedShieldVolumes(ShieldVolumes):
+class DShapedShieldVolumes(ShieldVolumes, WrapsFunction):
     """`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` -- the arm
     `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` take, both of them twice
     over (`itart = 1` **and** `i_fw_blkt_vv_shape = 1`).
     """
 
+    fn = calculate_shield_volumes_dshaped
+
+    r_shld_inboard_inner = From(build)
+    dr_shld_inboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    rminor = From(physics)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_outboard = From(build)
+    dr_blkt_inboard = From(build)
+    dr_blkt_outboard = From(build)
+    dz_shld_half = From(blanket)
+    dr_shld_outboard = From(build)
+    dz_shld_upper = From(build)
+    fvolsi = From(fwbs)
+    fvolso = From(fwbs)
+
     vol_shld_inboard = OutputInto(blanket)
     vol_shld_outboard = OutputInto(blanket)
     vol_shld_total = OutputInto(fwbs)
-
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        rminor=From(physics),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_blkt_outboard=From(build),
-        dz_shld_half=From(blanket),
-        dr_shld_outboard=From(build),
-        dz_shld_upper=From(build),
-        fvolsi=From(fwbs),
-        fvolso=From(fwbs),
-    ):
-        return calculate_shield_volumes_dshaped(
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_fw_inboard,
-            dr_fw_plasma_gap_inboard,
-            rminor,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_outboard,
-            dr_blkt_inboard,
-            dr_blkt_outboard,
-            dz_shld_half,
-            dr_shld_outboard,
-            dz_shld_upper,
-            fvolsi,
-            fvolso,
-        )
 
 
 class TokamakShield(ModelNamespace):

@@ -7,12 +7,13 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.safe_math import (
-    safe_sqrt,  # noqa: F401
-)
 from functional_process.cottax.paths import (
     physics,
     stellarator,
+)
+from functional_process.cottax.wraps import WrapsFunction
+from functional_process.models.safe_math import (
+    safe_sqrt,  # noqa: F401
 )
 from functional_process.models.stellarator.density_limits import (
     calculate_ecrh_density_limit,  # noqa: F401
@@ -21,28 +22,19 @@ from functional_process.models.stellarator.density_limits import (
 )
 
 
-class SudoDensityLimit(ExplicitFunction):
+class SudoDensityLimit(WrapsFunction):
     """cottax node: `calculate_sudo_density_limit`, unchanged, ports declared."""
 
-    nd_plasma_electrons_max = OutputInto(physics)
+    fn = calculate_sudo_density_limit
 
-    def __call__(
-        self,
-        b_plasma_toroidal_on_axis=From(physics),
-        p_plasma_loss_mw=From(physics),
-        rmajor=From(physics),
-        rminor=From(physics),
-        nd_plasma_electrons_vol_avg=From(physics),
-        nd_plasma_electron_line=From(physics),
-    ):
-        return calculate_sudo_density_limit(
-            b_plasma_toroidal_on_axis,
-            p_plasma_loss_mw,
-            rmajor,
-            rminor,
-            nd_plasma_electrons_vol_avg,
-            nd_plasma_electron_line,
-        )
+    b_plasma_toroidal_on_axis = From(physics)
+    p_plasma_loss_mw = From(physics)
+    rmajor = From(physics)
+    rminor = From(physics)
+    nd_plasma_electrons_vol_avg = From(physics)
+    nd_plasma_electron_line = From(physics)
+
+    nd_plasma_electrons_max = OutputInto(physics)
 
 
 class EcrhDensityLimit(ExplicitFunction):

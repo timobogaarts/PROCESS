@@ -402,8 +402,7 @@ class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
 
 
 class PFCoilMassesCsWstNb3Sn(PFCoilMasses):
-    """cottax node: `.tokamak.pf_coil.masses`, the `i_cs_superconductor = 5` occupant.
-    """
+    """cottax node: `.tokamak.pf_coil.masses`, the `i_cs_superconductor = 5` occupant."""
 
     def __call__(
         self,

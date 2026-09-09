@@ -16,6 +16,7 @@ from functional_process.cottax.paths import (
     superconducting_tfcoil,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.base import (
     calculate_r_b_tf_inboard_peak,
     calculate_tf_global_geometry_circular_case,
@@ -43,10 +44,20 @@ class TfGlobalGeometry(ExplicitFunction):
     """The family that owns `tf_global_geometry`'s nine unswitched outputs."""
 
 
-class TfGlobalGeometryCircularCase(TfGlobalGeometry):
-    """`i_tf_case_geom == TFPlasmaCaseType.CIRCULAR` (0) -- `large_tokamak_eval`'s arm.
+class TfGlobalGeometryCircularCase(TfGlobalGeometry, WrapsFunction):
+    """`i_tf_case_geom == TFPlasmaCaseType.CIRCULAR` (0).
+
+    `large_tokamak_eval`'s arm.
     """
 
+    fn = calculate_tf_global_geometry_circular_case
+
+    n_tf_coils = From(tfcoil)
+    r_tf_inboard_out = From(build)
+    r_tf_inboard_in = From(build)
+    r_tf_outboard_mid = From(build)
+    dr_tf_outboard = From(build)
+
     rad_tf_coil_inboard_toroidal_half = OutputInto(superconducting_tfcoil)
     tan_theta_coil = OutputInto(superconducting_tfcoil)
     a_tf_inboard_total = OutputInto(tfcoil)
@@ -57,26 +68,18 @@ class TfGlobalGeometryCircularCase(TfGlobalGeometry):
     dr_tf_full_midplane = OutputInto(tfcoil)
     dr_tf_internal_midplane = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        n_tf_coils=From(tfcoil),
-        r_tf_inboard_out=From(build),
-        r_tf_inboard_in=From(build),
-        r_tf_outboard_mid=From(build),
-        dr_tf_outboard=From(build),
-    ):
-        return calculate_tf_global_geometry_circular_case(
-            n_tf_coils=n_tf_coils,
-            r_tf_inboard_out=r_tf_inboard_out,
-            r_tf_inboard_in=r_tf_inboard_in,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-            dr_tf_outboard=dr_tf_outboard,
-        )
 
-
-class TfGlobalGeometryStraightCase(TfGlobalGeometry):
+class TfGlobalGeometryStraightCase(TfGlobalGeometry, WrapsFunction):
     """`i_tf_case_geom == TFPlasmaCaseType.STRAIGHT` (1)."""
 
+    fn = calculate_tf_global_geometry_straight_case
+
+    n_tf_coils = From(tfcoil)
+    r_tf_inboard_out = From(build)
+    r_tf_inboard_in = From(build)
+    r_tf_outboard_mid = From(build)
+    dr_tf_outboard = From(build)
+
     rad_tf_coil_inboard_toroidal_half = OutputInto(superconducting_tfcoil)
     tan_theta_coil = OutputInto(superconducting_tfcoil)
     a_tf_inboard_total = OutputInto(tfcoil)
@@ -86,26 +89,12 @@ class TfGlobalGeometryStraightCase(TfGlobalGeometry):
     a_tf_leg_outboard = OutputInto(tfcoil)
     dr_tf_full_midplane = OutputInto(tfcoil)
     dr_tf_internal_midplane = OutputInto(tfcoil)
-
-    def __call__(
-        self,
-        n_tf_coils=From(tfcoil),
-        r_tf_inboard_out=From(build),
-        r_tf_inboard_in=From(build),
-        r_tf_outboard_mid=From(build),
-        dr_tf_outboard=From(build),
-    ):
-        return calculate_tf_global_geometry_straight_case(
-            n_tf_coils=n_tf_coils,
-            r_tf_inboard_out=r_tf_inboard_out,
-            r_tf_inboard_in=r_tf_inboard_in,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-            dr_tf_outboard=dr_tf_outboard,
-        )
 
 
 class DrTfPlasmaCaseFromInput(FixedPointFunction):
-    """`i_f_dr_tf_plasma_case == False` -- `large_tokamak_eval`'s arm, and a self-loop.
+    """`i_f_dr_tf_plasma_case == False`.
+
+    `large_tokamak_eval`'s arm, and a self-loop.
     """
 
     dr_tf_plasma_case = OutputInto(tfcoil)
@@ -125,262 +114,180 @@ class DrTfPlasmaCaseFromInput(FixedPointFunction):
         )
 
 
-class DrTfPlasmaCaseFromFraction(ExplicitFunction):
+class DrTfPlasmaCaseFromFraction(WrapsFunction):
     """`i_f_dr_tf_plasma_case == True`: a plain node, no loop."""
+
+    fn = dr_tf_plasma_case_from_fraction
+
+    f_dr_tf_plasma_case = From(tfcoil)
+    dr_tf_inboard = From(build)
+    r_tf_inboard_in = From(build)
+    n_tf_coils = From(tfcoil)
 
     dr_tf_plasma_case = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        f_dr_tf_plasma_case=From(tfcoil),
-        dr_tf_inboard=From(build),
-        r_tf_inboard_in=From(build),
-        n_tf_coils=From(tfcoil),
-    ):
-        return dr_tf_plasma_case_from_fraction(
-            f_dr_tf_plasma_case=f_dr_tf_plasma_case,
-            dr_tf_inboard=dr_tf_inboard,
-            r_tf_inboard_in=r_tf_inboard_in,
-            n_tf_coils=n_tf_coils,
-        )
 
-
-class DxTfSideCaseMinFromFraction(ExplicitFunction):
+class DxTfSideCaseMinFromFraction(WrapsFunction):
     """`tfc_sidewall_is_fraction == True`."""
+
+    fn = dx_tf_side_case_min_from_fraction
+
+    casths_fraction = From(tfcoil)
+    r_tf_inboard_in = From(build)
+    dr_tf_nose_case = From(tfcoil)
+    n_tf_coils = From(tfcoil)
 
     dx_tf_side_case_min = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        casths_fraction=From(tfcoil),
-        r_tf_inboard_in=From(build),
-        dr_tf_nose_case=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-    ):
-        return dx_tf_side_case_min_from_fraction(
-            casths_fraction=casths_fraction,
-            r_tf_inboard_in=r_tf_inboard_in,
-            dr_tf_nose_case=dr_tf_nose_case,
-            n_tf_coils=n_tf_coils,
-        )
 
-
-class RBTfInboardPeak(ExplicitFunction):
+class RBTfInboardPeak(WrapsFunction):
     """cottax node: `run_base_tf`'s inline `.tfcoil.r_b_tf_inboard_peak`."""
+
+    fn = calculate_r_b_tf_inboard_peak
+
+    r_tf_inboard_out = From(build)
+    dr_tf_plasma_case = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
 
     r_b_tf_inboard_peak = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        r_tf_inboard_out=From(build),
-        dr_tf_plasma_case=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-    ):
-        return calculate_r_b_tf_inboard_peak(
-            r_tf_inboard_out=r_tf_inboard_out,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-        )
 
-
-class TfCurrent(ExplicitFunction):
+class TfCurrent(WrapsFunction):
     """cottax node: `tf_current`, ports declared. No switch, so no family."""
+
+    fn = tf_current
+
+    n_tf_coils = From(tfcoil)
+    b_plasma_toroidal_on_axis = From(physics)
+    rmajor = From(physics)
+    r_b_tf_inboard_peak = From(tfcoil)
+    a_tf_inboard_total = From(tfcoil)
 
     b_tf_inboard_peak_symmetric = OutputInto(tfcoil)
     c_tf_total = OutputInto(tfcoil)
     c_tf_coil = OutputInto(superconducting_tfcoil)
     j_tf_coil_full_area = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        n_tf_coils=From(tfcoil),
-        b_plasma_toroidal_on_axis=From(physics),
-        rmajor=From(physics),
-        r_b_tf_inboard_peak=From(tfcoil),
-        a_tf_inboard_total=From(tfcoil),
-    ):
-        return tf_current(
-            n_tf_coils=n_tf_coils,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-            rmajor=rmajor,
-            r_b_tf_inboard_peak=r_b_tf_inboard_peak,
-            a_tf_inboard_total=a_tf_inboard_total,
-        )
-
 
 class TfCoilShape(ExplicitFunction):
     """The family that owns `.tfcoil.len_tf_coil` and the arc arrays."""
 
 
-class TfCoilShapeDShapeSingleNull(TfCoilShape):
+class TfCoilShapeDShapeSingleNull(TfCoilShape, WrapsFunction):
     """`i_tf_shape == 1`, `itart == 0`, `i_single_null == 1` -- the reference arm."""
 
+    fn = tf_coil_shape_inner_d_shape_single_null
+
+    r_tf_inboard_out = From(build)
+    rmajor = From(physics)
+    rminor = From(physics)
+    r_tf_outboard_in = From(superconducting_tfcoil)
+    z_tf_inside_half = From(build)
+    z_tf_top = From(build)
+    dr_tf_inboard = From(build)
+
     len_tf_coil = OutputInto(tfcoil)
     tfa = OutputInto(tfcoil)
     tfb = OutputInto(tfcoil)
     r_tf_arc = OutputInto(tfcoil)
     z_tf_arc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        r_tf_inboard_out=From(build),
-        rmajor=From(physics),
-        rminor=From(physics),
-        r_tf_outboard_in=From(superconducting_tfcoil),
-        z_tf_inside_half=From(build),
-        z_tf_top=From(build),
-        dr_tf_inboard=From(build),
-    ):
-        return tf_coil_shape_inner_d_shape_single_null(
-            r_tf_inboard_out=r_tf_inboard_out,
-            rmajor=rmajor,
-            rminor=rminor,
-            r_tf_outboard_in=r_tf_outboard_in,
-            z_tf_inside_half=z_tf_inside_half,
-            z_tf_top=z_tf_top,
-            dr_tf_inboard=dr_tf_inboard,
-        )
 
-
-class TfCoilShapeDShapeDoubleNull(TfCoilShape):
+class TfCoilShapeDShapeDoubleNull(TfCoilShape, WrapsFunction):
     """`i_tf_shape == 1`, `itart == 0`, `i_single_null == 0`."""
 
+    fn = tf_coil_shape_inner_d_shape_double_null
+
+    r_tf_inboard_out = From(build)
+    rmajor = From(physics)
+    rminor = From(physics)
+    r_tf_outboard_in = From(superconducting_tfcoil)
+    z_tf_inside_half = From(build)
+    dr_tf_inboard = From(build)
+
     len_tf_coil = OutputInto(tfcoil)
     tfa = OutputInto(tfcoil)
     tfb = OutputInto(tfcoil)
     r_tf_arc = OutputInto(tfcoil)
     z_tf_arc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        r_tf_inboard_out=From(build),
-        rmajor=From(physics),
-        rminor=From(physics),
-        r_tf_outboard_in=From(superconducting_tfcoil),
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-    ):
-        return tf_coil_shape_inner_d_shape_double_null(
-            r_tf_inboard_out=r_tf_inboard_out,
-            rmajor=rmajor,
-            rminor=rminor,
-            r_tf_outboard_in=r_tf_outboard_in,
-            z_tf_inside_half=z_tf_inside_half,
-            dr_tf_inboard=dr_tf_inboard,
-        )
 
-
-class TfCoilShapePictureFrameTart(TfCoilShape):
+class TfCoilShapePictureFrameTart(TfCoilShape, WrapsFunction):
     """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm."""
 
+    fn = tf_coil_shape_inner_picture_frame_tart
+
+    r_cp_top = From(build)
+    r_tf_outboard_in = From(superconducting_tfcoil)
+    z_tf_inside_half = From(build)
+    z_tf_top = From(build)
+    dr_tf_inboard = From(build)
+    r_tf_outboard_mid = From(build)
+
     len_tf_coil = OutputInto(tfcoil)
     tfa = OutputInto(tfcoil)
     tfb = OutputInto(tfcoil)
     r_tf_arc = OutputInto(tfcoil)
     z_tf_arc = OutputInto(tfcoil)
-
-    def __call__(
-        self,
-        r_cp_top=From(build),
-        r_tf_outboard_in=From(superconducting_tfcoil),
-        z_tf_inside_half=From(build),
-        z_tf_top=From(build),
-        dr_tf_inboard=From(build),
-        r_tf_outboard_mid=From(build),
-    ):
-        return tf_coil_shape_inner_picture_frame_tart(
-            r_cp_top=r_cp_top,
-            r_tf_outboard_in=r_tf_outboard_in,
-            z_tf_inside_half=z_tf_inside_half,
-            z_tf_top=z_tf_top,
-            dr_tf_inboard=dr_tf_inboard,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-        )
 
 
 class TfCoilSelfInductance(ExplicitFunction):
     """The family that owns `.tfcoil.ind_tf_coil`. `(itart, i_tf_shape)` decides it."""
 
 
-class TfCoilSelfInductanceDShape(TfCoilSelfInductance):
+class TfCoilSelfInductanceDShape(TfCoilSelfInductance, WrapsFunction):
     """`itart == 0` and `i_tf_shape == 1` -- the reference arm."""
 
+    fn = tf_coil_self_inductance_d_shape
+
+    dr_tf_inboard = From(build)
+    r_tf_arc = From(tfcoil)
+    z_tf_arc = From(tfcoil)
+
     ind_tf_coil = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dr_tf_inboard=From(build),
-        r_tf_arc=From(tfcoil),
-        z_tf_arc=From(tfcoil),
-    ):
-        return tf_coil_self_inductance_d_shape(
-            dr_tf_inboard=dr_tf_inboard, r_tf_arc=r_tf_arc, z_tf_arc=z_tf_arc
-        )
 
-
-class TfCoilSelfInductancePictureFrame(TfCoilSelfInductance):
+class TfCoilSelfInductancePictureFrame(TfCoilSelfInductance, WrapsFunction):
     """Everything else (`i_tf_shape == 2`, or `itart == 1`): the closed form."""
 
+    fn = tf_coil_self_inductance_picture_frame
+
+    z_tf_inside_half = From(build)
+    dr_tf_outboard = From(build)
+    r_tf_outboard_mid = From(build)
+    r_tf_inboard_mid = From(build)
+
     ind_tf_coil = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        dr_tf_outboard=From(build),
-        r_tf_outboard_mid=From(build),
-        r_tf_inboard_mid=From(build),
-    ):
-        return tf_coil_self_inductance_picture_frame(
-            z_tf_inside_half=z_tf_inside_half,
-            dr_tf_outboard=dr_tf_outboard,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-            r_tf_inboard_mid=r_tf_inboard_mid,
-        )
 
-
-class TfStoredMagneticEnergy(ExplicitFunction):
+class TfStoredMagneticEnergy(WrapsFunction):
     """cottax node: `tf_stored_magnetic_energy`. Owns one of the slot's ten reads."""
+
+    fn = tf_stored_magnetic_energy
+
+    ind_tf_coil = From(tfcoil)
+    c_tf_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
 
     e_tf_magnetic_stored_total = OutputInto(tfcoil)
     e_tf_magnetic_stored_total_gj = OutputInto(tfcoil)
     e_tf_coil_magnetic_stored = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        ind_tf_coil=From(tfcoil),
-        c_tf_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-    ):
-        return tf_stored_magnetic_energy(
-            ind_tf_coil=ind_tf_coil, c_tf_total=c_tf_total, n_tf_coils=n_tf_coils
-        )
 
-
-class GenericTfCoilAreaAndMasses(ExplicitFunction):
+class GenericTfCoilAreaAndMasses(WrapsFunction):
     """cottax node: `generic_tf_coil_area_and_masses`. Owns `.tfcoil.tfcryoarea`."""
+
+    fn = generic_tf_coil_area_and_masses
+
+    r_tf_inboard_out = From(build)
+    r_tf_inboard_in = From(build)
+    rad_tf_coil_inboard_toroidal_half = From(superconducting_tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    len_tf_coil = From(tfcoil)
+    r_tf_inboard_mid = From(build)
+    r_tf_outboard_mid = From(build)
 
     tfocrn = OutputInto(tfcoil)
     tficrn = OutputInto(tfcoil)
     tfcryoarea = OutputInto(tfcoil)
-
-    def __call__(
-        self,
-        r_tf_inboard_out=From(build),
-        r_tf_inboard_in=From(build),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        len_tf_coil=From(tfcoil),
-        r_tf_inboard_mid=From(build),
-        r_tf_outboard_mid=From(build),
-    ):
-        return generic_tf_coil_area_and_masses(
-            r_tf_inboard_out=r_tf_inboard_out,
-            r_tf_inboard_in=r_tf_inboard_in,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            tan_theta_coil=tan_theta_coil,
-            len_tf_coil=len_tf_coil,
-            r_tf_inboard_mid=r_tf_inboard_mid,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-        )

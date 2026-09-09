@@ -5,6 +5,18 @@
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
+from functional_process.cottax.paths import (
+    build,
+    constraints,
+    divertor,
+    first_wall,
+    fwbs,
+    physics,
+)
+from functional_process.models.engineering.ivc_functions import (
+    dshellarea,  # noqa: F401
+    eshellarea,  # noqa: F401
+)
 from functional_process.models.fw import (
     apply_first_wall_coverage_factors,  # noqa: F401
     apply_first_wall_coverage_factors_double_null,  # noqa: F401
@@ -19,18 +31,6 @@ from functional_process.models.fw import (
     calculate_pflux_fw_neutron_mw_ffwal,  # noqa: F401
     calculate_radiated_wall_load_scaled_plasma_surface,
     set_fw_geometry,
-)
-from functional_process.models.engineering.ivc_functions import (
-    dshellarea,  # noqa: F401
-    eshellarea,  # noqa: F401
-)
-from functional_process.cottax.paths import (
-    build,
-    constraints,
-    divertor,
-    first_wall,
-    fwbs,
-    physics,
 )
 
 
@@ -97,8 +97,7 @@ class FirstWallSingleNull(FirstWall):
 
 
 class FirstWallDoubleNull(FirstWall):
-    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2`, elliptical.
-    """
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2`, elliptical."""
 
     a_fw_inboard = OutputInto(first_wall)
     a_fw_outboard = OutputInto(first_wall)

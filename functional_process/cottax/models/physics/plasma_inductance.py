@@ -5,13 +5,13 @@
 import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
     ModelNamespace,
     OutputInto,
 )
 
 from functional_process.cottax.paths import physics, times
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
@@ -28,43 +28,49 @@ __all__ = [
 ]
 
 
-class PlasmaInternalInductanceScalings(ExplicitFunction):
+class PlasmaInternalInductanceScalings(WrapsFunction):
     """cottax node: `.tokamak.plasma_inductance.scalings`."""
+
+    fn = internal_inductance_norm_scalings
+
+    alphaj = From(physics)
+    kappa = From(physics)
+    b_plasma_surface_poloidal_average = From(physics)
+    plasma_current = From(physics)
+    vol_plasma = From(physics)
+    rmajor = From(physics)
 
     ind_plasma_internal_norm_wesson = OutputInto(physics)
     ind_plasma_internal_norm_menard = OutputInto(physics)
     ind_plasma_internal_norm_iter_3 = OutputInto(physics)
 
-    def __call__(
-        self,
-        alphaj=From(physics),
-        kappa=From(physics),
-        b_plasma_surface_poloidal_average=From(physics),
-        plasma_current=From(physics),
-        vol_plasma=From(physics),
-        rmajor=From(physics),
-    ):
-        return internal_inductance_norm_scalings(
-            alphaj,
-            kappa,
-            b_plasma_surface_poloidal_average,
-            plasma_current,
-            vol_plasma,
-            rmajor,
-        )
 
-
-class PlasmaInternalInductanceNormWesson(ExplicitFunction):
+class PlasmaInternalInductanceNormWesson(WrapsFunction):
     """cottax node: `.tokamak.plasma_inductance.internal_inductance_norm`."""
+
+    fn = internal_inductance_norm_wesson
+
+    ind_plasma_internal_norm_wesson = From(physics)
 
     ind_plasma_internal_norm = OutputInto(physics)
 
-    def __call__(self, ind_plasma_internal_norm_wesson=From(physics)):
-        return internal_inductance_norm_wesson(ind_plasma_internal_norm_wesson)
 
-
-class PlasmaVoltSecondRequirements(ExplicitFunction):
+class PlasmaVoltSecondRequirements(WrapsFunction):
     """cottax node: `.tokamak.plasma_inductance.volt_seconds`."""
+
+    fn = calculate_volt_second_requirements
+
+    csawth = From(physics)
+    eps = From(physics)
+    f_c_plasma_inductive = From(physics)
+    ejima_coeff = From(physics)
+    kappa = From(physics)
+    rmajor = From(physics)
+    res_plasma = From(physics)
+    plasma_current = From(physics)
+    t_plant_pulse_fusion_ramp = From(times)
+    t_plant_pulse_burn = From(times)
+    ind_plasma_internal_norm = From(physics)
 
     vs_plasma_internal = OutputInto(physics)
     ind_plasma = OutputInto(physics)
@@ -74,34 +80,6 @@ class PlasmaVoltSecondRequirements(ExplicitFunction):
     vs_plasma_res_ramp = OutputInto(physics)
     vs_plasma_total_required = OutputInto(physics)
     v_plasma_loop_burn = OutputInto(physics)
-
-    def __call__(
-        self,
-        csawth=From(physics),
-        eps=From(physics),
-        f_c_plasma_inductive=From(physics),
-        ejima_coeff=From(physics),
-        kappa=From(physics),
-        rmajor=From(physics),
-        res_plasma=From(physics),
-        plasma_current=From(physics),
-        t_plant_pulse_fusion_ramp=From(times),
-        t_plant_pulse_burn=From(times),
-        ind_plasma_internal_norm=From(physics),
-    ):
-        return calculate_volt_second_requirements(
-            csawth=csawth,
-            eps=eps,
-            f_c_plasma_inductive=f_c_plasma_inductive,
-            ejima_coeff=ejima_coeff,
-            kappa=kappa,
-            rmajor=rmajor,
-            res_plasma=res_plasma,
-            plasma_current=plasma_current,
-            t_plant_pulse_fusion_ramp=t_plant_pulse_fusion_ramp,
-            t_plant_pulse_burn=t_plant_pulse_burn,
-            ind_plasma_internal_norm=ind_plasma_internal_norm,
-        )
 
 
 class TokamakPlasmaInductance(ModelNamespace):

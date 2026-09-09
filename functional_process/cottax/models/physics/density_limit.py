@@ -14,6 +14,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.paths import physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,
@@ -47,37 +48,27 @@ class GreenwaldDensityLimit(ExplicitFunction):
         return calculate_greenwald_density_limit(c_plasma=plasma_current, rminor=rminor)
 
 
-class EnforcedDensityLimitGreenwald(ExplicitFunction):
+class EnforcedDensityLimitGreenwald(WrapsFunction):
     """The `i_density_limit == 7` (GREENWALD) occupant: selects the array element
     `GreenwaldDensityLimit` already produced.
     """
 
+    fn = select_enforced_density_limit_greenwald
+
+    nd_plasma_electron_max_array_7 = FromExactly(physics.nd_plasma_electron_max_array[6])
+
     nd_plasma_electrons_max = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electron_max_array_7=FromExactly(
-            physics.nd_plasma_electron_max_array[6]
-        ),
-    ):
-        return select_enforced_density_limit_greenwald(nd_plasma_electron_max_array_7)
 
-
-class GreenwaldFraction(ExplicitFunction):
+class GreenwaldFraction(WrapsFunction):
     """Unconditional producer of `.physics.f_nd_plasma_greenwald`."""
 
-    f_nd_plasma_greenwald = OutputInto(physics)
+    fn = calculate_greenwald_fraction
 
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        nd_plasma_electron_max_array_7=FromExactly(
-            physics.nd_plasma_electron_max_array[6]
-        ),
-    ):
-        return calculate_greenwald_fraction(
-            nd_plasma_electron_line, nd_plasma_electron_max_array_7
-        )
+    nd_plasma_electron_line = From(physics)
+    nd_plasma_electron_max_array_7 = FromExactly(physics.nd_plasma_electron_max_array[6])
+
+    f_nd_plasma_greenwald = OutputInto(physics)
 
 
 class TokamakDensityLimit(ModelNamespace):

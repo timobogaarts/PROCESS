@@ -1,4 +1,6 @@
-"""The Central Solenoid's stress state -- `ohcalc`'s superconducting-coil stress block.
+"""The Central Solenoid's stress state.
+
+`ohcalc`'s superconducting-coil stress block.
 """
 
 from cottax.interfaces.pytree_namespace_module import (

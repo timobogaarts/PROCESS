@@ -153,8 +153,7 @@ class ConfinementScalingInputs(ExplicitFunction):
 
 
 class PlasmaPowerLoss(ExplicitFunction):
-    """The family that owns `.physics.p_plasma_loss_mw`: the head, one occupant per arm.
-    """
+    """The family that owns `.physics.p_plasma_loss_mw`: the head, one occupant per arm."""
 
 
 class PlasmaPowerLossIgnitedCoreRadiation(PlasmaPowerLoss):
@@ -275,8 +274,7 @@ class ConfinementTail(ExplicitFunction):
 
 
 class ConfinementTailCoreRadiation(ConfinementTail):
-    """`i_rad_loss == CORE_ONLY`: `hstar` degrades on synchrotron plus inner radiation.
-    """
+    """`i_rad_loss == CORE_ONLY`: `hstar` degrades on synchrotron plus inner radiation."""
 
     pden_electron_transport_loss_mw = OutputInto(physics)
     pden_ion_transport_loss_mw = OutputInto(physics)

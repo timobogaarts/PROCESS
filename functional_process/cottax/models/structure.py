@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import From, OutputInto
 
 from functional_process.cottax.paths import (
     build,
@@ -14,6 +14,7 @@ from functional_process.cottax.paths import (
     structure,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.structure import calculate_structure_masses
 
 
@@ -64,53 +65,32 @@ def calculate_structure(
     )
 
 
-class Structure(ExplicitFunction):
+class Structure(WrapsFunction):
     """cottax node: `.tokamak.structure`."""
+
+    fn = calculate_structure
+
+    plasma_current = From(physics)
+    rmajor = From(physics)
+    rminor = From(physics)
+    kappa = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    dr_tf_inner_bore = From(build)
+    dr_tf_outboard = From(build)
+    dr_tf_inboard = From(build)
+    z_tf_inside_half = From(build)
+    whtshld = From(fwbs)
+    m_div_plate = From(divertor)
+    m_pf_coil_conductor_total = From(pf_coil)
+    m_pf_coil_structure_total = From(pf_coil)
+    m_tf_coils_total = From(tfcoil)
+    m_fw_total = From(fwbs)
+    m_blkt_total = From(fwbs)
+    m_fw_blkt_div_coolant_total = From(fwbs)
+    dewmkg = From(fwbs)
 
     fncmass = OutputInto(structure)
     aintmass = OutputInto(structure)
     clgsmass = OutputInto(structure)
     coldmass = OutputInto(structure)
     gsmass = OutputInto(structure)
-
-    def __call__(
-        self,
-        plasma_current=From(physics),
-        rmajor=From(physics),
-        rminor=From(physics),
-        kappa=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        dr_tf_inner_bore=From(build),
-        dr_tf_outboard=From(build),
-        dr_tf_inboard=From(build),
-        z_tf_inside_half=From(build),
-        whtshld=From(fwbs),
-        m_div_plate=From(divertor),
-        m_pf_coil_conductor_total=From(pf_coil),
-        m_pf_coil_structure_total=From(pf_coil),
-        m_tf_coils_total=From(tfcoil),
-        m_fw_total=From(fwbs),
-        m_blkt_total=From(fwbs),
-        m_fw_blkt_div_coolant_total=From(fwbs),
-        dewmkg=From(fwbs),
-    ):
-        return calculate_structure(
-            plasma_current,
-            rmajor,
-            rminor,
-            kappa,
-            b_plasma_toroidal_on_axis,
-            dr_tf_inner_bore,
-            dr_tf_outboard,
-            dr_tf_inboard,
-            z_tf_inside_half,
-            whtshld,
-            m_div_plate,
-            m_pf_coil_conductor_total,
-            m_pf_coil_structure_total,
-            m_tf_coils_total,
-            m_fw_total,
-            m_blkt_total,
-            m_fw_blkt_div_coolant_total,
-            dewmkg,
-        )

@@ -12,10 +12,6 @@ from cottax.interfaces.pytree_namespace_module import (
 from cottax.problem import Feasibility
 from cottax.spec import In, Out, VarPath
 
-from functional_process.models.engineering.ivc_functions import (
-    dshellvol,  # noqa: F401
-    eshellvol,  # noqa: F401
-)
 from functional_process.cottax.paths import (
     blanket,
     build,
@@ -25,6 +21,10 @@ from functional_process.cottax.paths import (
     tfcoil,
     times,
     vacuum,
+)
+from functional_process.models.engineering.ivc_functions import (
+    dshellvol,  # noqa: F401
+    eshellvol,  # noqa: F401
 )
 from functional_process.models.vacuum.vacuum import (
     XMULT,  # noqa: F401

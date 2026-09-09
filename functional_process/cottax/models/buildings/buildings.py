@@ -1,17 +1,12 @@
-"""Pure-functional port of `process/models/buildings.py`'s `Buildings.run()` (unit #15).
+"""Pure-functional port of `process/models/buildings.py`'s `Buildings.run()`.
+
+Unit #15.
 """
 
 import equinox as eqx
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.models.buildings.buildings import (
-    calculate_bldgs,
-    calculate_bldgs_sizes,
-    calculate_shield_height,
-    calculate_tf_coil_envelope,
-)
-from functional_process.models.safe_math import safe_pow  # noqa: F401
 from functional_process.cottax.paths import (
     build,
     buildings,
@@ -23,40 +18,38 @@ from functional_process.cottax.paths import (
     physics,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
+from functional_process.models.buildings.buildings import (
+    calculate_bldgs,
+    calculate_bldgs_sizes,
+    calculate_shield_height,
+    calculate_tf_coil_envelope,
+)
+from functional_process.models.safe_math import safe_pow  # noqa: F401
 from functional_process.vocabulary import (
     CurrentDriveMethodType,
     CurrentDriveModel,
 )
 
 
-class TfCoilEnvelope(ExplicitFunction):
+class TfCoilEnvelope(WrapsFunction):
     """cottax node: `calculate_tf_coil_envelope`, ports declared."""
+
+    fn = calculate_tf_coil_envelope
+
+    r_tf_outboard_mid = From(build)
+    dr_tf_outboard = From(build)
+    r_tf_inboard_mid = From(build)
+    dr_tf_inboard = From(build)
+    z_tf_inside_half = From(build)
+    m_tf_coils_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
 
     tfro = OutputInto(buildings)
     tfri = OutputInto(buildings)
     tf_radial_dim = OutputInto(buildings)
     tf_vertical_dim = OutputInto(buildings)
     tfmtn = OutputInto(buildings)
-
-    def __call__(
-        self,
-        r_tf_outboard_mid=From(build),
-        dr_tf_outboard=From(build),
-        r_tf_inboard_mid=From(build),
-        dr_tf_inboard=From(build),
-        z_tf_inside_half=From(build),
-        m_tf_coils_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-    ):
-        return calculate_tf_coil_envelope(
-            r_tf_outboard_mid,
-            dr_tf_outboard,
-            r_tf_inboard_mid,
-            dr_tf_inboard,
-            z_tf_inside_half,
-            m_tf_coils_total,
-            n_tf_coils,
-        )
 
 
 class Bldgs(ExplicitFunction):

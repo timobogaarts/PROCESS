@@ -21,11 +21,11 @@ from cottax.interfaces.pytree_namespace_module import (  # noqa: E402
     to_graph,
 )
 
-from functional_process.cottax.paths import physics  # noqa: E402
 from functional_process.cottax.models.physics.density_limit import (  # noqa: E402
     EnforcedDensityLimitGreenwald,
     GreenwaldDensityLimit,
 )
+from functional_process.cottax.paths import physics  # noqa: E402
 from functional_process.cottax.wraps import WrapsFunction  # noqa: E402
 from functional_process.models.physics.density_limit import (  # noqa: E402
     calculate_greenwald_density_limit,
@@ -54,9 +54,7 @@ class WrapsEnforced(WrapsFunction):
 
     fn = select_enforced_density_limit_greenwald
 
-    nd_plasma_electron_max_array_7 = FromExactly(
-        physics.nd_plasma_electron_max_array[6]
-    )
+    nd_plasma_electron_max_array_7 = FromExactly(physics.nd_plasma_electron_max_array[6])
 
     nd_plasma_electrons_max = OutputInto(physics)
 
@@ -209,3 +207,63 @@ def test_a_declared_node_takes_its_nested_name_from_its_slot():
         assert [n.path_str() for n in graph.nodes] == [
             ".physics.greenwald_density_limit"
         ], node_class.__name__
+
+
+def test_an_arm_that_writes_its_own_body_keeps_it():
+    """The inverse of the arm case above, and the sharper one.
+
+    An arm that inherits its family's `fn` but answers with a *different* target writes
+    `__call__` itself. Synthesising over it would forward to the parent's `fn` -- and
+    `test_a_read_that_does_not_match_the_function_is_refused` cannot catch that whenever
+    the two targets share parameter names, which is exactly when a family is a family.
+    `models/pfcoil/volt_seconds.py` is the live instance: two occupants of one slot,
+    both reading `ind_pf_cs_plasma_mutual`, calling different formulas.
+    """
+
+    def other_formula(c_plasma, rminor):
+        """Same parameters as `calculate_greenwald_density_limit`, different answer."""
+        return c_plasma / rminor
+
+    class Family(WrapsFunction):
+        """A family head."""
+
+        fn = calculate_greenwald_density_limit
+
+        c_plasma = FromExactly(physics.plasma_current)
+        rminor = From(physics)
+
+        nd_plasma_electrons_max = OutputInto(physics)
+
+    class Arm(Family):
+        """An arm that answers with its own body, not its family's `fn`."""
+
+        def __call__(
+            self,
+            c_plasma=FromExactly(physics.plasma_current),  # noqa: B008 -- the declaration
+            rminor=From(physics),  # noqa: B008
+        ):
+            return other_formula(c_plasma, rminor)
+
+    assert Arm()(c_plasma=1.2e7, rminor=2.0) == other_formula(1.2e7, 2.0)
+    assert Arm()(c_plasma=1.2e7, rminor=2.0) != Family()(c_plasma=1.2e7, rminor=2.0)
+    assert [str(i.var) for i in Arm().inputs] == [str(i.var) for i in Family().inputs]
+
+
+def test_an_output_shadowing_fn_is_refused():
+    """`fn` must be declared before the outputs, and says so when it is not.
+
+    A single-output node is often named for the function that produces it, so a class
+    body that declares the output first leaves `fn` bound to the descriptor rather than
+    the function. Silent until something calls it.
+    """
+    with pytest.raises(TypeError, match=r"Declare `fn` before the outputs"):
+
+        class Backwards(WrapsFunction):
+            """Outputs above `fn`, which is the mistake."""
+
+            nd_plasma_electrons_max = OutputInto(physics)
+
+            fn = nd_plasma_electrons_max
+
+            c_plasma = FromExactly(physics.plasma_current)
+            rminor = From(physics)

@@ -1,9 +1,7 @@
-"""Pure-functional port of `Stellarator.sc_tf_coil_nuclear_heating_iter90` (chunk 1F).
-"""
+"""Pure-functional port of `Stellarator.sc_tf_coil_nuclear_heating_iter90` (chunk 1F)."""
 
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
     OutputInto,
 )
@@ -15,13 +13,31 @@ from functional_process.cottax.paths import (
     physics,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.stellarator.tf_nuclear_heating import (
     calculate_sc_tf_coil_nuclear_heating,
 )
 
 
-class ScTfCoilNuclearHeating(ExplicitFunction):
+class ScTfCoilNuclearHeating(WrapsFunction):
     """cottax node: `calculate_sc_tf_coil_nuclear_heating`, unchanged, ports declared."""
+
+    fn = calculate_sc_tf_coil_nuclear_heating
+
+    dr_shld_inboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    dr_shld_outboard = From(build)
+    dr_fw_outboard = From(build)
+    dr_blkt_outboard = From(build)
+    dr_tf_wp_with_insulation = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    pflux_fw_neutron_mw = From(physics)
+    tfsai = From(tfcoil)
+    tfsao = From(tfcoil)
+    dr_tf_plasma_case = From(tfcoil)
+    f_t_plant_available = From(costs)
+    life_plant = From(costs)
 
     coilhtmx = OutputInto(fwbs)
     dpacop = OutputInto(fwbs)
@@ -33,37 +49,3 @@ class ScTfCoilNuclearHeating(ExplicitFunction):
     ptfowp = OutputInto(fwbs)
     raddose = OutputInto(fwbs)
     p_tf_nuclear_heat_mw = OutputInto(fwbs)
-
-    def __call__(
-        self,
-        dr_shld_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_shld_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dr_tf_wp_with_insulation=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        pflux_fw_neutron_mw=From(physics),
-        tfsai=From(tfcoil),
-        tfsao=From(tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        f_t_plant_available=From(costs),
-        life_plant=From(costs),
-    ):
-        return calculate_sc_tf_coil_nuclear_heating(
-            dr_shld_inboard,
-            dr_fw_inboard,
-            dr_blkt_inboard,
-            dr_shld_outboard,
-            dr_fw_outboard,
-            dr_blkt_outboard,
-            dr_tf_wp_with_insulation,
-            dx_tf_wp_insulation,
-            pflux_fw_neutron_mw,
-            tfsai,
-            tfsao,
-            dr_tf_plasma_case,
-            f_t_plant_available,
-            life_plant,
-        )

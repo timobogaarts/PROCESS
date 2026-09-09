@@ -1,5 +1,4 @@
-"""Where the CS and the PF coils are: cross-sections, filament placement, coil centres.
-"""
+"""Where the CS and the PF coils are: cross-sections, filament placement, coil centres."""
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -18,6 +17,7 @@ from functional_process.cottax.paths import (
     physics,
     superconducting_tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.geometry import (
     calculate_cs_geometry,  # noqa: F401 -- re-exported for tests
     calculate_cs_geometry_ports,
@@ -30,8 +30,22 @@ from functional_process.models.pfcoil.geometry import (
 )
 
 
-class CSCoilGeometry(ExplicitFunction):
-    """cottax node: `.tokamak.cs_coil.geometry`."""
+class CSCoilGeometry(WrapsFunction):
+    """cottax node: `.tokamak.cs_coil.geometry`.
+
+    `CSGeometry.r_cs_coil_middle` is dropped: it is bit-for-bit `r_cs_middle`
+    (`pfcoil.py:3030`, `:3042`) and `DataStructure`'s `PfCoilVariables` has no field of
+    that name -- PROCESS stores it only into `r_pf_coil_middle[n_cs_pf_coils - 1]`,
+    which `PFCoilPositions` owns. Owning it here would mint a `VarPath` that names no
+    place.
+    """
+
+    fn = calculate_cs_geometry_ports
+
+    z_tf_inside_half = From(build)
+    f_z_cs_tf_internal = From(pf_coil)
+    dr_cs = From(build)
+    dr_cs_bore = From(build)
 
     z_cs_upper = OutputInto(pf_coil)
     z_cs_lower = OutputInto(pf_coil)
@@ -44,28 +58,17 @@ class CSCoilGeometry(ExplicitFunction):
     dz_cs_full = OutputInto(pf_coil)
     dr_cs_full = OutputInto(pf_coil)
 
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        f_z_cs_tf_internal=From(pf_coil),
-        dr_cs=From(build),
-        dr_cs_bore=From(build),
-    ):
-        # `CSGeometry.r_cs_coil_middle` is dropped: it is bit-for-bit `r_cs_middle`
-        # (`pfcoil.py:3030`, `:3042`) and `DataStructure`'s `PfCoilVariables` has no
-        # field of that name -- PROCESS stores it only into
-        # `r_pf_coil_middle[n_cs_pf_coils - 1]`, which `PFCoilPositions` owns. Owning it
-        # here would mint a `VarPath` that names no place.
-        return calculate_cs_geometry_ports(
-            z_tf_inside_half=z_tf_inside_half,
-            f_z_cs_tf_internal=f_z_cs_tf_internal,
-            dr_cs=dr_cs,
-            dr_cs_bore=dr_cs_bore,
-        )
 
-
-class CSCoilTurnGeometry(ExplicitFunction):
+class CSCoilTurnGeometry(WrapsFunction):
     """cottax node: `.tokamak.cs_coil.turn_geometry`."""
+
+    fn = calculate_cs_turn_geometry_eu_demo_from_turns
+
+    a_cs_poloidal = From(pf_coil)
+    n_pf_coil_turns = From(pf_coil)
+    f_dr_dz_cs_turn = From(pf_coil)
+    radius_cs_turn_corners = From(pf_coil)
+    f_a_cs_turn_steel = From(pf_coil)
 
     a_cs_turn = OutputInto(pf_coil)
     dz_cs_turn = OutputInto(pf_coil)
@@ -73,22 +76,6 @@ class CSCoilTurnGeometry(ExplicitFunction):
     radius_cs_turn_cable_space = OutputInto(pf_coil)
     dr_cs_turn_conduit = OutputInto(cs_fatigue)
     dz_cs_turn_conduit = OutputInto(cs_fatigue)
-
-    def __call__(
-        self,
-        a_cs_poloidal=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-        f_dr_dz_cs_turn=From(pf_coil),
-        radius_cs_turn_corners=From(pf_coil),
-        f_a_cs_turn_steel=From(pf_coil),
-    ):
-        return calculate_cs_turn_geometry_eu_demo_from_turns(
-            a_cs_poloidal=a_cs_poloidal,
-            n_pf_coil_turns=n_pf_coil_turns,
-            f_dr_dz_cs_turn=f_dr_dz_cs_turn,
-            radius_cs_turn_corners=radius_cs_turn_corners,
-            f_a_cs_turn_steel=f_a_cs_turn_steel,
-        )
 
 
 class PFCoilPlacement(ExplicitFunction):

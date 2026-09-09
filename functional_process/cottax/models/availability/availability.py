@@ -11,6 +11,16 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.cottax.paths import (
+    constraints,
+    costs,
+    divertor,
+    fwbs,
+    physics,
+    tfcoil,
+    times,
+)
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.availability.availability import (
     DAY_SECONDS,  # noqa: F401
     DAYS_IN_YEAR,  # noqa: F401
@@ -47,15 +57,6 @@ from functional_process.models.availability.availability import (
 from functional_process.models.switch_enums import (
     BlanketLifetimeModel,
     SphericalTokamakModel,
-)
-from functional_process.cottax.paths import (
-    constraints,
-    costs,
-    divertor,
-    fwbs,
-    physics,
-    tfcoil,
-    times,
 )
 from functional_process.vocabulary import TFConductorModel
 
@@ -99,71 +100,49 @@ from functional_process.vocabulary import TFConductorModel
 # ---------------------------------------------------------------------------
 
 
-class CpLifetimeSuperconducting(ExplicitFunction):
-    """cottax node: `calculate_cp_lifetime_superconducting`, unchanged, ports declared.
-    """
+class CpLifetimeSuperconducting(WrapsFunction):
+    """cottax node: `calculate_cp_lifetime_superconducting`, unchanged, ports declared."""
+
+    fn = calculate_cp_lifetime_superconducting
+
+    neut_flux_cp = From(fwbs)
+    flu_tf_neutron_fast_max = From(constraints)
+    life_plant = From(costs)
 
     cplife = OutputInto(costs)
 
-    def __call__(
-        self,
-        neut_flux_cp=From(fwbs),
-        flu_tf_neutron_fast_max=From(constraints),
-        life_plant=From(costs),
-    ):
-        return calculate_cp_lifetime_superconducting(
-            neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-        )
 
-
-class CpLifetimeResistive(ExplicitFunction):
+class CpLifetimeResistive(WrapsFunction):
     """cottax node: `calculate_cp_lifetime_resistive`, unchanged, ports declared."""
 
+    fn = calculate_cp_lifetime_resistive
+
+    cpstflnc = From(costs)
+    pflux_fw_neutron_mw = From(physics)
+    life_plant = From(costs)
+
     cplife = OutputInto(costs)
 
-    def __call__(
-        self,
-        cpstflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_plant=From(costs),
-    ):
-        return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
 
-
-class WardTaylorAvailability(ExplicitFunction):
+class WardTaylorAvailability(WrapsFunction):
     """cottax node: `calculate_ward_taylor_availability`, unchanged, ports declared."""
 
-    f_t_plant_available = OutputInto(costs)
+    fn = calculate_ward_taylor_availability
 
-    def __call__(
-        self,
-        life_div_fpy=From(costs),
-        life_blkt_fpy=From(fwbs),
-        t_div_replace_yrs=From(costs),
-        t_blkt_replace_yrs=From(costs),
-        tcomrepl=From(costs),
-        uubop=From(costs),
-        uucd=From(costs),
-        uudiv=From(costs),
-        uufuel=From(costs),
-        uufw=From(costs),
-        uumag=From(costs),
-        uuves=From(costs),
-    ):
-        return calculate_ward_taylor_availability(
-            life_div_fpy,
-            life_blkt_fpy,
-            t_div_replace_yrs,
-            t_blkt_replace_yrs,
-            tcomrepl,
-            uubop,
-            uucd,
-            uudiv,
-            uufuel,
-            uufw,
-            uumag,
-            uuves,
-        )
+    life_div_fpy = From(costs)
+    life_blkt_fpy = From(fwbs)
+    t_div_replace_yrs = From(costs)
+    t_blkt_replace_yrs = From(costs)
+    tcomrepl = From(costs)
+    uubop = From(costs)
+    uucd = From(costs)
+    uudiv = From(costs)
+    uufuel = From(costs)
+    uufw = From(costs)
+    uumag = From(costs)
+    uuves = From(costs)
+
+    f_t_plant_available = OutputInto(costs)
 
 
 class CplifeAvail(ExplicitFunction):
@@ -174,38 +153,30 @@ class CplifeAvail(ExplicitFunction):
     cplife = OutputInto(costs)
 
 
-class CplifeAvailSuperconducting(CplifeAvail):
+class CplifeAvailSuperconducting(CplifeAvail, WrapsFunction):
     """`itart == 1` with `i_tf_sup == SUPERCONDUCTING` (1): the centrepost lasts until
     its fast-neutron fluence limit, then adjusted for plant availability.
     """
 
-    def __call__(
-        self,
-        neut_flux_cp=From(fwbs),
-        flu_tf_neutron_fast_max=From(constraints),
-        life_plant=From(costs),
-        f_t_plant_available=From(costs),
-    ):
-        return calculate_cplife_superconducting(
-            neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
-        )
+    fn = calculate_cplife_superconducting
+
+    neut_flux_cp = From(fwbs)
+    flu_tf_neutron_fast_max = From(constraints)
+    life_plant = From(costs)
+    f_t_plant_available = From(costs)
 
 
-class CplifeAvailResistive(CplifeAvail):
+class CplifeAvailResistive(CplifeAvail, WrapsFunction):
     """`itart == 1` with `i_tf_sup != SUPERCONDUCTING`: the centrepost lasts until its
     allowable stress fluence is spent, then adjusted for plant availability.
     """
 
-    def __call__(
-        self,
-        cpstflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_plant=From(costs),
-        f_t_plant_available=From(costs),
-    ):
-        return calculate_cplife_resistive(
-            cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
-        )
+    fn = calculate_cplife_resistive
+
+    cpstflnc = From(costs)
+    pflux_fw_neutron_mw = From(physics)
+    life_plant = From(costs)
+    f_t_plant_available = From(costs)
 
 
 class CplifeAvailSt(FixedPointFunction):
@@ -251,64 +222,40 @@ class Avail(ExplicitFunction):
     life_hcd_fpy = OutputInto(costs)
 
 
-class AvailNeutronFluence(Avail):
+class AvailNeutronFluence(Avail, WrapsFunction):
     """`ibkt_life == NEUTRON_FLUENCE` (0) -- PROCESS's own default
     (`cost_variables.py:416`) and the reference run's.
     """
 
-    def __call__(
-        self,
-        life_fw_fpy=From(fwbs),
-        abktflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_plant=From(costs),
-        pflux_div_heat_load_mw=From(divertor),
-        adivflnc=From(costs),
-        t_plant_pulse_total=From(times),
-        t_plant_pulse_burn=From(times),
-        f_t_plant_available=From(costs),
-    ):
-        return calculate_avail_neutron_fluence(
-            life_fw_fpy,
-            abktflnc,
-            pflux_fw_neutron_mw,
-            life_plant,
-            pflux_div_heat_load_mw,
-            adivflnc,
-            t_plant_pulse_total,
-            t_plant_pulse_burn,
-            f_t_plant_available,
-        )
+    fn = calculate_avail_neutron_fluence
+
+    life_fw_fpy = From(fwbs)
+    abktflnc = From(costs)
+    pflux_fw_neutron_mw = From(physics)
+    life_plant = From(costs)
+    pflux_div_heat_load_mw = From(divertor)
+    adivflnc = From(costs)
+    t_plant_pulse_total = From(times)
+    t_plant_pulse_burn = From(times)
+    f_t_plant_available = From(costs)
 
 
-class AvailDisplacementsPerAtom(Avail):
+class AvailDisplacementsPerAtom(Avail, WrapsFunction):
     """`ibkt_life == FUSION_POWER` (1) -- the blanket lifetime set by displacement
     damage per full-power year.
     """
 
-    def __call__(
-        self,
-        life_fw_fpy=From(fwbs),
-        p_fusion_total_mw=From(physics),
-        life_dpa=From(costs),
-        life_plant=From(costs),
-        pflux_div_heat_load_mw=From(divertor),
-        adivflnc=From(costs),
-        t_plant_pulse_total=From(times),
-        t_plant_pulse_burn=From(times),
-        f_t_plant_available=From(costs),
-    ):
-        return calculate_avail_displacements_per_atom(
-            life_fw_fpy,
-            p_fusion_total_mw,
-            life_dpa,
-            life_plant,
-            pflux_div_heat_load_mw,
-            adivflnc,
-            t_plant_pulse_total,
-            t_plant_pulse_burn,
-            f_t_plant_available,
-        )
+    fn = calculate_avail_displacements_per_atom
+
+    life_fw_fpy = From(fwbs)
+    p_fusion_total_mw = From(physics)
+    life_dpa = From(costs)
+    life_plant = From(costs)
+    pflux_div_heat_load_mw = From(divertor)
+    adivflnc = From(costs)
+    t_plant_pulse_total = From(times)
+    t_plant_pulse_burn = From(times)
+    f_t_plant_available = From(costs)
 
 
 class Avail2(ExplicitFunction):

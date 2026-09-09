@@ -33,8 +33,7 @@ class PlasmaCurrentScaling(ExplicitFunction):
 
 
 class Ipdg89PlasmaCurrent(PlasmaCurrentScaling):
-    """`i_plasma_current == IPDG89_SCALING` (4) -- the arm `large_tokamak_eval` takes.
-    """
+    """`i_plasma_current == IPDG89_SCALING` (4) -- the arm `large_tokamak_eval` takes."""
 
     plasma_current = OutputInto(physics)
 
@@ -112,8 +111,7 @@ class PlasmaCylindricalSafetyFactor(ExplicitFunction):
 
 
 class CurrentProfileIndexScaling(ExplicitFunction):
-    """The family that owns `.physics.alphaj` under `i_alphaj` (`physics.py:334-348`).
-    """
+    """The family that owns `.physics.alphaj` under `i_alphaj` (`physics.py:334-348`)."""
 
 
 class WessonCurrentProfileIndex(CurrentProfileIndexScaling):

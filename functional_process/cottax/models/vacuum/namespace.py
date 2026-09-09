@@ -2,7 +2,10 @@
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
-from functional_process.cottax.models.vacuum.vacuum import DuctDiameterRootFind, VacuumOld
+from functional_process.cottax.models.vacuum.vacuum import (
+    DuctDiameterRootFind,
+    VacuumOld,
+)
 
 
 class Vacuum(ModelNamespace):

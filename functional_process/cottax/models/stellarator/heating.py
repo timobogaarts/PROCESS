@@ -1,5 +1,4 @@
-"""Pure-functional port of `process/models/stellarator/heating.py` (registry unit #5).
-"""
+"""Pure-functional port of `process/models/stellarator/heating.py` (registry unit #5)."""
 
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (

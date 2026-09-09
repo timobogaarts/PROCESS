@@ -27,8 +27,7 @@ from functional_process.cottax.models.blankets.hcpb import (
 
 
 class CcfeHcpb(ModelNamespace):
-    """The CCFE helium-cooled pebble-bed blanket: geometry, masses, neutronics, pumping.
-    """
+    """The CCFE helium-cooled pebble-bed blanket: geometry, masses, neutronics, pumping."""
 
     # ---- blanket_library.py: the geometry `component_masses` runs on ----------------
 

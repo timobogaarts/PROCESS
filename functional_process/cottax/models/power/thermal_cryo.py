@@ -11,10 +11,6 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.switch_enums import (
-    BlanketDualCoolantModel,
-    CoilNuclearHeatingModel,
-)
 from functional_process.cottax.paths import (
     current_drive,
     fwbs,
@@ -27,6 +23,7 @@ from functional_process.cottax.paths import (
     tfcoil,
     times,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.power.thermal_cryo import (
     calculate_component_thermal_powers,
     calculate_component_thermal_powers_owned,
@@ -60,6 +57,10 @@ from functional_process.models.power.thermal_cryo import (
     etath_liq_supercritical_co2,
     temp_turbine_coolant_in_from_blanket_coolant,
     temp_turbine_coolant_in_from_liquid_breeder,
+)
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    CoilNuclearHeatingModel,
 )
 from functional_process.vocabulary import (
     BlktModelTypes,
@@ -348,35 +349,35 @@ class EtaTurbineCcfeHcpbValue(EtaTurbine):
         return eta_turbine_ccfe_hcpb_value()
 
 
-class EtaTurbineCcfeHcpbValueWithDivertor(EtaTurbine):
+class EtaTurbineCcfeHcpbValueWithDivertor(EtaTurbine, WrapsFunction):
     """`i_thermal_electric_conversion == CCFE_HCPB_VALUE_WITH_DIVERTOR` (1) with
     `i_blanket_type == CCFE_HCPB`.
     """
 
-    def __call__(self, delta_eta=From(power)):
-        return eta_turbine_ccfe_hcpb_value_with_divertor(delta_eta)
+    fn = eta_turbine_ccfe_hcpb_value_with_divertor
+
+    delta_eta = From(power)
 
 
-class EtaTurbineSteamRankineCycle(EtaTurbine):
+class EtaTurbineSteamRankineCycle(EtaTurbine, WrapsFunction):
     """`i_thermal_electric_conversion == STEAM_RANKINE_CYCLE` (3) with `i_blanket_type
     == CCFE_HCPB`.
     """
 
-    def __call__(
-        self,
-        temp_blkt_coolant_out=From(fwbs),
-        delta_eta=From(power),
-    ):
-        return eta_turbine_steam_rankine_cycle(temp_blkt_coolant_out, delta_eta)
+    fn = eta_turbine_steam_rankine_cycle
+
+    temp_blkt_coolant_out = From(fwbs)
+    delta_eta = From(power)
 
 
-class EtaTurbineSupercriticalCo2(EtaTurbine):
+class EtaTurbineSupercriticalCo2(EtaTurbine, WrapsFunction):
     """`i_thermal_electric_conversion == SUPERCRITICAL_CO2_BRAYTON_CYCLE` (4), at any
     blanket type.
     """
 
-    def __call__(self, temp_blkt_coolant_out=From(fwbs)):
-        return eta_turbine_supercritical_co2(temp_blkt_coolant_out)
+    fn = eta_turbine_supercritical_co2
+
+    temp_blkt_coolant_out = From(fwbs)
 
 
 class EtathLiq(ExplicitFunction):
@@ -387,11 +388,12 @@ class EtathLiq(ExplicitFunction):
     etath_liq = OutputInto(heat_transport)
 
 
-class EtathLiqSupercriticalCo2(EtathLiq):
+class EtathLiqSupercriticalCo2(EtathLiq, WrapsFunction):
     """`secondary_cycle_liq == 4` -- the reference run's."""
 
-    def __call__(self, outlet_temp_liq=From(fwbs)):
-        return etath_liq_supercritical_co2(outlet_temp_liq)
+    fn = etath_liq_supercritical_co2
+
+    outlet_temp_liq = From(fwbs)
 
 
 class TempTurbineCoolantIn(ExplicitFunction):
@@ -403,21 +405,23 @@ class TempTurbineCoolantIn(ExplicitFunction):
     temp_turbine_coolant_in = OutputInto(heat_transport)
 
 
-class TempTurbineCoolantInFromLiquidBreeder(TempTurbineCoolantIn):
+class TempTurbineCoolantInFromLiquidBreeder(TempTurbineCoolantIn, WrapsFunction):
     """`secondary_cycle_liq == 4` -- the reference run's."""
 
-    def __call__(self, outlet_temp_liq=From(fwbs)):
-        return temp_turbine_coolant_in_from_liquid_breeder(outlet_temp_liq)
+    fn = temp_turbine_coolant_in_from_liquid_breeder
+
+    outlet_temp_liq = From(fwbs)
 
 
-class TempTurbineCoolantInFromBlanketCoolant(TempTurbineCoolantIn):
+class TempTurbineCoolantInFromBlanketCoolant(TempTurbineCoolantIn, WrapsFunction):
     """`secondary_cycle_liq == 2` with an `i_thermal_electric_conversion` arm that
     writes the turbine inlet temperature -- `STEAM_RANKINE_CYCLE` with a CCFE HCPB
     blanket, or `SUPERCRITICAL_CO2_BRAYTON_CYCLE` at any blanket.
     """
 
-    def __call__(self, temp_blkt_coolant_out=From(fwbs)):
-        return temp_turbine_coolant_in_from_blanket_coolant(temp_blkt_coolant_out)
+    fn = temp_turbine_coolant_in_from_blanket_coolant
+
+    temp_blkt_coolant_out = From(fwbs)
 
 
 class PFwDivHeatDepositedMw(ExplicitFunction):
@@ -428,51 +432,34 @@ class PFwDivHeatDepositedMw(ExplicitFunction):
     p_fw_div_heat_deposited_mw = OutputInto(heat_transport)
 
 
-class PFwDivHeatDepositedMwSummed(PFwDivHeatDepositedMw):
+class PFwDivHeatDepositedMwSummed(PFwDivHeatDepositedMw, WrapsFunction):
     """`i_p_coolant_pumping != MECHANICAL_WITH_PRESSURE_DROP` -- the reference run's."""
 
-    def __call__(
-        self,
-        p_fw_nuclear_heat_total_mw=From(fwbs),
-        p_fw_rad_total_mw=From(fwbs),
-        p_fw_coolant_pump_mw=From(heat_transport),
-        p_beam_orbit_loss_mw=From(current_drive),
-        p_fw_alpha_mw=From(physics),
-        p_beam_shine_through_mw=From(current_drive),
-        p_plasma_separatrix_mw=From(physics),
-        p_div_nuclear_heat_total_mw=From(fwbs),
-        p_div_rad_total_mw=From(fwbs),
-        p_div_coolant_pump_mw=From(heat_transport),
-    ):
-        return calculate_p_fw_div_heat_deposited_mw_summed(
-            p_fw_nuclear_heat_total_mw,
-            p_fw_rad_total_mw,
-            p_fw_coolant_pump_mw,
-            p_beam_orbit_loss_mw,
-            p_fw_alpha_mw,
-            p_beam_shine_through_mw,
-            p_plasma_separatrix_mw,
-            p_div_nuclear_heat_total_mw,
-            p_div_rad_total_mw,
-            p_div_coolant_pump_mw,
-        )
+    fn = calculate_p_fw_div_heat_deposited_mw_summed
+
+    p_fw_nuclear_heat_total_mw = From(fwbs)
+    p_fw_rad_total_mw = From(fwbs)
+    p_fw_coolant_pump_mw = From(heat_transport)
+    p_beam_orbit_loss_mw = From(current_drive)
+    p_fw_alpha_mw = From(physics)
+    p_beam_shine_through_mw = From(current_drive)
+    p_plasma_separatrix_mw = From(physics)
+    p_div_nuclear_heat_total_mw = From(fwbs)
+    p_div_rad_total_mw = From(fwbs)
+    p_div_coolant_pump_mw = From(heat_transport)
 
 
-class PFwBlktCoolantPumpMw(ExplicitFunction):
+class PFwBlktCoolantPumpMw(WrapsFunction):
     """`.primary_pumping.p_fw_blkt_coolant_pump_mw` at the `.fwbs.i_p_coolant_pumping`
     values where `power` owns it: `USER_INPUT` and `FRACTION_OF_HEAT`.
     """
 
-    p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
+    fn = calculate_p_fw_blkt_coolant_pump_mw_summed
 
-    def __call__(
-        self,
-        p_fw_coolant_pump_mw=From(heat_transport),
-        p_blkt_coolant_pump_mw=From(heat_transport),
-    ):
-        return calculate_p_fw_blkt_coolant_pump_mw_summed(
-            p_fw_coolant_pump_mw, p_blkt_coolant_pump_mw
-        )
+    p_fw_coolant_pump_mw = From(heat_transport)
+    p_blkt_coolant_pump_mw = From(heat_transport)
+
+    p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
 
 
 class Cryo(ExplicitFunction):
@@ -513,13 +500,14 @@ class Cryo(ExplicitFunction):
         )
 
 
-class CryoQNuc(ExplicitFunction):
+class CryoQNuc(WrapsFunction):
     """`.fwbs.qnuc` when PROCESS computes it: `inuclear == 0` and `i_tf_sup == 1`."""
 
-    qnuc = OutputInto(fwbs)
+    fn = calculate_cryo_qnuc_when_computed
 
-    def __call__(self, p_tf_nuclear_heat_mw=From(fwbs)):
-        return calculate_cryo_qnuc_when_computed(p_tf_nuclear_heat_mw)
+    p_tf_nuclear_heat_mw = From(fwbs)
+
+    qnuc = OutputInto(fwbs)
 
 
 class CryoQNucStep(FixedPointFunction):
@@ -551,45 +539,31 @@ class CryoQLoads(ExplicitFunction):
     qmisc = OutputInto(power)
 
 
-class CryoQLoadsSuperconductingTf(CryoQLoads):
+class CryoQLoadsSuperconductingTf(CryoQLoads, WrapsFunction):
     """`i_tf_sup == SUPERCONDUCTING` (1) -- the reference run's."""
 
-    def __call__(
-        self,
-        qnuc=From(fwbs),
-        tfcryoarea=From(tfcoil),
-        coldmass=From(structure),
-        ensxpfm=From(pf_power),
-        t_plant_pulse_plasma_present=From(times),
-        c_tf_turn=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-    ):
-        return calculate_cryo_q_loads_superconducting_tf(
-            tfcryoarea,
-            coldmass,
-            ensxpfm,
-            t_plant_pulse_plasma_present,
-            c_tf_turn,
-            n_tf_coils,
-            qnuc,
-        )
+    fn = calculate_cryo_q_loads_superconducting_tf
+
+    tfcryoarea = From(tfcoil)
+    coldmass = From(structure)
+    ensxpfm = From(pf_power)
+    t_plant_pulse_plasma_present = From(times)
+    c_tf_turn = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    qnuc = From(fwbs)
 
 
-class CryoQLoadsResistiveTf(CryoQLoads):
+class CryoQLoadsResistiveTf(CryoQLoads, WrapsFunction):
     """`i_tf_sup != SUPERCONDUCTING` with `i_pf_conductor == SUPERCONDUCTING` -- the PF
     coils are what needs cooling.
     """
 
-    def __call__(
-        self,
-        qnuc=From(fwbs),
-        coldmass=From(structure),
-        ensxpfm=From(pf_power),
-        t_plant_pulse_plasma_present=From(times),
-    ):
-        return calculate_cryo_q_loads_resistive_tf(
-            coldmass, ensxpfm, t_plant_pulse_plasma_present, qnuc
-        )
+    fn = calculate_cryo_q_loads_resistive_tf
+
+    coldmass = From(structure)
+    ensxpfm = From(pf_power)
+    t_plant_pulse_plasma_present = From(times)
+    qnuc = From(fwbs)
 
 
 class CryoLoads(ExplicitFunction):
@@ -603,40 +577,27 @@ class CryoLoads(ExplicitFunction):
     cryo_cool_req = OutputInto(tfcoil)
 
 
-class CryoLoadsActive(CryoLoads):
+class CryoLoadsActive(CryoLoads, WrapsFunction):
     """`i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` -- the reference run's."""
 
-    def __call__(
-        self,
-        eff_tf_cryo=From(tfcoil),
-        temp_tf_cryo=From(tfcoil),
-        temp_cp_coolant_inlet=From(tfcoil),
-        qss=From(power),
-        qac=From(power),
-        qcl=From(power),
-        qmisc=From(power),
-        qnuc=From(fwbs),
-    ):
-        return calculate_cryo_plant_loads_active(
-            eff_tf_cryo,
-            temp_tf_cryo,
-            temp_cp_coolant_inlet,
-            qss,
-            qac,
-            qcl,
-            qmisc,
-            qnuc,
-        )
+    fn = calculate_cryo_plant_loads_active
+
+    eff_tf_cryo = From(tfcoil)
+    temp_tf_cryo = From(tfcoil)
+    temp_cp_coolant_inlet = From(tfcoil)
+    qss = From(power)
+    qac = From(power)
+    qcl = From(power)
+    qmisc = From(power)
+    qnuc = From(fwbs)
 
 
-class CryoLoadsInactive(CryoLoads):
+class CryoLoadsInactive(CryoLoads, WrapsFunction):
     """`i_tf_sup != 1` with resistive PF coils: PROCESS never calls `Power.cryo`, so
     `helpow` and `p_cryo_plant_electric_mw` are literal zeros.
     """
 
-    def __call__(
-        self,
-        temp_tf_cryo=From(tfcoil),
-        temp_cp_coolant_inlet=From(tfcoil),
-    ):
-        return calculate_cryo_plant_loads_inactive(temp_tf_cryo, temp_cp_coolant_inlet)
+    fn = calculate_cryo_plant_loads_inactive
+
+    temp_tf_cryo = From(tfcoil)
+    temp_cp_coolant_inlet = From(tfcoil)

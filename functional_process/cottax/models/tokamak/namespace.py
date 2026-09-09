@@ -12,7 +12,6 @@ from functional_process.cottax.models.fw import (
     FirstWallGeometry,
     RadiatedWallLoad,
 )
-from functional_process.cottax.namespace import Build, Divertor
 from functional_process.cottax.models.pfcoil.namespace import CSCoil, PFCoil
 from functional_process.cottax.models.physics.bootstrap_current import (
     BootstrapCurrentFractionScaling,
@@ -24,8 +23,12 @@ from functional_process.cottax.models.physics.density_limit import TokamakDensit
 from functional_process.cottax.models.physics.l_h_transition import LHThresholdPower
 from functional_process.cottax.models.physics.plasma_current import TokamakPlasmaCurrent
 from functional_process.cottax.models.physics.plasma_fields import PlasmaFields
-from functional_process.cottax.models.physics.plasma_inductance import TokamakPlasmaInductance
-from functional_process.cottax.models.physics.scrape_off_layer import TokamakScrapeOffLayer
+from functional_process.cottax.models.physics.plasma_inductance import (
+    TokamakPlasmaInductance,
+)
+from functional_process.cottax.models.physics.scrape_off_layer import (
+    TokamakScrapeOffLayer,
+)
 from functional_process.cottax.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
@@ -37,6 +40,7 @@ from functional_process.cottax.models.shield import TokamakShield
 from functional_process.cottax.models.structure import Structure
 from functional_process.cottax.models.tfcoil.namespace import CiccSuperconductingTfCoil
 from functional_process.cottax.models.vacuum.vacuum import VacuumVesselElliptical
+from functional_process.cottax.namespace import Build, Divertor
 
 
 class Tokamak(ModelNamespace):

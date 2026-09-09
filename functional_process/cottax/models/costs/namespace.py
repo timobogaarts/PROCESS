@@ -1,4 +1,6 @@
-"""The cost model's namespace -- which cost nodes this machine has, and their settings.
+"""The cost model's namespace.
+
+Which cost nodes this machine has, and their settings.
 """
 
 import dataclasses

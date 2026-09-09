@@ -3,6 +3,7 @@
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.paths import physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,
@@ -28,14 +29,16 @@ __all__ = [
 ]
 
 
-class PlasmaMinorRadius(ExplicitFunction):
+class PlasmaMinorRadius(WrapsFunction):
     """cottax node: `calculate_minor_radius`, ports declared."""
+
+    fn = calculate_minor_radius
+
+    rmajor = From(physics)
+    aspect = From(physics)
 
     rminor = OutputInto(physics)
     eps = OutputInto(physics)
-
-    def __call__(self, rmajor=From(physics), aspect=From(physics)):
-        return calculate_minor_radius(rmajor, aspect)
 
 
 class PlasmaShapeKappa95Triang95(ExplicitFunction):
@@ -46,30 +49,30 @@ class PlasmaShapeKappa95Triang95(ExplicitFunction):
     """
 
 
-class Ipdg89XPointPlasmaShape(PlasmaShapeKappa95Triang95):
+class Ipdg89XPointPlasmaShape(PlasmaShapeKappa95Triang95, WrapsFunction):
     """`i_plasma_geometry == IPDG89_X_POINT` (0)."""
+
+    fn = calculate_shape_ipdg89_x_point
+
+    kappa = From(physics)
+    triang = From(physics)
 
     kappa95 = OutputInto(physics)
     triang95 = OutputInto(physics)
 
-    def __call__(self, kappa=From(physics), triang=From(physics)):
-        return calculate_shape_ipdg89_x_point(kappa, triang)
 
-
-class CreateDataEuDemoXPointPlasmaShape(PlasmaShapeKappa95Triang95):
+class CreateDataEuDemoXPointPlasmaShape(PlasmaShapeKappa95Triang95, WrapsFunction):
     """`i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10)."""
+
+    fn = calculate_shape_create_data_eu_demo_x_point
+
+    aspect = From(physics)
+    m_s_limit = From(physics)
+    triang = From(physics)
 
     kappa95 = OutputInto(physics)
     kappa = OutputInto(physics)
     triang95 = OutputInto(physics)
-
-    def __call__(
-        self,
-        aspect=From(physics),
-        m_s_limit=From(physics),
-        triang=From(physics),
-    ):
-        return calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang)
 
 
 class PlasmaGeometryArm(ExplicitFunction):
@@ -80,22 +83,20 @@ class PlasmaGeometryArm(ExplicitFunction):
     """
 
 
-class DoubleArcPlasmaGeometry(PlasmaGeometryArm):
+class DoubleArcPlasmaGeometry(PlasmaGeometryArm, WrapsFunction):
     """`i_plasma_current != 8 and i_plasma_shape != SAUTER` -- the arm
     `large_tokamak_eval.IN.DAT` takes.
     """
+
+    fn = calculate_geometry_double_arc
+
+    rmajor = From(physics)
+    rminor = From(physics)
+    kappa = From(physics)
+    triang = From(physics)
+    f_vol_plasma = From(physics)
 
     len_plasma_poloidal = OutputInto(physics)
     vol_plasma = OutputInto(physics)
     a_plasma_poloidal = OutputInto(physics)
     a_plasma_surface = OutputInto(physics)
-
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        kappa=From(physics),
-        triang=From(physics),
-        f_vol_plasma=From(physics),
-    ):
-        return calculate_geometry_double_arc(rmajor, rminor, kappa, triang, f_vol_plasma)

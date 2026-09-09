@@ -9,6 +9,7 @@ from functional_process.cottax.models.pfcoil import (
     PFCoilTopology,
 )
 from functional_process.cottax.paths import pf_coil, physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.volt_seconds import (
     calculate_pf_coil_turn_currents,
     calculate_pf_cs_volt_seconds,
@@ -42,25 +43,27 @@ class PFCoilTurnCurrents(ExplicitFunction):
         )
 
 
-class PFCoilVoltSeconds(ExplicitFunction):
+class PFCoilVoltSeconds(WrapsFunction):
     """cottax node: `.tokamak.pf_coil.volt_seconds`."""
+
+    fn = calculate_pf_cs_volt_seconds
+
+    ind_pf_cs_plasma_mutual = From(pf_coil)
+    c_pf_coil_turn = From(pf_coil)
 
     vs_cs_pf_total_burn = OutputInto(pf_coil)
     vs_cs_pf_total_pulse = OutputInto(pf_coil)
 
-    def __call__(
-        self,
-        ind_pf_cs_plasma_mutual=From(pf_coil),
-        c_pf_coil_turn=From(pf_coil),
-    ):
-        return calculate_pf_cs_volt_seconds(
-            ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
-            c_pf_coil_turn=c_pf_coil_turn,
-        )
-
 
 class PFCoilVoltSecondsNoCentralSolenoid(PFCoilVoltSeconds):
     """cottax node: `.tokamak.pf_coil.volt_seconds`, the `iohcl = 0` occupant."""
+
+    # Not `WrapsFunction`-synthesised: this occupant calls a *different* target
+    # (`calculate_pf_volt_seconds_no_central_solenoid`, with a `topology` keyword) than
+    # the one `PFCoilVoltSeconds.fn` names, so it writes the `__call__` below and
+    # `wraps.py` leaves it alone -- see that module's `__init_subclass__`, which names
+    # this class as the case its "a subclass that writes its own `__call__` keeps it"
+    # guard exists for.
 
     topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
 

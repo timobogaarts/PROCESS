@@ -9,15 +9,6 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.physics.superconductors import (
-    bi2212,  # noqa: F401
-    gl_nbti,  # noqa: F401
-    gl_rebco,  # noqa: F401
-    itersc,  # noqa: F401
-    jcrit_nbti,  # noqa: F401
-    jcrit_rebco,  # noqa: F401
-    western_superconducting_nb3sn,  # noqa: F401
-)
 from functional_process.cottax.models.stellarator.coils.coils import (
     bmax_from_awp,  # noqa: F401
     intersect,  # noqa: F401
@@ -44,6 +35,16 @@ from functional_process.cottax.paths import (
     stellarator,
     stellarator_config,
     tfcoil,
+)
+from functional_process.cottax.wraps import WrapsFunction
+from functional_process.models.physics.superconductors import (
+    bi2212,  # noqa: F401
+    gl_nbti,  # noqa: F401
+    gl_rebco,  # noqa: F401
+    itersc,  # noqa: F401
+    jcrit_nbti,  # noqa: F401
+    jcrit_rebco,  # noqa: F401
+    western_superconducting_nb3sn,  # noqa: F401
 )
 from functional_process.models.stellarator.coils.calculate import (
     calculate_bi2212_winding_pack_intersect_inputs,
@@ -87,99 +88,69 @@ from functional_process.vocabulary import (
 )
 
 
-class CoilToroidalThickness(ExplicitFunction):
+class CoilToroidalThickness(WrapsFunction):
+    fn = calculate_coil_toroidal_thickness
+
+    dx_tf_wp_primary_toroidal = From(tfcoil)
+    dx_tf_side_case_min = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+
     dx_tf_inboard_out_toroidal = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_wp_primary_toroidal=From(tfcoil),
-        dx_tf_side_case_min=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-    ):
-        return calculate_coil_toroidal_thickness(
-            dx_tf_wp_primary_toroidal, dx_tf_side_case_min, dx_tf_wp_insulation
-        )
 
+class CoilRadialThickness(WrapsFunction):
+    fn = calculate_coil_radial_thickness
 
-class CoilRadialThickness(ExplicitFunction):
+    dr_tf_nose_case = From(tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+    dr_tf_plasma_case = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+
     dr_tf_inboard = OutputInto(build)
 
-    def __call__(
-        self,
-        dr_tf_nose_case=From(tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-    ):
-        return calculate_coil_radial_thickness(
-            dr_tf_nose_case,
-            dr_tf_wp_with_insulation,
-            dr_tf_plasma_case,
-            dx_tf_wp_insulation,
-        )
 
+class CoilCrossSectionalArea(WrapsFunction):
+    fn = calculate_coil_cross_sectional_area
 
-class CoilCrossSectionalArea(ExplicitFunction):
+    a_tf_wp_with_insulation = From(tfcoil)
+    dr_tf_inboard = From(build)
+    dx_tf_inboard_out_toroidal = From(tfcoil)
+
     a_tf_leg_outboard = OutputInto(tfcoil)
     a_tf_coil_inboard_case = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        a_tf_wp_with_insulation=From(tfcoil),
-        dr_tf_inboard=From(build),
-        dx_tf_inboard_out_toroidal=From(tfcoil),
-    ):
-        return calculate_coil_cross_sectional_area(
-            a_tf_wp_with_insulation, dr_tf_inboard, dx_tf_inboard_out_toroidal
-        )
 
+class CoilHalfWidths(WrapsFunction):
+    fn = calculate_coil_half_widths
 
-class CoilHalfWidths(ExplicitFunction):
+    dx_tf_inboard_out_toroidal = From(tfcoil)
+
     tfocrn = OutputInto(tfcoil)
     tficrn = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_inboard_out_toroidal=From(tfcoil),
-    ):
-        return calculate_coil_half_widths(dx_tf_inboard_out_toroidal)
 
+class PlasmaFacingCoilArea(WrapsFunction):
+    fn = calculate_plasma_facing_coil_area
 
-class PlasmaFacingCoilArea(ExplicitFunction):
+    n_tf_coils = From(tfcoil)
+    dx_tf_inboard_out_toroidal = From(tfcoil)
+    len_tf_coil = From(tfcoil)
+
     tfsai = OutputInto(tfcoil)
     tfsao = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        n_tf_coils=From(tfcoil),
-        dx_tf_inboard_out_toroidal=From(tfcoil),
-        len_tf_coil=From(tfcoil),
-    ):
-        return calculate_plasma_facing_coil_area(
-            n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil
-        )
 
+class CoilCoilToroidalGap(WrapsFunction):
+    fn = select_coil_coil_toroidal_gap
 
-class CoilCoilToroidalGap(ExplicitFunction):
+    stella_config_dmin = From(stellarator_config)
+    r_coil_major = From(stellarator)
+    r_coil_minor = From(stellarator)
+    stella_config_coil_rmajor = From(stellarator_config)
+    stella_config_coil_rminor = From(stellarator_config)
+    dx_tf_inboard_out_toroidal = From(tfcoil)
+
     toroidalgap = OutputInto(tfcoil)
-
-    def __call__(
-        self,
-        stella_config_dmin=From(stellarator_config),
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        stella_config_coil_rmajor=From(stellarator_config),
-        stella_config_coil_rminor=From(stellarator_config),
-        dx_tf_inboard_out_toroidal=From(tfcoil),
-    ):
-        return select_coil_coil_toroidal_gap(
-            stella_config_dmin,
-            r_coil_major,
-            r_coil_minor,
-            stella_config_coil_rmajor,
-            stella_config_coil_rminor,
-            dx_tf_inboard_out_toroidal,
-        )
 
 
 class CoilsSummaryVariables(ExplicitFunction):
@@ -207,62 +178,46 @@ class CoilsSummaryVariables(ExplicitFunction):
         )
 
 
-class StoredMagneticEnergy(ExplicitFunction):
+class StoredMagneticEnergy(WrapsFunction):
+    fn = calculate_stored_magnetic_energy
+
+    stella_config_inductance = From(stellarator_config)
+    f_st_rmajor = From(stellarator)
+    r_coil_minor = From(stellarator)
+    stella_config_coil_rminor = From(stellarator_config)
+    f_st_n_coils = From(stellarator)
+    c_tf_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+
     e_tf_magnetic_stored_total_gj = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        stella_config_inductance=From(stellarator_config),
-        f_st_rmajor=From(stellarator),
-        r_coil_minor=From(stellarator),
-        stella_config_coil_rminor=From(stellarator_config),
-        f_st_n_coils=From(stellarator),
-        c_tf_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-    ):
-        return calculate_stored_magnetic_energy(
-            stella_config_inductance,
-            f_st_rmajor,
-            r_coil_minor,
-            stella_config_coil_rminor,
-            f_st_n_coils,
-            c_tf_total,
-            n_tf_coils,
-        )
 
+class WindingPackGeometry(WrapsFunction):
+    fn = calculate_winding_pack_geometry
 
-class WindingPackGeometry(ExplicitFunction):
+    dx_tf_turn_general = From(tfcoil)
+    dx_tf_turn_steel = From(tfcoil)
+    dx_tf_turn_insulation = From(tfcoil)
+
     a_tf_turn_cable_space_no_void = OutputInto(tfcoil)
     a_tf_turn_steel = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_turn_general=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-    ):
-        return calculate_winding_pack_geometry(
-            dx_tf_turn_general, dx_tf_turn_steel, dx_tf_turn_insulation
-        )
 
-
-class CoilCurrent(ExplicitFunction):
+class CoilCurrent(WrapsFunction):
     """`coilcurrent` has no PROCESS storage location -- it is a local in `st_coil`,
     threaded manually into `winding_pack_total_size` and
     `calculate_coils_summary_variables`.
     """
 
+    fn = calculate_current
+
+    f_st_b = From(stellarator)
+    stella_config_i0 = From(stellarator_config)
+    f_st_rmajor = From(stellarator)
+    f_st_n_coils = From(stellarator)
+
     coilcurrent = OutputInto(stellarator)
     f_st_i_total = OutputInto(stellarator)
-
-    def __call__(
-        self,
-        f_st_b=From(stellarator),
-        stella_config_i0=From(stellarator_config),
-        f_st_rmajor=From(stellarator),
-        f_st_n_coils=From(stellarator),
-    ):
-        return calculate_current(f_st_b, stella_config_i0, f_st_rmajor, f_st_n_coils)
 
 
 class WindingPackIntersectInputs(ExplicitFunction):
@@ -302,8 +257,7 @@ class WindingPackIntersectInputs(ExplicitFunction):
         a_tf_turn_cable_space_no_void,
         dx_tf_turn_general,
     ):
-        """The occupant's four outputs, from its own `jcrit` law and its own divisors.
-        """
+        """The occupant's four outputs, from its own `jcrit` law and its own divisors."""
         wp_width_r, lhs, rhs, _fraction, wp_width_r_min_guess = (
             winding_pack_pre_intersect_for(
                 jcrit,
@@ -660,10 +614,29 @@ class DurhamRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
         )
 
 
-class WindingPackTotalSizePost(ExplicitFunction):
+class WindingPackTotalSizePost(WrapsFunction):
     """cottax node: the *post*-`intersect` half of `winding_pack_total_size` --
     everything downstream of the resolved crossing point.
+
+    `winding_pack_post_intersect`'s return tuple is already in this exact order (see its
+    own docstring), so the declaration below delegates directly.
     """
+
+    fn = winding_pack_post_intersect
+
+    wp_width_r_min = From(stellarator)
+    r_coil_major = From(stellarator)
+    r_coil_minor = From(stellarator)
+    coilcurrent = From(stellarator)
+    n_tf_coils = From(tfcoil)
+    stella_config_a1 = From(stellarator_config)
+    stella_config_a2 = From(stellarator_config)
+    stella_config_wp_ratio = From(stellarator_config)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
+    a_tf_turn_cable_space_no_void = From(tfcoil)
+    dx_tf_turn_general = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    a_tf_turn_steel = From(tfcoil)
 
     b_tf_inboard_peak_symmetric = OutputInto(tfcoil)
     dx_tf_wp_primary_toroidal = OutputInto(tfcoil)
@@ -679,133 +652,73 @@ class WindingPackTotalSizePost(ExplicitFunction):
     a_tf_wp_no_insulation = OutputInto(tfcoil)
     a_tf_wp_with_insulation = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        wp_width_r_min=From(stellarator),
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        a_tf_turn_steel=From(tfcoil),
-    ):
-        # `winding_pack_post_intersect`'s return tuple is already in this exact order
-        # (see its own docstring) -- the unpack-then-repack this used to do was an
-        # identity transform, so the declaration now just delegates directly.
-        return winding_pack_post_intersect(
-            wp_width_r_min,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            f_a_tf_turn_cable_space_extra_void,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-            dx_tf_wp_insulation,
-            a_tf_turn_steel,
-        )
 
+class CoilCasing(WrapsFunction):
+    fn = calculate_casing
 
-class CoilCasing(ExplicitFunction):
+    dr_tf_nose_case = From(tfcoil)
+
     dr_tf_plasma_case = OutputInto(tfcoil)
     dx_tf_side_case_min = OutputInto(tfcoil)
 
-    def __call__(self, dr_tf_nose_case=From(tfcoil)):
-        return calculate_casing(dr_tf_nose_case)
 
+class VerticalPorts(WrapsFunction):
+    fn = calculate_vertical_ports
 
-class VerticalPorts(ExplicitFunction):
+    stella_config_max_portsize_width = From(stellarator_config)
+    f_st_rmajor = From(stellarator)
+    f_st_n_coils = From(stellarator)
+
     vporttmax = OutputInto(stellarator)
     vportpmax = OutputInto(stellarator)
     vportamax = OutputInto(stellarator)
 
-    def __call__(
-        self,
-        stella_config_max_portsize_width=From(stellarator_config),
-        f_st_rmajor=From(stellarator),
-        f_st_n_coils=From(stellarator),
-    ):
-        return calculate_vertical_ports(
-            stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
-        )
 
+class HorizontalPorts(WrapsFunction):
+    fn = calculate_horizontal_ports
 
-class HorizontalPorts(ExplicitFunction):
+    stella_config_max_portsize_width = From(stellarator_config)
+    f_st_rmajor = From(stellarator)
+    f_st_n_coils = From(stellarator)
+
     hporttmax = OutputInto(stellarator)
     hportpmax = OutputInto(stellarator)
     hportamax = OutputInto(stellarator)
 
-    def __call__(
-        self,
-        stella_config_max_portsize_width=From(stellarator_config),
-        f_st_rmajor=From(stellarator),
-        f_st_n_coils=From(stellarator),
-    ):
-        return calculate_horizontal_ports(
-            stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
-        )
 
-
-class ZTfInsideHalf(ExplicitFunction):
+class ZTfInsideHalf(WrapsFunction):
     """cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`."""
+
+    fn = calculate_z_tf_inside_half
+
+    stella_config_maximal_coil_height = From(stellarator_config)
+    r_coil_minor = From(stellarator)
+    stella_config_coil_rminor = From(stellarator_config)
 
     z_tf_inside_half = OutputInto(build)
 
-    def __call__(
-        self,
-        stella_config_maximal_coil_height=From(stellarator_config),
-        r_coil_minor=From(stellarator),
-        stella_config_coil_rminor=From(stellarator_config),
-    ):
-        return calculate_z_tf_inside_half(
-            stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
-        )
 
-
-class LenTfCoil(ExplicitFunction):
+class LenTfCoil(WrapsFunction):
     """cottax node: `calculate_len_tf_coil`, owning `.tfcoil.len_tf_coil`."""
+
+    fn = calculate_len_tf_coil
+
+    stella_config_coillength = From(stellarator_config)
+    r_coil_minor = From(stellarator)
+    stella_config_coil_rminor = From(stellarator_config)
+    n_tf_coils = From(tfcoil)
 
     len_tf_coil = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        stella_config_coillength=From(stellarator_config),
-        r_coil_minor=From(stellarator),
-        stella_config_coil_rminor=From(stellarator_config),
-        n_tf_coils=From(tfcoil),
-    ):
-        return calculate_len_tf_coil(
-            stella_config_coillength,
-            r_coil_minor,
-            stella_config_coil_rminor,
-            n_tf_coils,
-        )
 
-
-class TfCryoArea(ExplicitFunction):
+class TfCryoArea(WrapsFunction):
     """cottax node: `calculate_tfcryoarea`, owning `.tfcoil.tfcryoarea`."""
 
-    tfcryoarea = OutputInto(tfcoil)
+    fn = calculate_tfcryoarea
 
-    def __call__(
-        self,
-        stella_config_coilsurface=From(stellarator_config),
-        f_st_rmajor=From(stellarator),
-        r_coil_minor=From(stellarator),
-        stella_config_coil_rminor=From(stellarator_config),
-    ):
-        return calculate_tfcryoarea(
-            stella_config_coilsurface,
-            f_st_rmajor,
-            r_coil_minor,
-            stella_config_coil_rminor,
-        )
+    stella_config_coilsurface = From(stellarator_config)
+    f_st_rmajor = From(stellarator)
+    r_coil_minor = From(stellarator)
+    stella_config_coil_rminor = From(stellarator_config)
+
+    tfcryoarea = OutputInto(tfcoil)

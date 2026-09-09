@@ -5,6 +5,8 @@
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
+from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.blankets.blanket_library import (
     apply_coverage_factors_double_null,
     apply_coverage_factors_single_null,
@@ -17,7 +19,6 @@ from functional_process.models.blankets.blanket_library import (
     calculate_elliptical_blkt_volumes,
 )
 from functional_process.models.engineering.ivc_functions import dshellarea, dshellvol
-from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
 
 # ruff's docstring rules treat `__all__` membership as the definition of "public" once
 # one is present, so this lists every public name this module resolved before step 2 of
@@ -67,54 +68,35 @@ class BlanketHalfHeight(ExplicitFunction):
     """
 
 
-class BlanketHalfHeightSingleNull(BlanketHalfHeight):
+class BlanketHalfHeightSingleNull(BlanketHalfHeight, WrapsFunction):
     """cottax node: `calculate_blkt_half_height_single_null`. `n_divertors == 1`."""
 
+    fn = calculate_blkt_half_height_single_null
+
+    z_plasma_xpoint_lower = From(build)
+    dz_xpoint_divertor = From(build)
+    dz_divertor = From(divertor)
+    dz_blkt_upper = From(build)
+    z_plasma_xpoint_upper = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_outboard = From(build)
+
     dz_blkt_half = OutputInto(blanket)
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        dz_blkt_upper=From(build),
-        z_plasma_xpoint_upper=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_outboard=From(build),
-    ):
-        return calculate_blkt_half_height_single_null(
-            z_plasma_xpoint_lower,
-            dz_xpoint_divertor,
-            dz_divertor,
-            dz_blkt_upper,
-            z_plasma_xpoint_upper,
-            dr_fw_plasma_gap_inboard,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_inboard,
-            dr_fw_outboard,
-        )
 
-
-class BlanketHalfHeightDoubleNull(BlanketHalfHeight):
+class BlanketHalfHeightDoubleNull(BlanketHalfHeight, WrapsFunction):
     """cottax node: `calculate_blkt_half_height_double_null`."""
 
-    dz_blkt_half = OutputInto(blanket)
+    fn = calculate_blkt_half_height_double_null
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_blkt_half_height_double_null(
-            z_plasma_xpoint_lower,
-            dz_xpoint_divertor,
-            dz_divertor,
-            dz_blkt_upper,
-        )
+    z_plasma_xpoint_lower = From(build)
+    dz_xpoint_divertor = From(build)
+    dz_divertor = From(divertor)
+    dz_blkt_upper = From(build)
+
+    dz_blkt_half = OutputInto(blanket)
 
 
 class BlanketAreas(ExplicitFunction):
@@ -130,142 +112,89 @@ class BlanketVolumes(ExplicitFunction):
     """
 
 
-class EllipticalBlanketAreas(BlanketAreas):
+class EllipticalBlanketAreas(BlanketAreas, WrapsFunction):
     """cottax node: `calculate_elliptical_blkt_areas`."""
 
+    fn = calculate_elliptical_blkt_areas
+
+    rmajor = From(physics)
+    rminor = From(physics)
+    triang = From(physics)
+    r_shld_inboard_inner = From(build)
+    dr_shld_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    r_shld_outboard_outer = From(build)
+    dr_shld_outboard = From(build)
+    dr_blkt_outboard = From(build)
+    dz_blkt_half = From(blanket)
+
     a_blkt_inboard_surface_full_coverage = OutputInto(build)
     a_blkt_outboard_surface_full_coverage = OutputInto(build)
     a_blkt_total_surface_full_coverage = OutputInto(build)
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_shld_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dz_blkt_half=From(blanket),
-    ):
-        return calculate_elliptical_blkt_areas(
-            rmajor,
-            rminor,
-            triang,
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            r_shld_outboard_outer,
-            dr_shld_outboard,
-            dr_blkt_outboard,
-            dz_blkt_half,
-        )
 
-
-class DShapedBlanketAreas(BlanketAreas):
+class DShapedBlanketAreas(BlanketAreas, WrapsFunction):
     """cottax node: `calculate_dshaped_blkt_areas`."""
 
+    fn = calculate_dshaped_blkt_areas
+
+    r_shld_inboard_inner = From(build)
+    dr_shld_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    rminor = From(physics)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_outboard = From(build)
+    dz_blkt_half = From(blanket)
+
     a_blkt_inboard_surface_full_coverage = OutputInto(build)
     a_blkt_outboard_surface_full_coverage = OutputInto(build)
     a_blkt_total_surface_full_coverage = OutputInto(build)
 
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        rminor=From(physics),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dz_blkt_half=From(blanket),
-    ):
-        return calculate_dshaped_blkt_areas(
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            dr_fw_inboard,
-            dr_fw_plasma_gap_inboard,
-            rminor,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_outboard,
-            dz_blkt_half,
-        )
 
-
-class EllipticalBlanketVolumes(BlanketVolumes):
+class EllipticalBlanketVolumes(BlanketVolumes, WrapsFunction):
     """cottax node: `calculate_elliptical_blkt_volumes`. Same arm as the areas above."""
 
+    fn = calculate_elliptical_blkt_volumes
+
+    rmajor = From(physics)
+    rminor = From(physics)
+    triang = From(physics)
+    r_shld_inboard_inner = From(build)
+    dr_shld_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    r_shld_outboard_outer = From(build)
+    dr_shld_outboard = From(build)
+    dr_blkt_outboard = From(build)
+    dz_blkt_half = From(blanket)
+    dz_blkt_upper = From(build)
+
     vol_blkt_inboard_full_coverage = OutputInto(fwbs)
     vol_blkt_outboard_full_coverage = OutputInto(fwbs)
     vol_blkt_total_full_coverage = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_shld_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dz_blkt_half=From(blanket),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_elliptical_blkt_volumes(
-            rmajor,
-            rminor,
-            triang,
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            r_shld_outboard_outer,
-            dr_shld_outboard,
-            dr_blkt_outboard,
-            dz_blkt_half,
-            dz_blkt_upper,
-        )
 
-
-class DShapedBlanketVolumes(BlanketVolumes):
+class DShapedBlanketVolumes(BlanketVolumes, WrapsFunction):
     """cottax node: `calculate_dshaped_blkt_volumes`."""
 
+    fn = calculate_dshaped_blkt_volumes
+
+    r_shld_inboard_inner = From(build)
+    dr_shld_inboard = From(build)
+    dr_blkt_inboard = From(build)
+    dr_fw_inboard = From(build)
+    dr_fw_plasma_gap_inboard = From(build)
+    rminor = From(physics)
+    dr_fw_plasma_gap_outboard = From(build)
+    dr_fw_outboard = From(build)
+    dz_blkt_half = From(blanket)
+    dr_blkt_outboard = From(build)
+    dz_blkt_upper = From(build)
+
     vol_blkt_inboard_full_coverage = OutputInto(fwbs)
     vol_blkt_outboard_full_coverage = OutputInto(fwbs)
     vol_blkt_total_full_coverage = OutputInto(fwbs)
-
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        rminor=From(physics),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dz_blkt_half=From(blanket),
-        dr_blkt_outboard=From(build),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_dshaped_blkt_volumes(
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            dr_fw_inboard,
-            dr_fw_plasma_gap_inboard,
-            rminor,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_outboard,
-            dz_blkt_half,
-            dr_blkt_outboard,
-            dz_blkt_upper,
-        )
 
 
 class BlanketCoverageFactors(ExplicitFunction):
@@ -274,9 +203,18 @@ class BlanketCoverageFactors(ExplicitFunction):
     """
 
 
-class BlanketCoverageFactorsSingleNull(BlanketCoverageFactors):
+class BlanketCoverageFactorsSingleNull(BlanketCoverageFactors, WrapsFunction):
     """cottax node: `apply_coverage_factors_single_null`. `n_divertors == 1`."""
 
+    fn = apply_coverage_factors_single_null
+
+    a_blkt_total_surface_full_coverage = From(build)
+    a_blkt_inboard_surface_full_coverage = From(build)
+    f_ster_div_single = From(fwbs)
+    f_a_fw_outboard_hcd = From(fwbs)
+    vol_blkt_total_full_coverage = From(fwbs)
+    vol_blkt_inboard_full_coverage = From(fwbs)
+
     a_blkt_outboard_surface = OutputInto(build)
     a_blkt_total_surface = OutputInto(build)
     vol_blkt_outboard = OutputInto(fwbs)
@@ -284,28 +222,19 @@ class BlanketCoverageFactorsSingleNull(BlanketCoverageFactors):
     a_blkt_inboard_surface = OutputInto(build)
     vol_blkt_total = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        a_blkt_total_surface_full_coverage=From(build),
-        a_blkt_inboard_surface_full_coverage=From(build),
-        f_ster_div_single=From(fwbs),
-        f_a_fw_outboard_hcd=From(fwbs),
-        vol_blkt_total_full_coverage=From(fwbs),
-        vol_blkt_inboard_full_coverage=From(fwbs),
-    ):
-        return apply_coverage_factors_single_null(
-            a_blkt_total_surface_full_coverage,
-            a_blkt_inboard_surface_full_coverage,
-            f_ster_div_single,
-            f_a_fw_outboard_hcd,
-            vol_blkt_total_full_coverage,
-            vol_blkt_inboard_full_coverage,
-        )
 
-
-class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors):
+class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors, WrapsFunction):
     """cottax node: `apply_coverage_factors_double_null`."""
 
+    fn = apply_coverage_factors_double_null
+
+    a_blkt_total_surface_full_coverage = From(build)
+    a_blkt_inboard_surface_full_coverage = From(build)
+    f_ster_div_single = From(fwbs)
+    f_a_fw_outboard_hcd = From(fwbs)
+    vol_blkt_total_full_coverage = From(fwbs)
+    vol_blkt_inboard_full_coverage = From(fwbs)
+
     a_blkt_outboard_surface = OutputInto(build)
     a_blkt_total_surface = OutputInto(build)
     vol_blkt_outboard = OutputInto(fwbs)
@@ -313,36 +242,14 @@ class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors):
     a_blkt_inboard_surface = OutputInto(build)
     vol_blkt_total = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        a_blkt_total_surface_full_coverage=From(build),
-        a_blkt_inboard_surface_full_coverage=From(build),
-        f_ster_div_single=From(fwbs),
-        f_a_fw_outboard_hcd=From(fwbs),
-        vol_blkt_total_full_coverage=From(fwbs),
-        vol_blkt_inboard_full_coverage=From(fwbs),
-    ):
-        return apply_coverage_factors_double_null(
-            a_blkt_total_surface_full_coverage,
-            a_blkt_inboard_surface_full_coverage,
-            f_ster_div_single,
-            f_a_fw_outboard_hcd,
-            vol_blkt_total_full_coverage,
-            vol_blkt_inboard_full_coverage,
-        )
 
-
-class BlanketInboardPoloidalAngle(ExplicitFunction):
+class BlanketInboardPoloidalAngle(WrapsFunction):
     """cottax node: `calculate_blkt_inboard_poloidal_plasma_angle`."""
 
-    deg_blkt_inboard_poloidal_plasma = OutputInto(blanket)
+    fn = calculate_blkt_inboard_poloidal_plasma_angle
 
-    def __call__(
-        self,
-        rminor=From(physics),
-        dz_blkt_half=From(blanket),
-        dr_fw_plasma_gap_inboard=From(build),
-    ):
-        return calculate_blkt_inboard_poloidal_plasma_angle(
-            rminor, dz_blkt_half, dr_fw_plasma_gap_inboard
-        )
+    rminor = From(physics)
+    dz_blkt_half = From(blanket)
+    dr_fw_plasma_gap_inboard = From(build)
+
+    deg_blkt_inboard_poloidal_plasma = OutputInto(blanket)

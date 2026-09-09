@@ -12,6 +12,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.paths import physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.scrape_off_layer import (
     calculate_eich2013_sol_power_decay_length,
     calculate_mast2014_sol_power_decay_length_1,
@@ -81,18 +82,17 @@ class OutboardSOLPowerDecayLength(ExplicitFunction):
     """
 
 
-class OutboardSOLPowerDecayLengthEich2013(OutboardSOLPowerDecayLength):
+class OutboardSOLPowerDecayLengthEich2013(OutboardSOLPowerDecayLength, WrapsFunction):
     """`i_len_sol_outboard_power_decay == EICH_2013` (1) -- PROCESS's own default
     (`physics_variables.py:1718`) and the value live on `large_tokamak_eval.IN.DAT`,
     which never sets this switch.
     """
 
-    len_sol_outboard_power_decay = OutputInto(physics)
+    fn = outboard_sol_power_decay_length_eich2013
 
-    def __call__(self, len_plasma_sol_eich13_power_decay=From(physics)):
-        return outboard_sol_power_decay_length_eich2013(
-            len_plasma_sol_eich13_power_decay
-        )
+    len_plasma_sol_eich13_power_decay = From(physics)
+
+    len_sol_outboard_power_decay = OutputInto(physics)
 
 
 class UpstreamSOLOutboardParallelArea(ExplicitFunction):
@@ -143,38 +143,30 @@ class UpstreamSOLOutboardEich13ParallelArea(ExplicitFunction):
         )
 
 
-class OutboardSOLParallelPowerFlux(ExplicitFunction):
+class OutboardSOLParallelPowerFlux(WrapsFunction):
     """cottax node: `.physics.pflux_plasma_outboard_sol_parallel_mw`, the switch-
     selected power flux.
     """
 
+    fn = outboard_sol_parallel_power_flux
+
+    p_plasma_separatrix_mw_raw = From(physics)
+    a_plasma_outboard_sol_parallel = From(physics)
+
     pflux_plasma_outboard_sol_parallel_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-        a_plasma_outboard_sol_parallel=From(physics),
-    ):
-        return outboard_sol_parallel_power_flux(
-            p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_parallel
-        )
 
-
-class OutboardSOLEich13ParallelPowerFlux(ExplicitFunction):
+class OutboardSOLEich13ParallelPowerFlux(WrapsFunction):
     """cottax node: `.physics.pflux_plasma_outboard_sol_eich13_parallel_mw`, the Eich
     2013 power flux, unconditional.
     """
 
-    pflux_plasma_outboard_sol_eich13_parallel_mw = OutputInto(physics)
+    fn = outboard_sol_eich13_parallel_power_flux
 
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-        a_plasma_outboard_sol_eich13_parallel=From(physics),
-    ):
-        return outboard_sol_eich13_parallel_power_flux(
-            p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_eich13_parallel
-        )
+    p_plasma_separatrix_mw_raw = From(physics)
+    a_plasma_outboard_sol_eich13_parallel = From(physics)
+
+    pflux_plasma_outboard_sol_eich13_parallel_mw = OutputInto(physics)
 
 
 class TokamakScrapeOffLayer(ModelNamespace):

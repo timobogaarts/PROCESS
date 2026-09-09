@@ -7,8 +7,8 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.cottax.stated import StatesValues
 from functional_process.cottax.paths import divertor, physics
+from functional_process.cottax.stated import StatesValues
 from functional_process.models.physics.plasma_profiles import (
     calculate_ion_vol_avg_temperature,
     calculate_parabolic_gradient_lengths,
@@ -77,8 +77,7 @@ class ProfileFactors(ExplicitFunction):
 
 
 class ParabolicGradientLengths(ExplicitFunction):
-    """cottax node: `calculate_parabolic_gradient_lengths`, unchanged, ports declared.
-    """
+    """cottax node: `calculate_parabolic_gradient_lengths`, unchanged, ports declared."""
 
     gradient_length_te = OutputInto(physics)
     gradient_length_ne = OutputInto(physics)

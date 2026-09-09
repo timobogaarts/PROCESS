@@ -85,7 +85,9 @@ from functional_process.cottax.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPowerUserInputPumping,
     ExponentialAttenuationBlanketShieldPower,
 )
-from functional_process.cottax.models.stellarator.stellarator_fwbs_s3 import DivertorPlateMass
+from functional_process.cottax.models.stellarator.stellarator_fwbs_s3 import (
+    DivertorPlateMass,
+)
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
     ShieldMass,
@@ -99,8 +101,7 @@ from functional_process.cottax.models.stellarator.tf_nuclear_heating import (
 
 
 class BlanketShieldPowerExponential(ModelNamespace):
-    """Exponential-attenuation blanket/shield power: `blktmodel == 0 & ipowerflow == 0`.
-    """
+    """Exponential-attenuation blanket/shield power: `blktmodel == 0 & ipowerflow == 0`."""
 
     # Over the line length and left that way -- see `Physics`'s own note: the slot
     # name and the occupant class are both this long and `ruff format` strips

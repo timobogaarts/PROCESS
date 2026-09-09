@@ -71,8 +71,7 @@ from functional_process.cottax.models.stellarator.plasma_physics import (
 
 
 class ProfileParameterisationParabolic(ModelNamespace):
-    """Parabolic profiles: the `.physics.i_plasma_pedestal == 0` occupant, 6 or 7 nodes.
-    """
+    """Parabolic profiles: the `.physics.i_plasma_pedestal == 0` occupant, 6 or 7 nodes."""
 
     ecrh_density_limit: EcrhDensityLimit | None = dataclasses.field(kw_only=True)
     """The ECRH density limit -- **present on a stellarator, absent on a tokamak.** Not
@@ -187,8 +186,7 @@ class PhysicsProfiles(ModelNamespace):
 
 
 class PhysicsConfinementTime(ModelNamespace):
-    """Energy confinement: the head, the scaling law, and the tail, as separate slots.
-    """
+    """Energy confinement: the head, the scaling law, and the tail, as separate slots."""
 
     inputs: ConfinementScalingInputs = ConfinementScalingInputs()
     """The unit conversions the laws take as arguments (`nd_plasma_electron_line_19`,

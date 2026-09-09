@@ -47,7 +47,11 @@ rather than a mechanism.
 
 import inspect
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, FromExactly
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def _declared_reads_on_cls(cls: type) -> dict[str, FromExactly]:
@@ -73,6 +77,16 @@ class WrapsFunction(ExplicitFunction):
     def __init_subclass__(cls, **kwargs):
         """Synthesise `__call__` from the declared reads, in `fn`'s parameter order.
 
+        **A subclass that writes its own `__call__` keeps it.** Without that guard a
+        switch arm which inherits its family's `fn` but overrides the body -- calling a
+        *different* target -- has its explicit `__call__` silently replaced by a
+        forwarder to the parent's `fn`, and the reads check below cannot catch it
+        whenever the two targets happen to share parameter names. Found in
+        `models/pfcoil/volt_seconds.py`, where `PFCoilVoltSecondsNoCentralSolenoid`
+        calls `calculate_pf_volt_seconds_no_central_solenoid` and its parent calls
+        `calculate_pf_cs_volt_seconds`: same two required names, wrong function, no
+        error, reachable from the live spherical-tokamak graph.
+
         Raises
         ------
         TypeError
@@ -80,12 +94,25 @@ class WrapsFunction(ExplicitFunction):
             the check the two-place form cannot make: today a parameter added to a
             `models/` function and forgotten in its node is silent until something reads
             the missing port.
+        TypeError
+            If `fn` resolved to an `Output` -- the class declared an output of the same
+            name above it, which the mandated `fn`-before-outputs order prevents.
         """
         super().__init_subclass__(**kwargs)
+        if "__call__" in cls.__dict__:
+            return  # writes its own body; see the note below
+
         fn = getattr(cls, "fn", None)
-        fn = getattr(fn, "__func__", fn)          # a `staticmethod` if it was wrapped
+        fn = getattr(fn, "__func__", fn)  # a `staticmethod` if it was wrapped
         if fn is None:
-            return                      # an intermediate base; its subclasses name `fn`
+            return  # an intermediate base; its subclasses name `fn`
+
+        if isinstance(fn, Output):
+            raise TypeError(
+                f"{cls.__name__}.fn is an `OutputInto`, not a function -- the class "
+                f"body declares an output above `fn` under the same name, so `fn` "
+                f"resolved to the descriptor. Declare `fn` before the outputs."
+            )
 
         reads = _declared_reads_on_cls(cls)
         expected = [

@@ -44,7 +44,9 @@ from functional_process.cottax.models.stellarator.initialization import PulseDur
 
 
 class TokamakPhysics(ModelNamespace):
-    """`.tokamak.physics` -- the radiation, separatrix and ohmic blocks of `physics.py`.
+    """`.tokamak.physics`.
+
+    The radiation, separatrix and ohmic blocks of `physics.py`.
     """
 
     unclipped_radiation_powers: UnclippedRadiationPowers = UnclippedRadiationPowers()

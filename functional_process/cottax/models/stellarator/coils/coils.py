@@ -1,5 +1,4 @@
-"""Pure-functional port of `process/models/stellarator/coils/coils.py` (registry #10).
-"""
+"""Pure-functional port of `process/models/stellarator/coils/coils.py` (registry #10)."""
 
 import jax  # noqa: F401
 import jax.numpy as jnp
@@ -9,7 +8,6 @@ from cottax.evaluate import (
     ConditionMap,
 )
 from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
     From,
     ImplicitFunction,
     OutputInto,
@@ -24,6 +22,11 @@ from cottax.spec import (
     VarPath,
 )
 
+from functional_process.cottax.paths import (
+    stellarator,
+    tfcoil,
+)
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.superconductors import (
     bi2212,  # noqa: F401
     gl_nbti,  # noqa: F401
@@ -32,10 +35,6 @@ from functional_process.models.physics.superconductors import (
     jcrit_nbti,  # noqa: F401
     jcrit_rebco,  # noqa: F401
     western_superconducting_nb3sn,  # noqa: F401
-)
-from functional_process.cottax.paths import (
-    stellarator,
-    tfcoil,
 )
 from functional_process.models.stellarator.coils.coils import (
     bmax_from_awp,  # noqa: F401
@@ -53,129 +52,102 @@ from functional_process.models.stellarator.coils.coils import (
 )
 
 
-class JcritIterNb3sn(ExplicitFunction):
+class JcritIterNb3sn(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 1` (ITER Nb3Sn)."""
 
+    fn = jcrit_from_material_iter_nb3sn
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-    ):
-        return jcrit_from_material_iter_nb3sn(t_helium, b_max)
 
-
-class JcritBi2212(ExplicitFunction):
+class JcritBi2212(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 2` (Bi-2212)."""
 
+    fn = jcrit_from_material_bi2212
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+    j_tf_wp = From(tfcoil)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
+    fhts = From(tfcoil)
+    f_a_tf_turn_cable_copper = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-        j_tf_wp=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        fhts=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-    ):
-        return jcrit_from_material_bi2212(
-            t_helium,
-            b_max,
-            j_tf_wp,
-            f_a_tf_turn_cable_space_extra_void,
-            fhts,
-            f_a_tf_turn_cable_copper,
-        )
 
-
-class JcritNbtiLubell(ExplicitFunction):
+class JcritNbtiLubell(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 3` (NbTi, Lubell scaling)."""
 
+    fn = jcrit_from_material_nbti_lubell
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-    ):
-        return jcrit_from_material_nbti_lubell(t_helium, b_max)
 
-
-class JcritIterNb3snUserDefined(ExplicitFunction):
+class JcritIterNb3snUserDefined(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 4` (ITER Nb3Sn,
     user-defined).
     """
 
+    fn = jcrit_from_material_iter_nb3sn_user_defined
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+    bcritsc = From(tfcoil)
+    tcritsc = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-        bcritsc=From(tfcoil),
-        tcritsc=From(tfcoil),
-    ):
-        return jcrit_from_material_iter_nb3sn_user_defined(
-            t_helium, b_max, bcritsc, tcritsc
-        )
 
-
-class JcritWstNb3sn(ExplicitFunction):
+class JcritWstNb3sn(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 5` (WST Nb3Sn)."""
 
+    fn = jcrit_from_material_wst_nb3sn
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-    ):
-        return jcrit_from_material_wst_nb3sn(t_helium, b_max)
 
-
-class JcritRebco(ExplicitFunction):
+class JcritRebco(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 6` (REBCO, CroCo strand)."""
 
+    fn = jcrit_from_material_rebco
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-    ):
-        return jcrit_from_material_rebco(t_helium, b_max)
 
-
-class JcritGlNbti(ExplicitFunction):
+class JcritGlNbti(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 7` (Durham GL Nb-Ti)."""
 
+    fn = jcrit_from_material_gl_nbti
+
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+    b_crit_upper_nbti = From(tfcoil)
+    t_crit_nbti = From(tfcoil)
+
     j_crit_sc = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-        b_crit_upper_nbti=From(tfcoil),
-        t_crit_nbti=From(tfcoil),
-    ):
-        return jcrit_from_material_gl_nbti(
-            t_helium, b_max, b_crit_upper_nbti, t_crit_nbti
-        )
 
-
-class JcritGlRebco(ExplicitFunction):
+class JcritGlRebco(WrapsFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 8` (Durham GL REBCO)."""
 
-    j_crit_sc = OutputInto(tfcoil)
+    fn = jcrit_from_material_gl_rebco
 
-    def __call__(
-        self,
-        t_helium=From(tfcoil),
-        b_max=From(tfcoil),
-    ):
-        return jcrit_from_material_gl_rebco(t_helium, b_max)
+    t_helium = From(tfcoil)
+    b_max = From(tfcoil)
+
+    j_crit_sc = OutputInto(tfcoil)
 
 
 # Not assembled into a `Switch`/`Alternative` group here, and not registered in

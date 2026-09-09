@@ -8,6 +8,7 @@ import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.paths import constraints, superconducting_tfcoil, tfcoil
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,  # noqa: F401 -- re-exported for tests
     calculate_quench_protection_current_density,  # noqa: F401 -- re-exported for tests
@@ -75,19 +76,13 @@ class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
         )
 
 
-class TfCoilDumpQuenchVoltage(ExplicitFunction):
+class TfCoilDumpQuenchVoltage(WrapsFunction):
     """cottax node: `.tfcoil.v_tf_coil_dump_quench_kv`, one of the slot's ten reads."""
 
-    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)
+    fn = v_tf_coil_dump_quench_kv
 
-    def __call__(
-        self,
-        e_tf_coil_magnetic_stored=From(tfcoil),
-        t_tf_superconductor_quench=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-    ):
-        return v_tf_coil_dump_quench_kv(
-            e_tf_coil_magnetic_stored=e_tf_coil_magnetic_stored,
-            t_tf_superconductor_quench=t_tf_superconductor_quench,
-            c_tf_turn=c_tf_turn,
-        )
+    e_tf_coil_magnetic_stored = From(tfcoil)
+    t_tf_superconductor_quench = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+
+    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)

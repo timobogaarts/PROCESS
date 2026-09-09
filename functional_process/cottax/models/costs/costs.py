@@ -11,6 +11,30 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.cottax.models.pfcoil.masses import (
+    I_CS_SUPERCONDUCTOR,
+    I_CS_SUPERCONDUCTOR_WST_NB3SN,
+    I_PF_SUPERCONDUCTOR,
+    I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO,
+)
+from functional_process.cottax.paths import (
+    buildings,
+    costs,
+    current_drive,
+    divertor,
+    first_wall,
+    fwbs,
+    heat_transport,
+    ife,
+    pf_coil,
+    pf_power,
+    physics,
+    structure,
+    tfcoil,
+    times,
+    vacuum,
+)
+from functional_process.cottax.stated import StatesValues
 from functional_process.models.costs.costs import (
     calculate_atmospheric_recovery_cost,
     calculate_auxiliary_component_cooling_cost,
@@ -73,31 +97,7 @@ from functional_process.models.costs.costs import (
     calculate_vacuum_vessel_assembly_cost,
     convert_fpy_to_calendar,
 )
-from functional_process.cottax.models.pfcoil.masses import (
-    I_CS_SUPERCONDUCTOR,
-    I_CS_SUPERCONDUCTOR_WST_NB3SN,
-    I_PF_SUPERCONDUCTOR,
-    I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO,
-)
 from functional_process.models.safe_math import safe_pow, safe_sqrt
-from functional_process.cottax.stated import StatesValues
-from functional_process.cottax.paths import (
-    buildings,
-    costs,
-    current_drive,
-    divertor,
-    first_wall,
-    fwbs,
-    heat_transport,
-    ife,
-    pf_coil,
-    pf_power,
-    physics,
-    structure,
-    tfcoil,
-    times,
-    vacuum,
-)
 from functional_process.vocabulary import PFConductorModel
 
 # ruff's docstring rules treat `__all__` membership as the definition of "public"
@@ -1468,8 +1468,7 @@ class EnergyStorageCost(ExplicitFunction):
 
 
 class EnergyStorageCostUnpulsed(EnergyStorageCost, StatesValues):
-    """`i_pulsed_plant == 0`: no storage, so `.costs.c2253` is zero and nothing is read.
-    """
+    """`i_pulsed_plant == 0`: no storage, so `.costs.c2253` is zero and nothing is read."""
 
 
 class EnergyStorageCostPulsed(EnergyStorageCost):

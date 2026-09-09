@@ -11,15 +11,16 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.safe_math import (
-    safe_sqrt,  # noqa: F401
-)
 from functional_process.cottax.paths import (
     impurity_radiation,
     neoclassics,
     physics,
     stellarator,
     stellarator_config,
+)
+from functional_process.cottax.wraps import WrapsFunction
+from functional_process.models.safe_math import (
+    safe_sqrt,  # noqa: F401
 )
 from functional_process.models.stellarator.neoclassics import (
     KEV,  # noqa: F401
@@ -83,41 +84,25 @@ class ProfileValues(ExplicitFunction):
         )
 
 
-class EffectiveThermalDiffusivity(ExplicitFunction):
+class EffectiveThermalDiffusivity(WrapsFunction):
     """cottax node: `calculate_effective_thermal_diffusivity`, unchanged, ports
     declared.
     """
 
-    chi_process_e = OutputInto(neoclassics)
+    fn = calculate_effective_thermal_diffusivity
 
-    def __call__(
-        self,
-        vol_plasma=From(physics),
-        f_st_rmajor=From(stellarator),
-        radius_plasma_core_norm=From(impurity_radiation),
-        rminor=From(physics),
-        stella_config_rminor_ref=From(stellarator_config),
-        a_plasma_surface=From(physics),
-        f_p_alpha_plasma_deposited=From(physics),
-        pden_alpha_total_mw=From(physics),
-        pden_plasma_core_rad_mw=From(physics),
-        nd_plasma_electron_on_axis=From(physics),
-        temp_plasma_electron_on_axis_kev=From(physics),
-        alphat=From(physics),
-        alphan=From(physics),
-    ):
-        return calculate_effective_thermal_diffusivity(
-            vol_plasma,
-            f_st_rmajor,
-            radius_plasma_core_norm,
-            rminor,
-            stella_config_rminor_ref,
-            a_plasma_surface,
-            f_p_alpha_plasma_deposited,
-            pden_alpha_total_mw,
-            pden_plasma_core_rad_mw,
-            nd_plasma_electron_on_axis,
-            temp_plasma_electron_on_axis_kev,
-            alphat,
-            alphan,
-        )
+    vol_plasma = From(physics)
+    f_st_rmajor = From(stellarator)
+    radius_plasma_core_norm = From(impurity_radiation)
+    rminor = From(physics)
+    stella_config_rminor_ref = From(stellarator_config)
+    a_plasma_surface = From(physics)
+    f_p_alpha_plasma_deposited = From(physics)
+    pden_alpha_total_mw = From(physics)
+    pden_plasma_core_rad_mw = From(physics)
+    nd_plasma_electron_on_axis = From(physics)
+    temp_plasma_electron_on_axis_kev = From(physics)
+    alphat = From(physics)
+    alphan = From(physics)
+
+    chi_process_e = OutputInto(neoclassics)

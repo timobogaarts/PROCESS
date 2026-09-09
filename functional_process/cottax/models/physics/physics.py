@@ -1,5 +1,4 @@
-"""Pure-functional port of the **tokamak arm** of `process/models/physics/physics.py`.
-"""
+"""Pure-functional port of the **tokamak arm** of `process/models/physics/physics.py`."""
 
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -8,6 +7,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.paths import current_drive, physics, times
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
@@ -48,110 +48,89 @@ class SurfaceAveragedPoloidalFieldAmperes(SurfaceAveragedPoloidalField):
         )
 
 
-class UnclippedRadiationPowers(ExplicitFunction):
+class UnclippedRadiationPowers(WrapsFunction):
     """cottax node: `calculate_unclipped_radiation_powers`, ports declared."""
+
+    fn = calculate_unclipped_radiation_powers
+
+    pden_plasma_core_rad_mw_unclipped = From(physics)
+    pden_plasma_outer_rad_mw_unclipped = From(physics)
+    vol_plasma = From(physics)
 
     pden_plasma_core_rad_mw = OutputInto(physics)
     pden_plasma_outer_rad_mw = OutputInto(physics)
     p_plasma_inner_rad_mw = OutputInto(physics)
     p_plasma_outer_rad_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        pden_plasma_core_rad_mw_unclipped=From(physics),
-        pden_plasma_outer_rad_mw_unclipped=From(physics),
-        vol_plasma=From(physics),
-    ):
-        return calculate_unclipped_radiation_powers(
-            pden_plasma_core_rad_mw_unclipped,
-            pden_plasma_outer_rad_mw_unclipped,
-            vol_plasma,
-        )
 
-
-class TotalRadiationPower(ExplicitFunction):
+class TotalRadiationPower(WrapsFunction):
     """cottax node: `calculate_total_radiation_power`, ports declared."""
 
-    p_plasma_rad_mw = OutputInto(physics)
+    fn = calculate_total_radiation_power
 
-    def __call__(
-        self,
-        pden_plasma_rad_mw=From(physics),
-        vol_plasma=From(physics),
-    ):
-        return calculate_total_radiation_power(pden_plasma_rad_mw, vol_plasma)
+    pden_plasma_rad_mw = From(physics)
+    vol_plasma = From(physics)
+
+    p_plasma_rad_mw = OutputInto(physics)
 
 
 class SeparatrixPower(ExplicitFunction):
     """The family that owns `.physics.p_plasma_separatrix_mw_raw`."""
 
 
-class SeparatrixPowerNonIgnited(SeparatrixPower):
+class SeparatrixPowerNonIgnited(SeparatrixPower, WrapsFunction):
     """`i_plasma_ignited == NON_IGNITED`: injected heating crosses the separatrix."""
+
+    fn = calculate_separatrix_power
+
+    f_p_alpha_plasma_deposited = From(physics)
+    p_alpha_total_mw = From(physics)
+    p_non_alpha_charged_mw = From(physics)
+    p_hcd_injected_total_mw = From(current_drive)
+    p_plasma_ohmic_mw = From(physics)
+    p_plasma_rad_mw = From(physics)
 
     p_plasma_separatrix_mw_raw = OutputInto(physics)
 
-    def __call__(
-        self,
-        f_p_alpha_plasma_deposited=From(physics),
-        p_alpha_total_mw=From(physics),
-        p_non_alpha_charged_mw=From(physics),
-        p_hcd_injected_total_mw=From(current_drive),
-        p_plasma_ohmic_mw=From(physics),
-        p_plasma_rad_mw=From(physics),
-    ):
-        return calculate_separatrix_power(
-            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
-            p_alpha_total_mw=p_alpha_total_mw,
-            p_non_alpha_charged_mw=p_non_alpha_charged_mw,
-            p_hcd_injected_total_mw=p_hcd_injected_total_mw,
-            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
-            p_plasma_rad_mw=p_plasma_rad_mw,
-        )
 
-
-class PositiveSeparatrixPower(ExplicitFunction):
+class PositiveSeparatrixPower(WrapsFunction):
     """cottax node: `force_positive_separatrix_power`, ports declared."""
 
-    p_plasma_separatrix_mw = OutputInto(physics)
+    fn = force_positive_separatrix_power
 
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-    ):
-        return force_positive_separatrix_power(p_plasma_separatrix_mw_raw)
+    p_plasma_separatrix_mw_raw = From(physics)
+
+    p_plasma_separatrix_mw = OutputInto(physics)
 
 
 class PulseRampTimes(ExplicitFunction):
     """The family that owns the plasma-current ramp times, `physics.py:463-498`."""
 
 
-class PulseRampTimesPulsedDefault(PulseRampTimes):
+class PulseRampTimesPulsedDefault(PulseRampTimes, WrapsFunction):
     """`i_pulsed_plant == 1` and `pulsetimings == 0` -- `large_tokamak_eval`'s arm."""
+
+    fn = calculate_pulsed_plant_ramp_times
+
+    plasma_current = From(physics)
 
     t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
     t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
 
-    def __call__(
-        self,
-        plasma_current=From(physics),
-    ):
-        return calculate_pulsed_plant_ramp_times(plasma_current)
 
+class PulseRampTimesContinuousDefault(PulseRampTimes, WrapsFunction):
+    """`i_pulsed_plant != 1` and `i_t_current_ramp_up == 0`.
 
-class PulseRampTimesContinuousDefault(PulseRampTimes):
-    """`i_pulsed_plant != 1` and `i_t_current_ramp_up == 0` -- the spherical tokamaks'.
+    The spherical tokamaks'.
     """
+
+    fn = calculate_continuous_plant_ramp_times
+
+    plasma_current = From(physics)
 
     t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
     t_plant_pulse_coil_precharge = OutputInto(times)
     t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
-
-    def __call__(
-        self,
-        plasma_current=From(physics),
-    ):
-        return calculate_continuous_plant_ramp_times(plasma_current)
 
 
 class PlasmaEnergyFromBeta(ExplicitFunction):
@@ -207,81 +186,61 @@ class PlasmaOhmicHeating(ExplicitFunction):
         )
 
 
-class CoulombLogarithmIonElectron(ExplicitFunction):
+class CoulombLogarithmIonElectron(WrapsFunction):
     """cottax node: `calculate_coulomb_logarithm_ion_electron`."""
+
+    fn = calculate_coulomb_logarithm_ion_electron
+
+    nd_plasma_electrons_vol_avg = From(physics)
+    temp_plasma_electron_vol_avg_kev = From(physics)
 
     dlamie = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electrons_vol_avg=From(physics),
-        temp_plasma_electron_vol_avg_kev=From(physics),
-    ):
-        return calculate_coulomb_logarithm_ion_electron(
-            nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev
-        )
 
-
-class PlasmaSurfaceNeutronFlux(ExplicitFunction):
+class PlasmaSurfaceNeutronFlux(WrapsFunction):
     """cottax node: `calculate_pflux_plasma_surface_neutron_avg_mw`."""
+
+    fn = calculate_pflux_plasma_surface_neutron_avg_mw
+
+    p_neutron_total_mw = From(physics)
+    a_plasma_surface = From(physics)
 
     pflux_plasma_surface_neutron_avg_mw = OutputInto(physics)
 
-    def __call__(
-        self,
-        p_neutron_total_mw=From(physics),
-        a_plasma_surface=From(physics),
-    ):
-        return calculate_pflux_plasma_surface_neutron_avg_mw(
-            p_neutron_total_mw, a_plasma_surface
-        )
 
-
-class BetaNormMaxWesson(ExplicitFunction):
+class BetaNormMaxWesson(WrapsFunction):
     """cottax node: `calculate_beta_norm_max_wesson`."""
+
+    fn = calculate_beta_norm_max_wesson
+
+    ind_plasma_internal_norm = From(physics)
 
     beta_norm_max = OutputInto(physics)
 
-    def __call__(self, ind_plasma_internal_norm=From(physics)):
-        return calculate_beta_norm_max_wesson(ind_plasma_internal_norm)
 
-
-class BetaLimitFromNorm(ExplicitFunction):
+class BetaLimitFromNorm(WrapsFunction):
     """cottax node: `calculate_beta_limit_from_norm`. Unswitched."""
+
+    fn = calculate_beta_limit_from_norm
+
+    b_plasma_toroidal_on_axis = From(physics)
+    beta_norm_max = From(physics)
+    plasma_current = From(physics)
+    rminor = From(physics)
 
     beta_vol_avg_max = OutputInto(physics)
 
-    def __call__(
-        self,
-        b_plasma_toroidal_on_axis=From(physics),
-        beta_norm_max=From(physics),
-        plasma_current=From(physics),
-        rminor=From(physics),
-    ):
-        return calculate_beta_limit_from_norm(
-            b_plasma_toroidal_on_axis,
-            beta_norm_max,
-            plasma_current,
-            rminor,
-        )
 
-
-class ToroidalBeta(ExplicitFunction):
+class ToroidalBeta(WrapsFunction):
     """cottax node: `calculate_toroidal_beta`. Unswitched."""
 
-    beta_toroidal_vol_avg = OutputInto(physics)
+    fn = calculate_toroidal_beta
 
-    def __call__(
-        self,
-        beta_total_vol_avg=From(physics),
-        b_plasma_total=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-    ):
-        return calculate_toroidal_beta(
-            beta_total_vol_avg,
-            b_plasma_total,
-            b_plasma_toroidal_on_axis,
-        )
+    beta_total_vol_avg = From(physics)
+    b_plasma_total = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+
+    beta_toroidal_vol_avg = OutputInto(physics)
 
 
 class PoloidalBeta(ExplicitFunction):
@@ -302,15 +261,13 @@ class PoloidalBeta(ExplicitFunction):
         )
 
 
-class ThermalBeta(ExplicitFunction):
+class ThermalBeta(WrapsFunction):
     """cottax node: `calculate_thermal_beta`."""
 
-    beta_thermal_vol_avg = OutputInto(physics)
+    fn = calculate_thermal_beta
 
-    def __call__(
-        self,
-        beta_total_vol_avg=From(physics),
-        beta_fast_alpha=From(physics),
-        beta_beam=From(physics),
-    ):
-        return calculate_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam)
+    beta_total_vol_avg = From(physics)
+    beta_fast_alpha = From(physics)
+    beta_beam = From(physics)
+
+    beta_thermal_vol_avg = OutputInto(physics)

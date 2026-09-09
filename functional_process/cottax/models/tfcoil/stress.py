@@ -16,6 +16,7 @@ from functional_process.cottax.paths import (
     superconducting_tfcoil,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.stress import (
     extended_plane_strain,  # noqa: F401 -- re-exported for tests/.../test_stress.py
     eyoung_parallel,  # noqa: F401 -- re-exported for tests/.../test_stress.py
@@ -37,45 +38,30 @@ class TfFieldAndForce(ExplicitFunction):
     """The family that owns the TF coil's in-plane force and vertical tension."""
 
 
-class TfFieldAndForceClampedJoints(TfFieldAndForce):
+class TfFieldAndForceClampedJoints(TfFieldAndForce, WrapsFunction):
     """No sliding centrepost joints -- every superconducting coil unless an input file
     sets `i_cp_joints = 1` alongside `itart = 1`.
     """
+
+    fn = tf_field_and_force_clamped_joints
+
+    r_tf_wp_inboard_outer = From(superconducting_tfcoil)
+    r_tf_wp_inboard_inner = From(superconducting_tfcoil)
+    r_tf_outboard_in = From(superconducting_tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
+    b_tf_inboard_peak_symmetric = From(tfcoil)
+    c_tf_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    dr_tf_plasma_case = From(tfcoil)
+    rmajor = From(physics)
+    b_plasma_toroidal_on_axis = From(physics)
+    f_vforce_inboard = From(tfcoil)
 
     cforce = OutputInto(tfcoil)
     vforce = OutputInto(tfcoil)
     vforce_outboard = OutputInto(tfcoil)
     vforce_inboard_tot = OutputInto(superconducting_tfcoil)
-
-    def __call__(
-        self,
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_outboard_in=From(superconducting_tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-        b_tf_inboard_peak_symmetric=From(tfcoil),
-        c_tf_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        rmajor=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        f_vforce_inboard=From(tfcoil),
-    ):
-        return tf_field_and_force_clamped_joints(
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_outboard_in=r_tf_outboard_in,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-            b_tf_inboard_peak_symmetric=b_tf_inboard_peak_symmetric,
-            c_tf_total=c_tf_total,
-            n_tf_coils=n_tf_coils,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            rmajor=rmajor,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-            f_vforce_inboard=f_vforce_inboard,
-        )
 
 
 class TfStress(ExplicitFunction):

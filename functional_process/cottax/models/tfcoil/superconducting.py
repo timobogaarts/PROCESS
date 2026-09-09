@@ -18,6 +18,7 @@ from functional_process.cottax.paths import (
     superconducting_tfcoil,
     tfcoil,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.superconducting import (
     calculate_a_tf_turn,
     calculate_old_lubell_nbti_temperature_margin,
@@ -85,9 +86,19 @@ class SuperconductingTfWpGeometry(ExplicitFunction):
     """The family that owns the inboard winding-pack geometry."""
 
 
-class SuperconductingTfWpGeometryRectangular(SuperconductingTfWpGeometry):
+class SuperconductingTfWpGeometryRectangular(SuperconductingTfWpGeometry, WrapsFunction):
     """`i_tf_wp_geom == 0` (rectangular)."""
 
+    fn = superconducting_tf_wp_geometry_rectangular
+
+    r_tf_inboard_in = From(build)
+    dr_tf_nose_case = From(tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    dx_tf_side_case_min = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
+
     r_tf_wp_inboard_inner = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_outer = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_centre = OutputInto(superconducting_tfcoil)
@@ -100,30 +111,22 @@ class SuperconductingTfWpGeometryRectangular(SuperconductingTfWpGeometry):
     a_tf_wp_no_insulation = OutputInto(superconducting_tfcoil)
     a_tf_wp_ground_insulation = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        dr_tf_nose_case=From(tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        dx_tf_side_case_min=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-    ):
-        return superconducting_tf_wp_geometry_rectangular(
-            r_tf_inboard_in=r_tf_inboard_in,
-            dr_tf_nose_case=dr_tf_nose_case,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-            tan_theta_coil=tan_theta_coil,
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-        )
 
-
-class SuperconductingTfWpGeometryDoubleRectangular(SuperconductingTfWpGeometry):
+class SuperconductingTfWpGeometryDoubleRectangular(
+    SuperconductingTfWpGeometry, WrapsFunction
+):
     """`i_tf_wp_geom == 1` (double rectangular) -- `large_tokamak_eval`'s arm."""
 
+    fn = superconducting_tf_wp_geometry_double_rectangular
+
+    r_tf_inboard_in = From(build)
+    dr_tf_nose_case = From(tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    dx_tf_side_case_min = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
+
     r_tf_wp_inboard_inner = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_outer = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_centre = OutputInto(superconducting_tfcoil)
@@ -136,30 +139,20 @@ class SuperconductingTfWpGeometryDoubleRectangular(SuperconductingTfWpGeometry):
     a_tf_wp_no_insulation = OutputInto(superconducting_tfcoil)
     a_tf_wp_ground_insulation = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        dr_tf_nose_case=From(tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        dx_tf_side_case_min=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-    ):
-        return superconducting_tf_wp_geometry_double_rectangular(
-            r_tf_inboard_in=r_tf_inboard_in,
-            dr_tf_nose_case=dr_tf_nose_case,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-            tan_theta_coil=tan_theta_coil,
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-        )
 
-
-class SuperconductingTfWpGeometryTrapezoidal(SuperconductingTfWpGeometry):
+class SuperconductingTfWpGeometryTrapezoidal(SuperconductingTfWpGeometry, WrapsFunction):
     """`i_tf_wp_geom == 2` (trapezoidal)."""
 
+    fn = superconducting_tf_wp_geometry_trapezoidal
+
+    r_tf_inboard_in = From(build)
+    dr_tf_nose_case = From(tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    dx_tf_side_case_min = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
+
     r_tf_wp_inboard_inner = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_outer = OutputInto(superconducting_tfcoil)
     r_tf_wp_inboard_centre = OutputInto(superconducting_tfcoil)
@@ -171,170 +164,107 @@ class SuperconductingTfWpGeometryTrapezoidal(SuperconductingTfWpGeometry):
     a_tf_wp_with_insulation = OutputInto(superconducting_tfcoil)
     a_tf_wp_no_insulation = OutputInto(superconducting_tfcoil)
     a_tf_wp_ground_insulation = OutputInto(superconducting_tfcoil)
-
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        dr_tf_nose_case=From(tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        dx_tf_side_case_min=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-    ):
-        return superconducting_tf_wp_geometry_trapezoidal(
-            r_tf_inboard_in=r_tf_inboard_in,
-            dr_tf_nose_case=dr_tf_nose_case,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-            tan_theta_coil=tan_theta_coil,
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-        )
 
 
 class TfCaseAreas(ExplicitFunction):
     """The family that owns the four TF case areas. `i_tf_case_geom` decides it."""
 
 
-class TfCaseAreasCircularFront(TfCaseAreas):
+class TfCaseAreasCircularFront(TfCaseAreas, WrapsFunction):
     """`i_tf_case_geom == 0` (circular front case) -- the reference arm."""
 
+    fn = tf_case_areas_circular_front
+
+    a_tf_inboard_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    a_tf_wp_with_insulation = From(superconducting_tfcoil)
+    a_tf_leg_outboard = From(tfcoil)
+    rad_tf_coil_inboard_toroidal_half = From(superconducting_tfcoil)
+    r_tf_inboard_out = From(build)
+    tan_theta_coil = From(superconducting_tfcoil)
+    r_tf_wp_inboard_outer = From(superconducting_tfcoil)
+    r_tf_wp_inboard_inner = From(superconducting_tfcoil)
+    r_tf_inboard_in = From(build)
+
     a_tf_coil_inboard_case = OutputInto(tfcoil)
     a_tf_coil_outboard_case = OutputInto(tfcoil)
     a_tf_plasma_case = OutputInto(superconducting_tfcoil)
     a_tf_coil_nose_case = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        a_tf_inboard_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        a_tf_leg_outboard=From(tfcoil),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        r_tf_inboard_out=From(build),
-        tan_theta_coil=From(superconducting_tfcoil),
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_inboard_in=From(build),
-    ):
-        return tf_case_areas_circular_front(
-            a_tf_inboard_total=a_tf_inboard_total,
-            n_tf_coils=n_tf_coils,
-            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
-            a_tf_leg_outboard=a_tf_leg_outboard,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            r_tf_inboard_out=r_tf_inboard_out,
-            tan_theta_coil=tan_theta_coil,
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_inboard_in=r_tf_inboard_in,
-        )
 
-
-class TfCaseAreasStraightFront(TfCaseAreas):
+class TfCaseAreasStraightFront(TfCaseAreas, WrapsFunction):
     """`i_tf_case_geom == 1` (straight front case). Reads `dr_tf_plasma_case`."""
 
+    fn = tf_case_areas_straight_front
+
+    a_tf_inboard_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    a_tf_wp_with_insulation = From(superconducting_tfcoil)
+    a_tf_leg_outboard = From(tfcoil)
+    rad_tf_coil_inboard_toroidal_half = From(superconducting_tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    r_tf_wp_inboard_outer = From(superconducting_tfcoil)
+    dr_tf_plasma_case = From(tfcoil)
+    r_tf_wp_inboard_inner = From(superconducting_tfcoil)
+    r_tf_inboard_in = From(build)
+
     a_tf_coil_inboard_case = OutputInto(tfcoil)
     a_tf_coil_outboard_case = OutputInto(tfcoil)
     a_tf_plasma_case = OutputInto(superconducting_tfcoil)
     a_tf_coil_nose_case = OutputInto(superconducting_tfcoil)
-
-    def __call__(
-        self,
-        a_tf_inboard_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        a_tf_leg_outboard=From(tfcoil),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_inboard_in=From(build),
-    ):
-        return tf_case_areas_straight_front(
-            a_tf_inboard_total=a_tf_inboard_total,
-            n_tf_coils=n_tf_coils,
-            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
-            a_tf_leg_outboard=a_tf_leg_outboard,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            tan_theta_coil=tan_theta_coil,
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_inboard_in=r_tf_inboard_in,
-        )
 
 
 class DxTfSideCase(ExplicitFunction):
     """The family that owns the sidewall case thicknesses. `i_tf_wp_geom` decides it."""
 
 
-class DxTfSideCaseRectangular(DxTfSideCase):
+class DxTfSideCaseRectangular(DxTfSideCase, WrapsFunction):
     """`i_tf_wp_geom == 0`."""
 
+    fn = dx_tf_side_case_rectangular
+
+    dx_tf_side_case_min = From(tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+
     dx_tf_side_case_average = OutputInto(superconducting_tfcoil)
     dx_tf_side_case_peak = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_side_case_min=From(tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-    ):
-        return dx_tf_side_case_rectangular(
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            tan_theta_coil=tan_theta_coil,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-        )
 
-
-class DxTfSideCaseDoubleRectangular(DxTfSideCase):
+class DxTfSideCaseDoubleRectangular(DxTfSideCase, WrapsFunction):
     """`i_tf_wp_geom == 1` -- the reference arm."""
 
+    fn = dx_tf_side_case_double_rectangular
+
+    dx_tf_side_case_min = From(tfcoil)
+    tan_theta_coil = From(superconducting_tfcoil)
+    dr_tf_wp_with_insulation = From(tfcoil)
+
     dx_tf_side_case_average = OutputInto(superconducting_tfcoil)
     dx_tf_side_case_peak = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dx_tf_side_case_min=From(tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        dr_tf_wp_with_insulation=From(tfcoil),
-    ):
-        return dx_tf_side_case_double_rectangular(
-            dx_tf_side_case_min=dx_tf_side_case_min,
-            tan_theta_coil=tan_theta_coil,
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-        )
 
-
-class DxTfSideCaseTrapezoidal(DxTfSideCase):
+class DxTfSideCaseTrapezoidal(DxTfSideCase, WrapsFunction):
     """`i_tf_wp_geom == 2`: constant thickness, one read."""
 
+    fn = dx_tf_side_case_trapezoidal
+
+    dx_tf_side_case_min = From(tfcoil)
+
     dx_tf_side_case_average = OutputInto(superconducting_tfcoil)
     dx_tf_side_case_peak = OutputInto(tfcoil)
 
-    def __call__(self, dx_tf_side_case_min=From(tfcoil)):
-        return dx_tf_side_case_trapezoidal(dx_tf_side_case_min=dx_tf_side_case_min)
 
-
-class TfWpCurrents(ExplicitFunction):
+class TfWpCurrents(WrapsFunction):
     """cottax node: `tf_wp_currents`."""
 
-    j_tf_wp = OutputInto(tfcoil)
+    fn = tf_wp_currents
 
-    def __call__(
-        self,
-        c_tf_total=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        a_tf_wp_no_insulation=From(superconducting_tfcoil),
-    ):
-        return tf_wp_currents(
-            c_tf_total=c_tf_total,
-            n_tf_coils=n_tf_coils,
-            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
-        )
+    c_tf_total = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    a_tf_wp_no_insulation = From(superconducting_tfcoil)
+
+    j_tf_wp = OutputInto(tfcoil)
 
 
 class PeakBTfInboardWithRipple(ExplicitFunction):
@@ -387,16 +317,14 @@ class PeakBTfInboardWithRipple20Coils(_PeakBTfInboardWithRippleKovari):
     coefficients = _RIPPLE_FIT_COEFFICIENTS[20]
 
 
-class PeakBTfInboardWithRippleFlatAllowance(PeakBTfInboardWithRipple):
-    """Any other coil count: `1.09 * b_tf_inboard_peak_symmetric`, one read, one output.
-    """
+class PeakBTfInboardWithRippleFlatAllowance(PeakBTfInboardWithRipple, WrapsFunction):
+    """Any other coil count: `1.09 * b_tf_inboard_peak_symmetric`, one read, one output."""
+
+    fn = peak_b_tf_inboard_with_ripple_flat
+
+    b_tf_inboard_peak_symmetric = From(tfcoil)
 
     b_tf_inboard_peak_with_ripple = OutputInto(tfcoil)
-
-    def __call__(self, b_tf_inboard_peak_symmetric=From(tfcoil)):
-        return peak_b_tf_inboard_with_ripple_flat(
-            b_tf_inboard_peak_symmetric=b_tf_inboard_peak_symmetric
-        )
 
 
 class CiccTurnGeometry(ExplicitFunction):
@@ -407,8 +335,21 @@ class CiccAveragedTurnGeometry(CiccTurnGeometry):
     """The averaged (`i_tf_turns_integer == 0`) sub-family."""
 
 
-class CiccAveragedTurnGeometryFromCurrentPerTurn(CiccAveragedTurnGeometry):
+class CiccAveragedTurnGeometryFromCurrentPerTurn(
+    CiccAveragedTurnGeometry, WrapsFunction
+):
     """Both input flags `False` -- PROCESS's default and `large_tokamak_eval`'s arm."""
+
+    fn = cicc_averaged_turn_geometry_from_current_per_turn
+
+    j_tf_wp = From(tfcoil)
+    c_tf_turn = From(tfcoil)
+    dx_tf_turn_steel = From(tfcoil)
+    dx_tf_turn_insulation = From(tfcoil)
+    layer_ins = From(tfcoil)
+    a_tf_wp_no_insulation = From(superconducting_tfcoil)
+    dia_tf_turn_coolant_channel = From(tfcoil)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
 
     a_tf_turn_cable_space_no_void = OutputInto(tfcoil)
     a_tf_turn_steel = OutputInto(tfcoil)
@@ -423,32 +364,26 @@ class CiccAveragedTurnGeometryFromCurrentPerTurn(CiccAveragedTurnGeometry):
     a_tf_turn_cable_space_effective = OutputInto(superconducting_tfcoil)
     f_a_tf_turn_cable_space_cooling = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        j_tf_wp=From(tfcoil),
-        c_tf_turn=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        layer_ins=From(tfcoil),
-        a_tf_wp_no_insulation=From(superconducting_tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-    ):
-        return cicc_averaged_turn_geometry_from_current_per_turn(
-            j_tf_wp=j_tf_wp,
-            c_tf_turn=c_tf_turn,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            layer_ins=layer_ins,
-            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-        )
 
+class CiccIntegerTurnGeometry(CiccTurnGeometry, WrapsFunction):
+    """`i_tf_turns_integer == 1`.
 
-class CiccIntegerTurnGeometry(CiccTurnGeometry):
-    """`i_tf_turns_integer == 1` -- rectangular turns on a fixed layers x pancakes grid.
+    Rectangular turns on a fixed layers x pancakes grid.
     """
+
+    fn = cicc_integer_turn_geometry
+
+    dr_tf_wp_with_insulation = From(tfcoil)
+    dx_tf_wp_insulation = From(tfcoil)
+    dx_tf_wp_insertion_gap = From(tfcoil)
+    n_tf_wp_layers = From(tfcoil)
+    dx_tf_wp_toroidal_min = From(superconducting_tfcoil)
+    n_tf_wp_pancakes = From(tfcoil)
+    c_tf_coil = From(superconducting_tfcoil)
+    dx_tf_turn_steel = From(tfcoil)
+    dx_tf_turn_insulation = From(tfcoil)
+    dia_tf_turn_coolant_channel = From(tfcoil)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
 
     radius_tf_turn_cable_space_corners = OutputInto(superconducting_tfcoil)
     dr_tf_turn = OutputInto(superconducting_tfcoil)
@@ -468,37 +403,22 @@ class CiccIntegerTurnGeometry(CiccTurnGeometry):
     f_a_tf_turn_cable_space_cooling = OutputInto(superconducting_tfcoil)
     dx_tf_turn_general = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        dr_tf_wp_with_insulation=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-        n_tf_wp_layers=From(tfcoil),
-        dx_tf_wp_toroidal_min=From(superconducting_tfcoil),
-        n_tf_wp_pancakes=From(tfcoil),
-        c_tf_coil=From(superconducting_tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-    ):
-        return cicc_integer_turn_geometry(
-            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-            n_tf_wp_layers=n_tf_wp_layers,
-            dx_tf_wp_toroidal_min=dx_tf_wp_toroidal_min,
-            n_tf_wp_pancakes=n_tf_wp_pancakes,
-            c_tf_coil=c_tf_coil,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-        )
 
-
-class CiccInboardAreasAndFractions(ExplicitFunction):
+class CiccInboardAreasAndFractions(WrapsFunction):
     """cottax node: `tf_cicc_inboard_areas_and_fractions`."""
+
+    fn = tf_cicc_inboard_areas_and_fractions
+
+    n_tf_coil_turns = From(tfcoil)
+    dia_tf_turn_coolant_channel = From(tfcoil)
+    a_tf_turn_cable_space_no_void = From(tfcoil)
+    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
+    a_tf_turn_insulation = From(tfcoil)
+    a_tf_turn_steel = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    a_tf_inboard_total = From(tfcoil)
+    a_tf_coil_inboard_case = From(tfcoil)
+    a_tf_wp_ground_insulation = From(superconducting_tfcoil)
 
     a_tf_wp_coolant_channels = OutputInto(tfcoil)
     a_tf_wp_conductor = OutputInto(tfcoil)
@@ -510,51 +430,18 @@ class CiccInboardAreasAndFractions(ExplicitFunction):
     a_tf_coil_inboard_insulation = OutputInto(superconducting_tfcoil)
     f_a_tf_coil_inboard_insulation = OutputInto(superconducting_tfcoil)
 
-    def __call__(
-        self,
-        n_tf_coil_turns=From(tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        a_tf_turn_insulation=From(tfcoil),
-        a_tf_turn_steel=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        a_tf_inboard_total=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        a_tf_wp_ground_insulation=From(superconducting_tfcoil),
-    ):
-        return tf_cicc_inboard_areas_and_fractions(
-            n_tf_coil_turns=n_tf_coil_turns,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
-            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
-            a_tf_turn_insulation=a_tf_turn_insulation,
-            a_tf_turn_steel=a_tf_turn_steel,
-            n_tf_coils=n_tf_coils,
-            a_tf_inboard_total=a_tf_inboard_total,
-            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
-            a_tf_wp_ground_insulation=a_tf_wp_ground_insulation,
-        )
 
-
-class TfTurnArea(ExplicitFunction):
+class TfTurnArea(WrapsFunction):
     """cottax node: `run`'s inline `.tfcoil.a_tf_turn` (`superconducting.py:2700`)."""
 
-    a_tf_turn = OutputInto(tfcoil)
+    fn = calculate_a_tf_turn
 
-    def __call__(
-        self,
-        c_tf_total=From(tfcoil),
-        j_tf_wp=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-    ):
-        return calculate_a_tf_turn(
-            c_tf_total=c_tf_total,
-            j_tf_wp=j_tf_wp,
-            n_tf_coils=n_tf_coils,
-            n_tf_coil_turns=n_tf_coil_turns,
-        )
+    c_tf_total = From(tfcoil)
+    j_tf_wp = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    n_tf_coil_turns = From(tfcoil)
+
+    a_tf_turn = OutputInto(tfcoil)
 
 
 class SuperconductingTfCoilAreasAndMasses(ExplicitFunction):
@@ -1166,7 +1053,9 @@ class IterNb3snSuperconductingTfCoilAreasAndMassesConventional(
 class IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     IterNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
 ):
-    """`(itart, i_tf_sc_mat) == (1, 1)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, ITER_NB3SN]`.
+    """`(itart, i_tf_sc_mat) ==.
+
+    1, 1)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, ITER_NB3SN]`.
     """
 
 
@@ -1227,8 +1116,7 @@ class WstNb3snSuperconductingTfCoilAreasAndMassesConventional(
 class WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     WstNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
 ):
-    """`(itart, i_tf_sc_mat) == (1, 5)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, WST_NB3SN]`.
-    """
+    """`(itart, i_tf_sc_mat) == (1, 5)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, WST_NB3SN]`."""
 
 
 class CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional(
@@ -1242,7 +1130,9 @@ class CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional(
 class CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     CrocoRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
 ):
-    """`(itart, i_tf_sc_mat) == (1, 6)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, CROCO_REBCO]`.
+    """`(itart, i_tf_sc_mat) ==.
+
+    1, 6)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, CROCO_REBCO]`.
     """
 
 
@@ -1257,7 +1147,9 @@ class DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional(
 class DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     DurhamNbtiTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
 ):
-    """`(itart, i_tf_sc_mat) == (1, 7)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, DURHAM_NBTI]`.
+    """`(itart, i_tf_sc_mat) ==.
+
+    1, 7)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, DURHAM_NBTI]`.
     """
 
 
@@ -1293,74 +1185,42 @@ class HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     """
 
 
-class VvStressOnQuench(ExplicitFunction):
+class VvStressOnQuench(WrapsFunction):
     """cottax node: `.superconducting_tfcoil.vv_stress_quench`, constraint 65's read."""
 
-    vv_stress_quench = OutputInto(superconducting_tfcoil)
+    fn = calculate_vv_stress_on_quench
 
-    def __call__(
-        self,
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-        r_tf_inboard_mid=From(build),
-        r_tf_outboard_mid=From(build),
-        r_tf_inboard_out=From(build),
-        tfa=From(tfcoil),
-        z_plasma_xpoint_upper=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        dz_shld_upper=From(build),
-        dz_vv_upper=From(build),
-        r_vv_inboard_out=From(build),
-        dr_vv_outboard=From(build),
-        dr_tf_outboard=From(build),
-        dr_tf_shld_gap=From(build),
-        dr_shld_thermal_outboard=From(build),
-        dr_shld_vv_gap_outboard=From(build),
-        len_tf_coil=From(tfcoil),
-        theta1_coil=From(tfcoil),
-        theta1_vv=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
-        a_tf_plasma_case=From(superconducting_tfcoil),
-        a_tf_coil_nose_case=From(superconducting_tfcoil),
-        dx_tf_side_case_average=From(superconducting_tfcoil),
-        t_tf_superconductor_quench=From(tfcoil),
-        c_tf_coil=From(superconducting_tfcoil),
-        dr_vv_shells=From(build),
-    ):
-        return calculate_vv_stress_on_quench(
-            z_tf_inside_half,
-            dr_tf_inboard,
-            r_tf_inboard_mid,
-            r_tf_outboard_mid,
-            r_tf_inboard_out,
-            tfa,
-            z_plasma_xpoint_upper,
-            dz_xpoint_divertor,
-            dz_divertor,
-            dz_shld_upper,
-            dz_vv_upper,
-            r_vv_inboard_out,
-            dr_vv_outboard,
-            dr_tf_outboard,
-            dr_tf_shld_gap,
-            dr_shld_thermal_outboard,
-            dr_shld_vv_gap_outboard,
-            len_tf_coil,
-            theta1_coil,
-            theta1_vv,
-            n_tf_coils,
-            n_tf_coil_turns,
-            a_tf_coil_inboard_steel,
-            a_tf_plasma_case,
-            a_tf_coil_nose_case,
-            dx_tf_side_case_average,
-            t_tf_superconductor_quench,
-            c_tf_coil,
-            dr_vv_shells,
-        )
+    z_tf_inside_half = From(build)
+    dr_tf_inboard = From(build)
+    r_tf_inboard_mid = From(build)
+    r_tf_outboard_mid = From(build)
+    r_tf_inboard_out = From(build)
+    tfa = From(tfcoil)
+    z_plasma_xpoint_upper = From(build)
+    dz_xpoint_divertor = From(build)
+    dz_divertor = From(divertor)
+    dz_shld_upper = From(build)
+    dz_vv_upper = From(build)
+    r_vv_inboard_out = From(build)
+    dr_vv_outboard = From(build)
+    dr_tf_outboard = From(build)
+    dr_tf_shld_gap = From(build)
+    dr_shld_thermal_outboard = From(build)
+    dr_shld_vv_gap_outboard = From(build)
+    len_tf_coil = From(tfcoil)
+    theta1_coil = From(tfcoil)
+    theta1_vv = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    n_tf_coil_turns = From(tfcoil)
+    a_tf_coil_inboard_steel = From(superconducting_tfcoil)
+    a_tf_plasma_case = From(superconducting_tfcoil)
+    a_tf_coil_nose_case = From(superconducting_tfcoil)
+    dx_tf_side_case_average = From(superconducting_tfcoil)
+    t_tf_superconductor_quench = From(tfcoil)
+    c_tf_coil = From(superconducting_tfcoil)
+    dr_vv_shells = From(build)
+
+    vv_stress_quench = OutputInto(superconducting_tfcoil)
 
 
 class CiccSuperconductorProperties(ExplicitFunction):
@@ -1557,21 +1417,15 @@ class WstNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
     fit = staticmethod(temperature_margin_wst_nb3sn)
 
 
-class OldLubellNbtiTfSuperconductorTemperatureMargin(TfSuperconductorTemperatureMargin):
+class OldLubellNbtiTfSuperconductorTemperatureMargin(
+    TfSuperconductorTemperatureMargin, WrapsFunction
+):
     """`i_tf_sc_mat == 3` -- one read fewer, and one literal more."""
 
-    def __call__(
-        self,
-        j_tf_superconductor=From(superconducting_tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        b_tf_superconductor_critical_zero_temp_strain=From(superconducting_tfcoil),
-        temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
-        tftmp=From(tfcoil),
-    ):
-        return calculate_old_lubell_nbti_temperature_margin(
-            j_tf_superconductor,
-            b_tf_inboard_peak_with_ripple,
-            b_tf_superconductor_critical_zero_temp_strain,
-            temp_tf_superconductor_critical_zero_field_strain,
-            tftmp,
-        )
+    fn = calculate_old_lubell_nbti_temperature_margin
+
+    j_tf_superconductor = From(superconducting_tfcoil)
+    b_tf_inboard_peak_with_ripple = From(tfcoil)
+    b_tf_superconductor_critical_zero_temp_strain = From(superconducting_tfcoil)
+    temp_tf_superconductor_critical_zero_field_strain = From(superconducting_tfcoil)
+    tftmp = From(tfcoil)
