@@ -44,56 +44,20 @@ class Power(ModelNamespace):
     # `thermal_cryo.py` (unit #14 chunk B). Six of `calculate_
     # component_thermal_powers`'s outputs are genuine single-node self-loops (each
     # field's *entering* value is read, then a freshly-computed value is written back to
-    # the same `VarPath` later in the same PROCESS call) -- already split this session
-    # into their own `FixedPointFunction`s, same "Shape B" treatment as
+    # the same `VarPath` later in the same PROCESS call) -- already split into their own
+    # occupant families/`FixedPointFunction`s, same "Shape B" treatment as
     # `plasma_composition`'s `first_call`/`Avail`'s `cplife` above.
-    # `i_blkt_dual_coolant=0`/`i_blanket_type=1`/`secondary_cycle_liq=4` match
-    # `fwbs_variables.py`'s own defaults (lines 526, 70, 273) and agree with this run,
-    # confirmed by `mda_harness.py`'s `switch_audit`.
     #
-    # `i_p_coolant_pumping=1` (`PumpingPowerModelTypes.FRACTION_OF_HEAT`,
-    # `power.py:23`) -- **not** `fwbs_variables.py:249`'s bare default `2`
-    # (`MECHANICAL`), which all four registrations below used to carry.
-    # `stellarator_helias.IN.DAT:198` sets `1`. Flagged but not fixed by the pass that
-    # corrected `i_thermal_electric_conversion`; fixed here, and now checked
-    # automatically rather than by luck (`switch_audit`). Checked before flipping,
-    # same discipline: the two switch-dependent bodies are conditional-ownership
-    # pass-throughs, and value `1` selects the *recompute* side of both, out of
-    # arguments these nodes already take --
-    # `calculate_p_fw_blkt_coolant_pump_mw` (`thermal_cryo.py:206-211`)
-    # returns `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw` for `1 not in
-    # {MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`, and
-    # `calculate_p_fw_div_heat_deposited_mw` (`thermal_cryo.py:308-310`)
-    # returns `p_fw_heat_deposited_mw + p_div_heat_deposited_mw` for
-    # `1 != MECHANICAL_WITH_PRESSURE_DROP`. Both operands are already `FromExactly`s (or
-    # rebuilt from `FromExactly`s) on every node below, so no arm has a hole in it.
-    #
-    # `i_thermal_electric_conversion=2` (`ElectricConversionModelTypes.USER_INPUT`) --
-    # **not** `0` (`CCFE_HCPB_VALUE`, `fwbs_variables.py:264`'s bare default). Found and
-    # corrected via the block-by-block MDA-vs-PROCESS comparison harness
-    # (`mda_harness.py`): `stellarator_helias.IN.DAT` sets this explicitly (line 203),
-    # and the wrong hardcoded `0` fed a completely different branch of
-    # `calculate_plant_thermal_efficiency`/`calculate_component_thermal_powers`/
-    # `calculate_delta_eta` than PROCESS's own real run took -- confirmed as the exact,
-    # sole cause of `ComponentThermalPowers`/`EtaTurbineStep`/`DeltaEtaStep`'s
-    # disagreements (bit-for-bit match once corrected, `PicardDriver` itself was never
-    # at fault). Every branch these four nodes' `step`/`__call__` bodies already read
-    # this switch through -- `USER_INPUT` needs no input this port doesn't already wire
-    # (it is a pure identity pass-through for `eta_turbine`, confirmed against
-    # `power.py:1992-1994`), so this is a like-for-like default correction, not a new
-    # port. Duplicated identically across these four registrations rather than one
-    # shared source of truth -- same caution `i_confinement_time` (just above) already
-    # flags for itself: a real `Switch`/`Alternative` covering
-    # `ElectricConversionModelTypes`'s 5 values is a separate, larger follow-up, not
-    # done here.
-    #
-    # **`i_p_coolant_pumping` is threaded by the factory now, not written here.** It was
-    # the same hardcoded `FRACTION_OF_HEAT` on all four nodes below, correct for the
-    # Helias run (`stellarator_helias.IN.DAT:198` sets `1`) and wrong for the first
-    # tokamak, which sets `3` (`large_tokamak_eval.IN.DAT:172`). Nothing caught it,
-    # because `switch_audit` compares a registration against *the reference run's*
-    # converged state and the reference run was a stellarator. The tokamak caught it by
-    # refusing to assemble -- see `p_fw_blkt_coolant_pump_mw_step` below.
+    # **`component_thermal_powers`/`delta_eta_step` used to be the two switches
+    # `_audit/switch_kwarg_survey.md` exempted as "too costly to split" -- withdrawn
+    # 2026-09-09, see `naming_convention.md` § "Switches are not ports".** Both slots
+    # are now occupant families the same as everything else here: `indat.py` resolves
+    # `i_p_coolant_pumping`/`i_blkt_dual_coolant`/`i_thermal_electric_conversion` once
+    # and selects one of `ComponentThermalPowers`'s twelve arms (the full three-way
+    # product) or `DeltaEtaStep`'s eight (a coarser, binary role for
+    # `i_blkt_dual_coolant` here -- only `calculate_p_fw_blkt_heat_deposited_mw`'s `in
+    # (1, 2)` guard reads it) from a registry, instead of the switch ever being carried
+    # as a static kwarg into a node body.
     component_thermal_powers: ComponentThermalPowers = dataclasses.field(kw_only=True)
     delta_eta_step: DeltaEtaStep = dataclasses.field(kw_only=True)
     eta_turbine: EtaTurbine | None = dataclasses.field(kw_only=True)
@@ -142,15 +106,17 @@ class Power(ModelNamespace):
     # `Power.calculate_cryo_loads` (`_audit/boundary_inputs_audit.md` §7 item 7) is the
     # second wave of exactly that Shape-B gap, and it is now split the same way. Its
     # raw node `Cryo` stays NOT registered for the same reason
-    # `PlantThermalEfficiency` does -- `to_graph(Cryo(...))` raises `ValueError: reads
-    # ['.fwbs.qnuc'], which it also owns` -- and the three nodes below replace it:
-    #   * `CryoQNucStep` owns `.fwbs.qnuc`, conditionally written by PROCESS under
+    # `PlantThermalEfficiency` does -- `to_graph(Cryo())` raises `ValueError: reads
+    # ['.fwbs.qnuc'], which it also owns` on every one of its three arms, deliberately
+    # (`Cryo`'s own docstring) -- and the three families below replace it for real use:
+    #   * `CryoQNuc` owns `.fwbs.qnuc`, conditionally written by PROCESS under
     #     `inuclear == 0 and i_tf_sup == 1` ("Issue #511: if inuclear = 1: qnuc is
-    #     input", `power.py:1825`);
-    #   * `CryoQLoadsStep` owns `.power.qss`/`qac`/`qcl`/`qmisc`, conditionally written
+    #     input", `power.py:1825`) -- an occupant or `None`, not a `FixedPointFunction`,
+    #     since which arm applies is known at `indat.py` assembly time;
+    #   * `CryoQLoads` owns `.power.qss`/`qac`/`qcl`/`qmisc`, conditionally written
     #     under the *other* guard, `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING`
-    #     (`power.py:1054-1057`), which is why the five fields are two nodes and not
-    #     one -- see `CryoQNucStep`'s docstring for the degeneracy argument;
+    #     (`power.py:1054-1057`), which is why the five fields are two families and not
+    #     one -- see `CryoQNuc`'s docstring for the degeneracy argument;
     #   * `CryoLoads` owns the four fields written on every path
     #     (`.heat_transport.helpow`, `.p_cryo_plant_electric_mw`, `.helpow_cryal`,
     #     `.tfcoil.cryo_cool_req`) and reads the five `q*` as plain `FromExactly`s.

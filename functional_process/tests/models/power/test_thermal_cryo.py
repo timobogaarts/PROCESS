@@ -2,7 +2,10 @@
 
 The node-level tests at the bottom of this file cover the
 `DeltaEtaStep`/`ComponentThermalPowers` split -- see `DeltaEtaStep`'s own docstring
-for the full reasoning.
+for the full reasoning. Both switches used to be carried as static kwargs on those two
+nodes (`_audit/switch_kwarg_survey.md`'s exemption, withdrawn 2026-09-09); they are now
+occupant families like everything else, selected via `COMPONENT_THERMAL_POWERS`/
+`DELTA_ETA_STEP` and their arm functions, imported below from `indat.py`.
 """
 
 import inspect
@@ -14,25 +17,28 @@ from cottax.interfaces.pytree_namespace_module import to_graph
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples
 from functional_process.cottax._harness.sample_store import FROM_FILE
 from functional_process.cottax.indat import (
+    COMPONENT_THERMAL_POWERS,
     CRYO_LOADS,
     CRYO_Q_LOADS,
+    CRYO_Q_NUC,
+    DELTA_ETA_STEP,
     ETA_TURBINE,
     ETATH_LIQ,
     P_FW_BLKT_COOLANT_PUMP,
     P_FW_DIV_HEAT_DEPOSITED,
     TEMP_TURBINE_COOLANT_IN,
+    _component_thermal_powers_arm,
     _cryo_loads_arm,
     _cryo_q_loads_arm,
+    _cryo_q_nuc_arm,
+    _delta_eta_step_arm,
     _eta_turbine_arm,
     _p_fw_blkt_coolant_pump_arm,
     _p_fw_div_heat_deposited_arm,
     _temp_turbine_coolant_in_arm,
 )
 from functional_process.cottax.models.power.thermal_cryo import (
-    ComponentThermalPowers,
     Cryo,
-    CryoQNucStep,
-    DeltaEtaStep,
     calculate_component_thermal_powers,
     calculate_cryo,
     calculate_cryo_loads,
@@ -573,7 +579,7 @@ _DELTA_ETA_SWITCH_COMBOS = [
 def test_delta_eta_step_to_graph_builds(
     i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
 ):
-    """`to_graph(DeltaEtaStep(...))` succeeds -- the actual point of this split.
+    """`to_graph(DeltaEtaStep arm)` succeeds -- the actual point of this split.
 
     Before this split, `to_graph(ComponentThermalPowers(...))` raised `ValueError:
     reads ['.power.delta_eta', ...], which it also owns` for every configuration
@@ -581,17 +587,18 @@ def test_delta_eta_step_to_graph_builds(
     `DeltaEtaStep`'s built-in `FixedPointFunction` cut mints a `^cond.power.delta_eta`
     copy for the body to write and the real `.power.delta_eta` for the paired
     `FixedPoint` problem node to own, so neither piece reads and owns the same path.
+    `i_p_coolant_pumping`/`i_blkt_dual_coolant`/`i_thermal_electric_conversion` used
+    to be static kwargs threaded straight through to this node; they now select one
+    of `DeltaEtaStep`'s eight arms via `DELTA_ETA_STEP`.
     """
-    node = DeltaEtaStep(
-        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
-        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
-        i_thermal_electric_conversion=ElectricConversionModelTypes(
-            int(i_thermal_electric_conversion)
-        ),
+    arm = _delta_eta_step_arm(
+        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
+    node = DELTA_ETA_STEP[arm]()
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
-    assert names == {"['DeltaEtaStep']", "^problem['DeltaEtaStep']"}
+    cls_name = type(node).__name__
+    assert names == {f"['{cls_name}']", f"^problem['{cls_name}']"}
 
 
 _SIX_SELF_LOOP_VARPATHS = (
@@ -605,12 +612,16 @@ _SIX_SELF_LOOP_VARPATHS = (
 
 
 def _component_thermal_powers():
-    """The node as `machine_from_indat` builds it -- three static switches, not five."""
-    return ComponentThermalPowers(
-        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
-        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+    """The occupant `machine_from_indat` builds for this combo -- three switches that
+    used to be static kwargs now resolve to one of `ComponentThermalPowers`'s twelve
+    arms via `COMPONENT_THERMAL_POWERS`.
+    """
+    arm = _component_thermal_powers_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
     )
+    return COMPONENT_THERMAL_POWERS[arm]()
 
 
 def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
@@ -632,7 +643,7 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
 
 
 def test_component_thermal_powers_to_graph_builds_cleanly():
-    """`to_graph(ComponentThermalPowers(...))` no longer raises at all.
+    """`to_graph(ComponentThermalPowers arm)` no longer raises at all.
 
     Before the six-way split it raised on six self-referencing fields; with all six
     owned elsewhere -- and five of them no longer even read -- it assembles as an
@@ -640,7 +651,7 @@ def test_component_thermal_powers_to_graph_builds_cleanly():
     """
     node = _component_thermal_powers()
     graph = to_graph(node)
-    assert {n.path_str() for n in graph.nodes} == {"['ComponentThermalPowers']"}
+    assert {n.path_str() for n in graph.nodes} == {f"['{type(node).__name__}']"}
 
 
 def _delta_eta_step_kwargs(**overrides):
@@ -727,13 +738,10 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
     separately tested) pure function.
     """
     step_kwargs = _delta_eta_step_kwargs()
-    node = DeltaEtaStep(
-        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
-        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
-        i_thermal_electric_conversion=ElectricConversionModelTypes(
-            int(i_thermal_electric_conversion)
-        ),
+    arm = _delta_eta_step_arm(
+        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
+    node = DELTA_ETA_STEP[arm]()
     delta_eta_from_step = node.step(**step_kwargs)
 
     full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
@@ -803,13 +811,10 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     § 5's `Divertor` case taught this project -- verify a cycle is real, don't assume
     it from the shape alone.
     """
-    node = DeltaEtaStep(
-        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
-        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
-        i_thermal_electric_conversion=ElectricConversionModelTypes(
-            int(i_thermal_electric_conversion)
-        ),
+    arm = _delta_eta_step_arm(
+        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
+    node = DELTA_ETA_STEP[arm]()
     base_kwargs = _delta_eta_step_kwargs()
 
     def delta_eta_next(delta_eta):
@@ -1172,8 +1177,10 @@ def test_p_fw_blkt_coolant_pump_occupant_matches_calculate_component_thermal_pow
 
 
 # ---------------------------------------------------------------------------
-# CryoQNucStep / CryoQLoadsStep / CryoLoads -- `Power.calculate_cryo_loads`'s five
-# conditionally-owned `q*` fields cut into two `FixedPointFunction`s, and the four
+# CryoQNuc / CryoQLoads / CryoLoads -- `Power.calculate_cryo_loads`'s five
+# conditionally-owned `q*` fields cut into two occupant families (`CryoQNuc` used to
+# be `CryoQNucStep`, a `FixedPointFunction` carrying `i_tf_sup`/`inuclear` as static
+# kwargs -- withdrawn the same way `CryoQLoadsStep` already was), and the four
 # unconditionally-owned outputs left as an ordinary `ExplicitFunction`.
 # ---------------------------------------------------------------------------
 
@@ -1212,39 +1219,35 @@ _CRYO_SWITCH_COMBOS = [
 
 
 def test_cryo_cannot_be_a_plain_node():
-    """`Cryo` stays unregistered because `cottax` will not build it -- the same
-    position `PlantThermalEfficiency` is in, and the reason the split below exists.
+    """`Cryo` stays unregistered because `cottax` will not build any of its arms --
+    the same position `PlantThermalEfficiency` is in, and the reason the split below
+    exists. `i_tf_sup`/`inuclear` used to be static kwargs on this node; de-staticizing
+    them into arms does not remove the self-loop and does not try to (`Cryo`'s own
+    docstring) -- every arm still both reads and owns `.fwbs.qnuc`, so the bodiless
+    base itself already demonstrates the refusal with no arm needed.
     """
     with pytest.raises(ValueError, match="which it also owns"):
-        to_graph(
-            Cryo(
-                i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-                inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
-            )
-        )
+        to_graph(Cryo())
 
 
 @pytest.mark.parametrize(("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS)
 def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
-    """Each of the three replacement nodes builds a graph on every switch arm.
+    """Each of the three replacement occupant families builds a graph on every switch
+    arm.
 
-    `CryoQNucStep`/`CryoQLoadsStep` mint their own `^cond` copies (so the body writes
-    the copy and the paired `FixedPoint` owns the real `VarPath`); `CryoLoads` reads
-    all five `q*` as plain `FromExactly`s and owns none of them, so it is an ordinary
-    single-node graph.
+    `CryoQNuc` and `CryoQLoads` are families now, not `FixedPointFunction`s: the
+    switches select an occupant (or, for the `q*`/`qnuc` fields outside PROCESS's
+    guard, *no* occupant) instead of being carried into a body that reads what it
+    owns. `CryoLoads` reads all five `q*` as plain `FromExactly`s and owns none of
+    them, so it is an ordinary single-node graph.
     """
-    qnuc_node = CryoQNucStep(
-        i_tf_sup=TFConductorModel(int(i_tf_sup)),
-        inuclear=CoilNuclearHeatingModel(int(inuclear)),
-    )
-    assert {n.path_str() for n in to_graph(qnuc_node).nodes} == {
-        "['CryoQNucStep']",
-        "^problem['CryoQNucStep']",
-    }
+    qnuc_occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
+    if qnuc_occupant is not None:
+        qnuc_node = qnuc_occupant()
+        assert {n.path_str() for n in to_graph(qnuc_node).nodes} == {
+            f"['{type(qnuc_node).__name__}']"
+        }
 
-    # `CryoQLoads` and `CryoLoads` are families now, not `FixedPointFunction`s: the
-    # switches select an occupant (or, for the `q*` fields outside PROCESS's guard,
-    # *no* occupant) instead of being carried into a body that reads what it owns.
     q_occupant = CRYO_Q_LOADS[_cryo_q_loads_arm(i_tf_sup, int(i_pf_conductor))]
     if q_occupant is not None:
         q_node = q_occupant()
@@ -1259,13 +1262,14 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
 
 
 def test_cryo_split_ownership_is_a_partition():
-    """The three nodes own exactly the nine `VarPath`s `Power.calculate_cryo_loads`
+    """The three families own exactly the nine `VarPath`s `Power.calculate_cryo_loads`
     writes, with no overlap.
     """
-    qnuc_node = CryoQNucStep(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
-    )
+    qnuc_node = CRYO_Q_NUC[
+        _cryo_q_nuc_arm(
+            CoilNuclearHeatingModel.FRANCES_FOX, TFConductorModel.SUPERCONDUCTING
+        )
+    ]()
     q_node = CRYO_Q_LOADS[
         _cryo_q_loads_arm(
             TFConductorModel.SUPERCONDUCTING, PFConductorModel.SUPERCONDUCTING
@@ -1304,13 +1308,11 @@ def test_cryo_split_reproduces_calculate_cryo_loads(i_tf_sup, i_pf_conductor, in
     (`TestCryoLoads`), so pinning the node-level composition to it transfers that
     validation to the nodes without a second reference run.
     """
-    qnuc = CryoQNucStep(
-        i_tf_sup=TFConductorModel(int(i_tf_sup)),
-        inuclear=CoilNuclearHeatingModel(int(inuclear)),
-    ).step(
-        qnuc=_CRYO_KWARGS["qnuc"],
-        p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"],
-    )
+    qnuc_occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
+    if qnuc_occupant is None:
+        qnuc = _CRYO_KWARGS["qnuc"]
+    else:
+        qnuc = qnuc_occupant()(p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"])
     if i_tf_sup == 2:
         pytest.skip(
             "aluminium TF has no occupant -- `('i_tf_sup', 2)` is UNPORTED at the "
@@ -1388,35 +1390,34 @@ def test_cryo_split_reproduces_calculate_cryo_loads(i_tf_sup, i_pf_conductor, in
 
 
 @pytest.mark.parametrize(
-    ("i_tf_sup", "inuclear", "expected_grad"),
+    ("i_tf_sup", "inuclear", "has_occupant"),
     [
-        pytest.param(1, 0, 0.0, id="owned-recomputed"),
-        pytest.param(1, 1, 1.0, id="inuclear1-identity"),
-        pytest.param(0, 0, 1.0, id="resistive_tf-identity"),
-        pytest.param(2, 0, 1.0, id="aluminium_tf-identity"),
+        pytest.param(1, 0, True, id="owned-recomputed"),
+        pytest.param(1, 1, False, id="inuclear1-identity"),
+        pytest.param(0, 0, False, id="resistive_tf-identity"),
+        pytest.param(2, 0, False, id="aluminium_tf-identity"),
     ],
 )
-def test_cryo_q_nuc_step_gradient(i_tf_sup, inuclear, expected_grad):
-    """`d(qnuc_next)/d(qnuc)` is exactly `0` where PROCESS recomputes `.fwbs.qnuc`
-    and exactly `1` everywhere else -- the two arms of the fixed point, confirmed by
-    `jax.grad` rather than asserted from the source's shape.
-
-    `1` is the degenerate case: the residual `g(u) - u` is then structurally zero and
-    `functional_process.cottax.sand.degenerate_fixed_points` drops the problem, reverting
-    `.fwbs.qnuc` to a boundary input -- which is exactly PROCESS's *"if inuclear = 1:
-    qnuc is input"* (`process/models/power.py:1825`), recovered from structure.
+def test_cryo_q_nuc_has_no_self_read_on_the_computing_arm(
+    i_tf_sup, inuclear, has_occupant
+):
+    """**The replacement for `test_cryo_q_nuc_step_gradient`.** Same shape as
+    `test_cryo_q_loads_has_no_self_read_on_either_computing_arm` below: `CryoQNuc`
+    used to be `CryoQNucStep`, a `FixedPointFunction` whose self-gradient was `0`
+    where PROCESS recomputes `.fwbs.qnuc` and `1` (the degenerate, dropped case)
+    everywhere else. Once `inuclear`/`i_tf_sup` are resolved to an arm at `indat.py`
+    assembly time rather than carried as static kwargs, the computing arm is an
+    ordinary node that never reads `.fwbs.qnuc` at all, and the other three
+    combinations have no occupant -- there is no fixed point left to take a
+    self-gradient of.
     """
-    node = CryoQNucStep(
-        i_tf_sup=TFConductorModel(int(i_tf_sup)),
-        inuclear=CoilNuclearHeatingModel(int(inuclear)),
-    )
-
-    def qnuc_next(qnuc):
-        return node.step(
-            qnuc=qnuc, p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"]
-        )
-
-    assert jax.grad(qnuc_next)(_CRYO_KWARGS["qnuc"]) == expected_grad
+    occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
+    if not has_occupant:
+        assert occupant is None
+        return
+    node = occupant()
+    assert {o.var.path_str() for o in node.outputs} == {".fwbs.qnuc"}
+    assert ".fwbs.qnuc" not in {i.var.path_str() for i in node.inputs}
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():

@@ -27,8 +27,21 @@ from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.power.thermal_cryo import (
     calculate_component_thermal_powers,
     calculate_component_thermal_powers_owned,
+    calculate_component_thermal_powers_owned_mech_dual_ccfe,
+    calculate_component_thermal_powers_owned_mech_dual_other,
+    calculate_component_thermal_powers_owned_mech_liquid_ccfe,
+    calculate_component_thermal_powers_owned_mech_liquid_other,
+    calculate_component_thermal_powers_owned_mech_solid_ccfe,
+    calculate_component_thermal_powers_owned_mech_solid_other,
+    calculate_component_thermal_powers_owned_summed_dual_ccfe,
+    calculate_component_thermal_powers_owned_summed_dual_other,
+    calculate_component_thermal_powers_owned_summed_liquid_ccfe,
+    calculate_component_thermal_powers_owned_summed_liquid_other,
+    calculate_component_thermal_powers_owned_summed_solid_ccfe,
+    calculate_component_thermal_powers_owned_summed_solid_other,
     calculate_cryo,
     calculate_cryo_loads,
+    calculate_cryo_non_superconducting,
     calculate_cryo_plant_loads,
     calculate_cryo_plant_loads_active,
     calculate_cryo_plant_loads_inactive,
@@ -37,7 +50,18 @@ from functional_process.models.power.thermal_cryo import (
     calculate_cryo_q_loads_superconducting_tf,
     calculate_cryo_qnuc,
     calculate_cryo_qnuc_when_computed,
+    calculate_cryo_superconducting_computed,
+    calculate_cryo_superconducting_user_input,
     calculate_delta_eta,
+    calculate_delta_eta_next,
+    calculate_delta_eta_next_mech_liquid_ccfe,
+    calculate_delta_eta_next_mech_liquid_other,
+    calculate_delta_eta_next_mech_solid_ccfe,
+    calculate_delta_eta_next_mech_solid_other,
+    calculate_delta_eta_next_summed_liquid_ccfe,
+    calculate_delta_eta_next_summed_liquid_other,
+    calculate_delta_eta_next_summed_solid_ccfe,
+    calculate_delta_eta_next_summed_solid_other,
     calculate_helpow,
     calculate_p_div_heat_deposited_mw,
     calculate_p_fw_blkt_coolant_pump_mw,
@@ -82,16 +106,38 @@ __all__ = [
     "BlktModelTypes",
     "CoilNuclearHeatingModel",
     "ComponentThermalPowers",
+    "ComponentThermalPowersMechDualCcfe",
+    "ComponentThermalPowersMechDualOther",
+    "ComponentThermalPowersMechLiquidCcfe",
+    "ComponentThermalPowersMechLiquidOther",
+    "ComponentThermalPowersMechSolidCcfe",
+    "ComponentThermalPowersMechSolidOther",
+    "ComponentThermalPowersSummedDualCcfe",
+    "ComponentThermalPowersSummedDualOther",
+    "ComponentThermalPowersSummedLiquidCcfe",
+    "ComponentThermalPowersSummedLiquidOther",
+    "ComponentThermalPowersSummedSolidCcfe",
+    "ComponentThermalPowersSummedSolidOther",
     "Cryo",
     "CryoLoads",
     "CryoLoadsActive",
     "CryoLoadsInactive",
+    "CryoNonSuperconducting",
     "CryoQLoads",
     "CryoQLoadsResistiveTf",
     "CryoQLoadsSuperconductingTf",
     "CryoQNuc",
-    "CryoQNucStep",
+    "CryoSuperconductingComputed",
+    "CryoSuperconductingUserInput",
     "DeltaEtaStep",
+    "DeltaEtaStepMechLiquidCcfe",
+    "DeltaEtaStepMechLiquidOther",
+    "DeltaEtaStepMechSolidCcfe",
+    "DeltaEtaStepMechSolidOther",
+    "DeltaEtaStepSummedLiquidCcfe",
+    "DeltaEtaStepSummedLiquidOther",
+    "DeltaEtaStepSummedSolidCcfe",
+    "DeltaEtaStepSummedSolidOther",
     "ElectricConversionModelTypes",
     "EtaTurbine",
     "EtaTurbineCcfeHcpbValue",
@@ -116,8 +162,21 @@ __all__ = [
     "TempTurbineCoolantInFromLiquidBreeder",
     "calculate_component_thermal_powers",
     "calculate_component_thermal_powers_owned",
+    "calculate_component_thermal_powers_owned_mech_dual_ccfe",
+    "calculate_component_thermal_powers_owned_mech_dual_other",
+    "calculate_component_thermal_powers_owned_mech_liquid_ccfe",
+    "calculate_component_thermal_powers_owned_mech_liquid_other",
+    "calculate_component_thermal_powers_owned_mech_solid_ccfe",
+    "calculate_component_thermal_powers_owned_mech_solid_other",
+    "calculate_component_thermal_powers_owned_summed_dual_ccfe",
+    "calculate_component_thermal_powers_owned_summed_dual_other",
+    "calculate_component_thermal_powers_owned_summed_liquid_ccfe",
+    "calculate_component_thermal_powers_owned_summed_liquid_other",
+    "calculate_component_thermal_powers_owned_summed_solid_ccfe",
+    "calculate_component_thermal_powers_owned_summed_solid_other",
     "calculate_cryo",
     "calculate_cryo_loads",
+    "calculate_cryo_non_superconducting",
     "calculate_cryo_plant_loads",
     "calculate_cryo_plant_loads_active",
     "calculate_cryo_plant_loads_inactive",
@@ -126,7 +185,18 @@ __all__ = [
     "calculate_cryo_q_loads_superconducting_tf",
     "calculate_cryo_qnuc",
     "calculate_cryo_qnuc_when_computed",
+    "calculate_cryo_superconducting_computed",
+    "calculate_cryo_superconducting_user_input",
     "calculate_delta_eta",
+    "calculate_delta_eta_next",
+    "calculate_delta_eta_next_mech_liquid_ccfe",
+    "calculate_delta_eta_next_mech_liquid_other",
+    "calculate_delta_eta_next_mech_solid_ccfe",
+    "calculate_delta_eta_next_mech_solid_other",
+    "calculate_delta_eta_next_summed_liquid_ccfe",
+    "calculate_delta_eta_next_summed_liquid_other",
+    "calculate_delta_eta_next_summed_solid_ccfe",
+    "calculate_delta_eta_next_summed_solid_other",
     "calculate_helpow",
     "calculate_p_div_heat_deposited_mw",
     "calculate_p_fw_blkt_coolant_pump_mw",
@@ -162,16 +232,19 @@ __all__ = [
 ]
 
 
-class ComponentThermalPowers(ExplicitFunction):
-    """cottax node: `calculate_component_thermal_powers`'s outputs **other than** the
-    six self-referencing fields split into their own `FixedPointFunction`s below
-    (`DeltaEtaStep`, `EtaTurbineStep`, `EtathLiqStep`, `TempTurbineCoolantInStep`,
-    `PFwDivHeatDepositedMwStep`, `PFwBlktCoolantPumpMwStep`).
+class ComponentThermalPowers(WrapsFunction):
+    """cottax node: `calculate_component_thermal_powers`'s outputs **other than**
+    the six self-referencing fields split into their own occupant families/
+    `FixedPointFunction`s elsewhere in this module (`DeltaEtaStep`, `EtaTurbine`,
+    `EtathLiq`, `TempTurbineCoolantIn`, `PFwDivHeatDepositedMw`,
+    `PFwBlktCoolantPumpMw`). Bodiless family base: twelve occupants below, the full
+    `PumpingPowerModelTypes` (binary here) x `BlanketDualCoolantModel` (all three
+    values) x `ElectricConversionModelTypes` (binary here) product --
+    `_audit/switch_kwarg_survey.md`'s exemption for this node ("too costly to
+    split") is withdrawn, see `naming_convention.md` § "Switches are not ports".
+    Every arm shares this base's reads and outputs unchanged and adds only `fn`
+    (`cottax/wraps.py`), so none of the twelve restates the 24-read signature.
     """
-
-    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
-    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
-    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
 
     # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here --
     # `PFwBlktCoolantPumpMw` owns it. Still read below, as a plain FromExactly: the
@@ -191,84 +264,167 @@ class ComponentThermalPowers(ExplicitFunction):
     p_shld_heat_deposited_mw = OutputInto(power)
     p_div_heat_deposited_mw = OutputInto(power)
     # .heat_transport.p_fw_div_heat_deposited_mw / .eta_turbine / .etath_liq /
-    # .temp_turbine_coolant_in are NOT declared here -- each is owned by its own family
-    # below -- and, since `_audit/next_steps.md` §14.2, **not read here either**: this
-    # node recomputed all four and discarded the results.
+    # .temp_turbine_coolant_in are NOT declared here -- each is owned by its own
+    # family below -- and, since `_audit/next_steps.md` §14.2, **not read here
+    # either**: this node recomputed all four and discarded the results.
     p_plant_primary_heat_mw = OutputInto(heat_transport)
     p_div_secondary_heat_mw = OutputInto(heat_transport)
     i_div_primary_heat = OutputInto(power)
     f_p_div_primary_heat = OutputInto(power)
-    # .power.delta_eta is NOT declared here -- DeltaEtaStep's FixedPoint problem node
-    # owns it (see "The delta_eta self-loop" in thermal_cryo.md) -- and is no longer
-    # read here either, for the same reason as the four above.
+    # .power.delta_eta is NOT declared here -- DeltaEtaStep's FixedPoint problem
+    # node owns it (see "The delta_eta self-loop" in thermal_cryo.md) -- and is no
+    # longer read here either, for the same reason as the four above.
     p_shld_secondary_heat_mw = OutputInto(heat_transport)
     p_hcd_secondary_heat_mw = OutputInto(heat_transport)
     n_primary_heat_exchangers = OutputInto(heat_transport)
 
-    def __call__(
-        self,
-        p_fw_coolant_pump_mw=From(heat_transport),
-        p_blkt_coolant_pump_mw=From(heat_transport),
-        p_fw_blkt_coolant_pump_mw=From(primary_pumping),
-        eta_coolant_pump_electric=From(fwbs),
-        p_shld_coolant_pump_mw=From(heat_transport),
-        p_div_coolant_pump_mw=From(heat_transport),
-        p_blkt_breeder_pump_mw=From(heat_transport),
-        p_hcd_electric_total_mw=From(heat_transport),
-        p_hcd_injected_total_mw=From(current_drive),
-        p_blkt_nuclear_heat_total_mw=From(fwbs),
-        f_nuc_pow_bz_liq=From(fwbs),
-        p_fw_nuclear_heat_total_mw=From(fwbs),
-        p_fw_rad_total_mw=From(fwbs),
-        p_beam_orbit_loss_mw=From(current_drive),
-        p_fw_alpha_mw=From(physics),
-        p_beam_shine_through_mw=From(current_drive),
-        p_cp_shield_nuclear_heat_mw=From(fwbs),
-        p_shld_nuclear_heat_mw=From(fwbs),
-        p_plasma_separatrix_mw=From(physics),
-        p_div_nuclear_heat_total_mw=From(fwbs),
-        p_div_rad_total_mw=From(fwbs),
-        p_fw_hcd_nuclear_heat_mw=From(fwbs),
-        p_fw_hcd_rad_total_mw=From(fwbs),
-        i_shld_primary_heat=From(heat_transport),
-    ):
-        return calculate_component_thermal_powers_owned(
-            self.i_p_coolant_pumping,
-            p_fw_coolant_pump_mw,
-            p_blkt_coolant_pump_mw,
-            p_fw_blkt_coolant_pump_mw,
-            eta_coolant_pump_electric,
-            p_shld_coolant_pump_mw,
-            p_div_coolant_pump_mw,
-            p_blkt_breeder_pump_mw,
-            p_hcd_electric_total_mw,
-            p_hcd_injected_total_mw,
-            self.i_blkt_dual_coolant,
-            p_blkt_nuclear_heat_total_mw,
-            f_nuc_pow_bz_liq,
-            p_fw_nuclear_heat_total_mw,
-            p_fw_rad_total_mw,
-            p_beam_orbit_loss_mw,
-            p_fw_alpha_mw,
-            p_beam_shine_through_mw,
-            p_cp_shield_nuclear_heat_mw,
-            p_shld_nuclear_heat_mw,
-            p_plasma_separatrix_mw,
-            p_div_nuclear_heat_total_mw,
-            p_div_rad_total_mw,
-            p_fw_hcd_nuclear_heat_mw,
-            p_fw_hcd_rad_total_mw,
-            i_shld_primary_heat,
-            self.i_thermal_electric_conversion,
-        )
+    p_fw_coolant_pump_mw = From(heat_transport)
+    p_blkt_coolant_pump_mw = From(heat_transport)
+    p_fw_blkt_coolant_pump_mw = From(primary_pumping)
+    eta_coolant_pump_electric = From(fwbs)
+    p_shld_coolant_pump_mw = From(heat_transport)
+    p_div_coolant_pump_mw = From(heat_transport)
+    p_blkt_breeder_pump_mw = From(heat_transport)
+    p_hcd_electric_total_mw = From(heat_transport)
+    p_hcd_injected_total_mw = From(current_drive)
+    p_blkt_nuclear_heat_total_mw = From(fwbs)
+    f_nuc_pow_bz_liq = From(fwbs)
+    p_fw_nuclear_heat_total_mw = From(fwbs)
+    p_fw_rad_total_mw = From(fwbs)
+    p_beam_orbit_loss_mw = From(current_drive)
+    p_fw_alpha_mw = From(physics)
+    p_beam_shine_through_mw = From(current_drive)
+    p_cp_shield_nuclear_heat_mw = From(fwbs)
+    p_shld_nuclear_heat_mw = From(fwbs)
+    p_plasma_separatrix_mw = From(physics)
+    p_div_nuclear_heat_total_mw = From(fwbs)
+    p_div_rad_total_mw = From(fwbs)
+    p_fw_hcd_nuclear_heat_mw = From(fwbs)
+    p_fw_hcd_rad_total_mw = From(fwbs)
+    i_shld_primary_heat = From(heat_transport)
+
+
+class ComponentThermalPowersSummedSolidCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_SOLID_BREEDER`, `i_thermal_electric_conversion ==
+    CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_solid_ccfe
+
+
+class ComponentThermalPowersSummedSolidOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_SOLID_BREEDER`, `i_thermal_electric_conversion` anything else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_solid_other
+
+
+class ComponentThermalPowersSummedLiquidCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_LIQUID_BREEDER`, `i_thermal_electric_conversion ==
+    CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_liquid_ccfe
+
+
+class ComponentThermalPowersSummedLiquidOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_LIQUID_BREEDER`, `i_thermal_electric_conversion` anything
+    else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_liquid_other
+
+
+class ComponentThermalPowersSummedDualCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == DUAL_COOLANT`, `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_dual_ccfe
+
+
+class ComponentThermalPowersSummedDualOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == DUAL_COOLANT`, `i_thermal_electric_conversion` anything else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_summed_dual_other
+
+
+class ComponentThermalPowersMechSolidCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER`,
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_solid_ccfe
+
+
+class ComponentThermalPowersMechSolidOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER`,
+    `i_thermal_electric_conversion` anything else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_solid_other
+
+
+class ComponentThermalPowersMechLiquidCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_LIQUID_BREEDER`,
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_liquid_ccfe
+
+
+class ComponentThermalPowersMechLiquidOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_LIQUID_BREEDER`,
+    `i_thermal_electric_conversion` anything else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_liquid_other
+
+
+class ComponentThermalPowersMechDualCcfe(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == DUAL_COOLANT`, `i_thermal_electric_conversion ==
+    CCFE_HCPB_VALUE`.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_dual_ccfe
+
+
+class ComponentThermalPowersMechDualOther(ComponentThermalPowers):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == DUAL_COOLANT`, `i_thermal_electric_conversion` anything
+    else.
+    """
+
+    fn = calculate_component_thermal_powers_owned_mech_dual_other
 
 
 class DeltaEtaStep(FixedPointFunction):
-    """The `.power.delta_eta` self-loop, cut."""
+    """The `.power.delta_eta` self-loop, cut. Bodiless family base: eight
+    occupants below cover `PumpingPowerModelTypes` (binary here: pump powers
+    summed or passed through) x `BlanketDualCoolantModel` (binary here --
+    coarser than `ComponentThermalPowers`'s three-way use of the same switch,
+    since only `calculate_p_fw_blkt_heat_deposited_mw`'s `in (1, 2)` guard reads
+    it here) x `ElectricConversionModelTypes` (binary here, same split
+    `calculate_delta_eta` uses). `_audit/switch_kwarg_survey.md`'s exemption for
+    this node is withdrawn, the same as `ComponentThermalPowers`'s.
 
-    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
-    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
-    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
+    `step` is written once here, exactly as before, and dispatches to
+    `self._compute` -- each arm below overrides only that (`WrapsFunction` cannot
+    help a `FixedPointFunction`'s `step`, since it only ever synthesises
+    `__call__`; `AvailSt`/`_compute` in `models/availability/availability.py` is
+    the precedent for this shape).
+    """
 
     delta_eta = OutputInto(power)
 
@@ -294,42 +450,115 @@ class DeltaEtaStep(FixedPointFunction):
         i_shld_primary_heat=From(heat_transport),
         delta_eta=From(power),
     ):
-        del delta_eta  # see class docstring -- verified numerically inert here
-
-        p_fw_blkt_coolant_pump_mw = calculate_p_fw_blkt_coolant_pump_mw(
-            self.i_p_coolant_pumping,
+        return self._compute(
             p_fw_coolant_pump_mw,
             p_blkt_coolant_pump_mw,
             p_fw_blkt_coolant_pump_mw,
-        )
-        p_fw_blkt_heat_deposited_mw = calculate_p_fw_blkt_heat_deposited_mw(
-            self.i_blkt_dual_coolant,
             p_fw_nuclear_heat_total_mw,
             p_fw_rad_total_mw,
             p_blkt_nuclear_heat_total_mw,
             p_blkt_breeder_pump_mw,
-            p_fw_blkt_coolant_pump_mw,
             p_beam_orbit_loss_mw,
             p_fw_alpha_mw,
             p_beam_shine_through_mw,
-        )
-        p_shld_heat_deposited_mw = calculate_p_shld_heat_deposited_mw(
-            p_cp_shield_nuclear_heat_mw, p_shld_nuclear_heat_mw, p_shld_coolant_pump_mw
-        )
-        p_div_heat_deposited_mw = calculate_p_div_heat_deposited_mw(
+            p_cp_shield_nuclear_heat_mw,
+            p_shld_nuclear_heat_mw,
+            p_shld_coolant_pump_mw,
             p_plasma_separatrix_mw,
             p_div_nuclear_heat_total_mw,
             p_div_rad_total_mw,
             p_div_coolant_pump_mw,
-        )
-        _, _, _, _, delta_eta_next = calculate_delta_eta(
-            p_fw_blkt_heat_deposited_mw,
             i_shld_primary_heat,
-            p_shld_heat_deposited_mw,
-            p_div_heat_deposited_mw,
-            self.i_thermal_electric_conversion,
+            delta_eta,
         )
-        return delta_eta_next
+
+
+class DeltaEtaStepSummedSolidCcfe(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_summed_solid_ccfe(*args)
+
+
+class DeltaEtaStepSummedSolidOther(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant
+    == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion` anything else.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_summed_solid_other(*args)
+
+
+class DeltaEtaStepSummedLiquidCcfe(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant`
+    in `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}` (breeder-pump term added),
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_summed_liquid_ccfe(*args)
+
+
+class DeltaEtaStepSummedLiquidOther(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{USER_INPUT, FRACTION_OF_HEAT}`, `i_blkt_dual_coolant`
+    in `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}` (breeder-pump term added),
+    `i_thermal_electric_conversion` anything else.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_summed_liquid_other(*args)
+
+
+class DeltaEtaStepMechSolidCcfe(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_mech_solid_ccfe(*args)
+
+
+class DeltaEtaStepMechSolidOther(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion` anything else.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_mech_solid_other(*args)
+
+
+class DeltaEtaStepMechLiquidCcfe(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant` in `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}`
+    (breeder-pump term added), `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_mech_liquid_ccfe(*args)
+
+
+class DeltaEtaStepMechLiquidOther(DeltaEtaStep):
+    """`i_p_coolant_pumping` in `{MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`,
+    `i_blkt_dual_coolant` in `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}`
+    (breeder-pump term added), `i_thermal_electric_conversion` anything else.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_delta_eta_next_mech_liquid_other(*args)
 
 
 class EtaTurbine(ExplicitFunction):
@@ -463,10 +692,26 @@ class PFwBlktCoolantPumpMw(WrapsFunction):
 
 
 class Cryo(ExplicitFunction):
-    """cottax node: `calculate_cryo`."""
+    """cottax node: `calculate_cryo` -- unregistered scaffolding, kept only as a
+    negative property: `to_graph` refuses it, because it both reads and owns
+    `.fwbs.qnuc` (`test_cryo_cannot_be_a_plain_node`). The real replacement for
+    `Power.cryo`/`.fwbs.qnuc` is the three-way split registered below and in
+    `models/power/namespace.py` (`CryoQNuc`, `CryoQLoads`, `CryoLoads`) -- see
+    `CryoQNuc`'s own docstring for the degeneracy argument that split rests on.
 
-    i_tf_sup: TFConductorModel = eqx.field(static=True)
-    inuclear: CoilNuclearHeatingModel = eqx.field(static=True)
+    Bodiless-in-spirit family base: three arms below, one per distinct behaviour of
+    `.tfcoil.i_tf_sup` x `.fwbs.inuclear` (`i_tf_sup == SUPERCONDUCTING` with
+    `inuclear == FRANCES_FOX` computes `.fwbs.qnuc`; the other two pass it through
+    unchanged, differing only in which `calculate_cryo_q_loads` arm they take). Not a
+    `WrapsFunction`: that mechanism declares reads as class attributes, which cannot
+    coexist with an `OutputInto` of the same name on the same class -- exactly the
+    self-loop this node is kept to demonstrate. `__call__` is written once here,
+    unchanged from before de-staticizing, and dispatches to `self._compute`; each arm
+    overrides only that (`DeltaEtaStep`/`AvailSt` are the precedent for this shape).
+    De-staticizing `i_tf_sup`/`inuclear` into arms does not remove the self-loop and
+    must not try to: `qnuc` stays declared as both a read and an output on every arm,
+    deliberately, exactly as the un-split node did.
+    """
 
     helpow = OutputInto(heat_transport)
     qss = OutputInto(power)
@@ -486,9 +731,7 @@ class Cryo(ExplicitFunction):
         n_tf_coils=From(tfcoil),
         qnuc=From(fwbs),
     ):
-        return calculate_cryo(
-            self.i_tf_sup,
-            self.inuclear,
+        return self._compute(
             tfcryoarea,
             coldmass,
             p_tf_nuclear_heat_mw,
@@ -500,6 +743,37 @@ class Cryo(ExplicitFunction):
         )
 
 
+class CryoSuperconductingComputed(Cryo):
+    """`i_tf_sup == SUPERCONDUCTING`, `inuclear == FRANCES_FOX` -- `.fwbs.qnuc` is
+    computed, not read, but the read stays declared regardless (see `Cryo`'s
+    docstring).
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_cryo_superconducting_computed(*args)
+
+
+class CryoSuperconductingUserInput(Cryo):
+    """`i_tf_sup == SUPERCONDUCTING`, `inuclear == USER_INPUT` -- `.fwbs.qnuc` passed
+    through unchanged.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_cryo_superconducting_user_input(*args)
+
+
+class CryoNonSuperconducting(Cryo):
+    """`i_tf_sup != SUPERCONDUCTING` -- resistive `calculate_cryo_q_loads` arm,
+    `.fwbs.qnuc` passed through unchanged regardless of `inuclear`.
+    """
+
+    @staticmethod
+    def _compute(*args):
+        return calculate_cryo_non_superconducting(*args)
+
+
 class CryoQNuc(WrapsFunction):
     """`.fwbs.qnuc` when PROCESS computes it: `inuclear == 0` and `i_tf_sup == 1`."""
 
@@ -508,24 +782,6 @@ class CryoQNuc(WrapsFunction):
     p_tf_nuclear_heat_mw = From(fwbs)
 
     qnuc = OutputInto(fwbs)
-
-
-class CryoQNucStep(FixedPointFunction):
-    """The `.fwbs.qnuc` self-loop, cut."""
-
-    i_tf_sup: TFConductorModel = eqx.field(static=True)
-    inuclear: CoilNuclearHeatingModel = eqx.field(static=True)
-
-    qnuc = OutputInto(fwbs)
-
-    def step(
-        self,
-        qnuc=From(fwbs),
-        p_tf_nuclear_heat_mw=From(fwbs),
-    ):
-        return calculate_cryo_qnuc(
-            self.i_tf_sup, self.inuclear, p_tf_nuclear_heat_mw, qnuc
-        )
 
 
 class CryoQLoads(ExplicitFunction):

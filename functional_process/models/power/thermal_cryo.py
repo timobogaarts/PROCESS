@@ -20,12 +20,17 @@ its name, but it is a single straight-line evaluation, not a solve).
 
 import jax.numpy as jnp
 
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    CoilNuclearHeatingModel,
+)
 from functional_process.vocabulary import (
     BlktModelTypes,
     ElectricConversionModelTypes,
     PFConductorModel,
     ProcessValueError,
     PumpingPowerModelTypes,
+    TFConductorModel,
     constants,
 )
 
@@ -805,6 +810,1310 @@ def calculate_component_thermal_powers_owned(
     )
 
 
+def _component_thermal_powers_owned_arm(
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """Shared body for every `ComponentThermalPowers` arm below.
+
+    `_audit/switch_kwarg_survey.md`'s exemption for this node ("too costly to split")
+    is withdrawn -- see `naming_convention.md` § "Switches are not ports". The twelve
+    arms are `PumpingPowerModelTypes` (binary here: pump powers summed or passed
+    through) x `BlanketDualCoolantModel` (all three values -- `.power.
+    p_blkt_liquid_breeder_heat_deposited_mw` has a genuinely different formula at
+    each) x `ElectricConversionModelTypes` (binary here: only `calculate_delta_eta`'s
+    own split reads it, not the five-way split `plant_thermal_efficiency` uses). Each
+    of the twelve public wrappers below calls this with its own three literals baked
+    in, so no arm duplicates this forwarding call -- only its own three constants.
+    """
+    return calculate_component_thermal_powers_owned(
+        i_p_coolant_pumping,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        i_blkt_dual_coolant,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+        i_thermal_electric_conversion,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_solid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedSolidCcfe`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_SOLID_BREEDER`, `i_thermal_electric_conversion ==
+    CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_solid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedSolidOther`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_SOLID_BREEDER`, `i_thermal_electric_conversion` anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_liquid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedLiquidCcfe`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_LIQUID_BREEDER`, `i_thermal_electric_conversion ==
+    CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_liquid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedLiquidOther`: `i_p_coolant_pumping` in
+    `{USER_INPUT, FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_LIQUID_BREEDER`, `i_thermal_electric_conversion` anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_dual_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedDualCcfe`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant == DUAL_COOLANT`,
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.DUAL_COOLANT,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_summed_dual_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersSummedDualOther`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant == DUAL_COOLANT`,
+    `i_thermal_electric_conversion` anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.DUAL_COOLANT,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_solid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechSolidCcfe`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER`,
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_solid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechSolidOther`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER`,
+    `i_thermal_electric_conversion` anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_liquid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechLiquidCcfe`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_LIQUID_BREEDER`,
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_liquid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechLiquidOther`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_LIQUID_BREEDER`,
+    `i_thermal_electric_conversion` anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_dual_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechDualCcfe`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == DUAL_COOLANT`, `i_thermal_electric_conversion
+    == CCFE_HCPB_VALUE`.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.DUAL_COOLANT,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_component_thermal_powers_owned_mech_dual_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+):
+    """`ComponentThermalPowersMechDualOther`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == DUAL_COOLANT`, `i_thermal_electric_conversion`
+    anything else.
+    """
+    return _component_thermal_powers_owned_arm(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.DUAL_COOLANT,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+    )
+
+
+def calculate_delta_eta_next(
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStep.step`'s body, extracted so the twelve occupants below (nine after
+    counting `i_blkt_dual_coolant`'s coarser, binary role here) each bake their own
+    three switches into a call rather than restating this composition.
+
+    `_audit/switch_kwarg_survey.md`'s exemption for this node is withdrawn, the same
+    as `ComponentThermalPowers`'s -- see that function's own docstring. Reads
+    `delta_eta` and immediately discards it: the entering value has **zero** effect on
+    the result (`test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta`), so this
+    stays a plain declared read on every arm rather than being dropped, per
+    `FixedPointFunction`'s own contract -- the point of the cut is that the field is
+    both read and owned, not that the read is useful.
+    """
+    del delta_eta  # verified numerically inert -- see docstring above
+
+    p_fw_blkt_coolant_pump_mw = calculate_p_fw_blkt_coolant_pump_mw(
+        i_p_coolant_pumping,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+    )
+    p_fw_blkt_heat_deposited_mw = calculate_p_fw_blkt_heat_deposited_mw(
+        i_blkt_dual_coolant,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+    )
+    p_shld_heat_deposited_mw = calculate_p_shld_heat_deposited_mw(
+        p_cp_shield_nuclear_heat_mw, p_shld_nuclear_heat_mw, p_shld_coolant_pump_mw
+    )
+    p_div_heat_deposited_mw = calculate_p_div_heat_deposited_mw(
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+    )
+    _, _, _, _, delta_eta_next = calculate_delta_eta(
+        p_fw_blkt_heat_deposited_mw,
+        i_shld_primary_heat,
+        p_shld_heat_deposited_mw,
+        p_div_heat_deposited_mw,
+        i_thermal_electric_conversion,
+    )
+    return delta_eta_next
+
+
+def calculate_delta_eta_next_summed_solid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepSummedSolidCcfe`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_summed_solid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepSummedSolidOther`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant ==
+    SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump term),
+    `i_thermal_electric_conversion` anything else.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_summed_liquid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepSummedLiquidCcfe`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant` in
+    `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}` (the breeder-pump term is
+    added), `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_summed_liquid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepSummedLiquidOther`: `i_p_coolant_pumping` in `{USER_INPUT,
+    FRACTION_OF_HEAT}` (pump powers summed), `i_blkt_dual_coolant` in
+    `{SINGLE_COOLANT_LIQUID_BREEDER, DUAL_COOLANT}` (the breeder-pump term is
+    added), `i_thermal_electric_conversion` anything else.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.USER_INPUT,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_mech_solid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepMechSolidCcfe`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump
+    term), `i_thermal_electric_conversion == CCFE_HCPB_VALUE`.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_mech_solid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepMechSolidOther`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant == SINGLE_COOLANT_SOLID_BREEDER` (no breeder-pump
+    term), `i_thermal_electric_conversion` anything else.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_mech_liquid_ccfe(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepMechLiquidCcfe`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant` in `{SINGLE_COOLANT_LIQUID_BREEDER,
+    DUAL_COOLANT}` (the breeder-pump term is added), `i_thermal_electric_conversion
+    == CCFE_HCPB_VALUE`.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
+def calculate_delta_eta_next_mech_liquid_other(
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_blkt_breeder_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_shld_coolant_pump_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+    i_shld_primary_heat,
+    delta_eta,
+):
+    """`DeltaEtaStepMechLiquidOther`: `i_p_coolant_pumping` in `{MECHANICAL,
+    MECHANICAL_WITH_PRESSURE_DROP}` (the entering `p_fw_blkt_coolant_pump_mw` passed
+    through), `i_blkt_dual_coolant` in `{SINGLE_COOLANT_LIQUID_BREEDER,
+    DUAL_COOLANT}` (the breeder-pump term is added), `i_thermal_electric_conversion`
+    anything else.
+    """
+    return calculate_delta_eta_next(
+        PumpingPowerModelTypes.MECHANICAL,
+        BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+        ElectricConversionModelTypes.USER_INPUT,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_blkt_breeder_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_shld_coolant_pump_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+        i_shld_primary_heat,
+        delta_eta,
+    )
+
+
 def calculate_cryo(
     i_tf_sup,
     inuclear,
@@ -1403,3 +2712,96 @@ def calculate_cryo_qnuc_when_computed(p_tf_nuclear_heat_mw):
     into a named function (`_audit/formulas_split.md` step 1).
     """
     return 1.0e6 * p_tf_nuclear_heat_mw
+
+
+def calculate_cryo_superconducting_computed(
+    tfcryoarea,
+    coldmass,
+    p_tf_nuclear_heat_mw,
+    ensxpfm,
+    t_plant_pulse_plasma_present,
+    c_tf_turn,
+    n_tf_coils,
+    qnuc,
+):
+    """`CryoSuperconductingComputed`: `calculate_cryo` fixed to `i_tf_sup ==
+    SUPERCONDUCTING`, `inuclear == FRANCES_FOX` -- `.fwbs.qnuc` is computed here, not
+    read.
+
+    Still takes `qnuc` as an ordinary parameter, unused as it is on this arm: `Cryo`
+    is unregistered scaffolding whose entire point is the self-loop `to_graph` refuses
+    (`test_cryo_cannot_be_a_plain_node`), and minimising this arm's reads the way
+    `CryoQNuc`/`CryoQLoadsSuperconductingTf` do elsewhere would remove exactly the
+    thing being demonstrated. De-staticizing `i_tf_sup`/`inuclear` into arms does not
+    touch that -- see `Cryo`'s own docstring.
+    """
+    return calculate_cryo(
+        TFConductorModel.SUPERCONDUCTING,
+        CoilNuclearHeatingModel.FRANCES_FOX,
+        tfcryoarea,
+        coldmass,
+        p_tf_nuclear_heat_mw,
+        ensxpfm,
+        t_plant_pulse_plasma_present,
+        c_tf_turn,
+        n_tf_coils,
+        qnuc,
+    )
+
+
+def calculate_cryo_superconducting_user_input(
+    tfcryoarea,
+    coldmass,
+    p_tf_nuclear_heat_mw,
+    ensxpfm,
+    t_plant_pulse_plasma_present,
+    c_tf_turn,
+    n_tf_coils,
+    qnuc,
+):
+    """`CryoSuperconductingUserInput`: `calculate_cryo` fixed to `i_tf_sup ==
+    SUPERCONDUCTING`, `inuclear == USER_INPUT` -- `.fwbs.qnuc` passed through
+    unchanged, same self-loop as its sibling above, see `Cryo`'s docstring.
+    """
+    return calculate_cryo(
+        TFConductorModel.SUPERCONDUCTING,
+        CoilNuclearHeatingModel.USER_INPUT,
+        tfcryoarea,
+        coldmass,
+        p_tf_nuclear_heat_mw,
+        ensxpfm,
+        t_plant_pulse_plasma_present,
+        c_tf_turn,
+        n_tf_coils,
+        qnuc,
+    )
+
+
+def calculate_cryo_non_superconducting(
+    tfcryoarea,
+    coldmass,
+    p_tf_nuclear_heat_mw,
+    ensxpfm,
+    t_plant_pulse_plasma_present,
+    c_tf_turn,
+    n_tf_coils,
+    qnuc,
+):
+    """`CryoNonSuperconducting`: `calculate_cryo` fixed to `i_tf_sup !=
+    SUPERCONDUCTING` (`WATER_COOLED_COPPER` picked as the representative baked
+    value -- `calculate_cryo_q_loads`'s resistive-TF branch is reached identically
+    for any non-superconducting value, `inuclear` included, since the qnuc-computing
+    condition already requires `i_tf_sup == SUPERCONDUCTING`).
+    """
+    return calculate_cryo(
+        TFConductorModel.WATER_COOLED_COPPER,
+        CoilNuclearHeatingModel.FRANCES_FOX,
+        tfcryoarea,
+        coldmass,
+        p_tf_nuclear_heat_mw,
+        ensxpfm,
+        t_plant_pulse_plasma_present,
+        c_tf_turn,
+        n_tf_coils,
+        qnuc,
+    )

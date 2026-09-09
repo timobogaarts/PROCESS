@@ -8,7 +8,6 @@ a static kwarg, and which it has never read -- plus the headline counts for
 against a stale number is the failure mode `next_steps.md` §13.11 records twice.
 """
 
-
 from functional_process.cottax import indat
 from functional_process.cottax.machine_survey import (
     NOT_TOPOLOGY,
@@ -38,17 +37,27 @@ def test_the_factory_s_own_fields_are_read_from_its_source():
 
 
 def test_the_tree_s_pinned_switches_are_introspected_not_parsed():
+    """**The pinned set is empty**, and every name below is a switch that left it.
+
+    A "pinned" switch is one a node holds as a static field, which the walker exists to
+    police because a pinned value can drift from the file's. They left in three waves:
+    `i_confinement_time`/`i_rad_loss` (the confinement split) and `i_tf_sc_mat`
+    (`_audit/next_steps.md` §14.5) became slots; `i_p_coolant_pumping`, the last one,
+    became arms on 2026-09-09 along with every other switch-carrying static field, when
+    holding a switch as a static field stopped being allowed at all
+    (`_audit/naming_convention.md` § "Switches are not ports").
+
+    So the walker now has nothing to police, and that is the assertion. It is kept rather
+    than deleted because the emptiness is the property: a name reappearing here means a
+    node has started answering a question the factory already answered.
+    """
     from functional_process.cottax.indat import GRAPH
 
     pinned = pinned_switches(GRAPH)
-    assert "i_p_coolant_pumping" in pinned
-    # Three switches left this set by becoming slots: `i_confinement_time`/`i_rad_loss`
-    # (the confinement split) and `i_tf_sc_mat` (`_audit/next_steps.md` §14.5). Their
-    # absence is the assertion now -- a switch the factory dispatches on cannot drift
-    # from the file, so there is nothing left for this walker to police.
-    assert "i_confinement_time" not in pinned
-    assert "i_rad_loss" not in pinned
-    assert "i_tf_sc_mat" not in pinned
+    assert pinned == {}, (
+        f"{sorted(pinned)} are held as static fields on nodes in the assembled graph. "
+        "A switch selects which arm fills a slot; it is not a value a node carries."
+    )
 
 
 def test_no_pinned_switch_contradicts_the_tokamak_any_more():
@@ -169,7 +178,7 @@ def test_the_large_tokamak_is_three_new_decisions():
 
 
 def test_an_unknown_row_says_which_of_three_reasons_it_is():
-    """"`unknown`" means "no slot dispatches on it", and that is three different
+    """ "`unknown`" means "no slot dispatches on it", and that is three different
     situations. The report used to call all three "the port has never read it", which
     is false for **every** `unknown` row this file produces.
     """

@@ -2,15 +2,15 @@
 `process/models/power.py` (registry unit #14, chunk D).
 """
 
-import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import From, OutputInto
 
 from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_PF_GROUPS,
     PLASMA_INDEX,
     REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
 from functional_process.cottax.paths import (
@@ -20,6 +20,7 @@ from functional_process.cottax.paths import (
     physics,
     times,
 )
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.power.pf_coil_power import (
     COILS_IN_GROUP_WITH_CS,
     GROUP_CIRCUIT_INDEX,
@@ -33,6 +34,8 @@ from functional_process.models.power.pf_coil_power import (
     POLOIDAL_POWER_SENTINEL_W,
     VPFSKV_KV,
     calculate_pf_coil_power_supplies,
+    calculate_pf_coil_power_supplies_no_central_solenoid,
+    calculate_pf_coil_power_supplies_reference,
     coils_in_group_with_cs,
     group_circuit_index,
 )
@@ -57,23 +60,32 @@ __all__ = [
     "PLASMA_INDEX",
     "POLOIDAL_POWER_SENTINEL_W",
     "REFERENCE_TOPOLOGY",
+    "SPHERICAL_TOKAMAK_TOPOLOGY",
     "VPFSKV_KV",
     "PFCoilTopology",
     "PfCoilPowerSupplies",
+    "PfCoilPowerSuppliesNoCentralSolenoid",
+    "PfCoilPowerSuppliesReference",
     "calculate_pf_coil_power_supplies",
+    "calculate_pf_coil_power_supplies_no_central_solenoid",
+    "calculate_pf_coil_power_supplies_reference",
     "coils_in_group_with_cs",
     "group_circuit_index",
     "jnp",
 ]
 
 
-class PfCoilPowerSupplies(ExplicitFunction):
-    """cottax node: `.power.pf_coil_power` -- `Power.pfpwr`, eleven owned fields."""
+class PfCoilPowerSupplies(WrapsFunction):
+    """cottax node: `.power.pf_coil_power` -- `Power.pfpwr`, eleven owned fields.
 
-    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
-    """Static, and the same object the PF coil package's own nodes carry: `pfpwr`'s four
-    loop bounds are the coil topology's (module docstring), so a machine with no central
-    solenoid loops over its groups and not over a fifth that does not exist.
+    Bodiless family base: `topology` used to be a static field (`PFCoilTopology`,
+    defaulting to `REFERENCE_TOPOLOGY`) -- `_pf_coil_topology` only ever hands this
+    slot one of two values, so it is now two occupants instead, following the arm
+    pattern `models/pfcoil/`'s own topology-bound nodes already established (e.g.
+    `PFCoilEquilibriumCurrents`/`PFCoilEquilibriumCurrentsNoCentralSolenoid`). The
+    read set is identical between the two arms -- only the loop bounds baked into
+    `topology` differ -- so both share this base's reads and outputs and add only
+    `fn`.
     """
 
     srcktpm = OutputInto(pf_power)
@@ -88,53 +100,38 @@ class PfCoilPowerSupplies(ExplicitFunction):
     spsmva = OutputInto(pf_power)
     p_pf_electric_supplies_mw = OutputInto(pf_coil)
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        c_pf_coil_turn_peak_input=From(pf_coil),
-        rhopfbus=From(pf_coil),
-        rho_pf_coil=From(pf_coil),
-        r_pf_coil_middle=From(pf_coil),
-        j_pf_coil_wp_peak=From(pf_coil),
-        f_a_pf_coil_void=From(pf_coil),
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        c_pf_cs_coil_pulse_end_ma=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-        c_pf_coil_turn=From(pf_coil),
-        ind_pf_cs_plasma_mutual=From(pf_coil),
-        f_p_pf_energy_store_loss=From(pf_power),
-        f_p_pf_psu_loss=From(pf_power),
-        etapsu=From(pf_coil),
-        p_plasma_ohmic_mw=From(physics),
-        t_plant_pulse_coil_precharge=From(times),
-        t_plant_pulse_plasma_current_ramp_up=From(times),
-        t_plant_pulse_fusion_ramp=From(times),
-        t_plant_pulse_burn=From(times),
-        t_plant_pulse_plasma_current_ramp_down=From(times),
-    ):
-        return calculate_pf_coil_power_supplies(
-            rmajor=rmajor,
-            c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
-            rhopfbus=rhopfbus,
-            rho_pf_coil=rho_pf_coil,
-            r_pf_coil_middle=r_pf_coil_middle,
-            j_pf_coil_wp_peak=j_pf_coil_wp_peak,
-            f_a_pf_coil_void=f_a_pf_coil_void,
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
-            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
-            n_pf_coil_turns=n_pf_coil_turns,
-            c_pf_coil_turn=c_pf_coil_turn,
-            ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
-            f_p_pf_energy_store_loss=f_p_pf_energy_store_loss,
-            f_p_pf_psu_loss=f_p_pf_psu_loss,
-            etapsu=etapsu,
-            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
-            t_plant_pulse_coil_precharge=t_plant_pulse_coil_precharge,
-            t_plant_pulse_plasma_current_ramp_up=(t_plant_pulse_plasma_current_ramp_up),
-            t_plant_pulse_fusion_ramp=t_plant_pulse_fusion_ramp,
-            t_plant_pulse_burn=t_plant_pulse_burn,
-            t_plant_pulse_plasma_current_ramp_down=(
-                t_plant_pulse_plasma_current_ramp_down
-            ),
-            topology=self.topology,
-        )
+    rmajor = From(physics)
+    c_pf_coil_turn_peak_input = From(pf_coil)
+    rhopfbus = From(pf_coil)
+    rho_pf_coil = From(pf_coil)
+    r_pf_coil_middle = From(pf_coil)
+    j_pf_coil_wp_peak = From(pf_coil)
+    f_a_pf_coil_void = From(pf_coil)
+    c_pf_cs_coils_peak_ma = From(pf_coil)
+    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
+    n_pf_coil_turns = From(pf_coil)
+    c_pf_coil_turn = From(pf_coil)
+    ind_pf_cs_plasma_mutual = From(pf_coil)
+    f_p_pf_energy_store_loss = From(pf_power)
+    f_p_pf_psu_loss = From(pf_power)
+    etapsu = From(pf_coil)
+    p_plasma_ohmic_mw = From(physics)
+    t_plant_pulse_coil_precharge = From(times)
+    t_plant_pulse_plasma_current_ramp_up = From(times)
+    t_plant_pulse_fusion_ramp = From(times)
+    t_plant_pulse_burn = From(times)
+    t_plant_pulse_plasma_current_ramp_down = From(times)
+
+
+class PfCoilPowerSuppliesReference(PfCoilPowerSupplies):
+    """`.build.iohcl != 0` -- `REFERENCE_TOPOLOGY`, a machine with a central
+    solenoid.
+    """
+
+    fn = calculate_pf_coil_power_supplies_reference
+
+
+class PfCoilPowerSuppliesNoCentralSolenoid(PfCoilPowerSupplies):
+    """`.build.iohcl == 0` -- `SPHERICAL_TOKAMAK_TOPOLOGY`, no central solenoid."""
+
+    fn = calculate_pf_coil_power_supplies_no_central_solenoid

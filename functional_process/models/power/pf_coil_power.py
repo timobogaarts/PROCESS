@@ -57,6 +57,7 @@ from functional_process.models.pfcoil import (
     N_PF_GROUPS,
     PLASMA_INDEX,
     REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
 )
 
 
@@ -507,4 +508,118 @@ def calculate_pf_coil_power_supplies(
         acptmax,
         spsmva,
         wall_plug_ohmicmw + pfpowermw,
+    )
+
+
+def calculate_pf_coil_power_supplies_reference(
+    rmajor,
+    c_pf_coil_turn_peak_input,
+    rhopfbus,
+    rho_pf_coil,
+    r_pf_coil_middle,
+    j_pf_coil_wp_peak,
+    f_a_pf_coil_void,
+    c_pf_cs_coils_peak_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    n_pf_coil_turns,
+    c_pf_coil_turn,
+    ind_pf_cs_plasma_mutual,
+    f_p_pf_energy_store_loss,
+    f_p_pf_psu_loss,
+    etapsu,
+    p_plasma_ohmic_mw,
+    t_plant_pulse_coil_precharge,
+    t_plant_pulse_plasma_current_ramp_up,
+    t_plant_pulse_fusion_ramp,
+    t_plant_pulse_burn,
+    t_plant_pulse_plasma_current_ramp_down,
+):
+    """`PfCoilPowerSuppliesReference`: `calculate_pf_coil_power_supplies` fixed to
+    `REFERENCE_TOPOLOGY` (`.build.iohcl != 0`, a machine with a central solenoid).
+
+    `topology` used to be a static field on the node (`PfCoilPowerSupplies.topology`);
+    the two topologies `_pf_coil_topology` ever hands this slot are now two occupants
+    instead, following the arm pattern `models/pfcoil/`'s own topology-bound nodes
+    already established (e.g. `PFCoilEquilibriumCurrents`/
+    `PFCoilEquilibriumCurrentsNoCentralSolenoid`) -- the read set is identical between
+    the two, only the loop bounds baked into `topology` differ.
+    """
+    return calculate_pf_coil_power_supplies(
+        rmajor=rmajor,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        rhopfbus=rhopfbus,
+        rho_pf_coil=rho_pf_coil,
+        r_pf_coil_middle=r_pf_coil_middle,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+        n_pf_coil_turns=n_pf_coil_turns,
+        c_pf_coil_turn=c_pf_coil_turn,
+        ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+        f_p_pf_energy_store_loss=f_p_pf_energy_store_loss,
+        f_p_pf_psu_loss=f_p_pf_psu_loss,
+        etapsu=etapsu,
+        p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+        t_plant_pulse_coil_precharge=t_plant_pulse_coil_precharge,
+        t_plant_pulse_plasma_current_ramp_up=t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_fusion_ramp=t_plant_pulse_fusion_ramp,
+        t_plant_pulse_burn=t_plant_pulse_burn,
+        t_plant_pulse_plasma_current_ramp_down=t_plant_pulse_plasma_current_ramp_down,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
+def calculate_pf_coil_power_supplies_no_central_solenoid(
+    rmajor,
+    c_pf_coil_turn_peak_input,
+    rhopfbus,
+    rho_pf_coil,
+    r_pf_coil_middle,
+    j_pf_coil_wp_peak,
+    f_a_pf_coil_void,
+    c_pf_cs_coils_peak_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    n_pf_coil_turns,
+    c_pf_coil_turn,
+    ind_pf_cs_plasma_mutual,
+    f_p_pf_energy_store_loss,
+    f_p_pf_psu_loss,
+    etapsu,
+    p_plasma_ohmic_mw,
+    t_plant_pulse_coil_precharge,
+    t_plant_pulse_plasma_current_ramp_up,
+    t_plant_pulse_fusion_ramp,
+    t_plant_pulse_burn,
+    t_plant_pulse_plasma_current_ramp_down,
+):
+    """`PfCoilPowerSuppliesNoCentralSolenoid`: `calculate_pf_coil_power_supplies` fixed
+    to `SPHERICAL_TOKAMAK_TOPOLOGY` (`.build.iohcl == 0`, no central solenoid).
+
+    Same read set as `calculate_pf_coil_power_supplies_reference` -- see that
+    function's docstring.
+    """
+    return calculate_pf_coil_power_supplies(
+        rmajor=rmajor,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        rhopfbus=rhopfbus,
+        rho_pf_coil=rho_pf_coil,
+        r_pf_coil_middle=r_pf_coil_middle,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+        n_pf_coil_turns=n_pf_coil_turns,
+        c_pf_coil_turn=c_pf_coil_turn,
+        ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+        f_p_pf_energy_store_loss=f_p_pf_energy_store_loss,
+        f_p_pf_psu_loss=f_p_pf_psu_loss,
+        etapsu=etapsu,
+        p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+        t_plant_pulse_coil_precharge=t_plant_pulse_coil_precharge,
+        t_plant_pulse_plasma_current_ramp_up=t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_fusion_ramp=t_plant_pulse_fusion_ramp,
+        t_plant_pulse_burn=t_plant_pulse_burn,
+        t_plant_pulse_plasma_current_ramp_down=t_plant_pulse_plasma_current_ramp_down,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
     )

@@ -803,25 +803,26 @@ def test_no_slot_contradicts_a_factory_switch(tmp_path, switch, file_value, reso
     """
     machine = machine_from_indat(_indat_with_override(tmp_path, switch, file_value))
     held = dict(_static_fields_named(machine, switch))
-    contradictions = {
-        path: int(value) for path, value in held.items() if int(value) != resolved
-    }
-    assert not contradictions, (
+    assert not held, (
         f"{switch} = {file_value} resolves to {resolved}, but the assembled machine "
-        f"holds {contradictions} -- a slot is answering a switch the factory already "
-        "answered. A switch that decides which node exists belongs in one place; where "
-        "an occupant genuinely needs the value, thread it from machine_from_indat "
-        "rather than transcribing it."
+        f"spells it as a static field at {sorted(held)} -- a slot is answering a switch "
+        "the factory already answered. Since 2026-09-09 the answer is not 'make the "
+        "copies agree' but 'do not make a copy': a switch selects which arm fills the "
+        "slot, and no node holds one. See `_audit/naming_convention.md` § 'Switches are "
+        "not ports'."
     )
 
 
-def test_every_factory_switch_with_a_static_field_is_covered():
-    """`COHERENCE_CASES` covers every factory-read switch that any occupant also spells
-    as a static field -- so a slot that newly hardcodes one cannot go unchecked.
+def test_no_factory_switch_is_spelled_as_a_static_field():
+    """No switch that decides a slot appears as a static field on the reference machine.
 
-    Doubles as the positive control for `_static_fields_named`: if the walker found
-    nothing, the intersection would be empty and this would fail rather than letting
-    every case above pass vacuously.
+    The structural form of `test_no_slot_contradicts_a_factory_switch`, which checks the
+    same thing per override. Until 2026-09-09 this test asserted the opposite premise --
+    that `COHERENCE_CASES` *covered* every factory switch some occupant also spelled as a
+    static field -- because such fields existed and the guard was that their copies
+    agreed. They no longer exist: a switch selects an arm. So the invariant is now that
+    the intersection is empty, and a switch reappearing as a static field is the
+    regression.
     """
     names = set(_field_names(REFERENCE_MACHINE))
     forced = {
@@ -829,13 +830,33 @@ def test_every_factory_switch_with_a_static_field_is_covered():
         for name, entry in SWITCH_INVENTORY.items()
         if isinstance(entry, ForcedByProcess)
     }
-    should_be_covered = (FACTORY_READ_SWITCHES | forced) & names
-    covered = {switch for switch, _v, _r in COHERENCE_CASES}
-    assert should_be_covered == covered, (
-        f"uncovered: {sorted(should_be_covered - covered)}; stale: "
-        f"{sorted(covered - should_be_covered)}. A switch that both decides a slot and "
-        "appears as a static kwarg is exactly the shape that goes incoherent -- add "
-        "every value of it that assembles to COHERENCE_CASES."
+    spelled = (FACTORY_READ_SWITCHES | forced) & names
+    assert not spelled, (
+        f"{sorted(spelled)} decide which node exists AND are held as static fields. "
+        "That is the shape that goes incoherent -- give the switch one arm per "
+        "behaviour instead, per `_audit/naming_convention.md` § 'Switches are not "
+        "ports'."
+    )
+
+
+def test_the_static_field_walker_still_finds_something():
+    """The positive control for `_static_fields_named`, which now has no switches to find.
+
+    Every assertion built on that walker is of the form "it found nothing", so a walker
+    that silently stopped working would make all of them pass. It must therefore be shown
+    to still find the static fields that legitimately remain -- array shapes, lookup
+    tables, the preset record, a sample grid point -- which are not model choices and are
+    not going away.
+    """
+    survivors = {
+        name: dict(_static_fields_named(REFERENCE_MACHINE, name))
+        for name in ("n_plasma_profile_elements", "machine_config", "tftmp")
+    }
+    found = {name: held for name, held in survivors.items() if held}
+    assert found, (
+        "`_static_fields_named` found none of the static fields that are supposed to "
+        f"remain ({sorted(survivors)}) -- the walker is broken, and every 'no static "
+        "switch' assertion in this file is passing vacuously."
     )
 
 

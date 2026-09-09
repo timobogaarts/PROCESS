@@ -217,24 +217,45 @@ from functional_process.cottax.models.power.electric_production import (
 )
 from functional_process.cottax.models.power.namespace import Power
 from functional_process.cottax.models.physics.tokamak_namespace import PulseBurnTime
-from functional_process.cottax.models.power.pf_coil_power import PfCoilPowerSupplies
+from functional_process.cottax.models.power.pf_coil_power import (
+    PfCoilPowerSuppliesNoCentralSolenoid,
+    PfCoilPowerSuppliesReference,
+)
 from functional_process.cottax.models.power.tf_coil_power import (
     TfPowerResistive,
     TfPowerSuperconducting,
 )
 from functional_process.cottax.models.power.thermal_cryo import (
-    ComponentThermalPowers,
+    ComponentThermalPowersMechDualCcfe,
+    ComponentThermalPowersMechDualOther,
+    ComponentThermalPowersMechLiquidCcfe,
+    ComponentThermalPowersMechLiquidOther,
+    ComponentThermalPowersMechSolidCcfe,
+    ComponentThermalPowersMechSolidOther,
+    ComponentThermalPowersSummedDualCcfe,
+    ComponentThermalPowersSummedDualOther,
+    ComponentThermalPowersSummedLiquidCcfe,
+    ComponentThermalPowersSummedLiquidOther,
+    ComponentThermalPowersSummedSolidCcfe,
+    ComponentThermalPowersSummedSolidOther,
     CryoLoadsActive,
     CryoLoadsInactive,
     CryoQLoadsResistiveTf,
     CryoQLoadsSuperconductingTf,
     CryoQNuc,
-    DeltaEtaStep,
-    EtathLiqSupercriticalCo2,
+    DeltaEtaStepMechLiquidCcfe,
+    DeltaEtaStepMechLiquidOther,
+    DeltaEtaStepMechSolidCcfe,
+    DeltaEtaStepMechSolidOther,
+    DeltaEtaStepSummedLiquidCcfe,
+    DeltaEtaStepSummedLiquidOther,
+    DeltaEtaStepSummedSolidCcfe,
+    DeltaEtaStepSummedSolidOther,
     EtaTurbineCcfeHcpbValue,
     EtaTurbineCcfeHcpbValueWithDivertor,
     EtaTurbineSteamRankineCycle,
     EtaTurbineSupercriticalCo2,
+    EtathLiqSupercriticalCo2,
     PFwBlktCoolantPumpMw,
     PFwDivHeatDepositedMwSummed,
     TempTurbineCoolantInFromBlanketCoolant,
@@ -1643,6 +1664,119 @@ P_FW_BLKT_COOLANT_PUMP = {0: PFwBlktCoolantPumpMw, 1: None}
 """
 
 
+def _component_thermal_powers_arm(
+    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+) -> int:
+    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion)`
+    -> `ComponentThermalPowers`'s arm.
+
+    Twelve arms, not the raw 4x3x5 enum product: `i_p_coolant_pumping` and
+    `i_thermal_electric_conversion` each decide one bit here (see
+    `calculate_component_thermal_powers_owned`'s own docstring for which), and
+    `i_blkt_dual_coolant` is read at all three of its values.
+    """
+    pump = (
+        1
+        if PumpingPowerModelTypes(int(i_p_coolant_pumping))
+        in {
+            PumpingPowerModelTypes.MECHANICAL,
+            PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+        }
+        else 0
+    )
+    breeder = int(BlanketDualCoolantModel(int(i_blkt_dual_coolant)))
+    conversion = (
+        0
+        if ElectricConversionModelTypes(int(i_thermal_electric_conversion))
+        is ElectricConversionModelTypes.CCFE_HCPB_VALUE
+        else 1
+    )
+    return pump * 6 + breeder * 2 + conversion
+
+
+COMPONENT_THERMAL_POWERS = {
+    0: ComponentThermalPowersSummedSolidCcfe,
+    1: ComponentThermalPowersSummedSolidOther,
+    2: ComponentThermalPowersSummedLiquidCcfe,
+    3: ComponentThermalPowersSummedLiquidOther,
+    4: ComponentThermalPowersSummedDualCcfe,
+    5: ComponentThermalPowersSummedDualOther,
+    6: ComponentThermalPowersMechSolidCcfe,
+    7: ComponentThermalPowersMechSolidOther,
+    8: ComponentThermalPowersMechLiquidCcfe,
+    9: ComponentThermalPowersMechLiquidOther,
+    10: ComponentThermalPowersMechDualCcfe,
+    11: ComponentThermalPowersMechDualOther,
+}
+"""`_component_thermal_powers_arm(...)` -> the `component_thermal_powers` occupant."""
+
+
+def _delta_eta_step_arm(
+    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+) -> int:
+    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion)`
+    -> `DeltaEtaStep`'s arm.
+
+    Eight arms: `i_blkt_dual_coolant` is coarser here than in
+    `_component_thermal_powers_arm` above -- only
+    `calculate_p_fw_blkt_heat_deposited_mw`'s `in (1, 2)` guard reads it in this
+    composition, a binary split rather than the three-way one.
+    """
+    pump = (
+        1
+        if PumpingPowerModelTypes(int(i_p_coolant_pumping))
+        in {
+            PumpingPowerModelTypes.MECHANICAL,
+            PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+        }
+        else 0
+    )
+    breeder = (
+        1
+        if BlanketDualCoolantModel(int(i_blkt_dual_coolant))
+        in {
+            BlanketDualCoolantModel.SINGLE_COOLANT_LIQUID_BREEDER,
+            BlanketDualCoolantModel.DUAL_COOLANT,
+        }
+        else 0
+    )
+    conversion = (
+        0
+        if ElectricConversionModelTypes(int(i_thermal_electric_conversion))
+        is ElectricConversionModelTypes.CCFE_HCPB_VALUE
+        else 1
+    )
+    return pump * 4 + breeder * 2 + conversion
+
+
+DELTA_ETA_STEP = {
+    0: DeltaEtaStepSummedSolidCcfe,
+    1: DeltaEtaStepSummedSolidOther,
+    2: DeltaEtaStepSummedLiquidCcfe,
+    3: DeltaEtaStepSummedLiquidOther,
+    4: DeltaEtaStepMechSolidCcfe,
+    5: DeltaEtaStepMechSolidOther,
+    6: DeltaEtaStepMechLiquidCcfe,
+    7: DeltaEtaStepMechLiquidOther,
+}
+"""`_delta_eta_step_arm(...)` -> the `delta_eta_step` occupant."""
+
+
+def _pf_coil_power_supplies_arm(iohcl) -> int:
+    """`.build.iohcl` -> the `PfCoilPowerSupplies` occupant -- the same split
+    `_pf_coil_topology` makes, now baked into two classes instead of a static
+    `topology` field.
+    """
+    return 1 if int(iohcl) != 0 else 0
+
+
+PF_COIL_POWER_SUPPLIES = {
+    0: PfCoilPowerSuppliesNoCentralSolenoid,
+    1: PfCoilPowerSuppliesReference,
+}
+"""`_pf_coil_power_supplies_arm(...)` -> the `pf_coil_power` occupant."""
+
+
 def _energy_storage_arm(i_pulsed_plant: int, istore: int) -> int:
     """`(i_pulsed_plant, istore)` -> Account 225.3's arm."""
     if PlantOperationModel(int(i_pulsed_plant)) is PlantOperationModel.CONTINUOUS:
@@ -1886,8 +2020,7 @@ occupant, or `None`.
 
 
 def _cost_of_electricity_arm(ireactor: int, ipnet: int, itart: int) -> int:
-    """Which arm of `Costs.run()`'s cost-of-electricity dispatch three switches select.
-    """
+    """Which arm of `Costs.run()`'s cost-of-electricity dispatch three switches select."""
     if ireactor != 1 or ipnet != 0:
         return 0
     return (
@@ -1973,8 +2106,7 @@ DEVICE = {
 
 
 def _n_divertors(i_single_null: int) -> int:
-    """`.physics.i_single_null` -> `.divertor.n_divertors`, as `init.py:606-617` does.
-    """
+    """`.physics.i_single_null` -> `.divertor.n_divertors`, as `init.py:606-617` does."""
     return (
         2
         if DivertorNumberModels(int(i_single_null)) is (DivertorNumberModels.DOUBLE_NULL)
@@ -2088,8 +2220,7 @@ HCD_PRIMARY_EFFICIENCY_FREETHY = {0: HcdPrimaryEfficiencyFreethyEcrhOMode}
 
 
 def _hcd_primary_efficiency(i_hcd_primary: int, i_ecrh_wave_mode: int):
-    """The primary-efficiency occupant, resolving the one *nested* switch this slot has.
-    """
+    """The primary-efficiency occupant, resolving the one *nested* switch this slot has."""
     model = CurrentDriveModel(int(i_hcd_primary))
     if model is CurrentDriveModel.FREETHY_ELECTRON_CYCLOTRON:
         return _slot_occupant(
@@ -2287,8 +2418,7 @@ written for each.
 
 
 def _peak_b_ripple_arm(n_tf_coils: float) -> int:
-    """`round(n_tf_coils)` -> the ripple-fit arm; `-1` is the flat-allowance fallback.
-    """
+    """`round(n_tf_coils)` -> the ripple-fit arm; `-1` is the flat-allowance fallback."""
     count = round(float(n_tf_coils))
     return count if count in {16, 18, 20} else -1
 
@@ -2699,8 +2829,7 @@ occupant -- the fifth slot keyed on that existing joint predicate, per `shield.m
 
 
 def _pf_coil_topology(iohcl):
-    """`.build.iohcl` -> the `PFCoilTopology` the ported occupant set was written for.
-    """
+    """`.build.iohcl` -> the `PFCoilTopology` the ported occupant set was written for."""
     return REFERENCE_TOPOLOGY if int(iohcl) != 0 else SPHERICAL_TOKAMAK_TOPOLOGY
 
 
@@ -2718,8 +2847,7 @@ def _pf_coil_system_arm(
     i_tf_shape,
     i_r_pf_outside_tf_placement,
 ) -> int:
-    """Every switch the PF coil system's thirteen nodes branch on, resolved to one arm.
-    """
+    """Every switch the PF coil system's thirteen nodes branch on, resolved to one arm."""
     deviations = _pf_coil_system_deviations(
         iohcl=iohcl,
         n_pf_coil_groups=n_pf_coil_groups,
@@ -2911,8 +3039,7 @@ def iteration_variables_from_indat(input_file):
 
 
 def problem_from_indat(input_file):
-    """The problem statement this input file declares -- `importer.Problem`, in order.
-    """
+    """The problem statement this input file declares -- `importer.Problem`, in order."""
     return _as_imported(input_file).problem
 
 
@@ -2958,8 +3085,7 @@ EFF_TF_CRYO_UNSET = -1.0
 
 
 def resolve_eff_tf_cryo(eff_tf_cryo, i_tf_sup):
-    """`init.py:933-940`: the `-1.0` sentinel -> the cryoplant efficiency for a magnet.
-    """
+    """`init.py:933-940`: the `-1.0` sentinel -> the cryoplant efficiency for a magnet."""
     conductor = TFConductorModel(int(i_tf_sup))
     if abs(float(eff_tf_cryo) + 1.0) >= 1e-6:
         return float(eff_tf_cryo)
@@ -3216,8 +3342,7 @@ name.
 
 
 def _refuse_seed_owned_unknowns(ixc, owned):
-    """Refuse a machine whose `ixc` names a field one of `_initialisation`'s nodes owns.
-    """
+    """Refuse a machine whose `ixc` names a field one of `_initialisation`'s nodes owns."""
     frozen = {
         name
         for identifier in ixc
@@ -3238,8 +3363,7 @@ def _refuse_seed_owned_unknowns(ixc, owned):
 
 
 def _initialisation(imported, device, i_tf_sup, i_tf_sc_mat, ixc):
-    """The seed's own writes, as occupied slots: `models/initialisation.Initialisation`.
-    """
+    """The seed's own writes, as occupied slots: `models/initialisation.Initialisation`."""
     tokamak = device is TokamakProcess
     i_pulsed_plant = imported.get("pulse", "i_pulsed_plant", I_PULSED_PLANT_DEFAULT)
     i_single_null = imported.get("physics", "i_single_null", I_SINGLE_NULL_DEFAULT)
@@ -3387,8 +3511,7 @@ def _tokamak_device(
     i_tf_sc_mat,
     i_tf_turn_type,
 ):
-    """The `Tokamak` an IN.DAT describes -- twenty-six slots of the twenty-eight filled.
-    """
+    """The `Tokamak` an IN.DAT describes -- twenty-six slots of the twenty-eight filled."""
     i_single_null = switches.get("i_single_null", 1)  # `physics_variables.py:1366`
     n_divertors = _n_divertors(i_single_null)
     # One predicate, four slots -- blanket areas, blanket volumes, first wall and vacuum
@@ -3937,8 +4060,7 @@ def _tokamak_device(
 
 
 def machine_from_indat(input_file, stella_conf=None):
-    """The `StellaratorProcess` an IN.DAT describes -- the only thing that builds one.
-    """
+    """The `StellaratorProcess` an IN.DAT describes -- the only thing that builds one."""
     # One read of the file, four views of it: `importer.read_indat` is the parser now,
     # and the readers below take the `Imported` it returns rather than the path, so a
     # machine costs one parse instead of four scans.
@@ -4180,22 +4302,28 @@ def machine_from_indat(input_file, stella_conf=None):
         # absent on a stellarator, which has no PF coils and whose `stellarator.py`
         # never calls `Power.run` at all. The only slot in this namespace whose
         # occupancy is decided by the device rather than by a switch.
-        # **The topology is threaded, not defaulted.** `PfCoilPowerSupplies.topology`
-        # is a static field the class's own docstring says "one occupant serves both"
-        # through -- and this call site never set it, so every machine got
-        # `REFERENCE_TOPOLOGY`. On a solenoid-less machine that is 7 CS+PF coils where
-        # there are 8, and `pfpwr`'s `pfckts = (n_pf_cs_plasma_circuits - 2) + 6` comes
-        # out **12 against PROCESS's 13** -- a 1/13 that propagates into `spfbusl`,
-        # `acptmax`, `srcktpm` and six Account 22.5.2 power-conditioning rows, at
-        # 2e-02 to 2.5e-01 relative. Found by running `cold_start` on
-        # `spherical_tokamak_eval` and `st_regression` for the first time.
+        # **The topology is threaded, not defaulted.** `PfCoilPowerSupplies` used to
+        # carry `topology` as a static field defaulting to `REFERENCE_TOPOLOGY` -- and
+        # this call site never overrode it, so every machine got that default. On a
+        # solenoid-less machine that is 7 CS+PF coils where there are 8, and `pfpwr`'s
+        # `pfckts = (n_pf_cs_plasma_circuits - 2) + 6` comes out **12 against PROCESS's
+        # 13** -- a 1/13 that propagates into `spfbusl`, `acptmax`, `srcktpm` and six
+        # Account 22.5.2 power-conditioning rows, at 2e-02 to 2.5e-01 relative. Found by
+        # running `cold_start` on `spherical_tokamak_eval` and `st_regression` for the
+        # first time. `topology` is two occupants now (`PF_COIL_POWER_SUPPLIES`,
+        # `_pf_coil_power_supplies_arm`), so a value threaded here selects a class
+        # rather than a default a caller could forget to override.
         #
         # `_pf_coil_topology`'s own docstring already named this shape: the cost side
         # once held `N_CS_PF_COILS` (7, with a solenoid) while the PF coil system
         # correctly held 8 and none, and the answer is "written once and read twice
         # rather than transcribed". This is the third reader, and it was missed.
         pf_coil_power=(
-            PfCoilPowerSupplies(topology=_pf_coil_topology(pf_magnet_cost_iohcl))
+            _slot_occupant(
+                "pf_coil_power_arm",
+                _pf_coil_power_supplies_arm(pf_magnet_cost_iohcl),
+                PF_COIL_POWER_SUPPLIES,
+            )
             if device is TokamakProcess
             else None
         ),
@@ -4206,22 +4334,29 @@ def machine_from_indat(input_file, stella_conf=None):
             PFEnergyStorageSource(int(switches.get("i_pf_energy_storage_source", 2))),
             ACPOW,
         ),
-        # **The last two slots in the tree that still carry a switch as a static
-        # kwarg** (`_audit/next_steps.md` §14.2). `i_blanket_type` and
-        # `secondary_cycle_liq` left `ComponentThermalPowers` with the seven dead reads
-        # they fed; the three below are real branches on both nodes, and splitting them
-        # is a 2 x 3 x 2 product of occupants over a 26-read signature -- written up in
-        # §14.11 rather than improvised here. Every value is threaded from the file, so
-        # neither can contradict the slots the same switches decide.
-        component_thermal_powers=ComponentThermalPowers(
-            i_p_coolant_pumping=i_p_coolant_pumping,
-            i_blkt_dual_coolant=i_blkt_dual_coolant,
-            i_thermal_electric_conversion=i_thermal_electric_conversion,
+        # **The last two slots in this tree that used to carry a switch as a static
+        # kwarg** (`_audit/next_steps.md` §14.2, `_audit/switch_kwarg_survey.md`'s
+        # exemption, withdrawn 2026-09-09). Both are occupant families now, the same as
+        # every other slot: `ComponentThermalPowers`'s twelve arms are the full
+        # `i_p_coolant_pumping` x `i_blkt_dual_coolant` x `i_thermal_electric_conversion`
+        # product (`i_blkt_dual_coolant` reads at all three values in that
+        # composition); `DeltaEtaStep`'s eight arms use a coarser, binary role for
+        # `i_blkt_dual_coolant` (see `_delta_eta_step_arm`'s docstring). Every value is
+        # threaded from the file, so neither can contradict the slots the same switches
+        # decide.
+        component_thermal_powers=_slot_occupant(
+            "component_thermal_powers_arm",
+            _component_thermal_powers_arm(
+                i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+            ),
+            COMPONENT_THERMAL_POWERS,
         ),
-        delta_eta_step=DeltaEtaStep(
-            i_p_coolant_pumping=i_p_coolant_pumping,
-            i_blkt_dual_coolant=i_blkt_dual_coolant,
-            i_thermal_electric_conversion=i_thermal_electric_conversion,
+        delta_eta_step=_slot_occupant(
+            "delta_eta_step_arm",
+            _delta_eta_step_arm(
+                i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+            ),
+            DELTA_ETA_STEP,
         ),
         eta_turbine=_slot_occupant(
             "eta_turbine_arm",

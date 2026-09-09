@@ -21,10 +21,17 @@ from functional_process.cottax.core.solver.drivers import (
     PicardDriver,
     _refuse_inert_objective,
 )
-from functional_process.cottax.paths import fwbs
-from functional_process.cottax.models.power.thermal_cryo import CryoQNucStep
-from functional_process.models.switch_enums import CoilNuclearHeatingModel
-from process.models.tfcoil.base import TFConductorModel
+from functional_process.cottax.models.power.thermal_cryo import (
+    DeltaEtaStepSummedSolidCcfe,
+)
+from functional_process.cottax.paths import (
+    current_drive,
+    fwbs,
+    heat_transport,
+    physics,
+    power,
+    primary_pumping,
+)
 
 toy = area("toy")
 """A synthetic area for the contraction toy problem -- not a `DataStructure` area, so
@@ -83,21 +90,49 @@ def test_picard_driver_requires_a_start():
 
 
 def test_picard_driver_drives_a_real_fixed_point_function_node():
-    """`CryoQNucStep` at `inuclear = FRANCES_FOX` with a superconducting TF coil has
-    `d(qnuc_next)/d(qnuc) == 0` (`test_thermal_cryo.py`'s own gradient test pins this):
-    PROCESS recomputes `.fwbs.qnuc` from `.fwbs.p_tf_nuclear_heat_mw` alone, so the
-    fixed point does not depend on the starting guess and Picard reaches it in exactly
-    one step. Ground truth is one direct call to `step`, not a hardcoded number, since
-    the point of this regime is that any entering value gives the same answer.
+    """`DeltaEtaStep`'s self-loop is genuine but numerically inert on every arm
+    (`d(delta_eta_next)/d(delta_eta) == 0`,
+    `test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta` in
+    `test_thermal_cryo.py` pins this): PROCESS recomputes `.power.delta_eta` from
+    fields that never depend on its own entering value, so the fixed point does not
+    depend on the starting guess and Picard reaches it in exactly one step. Ground
+    truth is one direct call to `step`, not a hardcoded number, since the point of
+    this regime is that any entering value gives the same answer.
+
+    Was `CryoQNucStep` (`inuclear = FRANCES_FOX`, superconducting TF coil) until that
+    node's static `i_tf_sup`/`inuclear` kwargs were withdrawn along with every other
+    switch-carrying static field (`_audit/switch_kwarg_survey.md`) -- `CryoQNucStep`
+    was unregistered scaffolding to begin with (`CryoQNuc` is the real, registered
+    replacement, and it is a plain node with no self-loop at all), so this test moves
+    to `DeltaEtaStep`, which has the same numerically-inert-self-loop shape and *is*
+    a real, registered node. Any of its eight arms would do; `SummedSolidCcfe` is
+    arbitrary.
     """
-    node = CryoQNucStep(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
-    )
-    p_tf_nuclear_heat_mw = 0.045
+    node = DeltaEtaStepSummedSolidCcfe()
+    reads = {
+        "p_fw_coolant_pump_mw": (heat_transport, 12.0),
+        "p_blkt_coolant_pump_mw": (heat_transport, 30.0),
+        "p_fw_blkt_coolant_pump_mw": (primary_pumping, 45.0),
+        "p_fw_nuclear_heat_total_mw": (fwbs, 80.0),
+        "p_fw_rad_total_mw": (fwbs, 120.0),
+        "p_blkt_nuclear_heat_total_mw": (fwbs, 600.0),
+        "p_blkt_breeder_pump_mw": (heat_transport, 3.0),
+        "p_beam_orbit_loss_mw": (current_drive, 2.0),
+        "p_fw_alpha_mw": (physics, 15.0),
+        "p_beam_shine_through_mw": (current_drive, 1.0),
+        "p_cp_shield_nuclear_heat_mw": (fwbs, 5.0),
+        "p_shld_nuclear_heat_mw": (fwbs, 20.0),
+        "p_shld_coolant_pump_mw": (heat_transport, 8.0),
+        "p_plasma_separatrix_mw": (physics, 120.0),
+        "p_div_nuclear_heat_total_mw": (fwbs, 10.0),
+        "p_div_rad_total_mw": (fwbs, 15.0),
+        "p_div_coolant_pump_mw": (heat_transport, 6.0),
+        "i_shld_primary_heat": (heat_transport, 1.0),
+    }
+    kwargs = {name: value for name, (_area, value) in reads.items()}
     expected = node.step(
-        qnuc=0.0,  # arbitrary -- ignored in this regime
-        p_tf_nuclear_heat_mw=p_tf_nuclear_heat_mw,
+        delta_eta=0.0,  # arbitrary -- ignored in this regime
+        **kwargs,
     )
 
     graph = to_graph(node)
@@ -115,14 +150,15 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     # The guess port is read off the problem rather than spelled out, the same way
     # `mda.starts_for` does it: the node is the authority on where its start is read.
     (guess,) = driver_vars(graph[problem], Start)
-    env = {
-        guess: jnp.asarray(300.0),
-        vpath(fwbs.p_tf_nuclear_heat_mw): jnp.asarray(p_tf_nuclear_heat_mw),
-    }
+    env = {guess: jnp.asarray(0.05)}
+    env.update({
+        vpath(getattr(area, name)): jnp.asarray(value)
+        for name, (area, value) in reads.items()
+    })
 
     out = schedule.run(path_map(env))
 
-    got = out[vpath(fwbs.qnuc)]
+    got = out[vpath(power.delta_eta)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)
 
 
