@@ -79,9 +79,9 @@ from functional_process.models.stellarator.coils.calculate import (
     select_coil_coil_toroidal_gap,
     st_coil,  # noqa: F401
     winding_pack_curves,  # noqa: F401
+    winding_pack_intersect_inputs_curves,
     winding_pack_post_intersect,
     winding_pack_pre_intersect,  # noqa: F401
-    winding_pack_pre_intersect_for,
     winding_pack_total_size,  # noqa: F401
 )
 from functional_process.vocabulary import (
@@ -229,49 +229,14 @@ class WindingPackIntersectInputs(ExplicitFunction):
     """`_MATERIAL_SAMPLING`'s row for this occupant's material, as plain class
     attributes -- the ordinary pair by default, overridden by the one occupant PROCESS
     treats differently.
-    """
 
-    def _curves(
-        self,
-        jcrit,
-        r_coil_major,
-        r_coil_minor,
-        coilcurrent,
-        n_tf_coils,
-        stella_config_a1,
-        stella_config_a2,
-        stella_config_wp_ratio,
-        tftmp,
-        tmargmin,
-        f_a_tf_turn_cable_copper,
-        f_a_tf_turn_cable_space_extra_void,
-        f_j_tf_wp_critical_max,
-        a_tf_turn_cable_space_no_void,
-        dx_tf_turn_general,
-    ):
-        """The occupant's four outputs, from its own `jcrit` law and its own divisors."""
-        wp_width_r, lhs, rhs, _fraction, wp_width_r_min_guess = (
-            winding_pack_pre_intersect_for(
-                jcrit,
-                self.sample_lower_divisor,
-                self.guess_divisor,
-                r_coil_major,
-                r_coil_minor,
-                coilcurrent,
-                n_tf_coils,
-                stella_config_a1,
-                stella_config_a2,
-                stella_config_wp_ratio,
-                tftmp,
-                tmargmin,
-                f_a_tf_turn_cable_copper,
-                f_a_tf_turn_cable_space_extra_void,
-                f_j_tf_wp_critical_max,
-                a_tf_turn_cable_space_no_void,
-                dx_tf_turn_general,
-            )
-        )
-        return wp_width_r, lhs, rhs, wp_width_r_min_guess
+    Read by every occupant's `__call__` and passed as plain arguments into
+    `winding_pack_intersect_inputs_curves`/the
+    `calculate_*_winding_pack_intersect_inputs` functions
+    (`functional_process/models/stellarator/coils/calculate.py`) -- the computation
+    itself (the former `_curves` method) lives there now, not on this class, so it is
+    callable with no cottax node in hand.
+    """
 
 
 class IterNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
@@ -294,8 +259,10 @@ class IterNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        return self._curves(
+        return winding_pack_intersect_inputs_curves(
             jcrit_iter_nb3sn,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -336,7 +303,8 @@ class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
         j_tf_wp=From(tfcoil),
     ):
         return calculate_bi2212_winding_pack_intersect_inputs(
-            self,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -376,8 +344,10 @@ class OldLubellNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        return self._curves(
+        return winding_pack_intersect_inputs_curves(
             jcrit_old_lubell_nbti,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -421,7 +391,8 @@ class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
         tcritsc=From(tfcoil),
     ):
         return calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
-            self,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -461,8 +432,10 @@ class WstNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        return self._curves(
+        return winding_pack_intersect_inputs_curves(
             jcrit_wst_nb3sn,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -503,8 +476,10 @@ class CrocoRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        return self._curves(
+        return winding_pack_intersect_inputs_curves(
             jcrit_croco_rebco,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -547,7 +522,8 @@ class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
         t_crit_nbti=From(tfcoil),
     ):
         return calculate_durham_nbti_winding_pack_intersect_inputs(
-            self,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -587,8 +563,10 @@ class DurhamRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        return self._curves(
+        return winding_pack_intersect_inputs_curves(
             jcrit_durham_rebco,
+            self.sample_lower_divisor,
+            self.guess_divisor,
             r_coil_major,
             r_coil_minor,
             coilcurrent,

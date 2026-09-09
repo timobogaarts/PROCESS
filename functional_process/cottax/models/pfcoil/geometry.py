@@ -1,11 +1,9 @@
 """Where the CS and the PF coils are: cross-sections, filament placement, coil centres."""
 
 import equinox as eqx
-import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.models.pfcoil import (
-    NGC2,
     REFERENCE_TOPOLOGY,
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
@@ -25,7 +23,9 @@ from functional_process.models.pfcoil.geometry import (
     calculate_cs_turn_geometry_eu_demo_from_turns,
     calculate_pf_coil_group_positions,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_placement_for_topology,
-    calculate_pf_coil_positions,
+    calculate_pf_coil_positions,  # noqa: F401 -- re-exported for tests
+    calculate_pf_coil_positions_for_topology,
+    calculate_pf_coil_positions_from_elements,
     place_cs_filaments,  # noqa: F401 -- re-exported for currents.py / tests
 )
 
@@ -158,11 +158,33 @@ class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
         )
 
 
-class PFCoilPositions(ExplicitFunction):
-    """cottax node: `.tokamak.pf_coil.positions`."""
+class PFCoilPositions(WrapsFunction):
+    """cottax node: `.tokamak.pf_coil.positions`.
 
-    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
-    """Static. Which slot each coil occupies, and whether there is a CS slot at all."""
+    Which slot each coil occupies, and whether there is a CS slot at all, is fixed by
+    `fn` (`calculate_pf_coil_positions_from_elements`, for `REFERENCE_TOPOLOGY`) rather
+    than carried as a static field here -- see `PFCoilPositionsNoCentralSolenoid` for
+    the other arm.
+    """
+
+    fn = calculate_pf_coil_positions_from_elements
+
+    r_pf_coil_middle_group_array = From(pf_coil)
+    z_pf_coil_middle_group_array = From(pf_coil)
+    r_cs_middle = From(pf_coil)
+
+    r_pf_coil_middle = OutputInto(pf_coil)
+    z_pf_coil_middle = OutputInto(pf_coil)
+
+
+class PFCoilPositionsNoCentralSolenoid(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant.
+
+    Not `WrapsFunction`: `calculate_pf_coil_positions_for_topology` takes a `topology`
+    keyword this occupant must thread through explicitly (`self.topology`).
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
 
     r_pf_coil_middle = OutputInto(pf_coil)
     z_pf_coil_middle = OutputInto(pf_coil)
@@ -171,48 +193,10 @@ class PFCoilPositions(ExplicitFunction):
         self,
         r_pf_coil_middle_group_array=From(pf_coil),
         z_pf_coil_middle_group_array=From(pf_coil),
-        r_cs_middle=From(pf_coil),
     ):
-        return self._flattened(
-            r_pf_coil_middle_group_array,
-            z_pf_coil_middle_group_array,
-            r_cs_middle,
-        )
-
-    def _flattened(
-        self,
-        r_pf_coil_middle_group_array,
-        z_pf_coil_middle_group_array,
-        r_cs_middle,
-    ):
-        """The flattening and its `NGC2` padding, given this arm's reads."""
-        n_groups = self.topology.n_pf_coil_groups
-        r_flat, z_flat = calculate_pf_coil_positions(
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
-            r_cs_middle=r_cs_middle,
-            topology=self.topology,
-        )
-        pad = jnp.zeros(NGC2)
-        filled = self.topology.n_cs_pf_coils
-        return (
-            pad.at[:filled].set(r_flat),
-            pad.at[:filled].set(z_flat),
-        )
-
-
-class PFCoilPositionsNoCentralSolenoid(PFCoilPositions):
-    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant."""
-
-    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
-
-    def __call__(
-        self,
-        r_pf_coil_middle_group_array=From(pf_coil),
-        z_pf_coil_middle_group_array=From(pf_coil),
-    ):
-        return self._flattened(
-            r_pf_coil_middle_group_array,
-            z_pf_coil_middle_group_array,
+        return calculate_pf_coil_positions_for_topology(
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
             r_cs_middle=None,
+            topology=self.topology,
         )

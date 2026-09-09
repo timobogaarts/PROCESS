@@ -42,6 +42,7 @@ centre-post calculations two sections later correctly do.
 import jax.numpy as jnp
 
 from functional_process.models.safe_math import safe_pow
+from functional_process.vocabulary import CurrentDriveMethodType, CurrentDriveModel
 
 
 def _safe_ratio(numerator, denominator):
@@ -302,6 +303,159 @@ def calculate_bldgs(
         shovol,
         convol,
         volnucb,
+    )
+
+
+def calculate_bldgs_from_elements(
+    r_pf_coil_outer_max,
+    m_pf_coil_max,
+    tfro,
+    tfri,
+    tf_vertical_dim,
+    tfmtn,
+    n_tf_coils,
+    r_shld_outboard_outer,
+    r_shld_inboard_inner,
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_upper,
+    dz_vv_lower,
+    whtshld,
+    r_cryostat_inboard,
+    helpow,
+    rxcl,
+    trcl,
+    row,
+    wgt,
+    shmf,
+    clh2,
+    dz_tf_cryostat,
+    stcl,
+    rbvfac,
+    rbwt,
+    rbrt,
+    fndt,
+    hcwt,
+    hccl,
+    wgt2,
+    mbvfac,
+    wsvfac,
+    tfcbv,
+    pfbldgm3,
+    esbldgm3,
+    pibv,
+    triv,
+    conv,
+    admv,
+    shov,
+):
+    """`calculate_bldgs`, from the cottax `Bldgs` node's declared reads.
+
+    The cottax node's whole job: the attached-shield height `shh` that `calculate_bldgs`
+    takes as one positional argument is not a stored `.build.*`/`.buildings.*` field --
+    `calculate_shield_height` computes it inline at the source's call site (see that
+    function's docstring) -- so the node called it first and folded the result into
+    `calculate_bldgs`'s argument list. Both calls, in that order, are the whole of it;
+    nothing else happens between them.
+
+    Parameters
+    ----------
+    r_pf_coil_outer_max, m_pf_coil_max :
+        Largest PF coil outer radius (m), largest PF coil mass (tonne).
+        `.pf_coil.r_pf_coil_outer_max`, `.pf_coil.m_pf_coil_max`.
+    tfro, tfri, tf_vertical_dim, tfmtn :
+        TF coil outer/inner radius (m), full height (m), one-coil mass (tonne) --
+        `calculate_tf_coil_envelope`'s outputs.
+    n_tf_coils :
+        Number of TF coils. `.tfcoil.n_tf_coils`.
+    r_shld_outboard_outer, r_shld_inboard_inner :
+        Attached shield outer/inner radius (m). `.build.r_shld_outboard_outer`,
+        `.build.r_shld_inboard_inner`.
+    z_tf_inside_half, dz_shld_vv_gap, dz_vv_upper, dz_vv_lower :
+        Fed to `calculate_shield_height` for the attached-shield height `shh`.
+        `.build.z_tf_inside_half`, `.build.dz_shld_vv_gap`, `.build.dz_vv_upper`,
+        `.build.dz_vv_lower`.
+    whtshld :
+        Total shield mass (kg). `.fwbs.whtshld`.
+    r_cryostat_inboard :
+        Outer radius of the common cryostat (m). `.fwbs.r_cryostat_inboard`.
+    helpow :
+        Total cryogenic load (W). `.heat_transport.helpow`.
+    rxcl, trcl, row :
+        Clearance around reactor, transportation clearance, crane-operation clearance
+        (m). `.buildings.rxcl`, `.buildings.trcl`, `.buildings.row`.
+    wgt, shmf :
+        Reactor-building crane capacity (kg, 0 = calculated), shield-mass-per-coil lift
+        fraction. `.buildings.wgt`, `.buildings.shmf`.
+    clh2, dz_tf_cryostat, stcl :
+        Clearance beneath TF coil to foundation (m), TF-coil-to-cryostat clearance (m),
+        crane-to-roof clearance (m). `.buildings.clh2`, `.buildings.dz_tf_cryostat`,
+        `.buildings.stcl`.
+    rbvfac, rbwt, rbrt, fndt :
+        Reactor building volume factor, wall thickness (m), roof thickness (m),
+        foundation thickness (m). `.buildings.rbvfac`, `.rbwt`, `.rbrt`, `.fndt`.
+    hcwt, hccl :
+        Hot cell wall thickness (m), hot cell component clearance (m).
+        `.buildings.hcwt`, `.buildings.hccl`.
+    wgt2, mbvfac, wsvfac :
+        Hot cell crane capacity (kg, 0 = calculated), maintenance building volume
+        factor, warm shop volume factor. `.buildings.wgt2`, `.mbvfac`, `.wsvfac`.
+    tfcbv, pfbldgm3, esbldgm3, pibv :
+        TF coil PSU, PF coil PSU, energy storage, power injection building volumes
+        (m3). `.buildings.tfcbv`, `.pfbldgm3`, `.esbldgm3`, `.pibv`.
+    triv, conv, admv, shov :
+        Tritium, control, administration, shops building volumes (m3).
+        `.buildings.triv`, `.conv`, `.admv`, `.shov`.
+
+    Returns
+    -------
+    :
+        `(cryvol, volrci, rbvol, rmbvol, wsvol, elevol, wrbi,
+        a_plant_floor_effective, admvol, shovol, convol, volnucb)`, `Bldgs`'s outputs, in
+        that order.
+    """
+    shh = calculate_shield_height(
+        z_tf_inside_half, dz_shld_vv_gap, dz_vv_upper, dz_vv_lower
+    )
+    return calculate_bldgs(
+        r_pf_coil_outer_max,
+        m_pf_coil_max,
+        tfro,
+        tfri,
+        tf_vertical_dim,
+        tfmtn,
+        n_tf_coils,
+        r_shld_outboard_outer,
+        r_shld_inboard_inner,
+        shh,
+        whtshld,
+        r_cryostat_inboard,
+        helpow,
+        rxcl,
+        trcl,
+        row,
+        wgt,
+        shmf,
+        clh2,
+        dz_tf_cryostat,
+        stcl,
+        rbvfac,
+        rbwt,
+        rbrt,
+        fndt,
+        hcwt,
+        hccl,
+        wgt2,
+        mbvfac,
+        wsvfac,
+        tfcbv,
+        pfbldgm3,
+        esbldgm3,
+        pibv,
+        triv,
+        conv,
+        admv,
+        shov,
     )
 
 
@@ -737,4 +891,286 @@ def calculate_bldgs_sizes(
         reactor_hall_h,
         a_plant_floor_effective,
         volnucb,
+    )
+
+
+def calculate_bldgs_sizes_from_hcd(
+    i_hcd_primary,
+    r_pf_coil_outer_max,
+    r_cryostat_inboard,
+    tf_radial_dim,
+    bioshld_thk,
+    reactor_clrnc,
+    transp_clrnc,
+    crane_clrnc_h,
+    cryostat_clrnc,
+    ground_clrnc,
+    crane_arm_h,
+    tf_vertical_dim,
+    nbi_sys_l,
+    nbi_sys_w,
+    hcd_building_l,
+    hcd_building_w,
+    hcd_building_h,
+    fc_building_l,
+    fc_building_w,
+    reactor_wall_thk,
+    reactor_roof_thk,
+    reactor_fndtn_thk,
+    life_plant,
+    z_tf_inside_half,
+    dr_tf_inboard,
+    dr_tf_shld_gap,
+    dz_shld_thermal,
+    dz_shld_vv_gap,
+    dr_shld_inboard,
+    dr_blkt_inboard,
+    dr_fw_inboard,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    n_tf_coils,
+    hot_sepdist,
+    qnty_sfty_fac,
+    dr_fw_outboard,
+    dr_blkt_outboard,
+    dr_shld_outboard,
+    dr_fw_plasma_gap_outboard,
+    life_div_fpy,
+    dz_divertor,
+    cplife,
+    i_tf_sup,
+    r_cp_top,
+    hotcell_h,
+    chemlab_l,
+    chemlab_w,
+    chemlab_h,
+    heat_sink_l,
+    heat_sink_w,
+    heat_sink_h,
+    aux_build_l,
+    aux_build_w,
+    aux_build_h,
+    magnet_trains_l,
+    magnet_trains_w,
+    magnet_trains_h,
+    magnet_pulse_l,
+    magnet_pulse_w,
+    magnet_pulse_h,
+    control_buildings_l,
+    control_buildings_w,
+    control_buildings_h,
+    warm_shop_l,
+    warm_shop_w,
+    warm_shop_h,
+    workshop_l,
+    workshop_w,
+    workshop_h,
+    robotics_l,
+    robotics_w,
+    robotics_h,
+    maint_cont_l,
+    maint_cont_w,
+    maint_cont_h,
+    cryomag_l,
+    cryomag_w,
+    cryomag_h,
+    cryostore_l,
+    cryostore_w,
+    cryostore_h,
+    auxcool_l,
+    auxcool_w,
+    auxcool_h,
+    elecdist_l,
+    elecdist_w,
+    elecdist_h,
+    elecload_l,
+    elecload_w,
+    elecload_h,
+    elecstore_l,
+    elecstore_w,
+    elecstore_h,
+    turbine_hall_l,
+    turbine_hall_w,
+    turbine_hall_h,
+    ilw_smelter_l,
+    ilw_smelter_w,
+    ilw_smelter_h,
+    ilw_storage_l,
+    ilw_storage_w,
+    ilw_storage_h,
+    llw_storage_l,
+    llw_storage_w,
+    llw_storage_h,
+    hw_storage_l,
+    hw_storage_w,
+    hw_storage_h,
+    tw_storage_l,
+    tw_storage_w,
+    tw_storage_h,
+    gas_buildings_l,
+    gas_buildings_w,
+    gas_buildings_h,
+    water_buildings_l,
+    water_buildings_w,
+    water_buildings_h,
+    sec_buildings_l,
+    sec_buildings_w,
+    sec_buildings_h,
+    staff_buildings_area,
+    staff_buildings_h,
+):
+    """`calculate_bldgs_sizes`, from the cottax `BldgsSizes` node's static field plus
+    declared reads.
+
+    The cottax node's whole job: `is_neutral_beam` is not itself a stored `data` field or
+    a traced read -- `run()`'s call site derives it from `.current_drive.i_hcd_primary`
+    via `CurrentDriveModel(i_hcd_primary).method == CurrentDriveMethodType.NEUTRAL_BEAM`,
+    an enum lookup that cannot be traced (see module docstring's "two switches" note), so
+    the node held `i_hcd_primary` as a static field and did the comparison inline before
+    forwarding to `calculate_bldgs_sizes`. Both steps, in that order, are the whole of
+    it.
+
+    Parameters
+    ----------
+    i_hcd_primary :
+        Primary heating and current drive method switch. `.current_drive.i_hcd_primary`.
+        Static/non-differentiated -- see module docstring.
+    Everything else :
+        Forwarded unchanged to `calculate_bldgs_sizes` -- see its docstring.
+
+    Returns
+    -------
+    :
+        `(reactor_hall_l, reactor_hall_w, reactor_hall_h, a_plant_floor_effective,
+        volnucb)`, `BldgsSizes`'s outputs, in that order.
+    """
+    is_neutral_beam = (
+        CurrentDriveModel(i_hcd_primary).method == CurrentDriveMethodType.NEUTRAL_BEAM
+    )
+    return calculate_bldgs_sizes(
+        r_pf_coil_outer_max,
+        r_cryostat_inboard,
+        tf_radial_dim,
+        bioshld_thk,
+        reactor_clrnc,
+        transp_clrnc,
+        crane_clrnc_h,
+        cryostat_clrnc,
+        ground_clrnc,
+        crane_arm_h,
+        tf_vertical_dim,
+        is_neutral_beam,
+        nbi_sys_l,
+        nbi_sys_w,
+        hcd_building_l,
+        hcd_building_w,
+        hcd_building_h,
+        fc_building_l,
+        fc_building_w,
+        reactor_wall_thk,
+        reactor_roof_thk,
+        reactor_fndtn_thk,
+        life_plant,
+        z_tf_inside_half,
+        dr_tf_inboard,
+        dr_tf_shld_gap,
+        dz_shld_thermal,
+        dz_shld_vv_gap,
+        dr_shld_inboard,
+        dr_blkt_inboard,
+        dr_fw_inboard,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        n_tf_coils,
+        hot_sepdist,
+        qnty_sfty_fac,
+        dr_fw_outboard,
+        dr_blkt_outboard,
+        dr_shld_outboard,
+        dr_fw_plasma_gap_outboard,
+        life_div_fpy,
+        dz_divertor,
+        cplife,
+        i_tf_sup,
+        r_cp_top,
+        hotcell_h,
+        chemlab_l,
+        chemlab_w,
+        chemlab_h,
+        heat_sink_l,
+        heat_sink_w,
+        heat_sink_h,
+        aux_build_l,
+        aux_build_w,
+        aux_build_h,
+        magnet_trains_l,
+        magnet_trains_w,
+        magnet_trains_h,
+        magnet_pulse_l,
+        magnet_pulse_w,
+        magnet_pulse_h,
+        control_buildings_l,
+        control_buildings_w,
+        control_buildings_h,
+        warm_shop_l,
+        warm_shop_w,
+        warm_shop_h,
+        workshop_l,
+        workshop_w,
+        workshop_h,
+        robotics_l,
+        robotics_w,
+        robotics_h,
+        maint_cont_l,
+        maint_cont_w,
+        maint_cont_h,
+        cryomag_l,
+        cryomag_w,
+        cryomag_h,
+        cryostore_l,
+        cryostore_w,
+        cryostore_h,
+        auxcool_l,
+        auxcool_w,
+        auxcool_h,
+        elecdist_l,
+        elecdist_w,
+        elecdist_h,
+        elecload_l,
+        elecload_w,
+        elecload_h,
+        elecstore_l,
+        elecstore_w,
+        elecstore_h,
+        turbine_hall_l,
+        turbine_hall_w,
+        turbine_hall_h,
+        ilw_smelter_l,
+        ilw_smelter_w,
+        ilw_smelter_h,
+        ilw_storage_l,
+        ilw_storage_w,
+        ilw_storage_h,
+        llw_storage_l,
+        llw_storage_w,
+        llw_storage_h,
+        hw_storage_l,
+        hw_storage_w,
+        hw_storage_h,
+        tw_storage_l,
+        tw_storage_w,
+        tw_storage_h,
+        gas_buildings_l,
+        gas_buildings_w,
+        gas_buildings_h,
+        water_buildings_l,
+        water_buildings_w,
+        water_buildings_h,
+        sec_buildings_l,
+        sec_buildings_w,
+        sec_buildings_h,
+        staff_buildings_area,
+        staff_buildings_h,
     )

@@ -61,6 +61,37 @@ def calculate_mast2014_sol_power_decay_length_2(
     )
 
 
+def calculate_mast2014_sol_power_decay_length_2_from_plasma_current(
+    p_plasma_separatrix_mw_raw,
+    plasma_current,
+):
+    """`calculate_mast2014_sol_power_decay_length_2`, from the cottax node's declared
+    reads.
+
+    The cottax node's whole job: `calculate_mast2014_sol_power_decay_length_2` takes the
+    plasma current already in megaamps (see its docstring), but `.physics.plasma_current`
+    is in amps, so `run()`'s inline `/ 1e6` (`scrape_off_layer.py:36-42`, also done at
+    `calculate_scrape_off_layer`'s own call site above) has to happen before the call.
+    That conversion is the whole of it.
+
+    Parameters
+    ----------
+    p_plasma_separatrix_mw_raw :
+        Power flowing into the SOL, before the positivity kludge `physics.py` applies
+        (MW). `.physics.p_plasma_separatrix_mw` at the RAW mint -- see module docstring.
+    plasma_current :
+        Plasma current (A). `.physics.plasma_current`.
+
+    Returns
+    -------
+    :
+        `.physics.len_plasma_sol_mast14_power_decay_2` (m).
+    """
+    return calculate_mast2014_sol_power_decay_length_2(
+        p_plasma_separatrix_mw_raw, plasma_current / 1.0e6
+    )
+
+
 def calculate_upstream_sol_outboard_parallel_area(
     rmajor: float,
     rminor: float,

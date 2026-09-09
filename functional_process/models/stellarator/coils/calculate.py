@@ -1007,8 +1007,67 @@ def winding_pack_total_size(
     )
 
 
+def winding_pack_intersect_inputs_curves(
+    jcrit,
+    sample_lower_divisor,
+    guess_divisor,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    """An occupant's four outputs, from its own `jcrit` law and its own divisors.
+
+    Moved down from `WindingPackIntersectInputs._curves` (a method on the cottax
+    `ExplicitFunction` family base in `cottax/models/stellarator/coils/calculate.py`)
+    so that method's whole job is doable with no cottax node in hand. The method took
+    `self` only for `self.sample_lower_divisor`/`self.guess_divisor` -- plain
+    class-attribute floats, "the ordinary pair by default, overridden by the one
+    occupant PROCESS treats differently" (that class's own docstring) -- so they are
+    ordinary parameters here instead of an attribute lookup.
+
+    Returns
+    -------
+    :
+        `(wp_width_r, lhs, rhs, wp_width_r_min_guess)`.
+    """
+    wp_width_r, lhs, rhs, _fraction, wp_width_r_min_guess = (
+        winding_pack_pre_intersect_for(
+            jcrit,
+            sample_lower_divisor,
+            guess_divisor,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+    )
+    return wp_width_r, lhs, rhs, wp_width_r_min_guess
+
+
 def calculate_bi2212_winding_pack_intersect_inputs(
-    self,
+    sample_lower_divisor,
+    guess_divisor,
     r_coil_major,
     r_coil_minor,
     coilcurrent,
@@ -1027,10 +1086,11 @@ def calculate_bi2212_winding_pack_intersect_inputs(
     j_tf_wp,
 ):
     """`i_tf_sc_mat == BI2212` (2): closes Bi-2212's `jcrit` law over its cable/void/
-    current-density fields, then calls the shared `_curves` helper (`self` is the
-    declaration instance -- `_curves` is not a `calculate_*` physics function, it is
-    this unit's own declaration plumbing, so passing it through is not the signature
-    change the split's hard rule forbids).
+    current-density fields, then calls `winding_pack_intersect_inputs_curves` with its
+    own material's sampling divisors (`sample_lower_divisor`/`guess_divisor`, the
+    calling node's own `WindingPackIntersectInputs.sample_lower_divisor`/
+    `.guess_divisor` class attributes -- plain parameters here, not a `self` lookup, so
+    this function is callable with no cottax node in hand).
     """
 
     def jcrit(b_max, t_helium):
@@ -1043,8 +1103,10 @@ def calculate_bi2212_winding_pack_intersect_inputs(
             j_tf_wp,
         )
 
-    return self._curves(
+    return winding_pack_intersect_inputs_curves(
         jcrit,
+        sample_lower_divisor,
+        guess_divisor,
         r_coil_major,
         r_coil_minor,
         coilcurrent,
@@ -1063,7 +1125,8 @@ def calculate_bi2212_winding_pack_intersect_inputs(
 
 
 def calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
-    self,
+    sample_lower_divisor,
+    guess_divisor,
     r_coil_major,
     r_coil_minor,
     coilcurrent,
@@ -1082,16 +1145,19 @@ def calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
     tcritsc,
 ):
     """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4): closes `jcrit_user_defined_nb3sn` over
-    the user-supplied critical field/temperature, then calls the shared `_curves`
-    helper (see `calculate_bi2212_winding_pack_intersect_inputs` for why `self` is a
-    plain argument here).
+    the user-supplied critical field/temperature, then calls
+    `winding_pack_intersect_inputs_curves` (see
+    `calculate_bi2212_winding_pack_intersect_inputs` for why `sample_lower_divisor`/
+    `guess_divisor` are plain arguments here, not a `self` lookup).
     """
 
     def jcrit(b_max, t_helium):
         return jcrit_user_defined_nb3sn(b_max, t_helium, bcritsc, tcritsc)
 
-    return self._curves(
+    return winding_pack_intersect_inputs_curves(
         jcrit,
+        sample_lower_divisor,
+        guess_divisor,
         r_coil_major,
         r_coil_minor,
         coilcurrent,
@@ -1110,7 +1176,8 @@ def calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
 
 
 def calculate_durham_nbti_winding_pack_intersect_inputs(
-    self,
+    sample_lower_divisor,
+    guess_divisor,
     r_coil_major,
     r_coil_minor,
     coilcurrent,
@@ -1129,16 +1196,18 @@ def calculate_durham_nbti_winding_pack_intersect_inputs(
     t_crit_nbti,
 ):
     """`i_tf_sc_mat == DURHAM_NBTI` (7): closes `jcrit_durham_nbti` over Durham NbTi's
-    critical field/temperature, then calls the shared `_curves` helper (see
-    `calculate_bi2212_winding_pack_intersect_inputs` for why `self` is a plain
-    argument here).
+    critical field/temperature, then calls `winding_pack_intersect_inputs_curves` (see
+    `calculate_bi2212_winding_pack_intersect_inputs` for why `sample_lower_divisor`/
+    `guess_divisor` are plain arguments here, not a `self` lookup).
     """
 
     def jcrit(b_max, t_helium):
         return jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti)
 
-    return self._curves(
+    return winding_pack_intersect_inputs_curves(
         jcrit,
+        sample_lower_divisor,
+        guess_divisor,
         r_coil_major,
         r_coil_minor,
         coilcurrent,

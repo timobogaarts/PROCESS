@@ -17,7 +17,8 @@ from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.scrape_off_layer import (
     calculate_eich2013_sol_power_decay_length,
     calculate_mast2014_sol_power_decay_length_1,
-    calculate_mast2014_sol_power_decay_length_2,
+    calculate_mast2014_sol_power_decay_length_2,  # noqa: F401 -- re-exported for tests
+    calculate_mast2014_sol_power_decay_length_2_from_plasma_current,
     calculate_scrape_off_layer,
     calculate_upstream_sol_outboard_parallel_area,
     outboard_sol_eich13_parallel_power_flux,
@@ -54,19 +55,17 @@ class Mast2014SOLPowerDecayLength1(WrapsFunction):
     len_plasma_sol_mast14_power_decay_1 = OutputInto(physics)
 
 
-class Mast2014SOLPowerDecayLength2(ExplicitFunction):
-    """cottax node: `calculate_mast2014_sol_power_decay_length_2`, unconditional."""
+class Mast2014SOLPowerDecayLength2(WrapsFunction):
+    """cottax node: `calculate_mast2014_sol_power_decay_length_2_from_plasma_current` --
+    `calculate_mast2014_sol_power_decay_length_2`, unconditional.
+    """
+
+    fn = calculate_mast2014_sol_power_decay_length_2_from_plasma_current
+
+    p_plasma_separatrix_mw_raw = From(physics)
+    plasma_current = From(physics)
 
     len_plasma_sol_mast14_power_decay_2 = OutputInto(physics)
-
-    def __call__(
-        self,
-        p_plasma_separatrix_mw_raw=From(physics),
-        plasma_current=From(physics),
-    ):
-        return calculate_mast2014_sol_power_decay_length_2(
-            p_plasma_separatrix_mw_raw, plasma_current / 1.0e6
-        )
 
 
 class OutboardSOLPowerDecayLength(ExplicitFunction):

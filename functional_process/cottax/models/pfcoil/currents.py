@@ -10,12 +10,14 @@ from functional_process.cottax.models.pfcoil import (
     PFLocation,
 )
 from functional_process.cottax.paths import build, pf_coil, physics
+from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.currents import (
     calculate_cs_flux_swing,  # noqa: F401 -- re-exported for tests
     calculate_cs_flux_swing_for_topology,
     calculate_efc_currents,  # noqa: F401 -- re-exported for tests
     calculate_equilibrium_currents,  # noqa: F401 -- re-exported for tests
     calculate_equilibrium_currents_for_topology,
+    calculate_j_cs_pulse_start,
     calculate_plasma_initiation_currents,  # noqa: F401 -- re-exported for tests
     calculate_plasma_initiation_currents_for_topology,
     calculate_plasma_initiation_currents_no_central_solenoid,  # noqa: F401 -- re-exported for tests
@@ -38,17 +40,15 @@ for, in `pcls0`'s order (`pfcoil.py:519-532`).
 """
 
 
-class CSCurrentDensityPulseStart(ExplicitFunction):
+class CSCurrentDensityPulseStart(WrapsFunction):
     """cottax node: `.tokamak.cs_coil.current_density_pulse_start`."""
 
-    j_cs_pulse_start = OutputInto(pf_coil)
+    fn = calculate_j_cs_pulse_start
 
-    def __call__(
-        self,
-        j_cs_flat_top_end=From(pf_coil),
-        f_j_cs_start_pulse_end_flat_top=From(pf_coil),
-    ):
-        return j_cs_flat_top_end * f_j_cs_start_pulse_end_flat_top
+    j_cs_flat_top_end = From(pf_coil)
+    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
+
+    j_cs_pulse_start = OutputInto(pf_coil)
 
 
 class PFCoilInitiationCurrents(ExplicitFunction):

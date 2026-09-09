@@ -20,16 +20,15 @@ from functional_process.cottax.paths import (
 )
 from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.buildings.buildings import (
-    calculate_bldgs,
-    calculate_bldgs_sizes,
-    calculate_shield_height,
+    calculate_bldgs,  # noqa: F401 -- re-exported for tests
+    calculate_bldgs_from_elements,
+    calculate_bldgs_sizes,  # noqa: F401 -- re-exported for tests
+    calculate_bldgs_sizes_from_hcd,
+    calculate_shield_height,  # noqa: F401 -- re-exported for tests
     calculate_tf_coil_envelope,
 )
 from functional_process.models.safe_math import safe_pow  # noqa: F401
-from functional_process.vocabulary import (
-    CurrentDriveMethodType,
-    CurrentDriveModel,
-)
+from functional_process.vocabulary import CurrentDriveModel
 
 
 class TfCoilEnvelope(WrapsFunction):
@@ -52,8 +51,53 @@ class TfCoilEnvelope(WrapsFunction):
     tfmtn = OutputInto(buildings)
 
 
-class Bldgs(ExplicitFunction):
-    """cottax node: `calculate_bldgs`. Instantiate iff `i_bldgs_size == ITER_1992`."""
+class Bldgs(WrapsFunction):
+    """cottax node: `calculate_bldgs_from_elements` --
+    `calculate_bldgs`. Instantiate iff `i_bldgs_size == ITER_1992`."""
+
+    fn = calculate_bldgs_from_elements
+
+    r_pf_coil_outer_max = From(pf_coil)
+    m_pf_coil_max = From(pf_coil)
+    tfro = From(buildings)
+    tfri = From(buildings)
+    tf_vertical_dim = From(buildings)
+    tfmtn = From(buildings)
+    n_tf_coils = From(tfcoil)
+    r_shld_outboard_outer = From(build)
+    r_shld_inboard_inner = From(build)
+    z_tf_inside_half = From(build)
+    dz_shld_vv_gap = From(build)
+    dz_vv_upper = From(build)
+    dz_vv_lower = From(build)
+    whtshld = From(fwbs)
+    r_cryostat_inboard = From(fwbs)
+    helpow = From(heat_transport)
+    rxcl = From(buildings)
+    trcl = From(buildings)
+    row = From(buildings)
+    wgt = From(buildings)
+    shmf = From(buildings)
+    clh2 = From(buildings)
+    dz_tf_cryostat = From(buildings)
+    stcl = From(buildings)
+    rbvfac = From(buildings)
+    rbwt = From(buildings)
+    rbrt = From(buildings)
+    fndt = From(buildings)
+    hcwt = From(buildings)
+    hccl = From(buildings)
+    wgt2 = From(buildings)
+    mbvfac = From(buildings)
+    wsvfac = From(buildings)
+    tfcbv = From(buildings)
+    pfbldgm3 = From(buildings)
+    esbldgm3 = From(buildings)
+    pibv = From(buildings)
+    triv = From(buildings)
+    conv = From(buildings)
+    admv = From(buildings)
+    shov = From(buildings)
 
     cryvol = OutputInto(buildings)
     volrci = OutputInto(buildings)
@@ -68,97 +112,13 @@ class Bldgs(ExplicitFunction):
     convol = OutputInto(buildings)
     volnucb = OutputInto(buildings)
 
-    def __call__(
-        self,
-        r_pf_coil_outer_max=From(pf_coil),
-        m_pf_coil_max=From(pf_coil),
-        tfro=From(buildings),
-        tfri=From(buildings),
-        tf_vertical_dim=From(buildings),
-        tfmtn=From(buildings),
-        n_tf_coils=From(tfcoil),
-        r_shld_outboard_outer=From(build),
-        r_shld_inboard_inner=From(build),
-        z_tf_inside_half=From(build),
-        dz_shld_vv_gap=From(build),
-        dz_vv_upper=From(build),
-        dz_vv_lower=From(build),
-        whtshld=From(fwbs),
-        r_cryostat_inboard=From(fwbs),
-        helpow=From(heat_transport),
-        rxcl=From(buildings),
-        trcl=From(buildings),
-        row=From(buildings),
-        wgt=From(buildings),
-        shmf=From(buildings),
-        clh2=From(buildings),
-        dz_tf_cryostat=From(buildings),
-        stcl=From(buildings),
-        rbvfac=From(buildings),
-        rbwt=From(buildings),
-        rbrt=From(buildings),
-        fndt=From(buildings),
-        hcwt=From(buildings),
-        hccl=From(buildings),
-        wgt2=From(buildings),
-        mbvfac=From(buildings),
-        wsvfac=From(buildings),
-        tfcbv=From(buildings),
-        pfbldgm3=From(buildings),
-        esbldgm3=From(buildings),
-        pibv=From(buildings),
-        triv=From(buildings),
-        conv=From(buildings),
-        admv=From(buildings),
-        shov=From(buildings),
-    ):
-        shh = calculate_shield_height(
-            z_tf_inside_half, dz_shld_vv_gap, dz_vv_upper, dz_vv_lower
-        )
-        return calculate_bldgs(
-            r_pf_coil_outer_max,
-            m_pf_coil_max,
-            tfro,
-            tfri,
-            tf_vertical_dim,
-            tfmtn,
-            n_tf_coils,
-            r_shld_outboard_outer,
-            r_shld_inboard_inner,
-            shh,
-            whtshld,
-            r_cryostat_inboard,
-            helpow,
-            rxcl,
-            trcl,
-            row,
-            wgt,
-            shmf,
-            clh2,
-            dz_tf_cryostat,
-            stcl,
-            rbvfac,
-            rbwt,
-            rbrt,
-            fndt,
-            hcwt,
-            hccl,
-            wgt2,
-            mbvfac,
-            wsvfac,
-            tfcbv,
-            pfbldgm3,
-            esbldgm3,
-            pibv,
-            triv,
-            conv,
-            admv,
-            shov,
-        )
-
 
 class BldgsSizes(ExplicitFunction):
-    """cottax node: `calculate_bldgs_sizes`."""
+    """cottax node: `calculate_bldgs_sizes_from_hcd` -- `calculate_bldgs_sizes`. Kept as
+    an `ExplicitFunction`, not `WrapsFunction`: `i_hcd_primary` is a static field, not a
+    `From` read, and `WrapsFunction` requires the declared reads to match `fn`'s
+    parameters exactly -- there is no way to declare a static field as one of them.
+    """
 
     i_hcd_primary: CurrentDriveModel = eqx.field(static=True)
 
@@ -294,12 +254,8 @@ class BldgsSizes(ExplicitFunction):
         staff_buildings_area=From(buildings),
         staff_buildings_h=From(buildings),
     ):
-        is_neutral_beam = (
-            CurrentDriveModel(self.i_hcd_primary).method
-            == CurrentDriveMethodType.NEUTRAL_BEAM
-        )
-
-        return calculate_bldgs_sizes(
+        return calculate_bldgs_sizes_from_hcd(
+            self.i_hcd_primary,
             r_pf_coil_outer_max,
             r_cryostat_inboard,
             tf_radial_dim,
@@ -311,7 +267,6 @@ class BldgsSizes(ExplicitFunction):
             ground_clrnc,
             crane_arm_h,
             tf_vertical_dim,
-            is_neutral_beam,
             nbi_sys_l,
             nbi_sys_w,
             hcd_building_l,

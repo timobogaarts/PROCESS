@@ -22,16 +22,20 @@ from functional_process.models.build import (
     calculate_r_shld_outboard_outer,
     calculate_r_tf_inboard_radii_no_cs_precomp,
     calculate_r_tf_inboard_radii_tf_outside_cs,
-    calculate_r_tf_outboard_mid,
+    calculate_r_tf_outboard_mid,  # noqa: F401 -- re-exported for tests
+    calculate_r_tf_outboard_mid_dshape,
+    calculate_r_tf_outboard_mid_picture_frame,
     calculate_r_tf_outboard_mid_unrippled,
     calculate_rbld,
+    calculate_ripple_b_tf_plasma_edge_fitted,
+    calculate_ripple_b_tf_plasma_edge_picture_frame,
     calculate_tf_top_height_double_null,
     calculate_tf_top_height_single_null,
     calculate_vacuum_vessel_and_shield_radii,
     calculate_z_plasma_xpoint,
     calculate_z_tf_inside_half,
-    plasma_outboard_edge_toroidal_ripple_fitted,
-    plasma_outboard_edge_toroidal_ripple_picture_frame,
+    plasma_outboard_edge_toroidal_ripple_fitted,  # noqa: F401 -- re-exported for tests
+    plasma_outboard_edge_toroidal_ripple_picture_frame,  # noqa: F401 -- re-exported for tests
 )
 from functional_process.models.safe_math import safe_sqrt  # noqa: F401
 
@@ -285,108 +289,71 @@ class TfOutboardMidUnrippled(WrapsFunction):
     r_tf_outboard_mid_unrippled = OutputInto(build)
 
 
-class TfOutboardMidDShape(ExplicitFunction):
-    """cottax node: the ripple constraint on the outboard TF leg."""
+class TfOutboardMidDShape(WrapsFunction):
+    """cottax node: `calculate_r_tf_outboard_mid_dshape`, the ripple constraint on the
+    outboard TF leg.
+    """
+
+    fn = calculate_r_tf_outboard_mid_dshape
+
+    r_tf_outboard_mid_unrippled = From(build)
+    ripple_b_tf_plasma_edge_max = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    rmajor = From(physics)
+    rminor = From(physics)
+    dx_tf_wp_conductor_max = From(tfcoil)
 
     r_tf_outboard_mid = OutputInto(build)
 
-    def __call__(
-        self,
-        r_tf_outboard_mid_unrippled=From(build),
-        ripple_b_tf_plasma_edge_max=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        rmajor=From(physics),
-        rminor=From(physics),
-        dx_tf_wp_conductor_max=From(tfcoil),
-    ):
-        _, r_tf_outboard_midmin = plasma_outboard_edge_toroidal_ripple_fitted(
-            ripple_b_tf_plasma_edge_max,
-            r_tf_outboard_mid_unrippled,
-            n_tf_coils,
-            rmajor,
-            rminor,
-            dx_tf_wp_conductor_max,
-        )
-        return calculate_r_tf_outboard_mid(
-            r_tf_outboard_mid_unrippled, r_tf_outboard_midmin
-        )
 
-
-class TfOutboardEdgeRipple(ExplicitFunction):
-    """cottax node: `plasma_outboard_edge_toroidal_ripple_fitted`, evaluated at the
-    final leg radius.
+class TfOutboardEdgeRipple(WrapsFunction):
+    """cottax node: `calculate_ripple_b_tf_plasma_edge_fitted` --
+    `plasma_outboard_edge_toroidal_ripple_fitted`, evaluated at the final leg radius.
     """
+
+    fn = calculate_ripple_b_tf_plasma_edge_fitted
+
+    r_tf_outboard_mid = From(build)
+    ripple_b_tf_plasma_edge_max = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    rmajor = From(physics)
+    rminor = From(physics)
+    dx_tf_wp_conductor_max = From(tfcoil)
 
     ripple_b_tf_plasma_edge = OutputInto(tfcoil)
 
-    def __call__(
-        self,
-        r_tf_outboard_mid=From(build),
-        ripple_b_tf_plasma_edge_max=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        rmajor=From(physics),
-        rminor=From(physics),
-        dx_tf_wp_conductor_max=From(tfcoil),
-    ):
-        ripple_b_tf_plasma_edge, _ = plasma_outboard_edge_toroidal_ripple_fitted(
-            ripple_b_tf_plasma_edge_max,
-            r_tf_outboard_mid,
-            n_tf_coils,
-            rmajor,
-            rminor,
-            dx_tf_wp_conductor_max,
-        )
-        return ripple_b_tf_plasma_edge
 
+class TfOutboardMidPictureFrame(WrapsFunction):
+    """cottax node: `calculate_r_tf_outboard_mid_picture_frame`, the ripple constraint
+    on the outboard TF leg.
+    """
 
-class TfOutboardMidPictureFrame(ExplicitFunction):
-    """cottax node: the ripple constraint on the outboard TF leg."""
+    fn = calculate_r_tf_outboard_mid_picture_frame
+
+    r_tf_outboard_mid_unrippled = From(build)
+    ripple_b_tf_plasma_edge_max = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    rmajor = From(physics)
+    rminor = From(physics)
 
     r_tf_outboard_mid = OutputInto(build)
 
-    def __call__(
-        self,
-        r_tf_outboard_mid_unrippled=From(build),
-        ripple_b_tf_plasma_edge_max=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        rmajor=From(physics),
-        rminor=From(physics),
-    ):
-        _, r_tf_outboard_midmin = plasma_outboard_edge_toroidal_ripple_picture_frame(
-            ripple_b_tf_plasma_edge_max,
-            r_tf_outboard_mid_unrippled,
-            n_tf_coils,
-            rmajor,
-            rminor,
-        )
-        return calculate_r_tf_outboard_mid(
-            r_tf_outboard_mid_unrippled, r_tf_outboard_midmin
-        )
 
-
-class TfOutboardEdgeRipplePictureFrame(ExplicitFunction):
-    """cottax node: `plasma_outboard_edge_toroidal_ripple_picture_frame`, evaluated at
-    the final leg radius.
+class TfOutboardEdgeRipplePictureFrame(WrapsFunction):
+    """cottax node: `calculate_ripple_b_tf_plasma_edge_picture_frame` --
+    `plasma_outboard_edge_toroidal_ripple_picture_frame`, evaluated at the final leg
+    radius.
     """
 
-    ripple_b_tf_plasma_edge = OutputInto(tfcoil)
+    fn = calculate_ripple_b_tf_plasma_edge_picture_frame
 
-    def __call__(
-        self,
-        r_tf_outboard_mid=From(build),
-        ripple_b_tf_plasma_edge_max=From(tfcoil),
-        n_tf_coils=From(tfcoil),
-        rmajor=From(physics),
-        rminor=From(physics),
-    ):
-        ripple_b_tf_plasma_edge, _ = plasma_outboard_edge_toroidal_ripple_picture_frame(
-            ripple_b_tf_plasma_edge_max,
-            r_tf_outboard_mid,
-            n_tf_coils,
-            rmajor,
-            rminor,
-        )
-        return ripple_b_tf_plasma_edge
+    r_tf_outboard_mid = From(build)
+    ripple_b_tf_plasma_edge_max = From(tfcoil)
+    n_tf_coils = From(tfcoil)
+    rmajor = From(physics)
+    rminor = From(physics)
+
+    ripple_b_tf_plasma_edge = OutputInto(tfcoil)
 
 
 class ShldVvGapOutboard(WrapsFunction):

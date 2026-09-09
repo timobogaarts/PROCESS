@@ -17,6 +17,7 @@ from functional_process.models.pfcoil import (
     N_CS_FILAMENTS,
     N_PF_GROUPS_MAX,
     NFXF,
+    NGC2,
     REFERENCE_TOPOLOGY,
     PFLocation,
 )
@@ -396,6 +397,54 @@ def calculate_pf_coil_positions(
         r_flat.append(jnp.asarray(r_cs_middle))
         z_flat.append(jnp.zeros_like(jnp.asarray(r_cs_middle)))
     return jnp.stack(r_flat), jnp.stack(z_flat)
+
+
+def calculate_pf_coil_positions_for_topology(
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+    *,
+    topology,
+):
+    """The flattening and its `NGC2` padding, given an occupant's topology and reads.
+
+    Moved from the node bodies' shared `_flattened`. `PFCoilPositionsNoCentralSolenoid`
+    calls this directly with `topology=self.topology` and `r_cs_middle=None`;
+    `PFCoilPositions` goes through `calculate_pf_coil_positions_from_elements` below,
+    which is the same thing with `REFERENCE_TOPOLOGY` fixed so that `WrapsFunction` sees
+    no extra parameter.
+    """
+    n_groups = topology.n_pf_coil_groups
+    r_flat, z_flat = calculate_pf_coil_positions(
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+        r_cs_middle=r_cs_middle,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    filled = topology.n_cs_pf_coils
+    return (
+        pad.at[:filled].set(r_flat),
+        pad.at[:filled].set(z_flat),
+    )
+
+
+def calculate_pf_coil_positions_from_elements(
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+):
+    """`PFCoilPositions`: `calculate_pf_coil_positions_for_topology` fixed to
+    `REFERENCE_TOPOLOGY`, with no `topology` parameter left over for `WrapsFunction`
+    to complain about. Which slot each coil occupies, and whether there is a CS slot at
+    all, is fixed by this function rather than carried as a static field on the node.
+    """
+    return calculate_pf_coil_positions_for_topology(
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
+        r_cs_middle=r_cs_middle,
+        topology=REFERENCE_TOPOLOGY,
+    )
 
 
 def calculate_cs_geometry_ports(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bore):

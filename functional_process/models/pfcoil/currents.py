@@ -257,6 +257,29 @@ def _rsid(brin, bzin, ccls, bfix, gmat, n_groups):
     return brssq / (1.0 + brnrm) + bzssq / (1.0 + bznrm)
 
 
+def calculate_j_cs_pulse_start(j_cs_flat_top_end, f_j_cs_start_pulse_end_flat_top):
+    """CS current density at the start of the pulse.
+
+    Ports `j_cs_pulse_start = j_cs_flat_top_end * f_j_cs_start_pulse_end_flat_top`,
+    `process/models/pfcoil.py:161-164` -- computed unconditionally on both topologies
+    (see `calculate_plasma_initiation_currents_no_central_solenoid`'s docstring, which
+    is where this line was first read off).
+
+    Parameters
+    ----------
+    j_cs_flat_top_end :
+        CS overall current density at end of flat-top (A/m^2).
+    f_j_cs_start_pulse_end_flat_top :
+        Ratio of CS current density at beginning of pulse to end of flat-top.
+
+    Returns
+    -------
+    :
+        `.pf_coil.j_cs_pulse_start`.
+    """
+    return j_cs_flat_top_end * f_j_cs_start_pulse_end_flat_top
+
+
 def calculate_efc_currents(
     rpts, zpts, brin, bzin, r_fix, z_fix, c_fix, r_group, z_group, alfa, n_in_group
 ):

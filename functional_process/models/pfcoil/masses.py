@@ -136,6 +136,106 @@ def calculate_pf_coil_sizes(
     )
 
 
+def calculate_pf_coil_sizes_for_topology(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    c_pf_coil_turn_peak_input,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    pf_current_safety_factor,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_upper,
+    z_cs_lower,
+    rmajor,
+    rminor,
+    kappa,
+    *,
+    topology,
+):
+    """The sizing and its `NGC2` padding, given an occupant's topology and reads.
+
+    Moved from the node bodies' shared `_sized`, which used to slice each read to
+    `topology.n_cs_pf_coils` before calling `calculate_pf_coil_sizes` and pad its
+    outputs back out afterwards. `PFCoilSizesNoCentralSolenoid` calls this directly
+    with `topology=self.topology` and the CS edges `None`; `PFCoilSizes` goes through
+    `calculate_pf_coil_sizes_from_elements` below, which is the same thing with
+    `REFERENCE_TOPOLOGY` fixed so that `WrapsFunction` sees no extra parameter.
+    """
+    coils = topology.n_cs_pf_coils
+    (
+        turns,
+        r_inner,
+        r_outer,
+        z_upper,
+        z_lower,
+        r_pf_coil_outer_max,
+    ) = calculate_pf_coil_sizes(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[:coils],
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak[:coils],
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input[:coils],
+        r_pf_coil_middle=r_pf_coil_middle[:coils],
+        z_pf_coil_middle=z_pf_coil_middle[:coils],
+        pf_current_safety_factor=pf_current_safety_factor,
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        z_cs_upper=z_cs_upper,
+        z_cs_lower=z_cs_lower,
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    filled = topology.plasma_index + 1
+    return (
+        pad.at[:filled].set(turns),
+        pad.at[:filled].set(r_inner),
+        pad.at[:filled].set(r_outer),
+        pad.at[:filled].set(z_upper),
+        pad.at[:filled].set(z_lower),
+        r_pf_coil_outer_max,
+    )
+
+
+def calculate_pf_coil_sizes_from_elements(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    c_pf_coil_turn_peak_input,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    pf_current_safety_factor,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_upper,
+    z_cs_lower,
+    rmajor,
+    rminor,
+    kappa,
+):
+    """`PFCoilSizes`: `calculate_pf_coil_sizes_for_topology` fixed to
+    `REFERENCE_TOPOLOGY`, with no `topology` parameter left over for `WrapsFunction`
+    to complain about. Which slot each coil occupies, and whether there is a CS slot at
+    all, is fixed by this function rather than carried as a static field on the node.
+    """
+    return calculate_pf_coil_sizes_for_topology(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        pf_current_safety_factor=pf_current_safety_factor,
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        z_cs_upper=z_cs_upper,
+        z_cs_lower=z_cs_lower,
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        topology=REFERENCE_TOPOLOGY,
+    )
+
+
 def _pf_coil_masses_per_coil(
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
@@ -416,6 +516,103 @@ def calculate_pf_coil_masses(
         jnp.sum(m_pf_coil_structure),
         m_pf_coil_max,
         jnp.sum(jnp.abs(c_pf_cs_coils_peak_ma)),
+        a_cs_steel_poloidal,
+        a_cs_cable_space,
+    )
+
+
+def calculate_pf_coil_masses_from_elements(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    n_pf_coil_turns,
+    r_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    b_pf_coil_peak_0,
+    b_pf_coil_peak_1,
+    b_pf_coil_peak_2,
+    b_pf_coil_peak_3,
+    b_pf_coil_peak_4,
+    b_pf_coil_peak_5,
+    bpf2_0,
+    bpf2_1,
+    bpf2_2,
+    bpf2_3,
+    bpf2_4,
+    bpf2_5,
+    f_a_pf_coil_void,
+    pf_current_safety_factor,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+    den_cs_conductor,
+    a_cs_poloidal,
+    f_a_cs_turn_steel,
+    f_a_cs_void,
+):
+    """`PFCoilMasses`/`PFCoilMassesCsWstNb3Sn`: the whole calculation, given this
+    occupant's two conductor densities.
+
+    Moved from the node bodies' shared `_masses`: `calculate_pf_coil_masses` addresses
+    `b_pf_coil_peak`/`bpf2` as one six-entry array each, but cottax reads a coil's field
+    as its own port (`b_pf_coil_peak_0` .. `_5`), so this stacks the six ports back into
+    the two arrays before calling it, and pads its three per-coil outputs back out to
+    `NGC2` afterwards.
+    """
+    b_peak = jnp.stack([
+        b_pf_coil_peak_0,
+        b_pf_coil_peak_1,
+        b_pf_coil_peak_2,
+        b_pf_coil_peak_3,
+        b_pf_coil_peak_4,
+        b_pf_coil_peak_5,
+    ])
+    b_outer = jnp.stack([bpf2_0, bpf2_1, bpf2_2, bpf2_3, bpf2_4, bpf2_5])
+
+    (
+        m_conductor,
+        m_structure,
+        pfcaseth,
+        m_conductor_total,
+        m_structure_total,
+        m_pf_coil_max,
+        ricpf,
+        a_cs_steel_poloidal,
+        a_cs_cable_space,
+    ) = calculate_pf_coil_masses(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[: CS_INDEX + 1],
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak[: CS_INDEX + 1],
+        n_pf_coil_turns=n_pf_coil_turns[: CS_INDEX + 1],
+        r_pf_coil_middle=r_pf_coil_middle[: CS_INDEX + 1],
+        r_pf_coil_inner=r_pf_coil_inner[: CS_INDEX + 1],
+        r_pf_coil_outer=r_pf_coil_outer[: CS_INDEX + 1],
+        z_pf_coil_upper=z_pf_coil_upper[: CS_INDEX + 1],
+        z_pf_coil_lower=z_pf_coil_lower[: CS_INDEX + 1],
+        b_pf_coil_peak=b_peak,
+        bpf2=b_outer,
+        f_a_pf_coil_void=f_a_pf_coil_void[:N_PF_COILS],
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        den_cs_conductor=den_cs_conductor,
+        a_cs_poloidal=a_cs_poloidal,
+        f_a_cs_turn_steel=f_a_cs_turn_steel,
+        f_a_cs_void=f_a_cs_void,
+    )
+    pad = jnp.zeros(NGC2)
+    return (
+        pad.at[: CS_INDEX + 1].set(m_conductor),
+        pad.at[: CS_INDEX + 1].set(m_structure),
+        pad.at[: CS_INDEX + 1].set(pfcaseth),
+        m_conductor_total,
+        m_structure_total,
+        m_pf_coil_max,
+        ricpf,
         a_cs_steel_poloidal,
         a_cs_cable_space,
     )

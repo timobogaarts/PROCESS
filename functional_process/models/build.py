@@ -941,6 +941,191 @@ def calculate_r_tf_outboard_mid(r_tf_outboard_mid_unrippled, r_tf_outboard_midmi
     return jnp.maximum(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)
 
 
+def calculate_r_tf_outboard_mid_dshape(
+    r_tf_outboard_mid_unrippled,
+    ripple_b_tf_plasma_edge_max,
+    n_tf_coils,
+    rmajor,
+    rminor,
+    dx_tf_wp_conductor_max,
+):
+    """Radius to the centre of the outboard TF leg (m), D-shape coil, after the ripple
+    constraint.
+
+    The cottax `TfOutboardMidDShape` node's whole job: call
+    `plasma_outboard_edge_toroidal_ripple_fitted` for the minimum leg radius that meets
+    the ripple limit (discarding the ripple value it also returns -- that is
+    `calculate_ripple_b_tf_plasma_edge_fitted`'s job, evaluated at a different radius),
+    then fold it into the stacked-up build with `calculate_r_tf_outboard_mid`.
+
+    Parameters
+    ----------
+    r_tf_outboard_mid_unrippled :
+        The stacked-up outboard build (m), before the ripple constraint.
+        `.build.r_tf_outboard_mid_unrippled`.
+    ripple_b_tf_plasma_edge_max :
+        Maximum allowed ripple at the plasma edge (per cent).
+        `.tfcoil.ripple_b_tf_plasma_edge_max`.
+    n_tf_coils :
+        Number of TF coils. `.tfcoil.n_tf_coils`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+    dx_tf_wp_conductor_max :
+        Maximum toroidal conductor width of the winding pack (m).
+        `.tfcoil.dx_tf_wp_conductor_max`.
+
+    Returns
+    -------
+    :
+        `.build.r_tf_outboard_mid` (m).
+    """
+    _, r_tf_outboard_midmin = plasma_outboard_edge_toroidal_ripple_fitted(
+        ripple_b_tf_plasma_edge_max,
+        r_tf_outboard_mid_unrippled,
+        n_tf_coils,
+        rmajor,
+        rminor,
+        dx_tf_wp_conductor_max,
+    )
+    return calculate_r_tf_outboard_mid(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)
+
+
+def calculate_ripple_b_tf_plasma_edge_fitted(
+    r_tf_outboard_mid,
+    ripple_b_tf_plasma_edge_max,
+    n_tf_coils,
+    rmajor,
+    rminor,
+    dx_tf_wp_conductor_max,
+):
+    """TF ripple at the plasma edge (per cent), D-shape coil, evaluated at the final leg
+    radius.
+
+    The cottax `TfOutboardEdgeRipple` node's whole job: call
+    `plasma_outboard_edge_toroidal_ripple_fitted` again -- this time at the *final*
+    `r_tf_outboard_mid` rather than the unrippled one -- and keep only the ripple value,
+    discarding the minimum-radius value it also returns (that is what
+    `calculate_r_tf_outboard_mid_dshape` uses it for, at the unrippled radius).
+
+    Parameters
+    ----------
+    r_tf_outboard_mid :
+        Radius to the centre of the outboard TF leg (m), after the ripple constraint.
+        `.build.r_tf_outboard_mid`.
+    ripple_b_tf_plasma_edge_max :
+        Maximum allowed ripple at the plasma edge (per cent).
+        `.tfcoil.ripple_b_tf_plasma_edge_max`.
+    n_tf_coils :
+        Number of TF coils. `.tfcoil.n_tf_coils`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+    dx_tf_wp_conductor_max :
+        Maximum toroidal conductor width of the winding pack (m).
+        `.tfcoil.dx_tf_wp_conductor_max`.
+
+    Returns
+    -------
+    :
+        `.tfcoil.ripple_b_tf_plasma_edge` (per cent).
+    """
+    ripple_b_tf_plasma_edge, _ = plasma_outboard_edge_toroidal_ripple_fitted(
+        ripple_b_tf_plasma_edge_max,
+        r_tf_outboard_mid,
+        n_tf_coils,
+        rmajor,
+        rminor,
+        dx_tf_wp_conductor_max,
+    )
+    return ripple_b_tf_plasma_edge
+
+
+def calculate_r_tf_outboard_mid_picture_frame(
+    r_tf_outboard_mid_unrippled,
+    ripple_b_tf_plasma_edge_max,
+    n_tf_coils,
+    rmajor,
+    rminor,
+):
+    """Radius to the centre of the outboard TF leg (m), picture-frame coil, after the
+    ripple constraint.
+
+    The cottax `TfOutboardMidPictureFrame` node's whole job -- the picture-frame twin of
+    `calculate_r_tf_outboard_mid_dshape`: call
+    `plasma_outboard_edge_toroidal_ripple_picture_frame` for the minimum leg radius,
+    discarding the ripple value it also returns, then fold it into the stacked-up build
+    with `calculate_r_tf_outboard_mid`.
+
+    Parameters
+    ----------
+    r_tf_outboard_mid_unrippled :
+        The stacked-up outboard build (m), before the ripple constraint.
+        `.build.r_tf_outboard_mid_unrippled`.
+    ripple_b_tf_plasma_edge_max :
+        Maximum allowed ripple at the plasma edge (per cent).
+        `.tfcoil.ripple_b_tf_plasma_edge_max`.
+    n_tf_coils :
+        Number of TF coils (outer legs, for an ST). `.tfcoil.n_tf_coils`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+
+    Returns
+    -------
+    :
+        `.build.r_tf_outboard_mid` (m).
+    """
+    _, r_tf_outboard_midmin = plasma_outboard_edge_toroidal_ripple_picture_frame(
+        ripple_b_tf_plasma_edge_max,
+        r_tf_outboard_mid_unrippled,
+        n_tf_coils,
+        rmajor,
+        rminor,
+    )
+    return calculate_r_tf_outboard_mid(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)
+
+
+def calculate_ripple_b_tf_plasma_edge_picture_frame(
+    r_tf_outboard_mid,
+    ripple_b_tf_plasma_edge_max,
+    n_tf_coils,
+    rmajor,
+    rminor,
+):
+    """TF ripple at the plasma edge (per cent), picture-frame coil, evaluated at the
+    final leg radius.
+
+    The cottax `TfOutboardEdgeRipplePictureFrame` node's whole job -- the picture-frame
+    twin of `calculate_ripple_b_tf_plasma_edge_fitted`: call
+    `plasma_outboard_edge_toroidal_ripple_picture_frame` again at the final
+    `r_tf_outboard_mid`, and keep only the ripple value.
+
+    Parameters
+    ----------
+    r_tf_outboard_mid :
+        Radius to the centre of the outboard TF leg (m), after the ripple constraint.
+        `.build.r_tf_outboard_mid`.
+    ripple_b_tf_plasma_edge_max :
+        Maximum allowed ripple at the plasma edge (per cent).
+        `.tfcoil.ripple_b_tf_plasma_edge_max`.
+    n_tf_coils :
+        Number of TF coils (outer legs, for an ST). `.tfcoil.n_tf_coils`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+
+    Returns
+    -------
+    :
+        `.tfcoil.ripple_b_tf_plasma_edge` (per cent).
+    """
+    ripple_b_tf_plasma_edge, _ = plasma_outboard_edge_toroidal_ripple_picture_frame(
+        ripple_b_tf_plasma_edge_max,
+        r_tf_outboard_mid,
+        n_tf_coils,
+        rmajor,
+        rminor,
+    )
+    return ripple_b_tf_plasma_edge
+
+
 def calculate_dr_tf_inner_bore(
     r_tf_outboard_mid, dr_tf_outboard, r_tf_inboard_mid, dr_tf_inboard
 ):
