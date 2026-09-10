@@ -108,7 +108,7 @@ def _measure(mdf_problem, data, label, bounds, tolerance):
     worst = sorted(mdf.inner_residuals(mdf_problem.eager, out), key=lambda r: -r[3])[:3]
     print("  worst inner-solve residuals at the answer:")
     for _problem, unknown, residual, relative in worst:
-        print(f"    {unknown.path_str():<48s} {residual:+12.3e}  rel {relative:8.2e}")
+        print(f"    {unknown.spelling:<48s} {residual:+12.3e}  rel {relative:8.2e}")
     return x, trace, primed
 
 
@@ -168,7 +168,7 @@ def main(argv=None):
     )
     index = nested.index[name]
     print(
-        f"  stated as a nesting: {name.path_str()} answers a block of "
+        f"  stated as a nesting: {name.spelling} answers a block of "
         f"{len(nested.blocks[index])} nodes whose interior is "
         f"{len(nested.inner[index].blocks)} blocks "
         f"({sum(1 for t in nested.inner[index].problem_types if t is not None)} driven) "
@@ -180,13 +180,13 @@ def main(argv=None):
     env, primed = mdf.prime(problem, env)
     conditions = mdf.condition_map(problem, env)
     start = tuple(jnp.asarray(env[v]) for v in problem.design)
-    names = [c.path_str() for c in problem.conditions]
+    names = [c.spelling for c in problem.conditions]
     print()
     print(stage_a(reference, conditions, names, start).summary())
     worst = sorted(mdf.inner_residuals(problem.eager, primed), key=lambda r: -r[3])[:3]
     print("  worst inner-solve residual at PROCESS's converged point:")
     for _problem, unknown, residual, relative in worst:
-        print(f"    {unknown.path_str():<48s} {residual:+12.3e}  rel {relative:8.2e}")
+        print(f"    {unknown.spelling:<48s} {residual:+12.3e}  rel {relative:8.2e}")
 
     # ---------------------------------------------------------------- cost
     _values, evaluate_compile, evaluate_ms = mdf.evaluation(conditions, start)

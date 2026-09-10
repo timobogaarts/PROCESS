@@ -4666,7 +4666,7 @@ if __name__ == "__main__":
     )
     print(f"{len(GRAPH.definitions)} nodes, {n_vars} ports (inputs + outputs, unmerged)")
     for name, node in GRAPH.definitions.items():
-        print(f"  {name.path_str()}: {len(node.inputs)} in, {len(node.outputs)} out")
+        print(f"  {name.spelling}: {len(node.inputs)} in, {len(node.outputs)} out")
 
     print("\ncycles, per machine:")
     for label, machine in (
@@ -4690,4 +4690,4 @@ if __name__ == "__main__":
         ),
     ):
         cycles = graph_for(machine).cycles
-        print(f"  {label}: {[[n.path_str() for n in c] for c in cycles] or 'acyclic'}")
+        print(f"  {label}: {[[n.spelling for n in c] for c in cycles] or 'acyclic'}")

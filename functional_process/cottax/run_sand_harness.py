@@ -78,7 +78,7 @@ def _why_no_step(drive, context, seeded):
         # tolerance question. A merely small row is a badly conditioned
         # constraint and the QP can still use it.
         if away and not np.any(row != 0.0):  # noqa: RUF069
-            stuck.append((condition.path_str(), float(value)))
+            stuck.append((condition.spelling, float(value)))
     return stuck
 
 
@@ -187,15 +187,15 @@ def main(argv=None):
     combined, report = assemble(reference, driven, env, switch_values=switch_values)
     print(
         f"\ndegenerate fixed points dropped: "
-        f"{[d.path_str() for d in report['degenerate']]}"
+        f"{[d.spelling for d in report['degenerate']]}"
     )
     if report["array_valued"]:
         print(
             f"ARRAY-UNKNOWN PROBLEMS DROPPED (loop-carried values frozen at the "
             f"seed -- the SAND problem is reduced, see `sand_harness.assemble`): "
-            f"{[p.path_str() for p in report['array_valued']]}"
+            f"{[p.spelling for p in report['array_valued']]}"
         )
-    print(f"residualised: {[r.path_str() for r in report['residualised']]}")
+    print(f"residualised: {[r.spelling for r in report['residualised']]}")
     if report["omitted"]:
         print(f"CONSTRAINTS OMITTED: {report['omitted']}")
 
@@ -216,7 +216,7 @@ def main(argv=None):
         jnp.asarray(env[v]) if v in env else jnp.asarray(ground_truth(reference.data, v))
         for v in drive.unknowns
     ]
-    names = [c.path_str() for c in drive.conditions]
+    names = [c.spelling for c in drive.conditions]
 
     # ---------------------------------------------------------------- A
     if "A" in asked:
@@ -379,7 +379,7 @@ def main(argv=None):
                 jnp.asarray(seeded[u]) for u in solve_drive.unknowns
             ])
             non_finite = [
-                (condition.path_str(), float(np.asarray(value)))
+                (condition.spelling, float(np.asarray(value)))
                 for condition, value in zip(
                     solve_drive.conditions, at_start, strict=True
                 )

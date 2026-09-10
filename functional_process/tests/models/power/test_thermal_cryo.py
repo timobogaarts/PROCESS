@@ -596,7 +596,7 @@ def test_delta_eta_step_to_graph_builds(
     )
     node = DELTA_ETA_STEP[arm]()
     graph = to_graph(node)
-    names = {n.path_str() for n in graph.nodes}
+    names = {n.spelling for n in graph.nodes}
     cls_name = type(node).__name__
     assert names == {f"['{cls_name}']", f"^problem['{cls_name}']"}
 
@@ -629,8 +629,8 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
     change is the finding.**
     """
     node = _component_thermal_powers()
-    owned = {o.var.path_str() for o in node.outputs}
-    read = {i.var.path_str() for i in node.inputs}
+    owned = {o.var.spelling for o in node.outputs}
+    read = {i.var.spelling for i in node.inputs}
     for path in _SIX_SELF_LOOP_VARPATHS:
         assert path not in owned
     assert ".primary_pumping.p_fw_blkt_coolant_pump_mw" in read
@@ -651,7 +651,7 @@ def test_component_thermal_powers_to_graph_builds_cleanly():
     """
     node = _component_thermal_powers()
     graph = to_graph(node)
-    assert {n.path_str() for n in graph.nodes} == {f"['{type(node).__name__}']"}
+    assert {n.spelling for n in graph.nodes} == {f"['{type(node).__name__}']"}
 
 
 def _delta_eta_step_kwargs(**overrides):
@@ -1244,19 +1244,19 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
     qnuc_occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
     if qnuc_occupant is not None:
         qnuc_node = qnuc_occupant()
-        assert {n.path_str() for n in to_graph(qnuc_node).nodes} == {
+        assert {n.spelling for n in to_graph(qnuc_node).nodes} == {
             f"['{type(qnuc_node).__name__}']"
         }
 
     q_occupant = CRYO_Q_LOADS[_cryo_q_loads_arm(i_tf_sup, int(i_pf_conductor))]
     if q_occupant is not None:
         q_node = q_occupant()
-        assert {n.path_str() for n in to_graph(q_node).nodes} == {
+        assert {n.spelling for n in to_graph(q_node).nodes} == {
             f"['{type(q_node).__name__}']"
         }
 
     loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]()
-    assert {n.path_str() for n in to_graph(loads).nodes} == {
+    assert {n.spelling for n in to_graph(loads).nodes} == {
         f"['{type(loads).__name__}']"
     }
 
@@ -1281,7 +1281,7 @@ def test_cryo_split_ownership_is_a_partition():
         )
     ]()
 
-    owned = [{o.var.path_str() for o in n.outputs} for n in (qnuc_node, q_node, loads)]
+    owned = [{o.var.spelling for o in n.outputs} for n in (qnuc_node, q_node, loads)]
     assert owned[0] == {".fwbs.qnuc"}
     assert owned[1] == {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     assert owned[2] == {
@@ -1294,7 +1294,7 @@ def test_cryo_split_ownership_is_a_partition():
     assert (owned[0] | owned[1]) & owned[2] == set()
 
     # `CryoLoads` must still *read* every `q*` -- it builds `helpow` from them.
-    read = {i.var.path_str() for i in loads.inputs}
+    read = {i.var.spelling for i in loads.inputs}
     assert owned[0] | owned[1] <= read
 
 
@@ -1416,8 +1416,8 @@ def test_cryo_q_nuc_has_no_self_read_on_the_computing_arm(
         assert occupant is None
         return
     node = occupant()
-    assert {o.var.path_str() for o in node.outputs} == {".fwbs.qnuc"}
-    assert ".fwbs.qnuc" not in {i.var.path_str() for i in node.inputs}
+    assert {o.var.spelling for o in node.outputs} == {".fwbs.qnuc"}
+    assert ".fwbs.qnuc" not in {i.var.spelling for i in node.inputs}
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
@@ -1425,8 +1425,8 @@ def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
     owned = {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     for arm in (0, 1):
         node = CRYO_Q_LOADS[arm]()
-        assert {o.var.path_str() for o in node.outputs} == owned
-        assert owned & {i.var.path_str() for i in node.inputs} == set()
+        assert {o.var.spelling for o in node.outputs} == owned
+        assert owned & {i.var.spelling for i in node.inputs} == set()
     assert (
         CRYO_Q_LOADS[
             _cryo_q_loads_arm(

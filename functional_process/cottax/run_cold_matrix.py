@@ -533,7 +533,7 @@ def _explained_by(reference, graph, switch_values):
         return None
     for node in nodes.values():
         for port in node.inputs:
-            read = port.var.path_str()
+            read = port.var.spelling
             if read in EXPLAINED_OBJECTIVE_READS:
                 return EXPLAINED_OBJECTIVE_READS[read], read
     return None

@@ -14,7 +14,7 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.plan import Delete
@@ -187,7 +187,7 @@ def device_root(graph) -> str | None:
         root
         for root in DEVICE_ROOTS
         for node in graph.nodes
-        if node.path_str().startswith(f".{root}.")
+        if node.spelling.startswith(f".{root}.")
     }
     if len(found) > 1:
         raise ValueError(
@@ -420,7 +420,7 @@ def switch_audit(graph, data) -> SwitchAudit:
     audit = SwitchAudit()
     seen_pairs = set()
     for node_path, node in graph.definitions.items():
-        node_name = node_path.path_str()
+        node_name = node_path.spelling
         for declaration in _declaration_modules(node, set()):
             for f in dataclasses.fields(declaration):
                 if not f.metadata.get("static"):
@@ -638,7 +638,7 @@ def _without_excluded(graph):
     to_delete = tuple(
         n
         for n in graph.nodes
-        if any(name in n.path_str() for name in EXCLUDED_NODE_NAMES)
+        if any(name in n.spelling for name in EXCLUDED_NODE_NAMES)
     )
     if not to_delete:
         return graph
@@ -761,17 +761,17 @@ class ComparisonReport:
         if self.ungrounded_inputs:
             lines.append("\nungrounded inputs:")
             for v in self.ungrounded_inputs:
-                lines.append(f"  {v.path_str()}")
+                lines.append(f"  {v.spelling}")
         by_owner: dict = {}
         for d in self.disagreements:
-            by_owner.setdefault(d.owner.path_str(), []).append(d)
+            by_owner.setdefault(d.owner.spelling, []).append(d)
         worst = sorted(by_owner.items(), key=lambda kv: -max(d.rel_diff for d in kv[1]))
         lines.append("\nworst offenders by node:")
         for owner, ds in worst[:20]:
             worst_d = max(ds, key=lambda d: d.rel_diff)
             lines.append(
                 f"  {owner}: {len(ds)} var(s) off, worst "
-                f"{worst_d.var.path_str()} got={worst_d.got!r} "
+                f"{worst_d.var.spelling} got={worst_d.got!r} "
                 f"expected={worst_d.expected!r} rel_diff={worst_d.rel_diff:.3e}"
                 f"{worst_d.where}"
             )
@@ -785,7 +785,7 @@ class ComparisonReport:
             for owner, ds in worst:
                 for d in sorted(ds, key=lambda d: -d.rel_diff):
                     lines.append(
-                        f"  {owner} {d.var.path_str()}: got={d.got!r} "
+                        f"  {owner} {d.var.spelling}: got={d.got!r} "
                         f"expected={d.expected!r} rel_diff={d.rel_diff:.3e}"
                         f"{d.where}"
                     )
@@ -808,10 +808,10 @@ def _ground_truth(data, var: VarPath):
     from cottax.tools.minting import unminted
     from cottax.tools.pytree import get_at
 
-    known = KNOWN_MINT_VALUES.get(var.path_str())
+    known = KNOWN_MINT_VALUES.get(var.spelling)
     if known is not None:
         return known(data)
-    return get_at(data, unminted(var).keys)
+    return get_at(data, unminted(var).segments)
 
 
 def _diff(var: VarPath, owner: NodePath, got, expected, *, rtol, atol):
@@ -820,10 +820,10 @@ def _diff(var: VarPath, owner: NodePath, got, expected, *, rtol, atol):
         got_a = np.asarray(got, dtype=float)
         expected_a = np.asarray(expected, dtype=float)
     except (TypeError, ValueError) as e:
-        return f"not numeric, cannot compare {var.path_str()} (owned by {owner}): {e}"
+        return f"not numeric, cannot compare {var.spelling} (owned by {owner}): {e}"
     if got_a.shape != expected_a.shape:
         return (
-            f"shape mismatch for {var.path_str()} (owned by {owner}): port "
+            f"shape mismatch for {var.spelling} (owned by {owner}): port "
             f"{got_a.shape} vs data {expected_a.shape}"
         )
     close = np.isclose(got_a, expected_a, rtol=rtol, atol=atol, equal_nan=True)
@@ -935,7 +935,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
             unverifiable_owners |= set(driven.descendants([reader]))
 
     try:
-        out = dict(schedule.run(path_map(env)))
+        out = dict(schedule.run(PathMap(env)))
     except Exception as e:  # noqa: BLE001 -- report, don't crash the harness
         report.errors.append(f"schedule() raised: {type(e).__name__}: {e}")
         return report
@@ -951,16 +951,16 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
     }
     for var, owner in driven.owners.items():
         report.owned_total += 1
-        if owner in unverifiable_owners or var.path_str() in unverifiable_here:
+        if owner in unverifiable_owners or var.spelling in unverifiable_here:
             report.unverifiable.append(var)
             continue
         try:
             expected = _ground_truth(data, var)
         except (AttributeError, KeyError) as e:
-            report.errors.append(f"no DataStructure field for {var.path_str()}: {e}")
+            report.errors.append(f"no DataStructure field for {var.spelling}: {e}")
             continue
         if var not in out:
-            report.errors.append(f"schedule did not produce {var.path_str()}")
+            report.errors.append(f"schedule did not produce {var.spelling}")
             continue
         d = _diff(var, owner, out[var], expected, rtol=rtol, atol=atol)
         if isinstance(d, str):  # not comparable at all -- say so, never drop it

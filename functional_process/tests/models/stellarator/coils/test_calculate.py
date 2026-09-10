@@ -31,7 +31,7 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, is_root_find, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax._harness import Sample, Tier1Contract, Tier2Contract
 from functional_process.cottax._harness.process_reference import data_reference
@@ -842,7 +842,7 @@ def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occup
     node = occupant()
     graph = to_graph(node)
     assert graph.definitions
-    owned = {out.var.path_str() for out in node.outputs}
+    owned = {out.var.spelling for out in node.outputs}
     assert owned == {
         ".stellarator.wp_width_r",
         ".stellarator.lhs",
@@ -859,9 +859,9 @@ def test_only_the_bi2212_occupant_reads_j_tf_wp():
     the coils SCC. Each occupant's extra reads over the shared fourteen are its own
     material's, and no others.
     """
-    shared = {i.var.path_str() for i in IterNb3snWindingPackIntersectInputs().inputs}
+    shared = {i.var.spelling for i in IterNb3snWindingPackIntersectInputs().inputs}
     extra = {
-        material: {i.var.path_str() for i in occupant().inputs} - shared
+        material: {i.var.spelling for i in occupant().inputs} - shared
         for material, occupant in _WINDING_PACK_OCCUPANTS.items()
     }
     assert extra == {
@@ -962,7 +962,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
     assert not graph.is_acyclic
     (cycle,) = graph.cycles
-    assert {n.path_str() for n in cycle} == {
+    assert {n.spelling for n in cycle} == {
         "['Bi2212WindingPackIntersectInputs']",
         "['Intersect']",
         "^problem['Intersect']",
@@ -975,7 +975,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
         graph = to_graph(occupant(), Intersect(), post)
         assert len(graph.definitions) == 4
         (cycle,) = graph.cycles
-        assert {n.path_str() for n in cycle} == {
+        assert {n.spelling for n in cycle} == {
             "['Intersect']",
             "^problem['Intersect']",
         }, material
@@ -1094,7 +1094,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     schedule = Schedule(
         Blocking.scc(Assign(Intersect().problem_name, driver).apply(graph))
     )
-    out = schedule.run(path_map(env))
+    out = schedule.run(PathMap(env))
 
     reference = winding_pack_total_size(
         **base, j_tf_wp=jax.numpy.asarray(0.0), i_tf_sc_mat=i_tf_sc_mat

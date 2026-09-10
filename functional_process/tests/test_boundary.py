@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 from cottax.graph import Graph
-from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
+from cottax.spec import In, NodePath, Out, VarPath
+from cottax.nodes import ImplementedFunction
 from cottax.tools.minting import MintKey, unminted
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax.boundary import (
     GUESSED,
@@ -89,7 +90,7 @@ def call(reads, owns):
 def small():
     """`.a` is produced; `.b` and a start are not."""
     return Graph(
-        path_map({
+        PathMap({
             N("g", "x"): call([V("b"), G("y")], [V("a")]),
             N("g", "z"): call([V("a")], [V("c")]),
         })
@@ -115,7 +116,7 @@ def test_boundary_is_categorised_and_stably_ordered(small):
 def test_an_unallowed_read_is_refused_and_its_readers_named(small):
     with pytest.raises(ValueError, match=r"\.b") as caught:
         check_boundary(small, [G("y")])
-    assert N("g", "x").path_str() in str(caught.value)  # the node left holding it
+    assert N("g", "x").spelling in str(caught.value)  # the node left holding it
     assert "silently" in str(caught.value)
 
 
@@ -141,7 +142,7 @@ def test_the_reference_machine_s_boundary_is_the_pin():
     `$PY -m functional_process.cottax.boundary --write`.
     """
     driven = driven_graph(GRAPH)
-    assert [(kind, var.path_str()) for kind, var in boundary(driven)] == list(read_pin())
+    assert [(kind, var.spelling) for kind, var in boundary(driven)] == list(read_pin())
 
 
 def test_the_split_is_289_inputs_and_one_guess_per_unsupplied_driven_unknown():
@@ -188,7 +189,7 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
     of one.
     """
     driven = driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE)))
-    assert [(kind, var.path_str()) for kind, var in boundary(driven)] == list(
+    assert [(kind, var.spelling) for kind, var in boundary(driven)] == list(
         read_pin(TOKAMAK_PIN)
     )
 
@@ -210,7 +211,7 @@ def test_no_new_boundary_input_is_something_process_computes():
     reference = reference_run(MISSING_PRODUCERS_INPUT_FILE)
     graph = driven_graph(graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE)))
     design = {iteration_variable_path(i) for i in reference.ixc}
-    found = [v.path_str() for v in unproduced_but_computed(graph, computed, design)]
+    found = [v.spelling for v in unproduced_but_computed(graph, computed, design)]
     pinned = [
         line.strip()
         for line in Path(MISSING_PRODUCERS_PIN).read_text().splitlines()
@@ -247,7 +248,7 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
     input it always was there.
     """
     tokamak = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
-    owners = {var.path_str(): node.path_str() for var, node in tokamak.owners.items()}
+    owners = {var.spelling: node.spelling for var, node in tokamak.owners.items()}
     assert owners[".costs.c2222"] == ".costs.pf_magnet_cost"
     assert owners[".pf_coil.j_crit_str_pf"] == ".tokamak.pf_coil.strand_critical_current"
 
@@ -263,9 +264,9 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
     account = next(
         node
         for name, node in tokamak.definitions.items()
-        if name.path_str() == ".costs.pf_magnet_cost"
+        if name.spelling == ".costs.pf_magnet_cost"
     )
-    reads = {port.var.path_str() for port in account.inputs}
+    reads = {port.var.spelling for port in account.inputs}
     assert not (
         reads
         & {
@@ -295,7 +296,7 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
 def steerable():
     """`.d` is a design variable; `^cond.ok` moves with it, `^cond.dead` does not."""
     return Graph(
-        path_map({
+        PathMap({
             N("model"): call([V("d"), V("frozen")], [V("mid")]),
             N("Ok"): call([V("mid")], [C("ok")]),
             N("Dead"): call([V("frozen"), V("other")], [C("dead")]),
@@ -331,7 +332,7 @@ def test_a_design_variable_is_not_frozen():
     subtraction `.Ok`'s cone counts `.d`, the one variable the optimiser is steering.
     """
     graph = Graph(
-        path_map({
+        PathMap({
             N("model"): call([V("d"), V("frozen")], [V("mid")]),
             N("Ok"): call([V("mid")], [C("ok")]),
         })
@@ -353,8 +354,8 @@ def test_the_refusal_names_the_row_its_operands_and_the_cause(steerable):
     with pytest.raises(ValueError, match=r"operand\(s\) frozen") as caught:
         refuse_inert_conditions(steerable, [V("d")], [C("dead")])
     message = str(caught.value)
-    assert N("Dead").path_str() in message
-    assert V("frozen").path_str() in message
+    assert N("Dead").spelling in message
+    assert V("frozen").spelling in message
     assert "missing producer" in message
 
 
@@ -381,7 +382,7 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
         stem = Path(input_file).name.removesuffix(".IN.DAT")
         graph, design, driven, _reported = problem_graph(input_file)
         rows = inert_conditions(graph, design, driven)
-        found[stem] = {row.node.path_str() for row in rows}
+        found[stem] = {row.node.spelling for row in rows}
         if stem == "st_regression":
             # The half the census cannot show: the objective is not merely absent from
             # the inert list, it reads a path this graph *owns*. A row that vanished
@@ -405,7 +406,7 @@ def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
         str(root / "spherical_tokamak_eval.IN.DAT")
     )
     assert inert_conditions(graph, design, driven) == ()
-    loose = {row.node.path_str() for row in inert_conditions(graph, design, reported)}
+    loose = {row.node.spelling for row in inert_conditions(graph, design, reported)}
     assert loose == set()
 
     graph, design, driven, reported = problem_graph(TOKAMAK_INPUT_FILE)
@@ -489,7 +490,7 @@ is a mis-wiring the tokamak's own pin cannot see."""
 def test_a_landed_producer_is_owned_by_its_node_and_off_the_pin(path, owner):
     """Owned, owned by the node named, and absent from the missing-producer pin."""
     graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
-    owners = {var.path_str(): node.path_str() for var, node in graph.owners.items()}
+    owners = {var.spelling: node.spelling for var, node in graph.owners.items()}
     assert path in owners, f"{path} lost its producer"
     assert owners[path] == owner
     assert path not in Path(MISSING_PRODUCERS_PIN).read_text()
@@ -498,7 +499,7 @@ def test_a_landed_producer_is_owned_by_its_node_and_off_the_pin(path, owner):
 def test_a_stellarator_owns_none_of_the_pf_coil_producers():
     """The device-dependent half, which no single machine's pin can state."""
     stellarator = graph_for(machine_from_indat(REFERENCE_INPUT_FILE))
-    owned = {var.path_str() for var in stellarator.owners}
+    owned = {var.spelling for var in stellarator.owners}
     assert not (owned & set(PF_COIL_ONLY)), (
         "a stellarator has no PF coils and never calls `Power.run`; nothing on it may "
         "own a PF-coil power-supply or central-solenoid field"

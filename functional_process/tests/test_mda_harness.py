@@ -13,7 +13,7 @@ import inspect
 
 import numpy as np
 from cottax.graph import Graph
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
 from functional_process.cottax.indat import (
@@ -125,7 +125,7 @@ def test_device_root_reads_the_device_off_the_graph():
     """
     assert device_root(GRAPH) == "stellarator"
     assert device_root(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))) == "tokamak"
-    assert device_root(Graph(path_map({}))) is None
+    assert device_root(Graph(PathMap({}))) is None
 
 
 def test_the_unverifiable_outputs_are_owned_on_both_machines_and_gated_on_one():
@@ -140,7 +140,7 @@ def test_the_unverifiable_outputs_are_owned_on_both_machines_and_gated_on_one():
     """
     assert set(KNOWN_UNVERIFIABLE_OUTPUTS.values()) == {STELLARATOR}
     for graph in (GRAPH, graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))):
-        owned = {v.path_str() for v in driven_graph(_without_excluded(graph)).owners}
+        owned = {v.spelling for v in driven_graph(_without_excluded(graph)).owners}
         assert set(KNOWN_UNVERIFIABLE_OUTPUTS) <= owned
 
 

@@ -17,9 +17,10 @@ from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of, is_fixed_point, is_optimise
 from cottax.rewrites import Assign, Combine, NestInside, Residualise
 
-from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
+from cottax.spec import In, NodePath, Out, VarPath
+from cottax.nodes import ImplementedFunction
 from cottax.tools.minting import MintKey, prefix_path
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -258,7 +259,7 @@ class _Resolver:
     def __init__(self, graph: Graph):
         self.by_name = {}
         for var in graph.variables:
-            keys = var.keys
+            keys = var.segments
             if len(keys) == 2 and all(isinstance(k, GetAttrKey) for k in keys):
                 self.by_name.setdefault(keys[-1].name, set()).add(var)
 
@@ -269,7 +270,7 @@ class _Resolver:
         if hits:
             raise ValueError(
                 f"{name!r} names {len(hits)} variables in the graph "
-                f"({sorted(v.path_str() for v in hits)}) -- resolution is by unique "
+                f"({sorted(v.spelling for v in hits)}) -- resolution is by unique "
                 f"name, so this one has to be given explicitly"
             )
         area = NON_INPUT_FIELDS.get(name)
@@ -452,7 +453,7 @@ def optimise_graph(
         equalities=tuple(In(c) for c in equalities),
         inequalities=tuple(In(c) for c in inequalities),
     )
-    inserted = (Plan(graph) + Insert(path_map(nodes.items()))).graph
+    inserted = (Plan(graph) + Insert(PathMap(nodes.items()))).graph
     # **No driver is attached here by default, and that is the ordering the new API
     # forces.** `Combine` refuses to join two problems that carry an algorithm -- *"one
     # discards the algorithm answering each, `Undrive` first"* -- and this graph's whole
@@ -585,7 +586,7 @@ def degenerate_fixed_points(graph, env, problems=None):
     undetectable = [r for r in measured if r.undetectable is not None]
     if undetectable:
         detail = "; ".join(
-            f"{r.problem.path_str()} ({r.undetectable})" for r in undetectable
+            f"{r.problem.spelling} ({r.undetectable})" for r in undetectable
         )
         raise ValueError(
             f"cannot tell whether {len(undetectable)} of {len(measured)} fixed "
@@ -650,7 +651,7 @@ def constraints_outside_block(graph):
     )
     outside = {}
     for name in graph.nodes:
-        leaf = name.keys[-1].name
+        leaf = name.segments[-1].name
         if leaf.startswith("Constraint") and name not in problem_block:
             outside[int(leaf.removeprefix("Constraint"))] = name
     return outside
@@ -670,7 +671,7 @@ def residual_condition_scales(drive, env, floor=1e-12):
     unknowns = {place(v): v for v in drive.unknowns}
     scales = []
     for condition in drive.conditions:
-        if condition.path_str().startswith(("^cond.constraints.", "^cond.numerics.")):
+        if condition.spelling.startswith(("^cond.constraints.", "^cond.numerics.")):
             continue
         unknown = unknowns.get(place(condition))
         if unknown is None or unknown not in env:

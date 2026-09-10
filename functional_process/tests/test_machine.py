@@ -809,7 +809,7 @@ def _swap_orphans():
                 where, REFERENCE_MACHINE, build(occupant), is_leaf=lambda x: x is None
             )
             for var in orphaned_by(GRAPH, to_graph(machine)):
-                out.setdefault(f"{field}={value}", []).append(var.path_str())
+                out.setdefault(f"{field}={value}", []).append(var.spelling)
     return {k: sorted(v) for k, v in out.items()}
 
 
@@ -1196,8 +1196,8 @@ def test_the_1990_cost_model_is_the_only_producer_of_coe():
             lambda m: m.costs, REFERENCE_MACHINE, None, is_leaf=lambda x: x is None
         )
     )
-    assert ".costs.coe" in {v.path_str() for v in with_costs.owners}
-    assert ".costs.coe" not in {v.path_str() for v in without.owners}
+    assert ".costs.coe" in {v.spelling for v in with_costs.owners}
+    assert ".costs.coe" not in {v.spelling for v in without.owners}
 
 
 SPHERICAL_TOKAMAK_PF_SWITCHES = {
@@ -1330,7 +1330,7 @@ def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_
 
     # And the fields `ohcalc` would have written are boundary inputs, not zeros some
     # node claims to have computed.
-    owners = {v.path_str() for v in graph_for(machine).owners}
+    owners = {v.spelling for v in graph_for(machine).owners}
     for cs_field in (
         ".pf_coil.a_cs_poloidal",
         ".pf_coil.a_cs_cable_space",
@@ -1439,10 +1439,10 @@ def test_the_seed_nodes_account_for_every_moved_node_count(stem):
     seed_nodes = [
         node
         for node in graph.definitions
-        if node.path_str().startswith(".initialisation")
+        if node.spelling.startswith(".initialisation")
     ]
     assert len(seed_nodes) == SEED_NODE_COUNTS[stem], sorted(
-        n.path_str() for n in seed_nodes
+        n.spelling for n in seed_nodes
     )
 
 

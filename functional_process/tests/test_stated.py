@@ -40,7 +40,7 @@ from functional_process.cottax.stated import StatesValues, stated_port  # noqa: 
 def _stated_reads(input_file):
     """Every `^stated.*` boundary read of one configuration's assembled graph."""
     graph = graph_for(machine_from_indat(input_file))
-    return {var.path_str() for kind, var in boundary(graph) if kind == STATED}
+    return {var.spelling for kind, var in boundary(graph) if kind == STATED}
 
 
 @pytest.mark.parametrize(
@@ -127,10 +127,10 @@ def test_reads_are_derived_from_writes():
         graph = graph_for(machine_from_indat(input_file))
         for name, node in graph.definitions.items():
             reads = [
-                v.path_str() for v in node.reads if v.path_str().startswith("^stated")
+                v.spelling for v in node.reads if v.spelling.startswith("^stated")
             ]
             if not reads:
                 continue
-            assert reads == [stated_port(out).var.path_str() for out in node.outputs], (
-                name.path_str()
+            assert reads == [stated_port(out).var.spelling for out in node.outputs], (
+                name.spelling
             )

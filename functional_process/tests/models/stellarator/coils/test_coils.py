@@ -11,7 +11,7 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax._harness import (
     Sample,
@@ -541,7 +541,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             # claim that any starting guess reaches the same root.
             guess_path: jnp.asarray(kwargs["xin"]),
         }
-        out = schedule.run(path_map(env))
+        out = schedule.run(PathMap(env))
         want = intersect(
             jnp.asarray(kwargs["x1"]),
             jnp.asarray(kwargs["y1"]),

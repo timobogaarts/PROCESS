@@ -15,8 +15,9 @@ from cottax.problem import (
 )
 from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
-from cottax.spec import ConditionNode, NodePath, VarPath
-from cottax.tools.path import path_map, written
+from cottax.spec import NodePath, VarPath
+from cottax.nodes import ConditionNode
+from cottax.tools.path import PathMap, written
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
 
@@ -110,7 +111,7 @@ def cut_graph(graph=GRAPH):
         place = (
             None
             if len(cuts) == 1
-            else NodePath((*cuts[0].var.keys, GetAttrKey("cycle")))
+            else NodePath((*cuts[0].var.segments, GetAttrKey("cycle")))
         )
         graph = FixedPointCut(tuple(cuts), place=place).apply(graph)
 
@@ -188,7 +189,7 @@ def given_start(unknown, fallback):
     # `.pf_coil.n_pf_coil_turns`, and a table that had to spell the mint would be a table
     # about cottax's naming rather than about the machine. `unminted` is the same
     # normalisation `mda_harness._ground_truth` already applies for the same reason.
-    given = GIVEN_STARTS.get(unminted(unknown).path_str())
+    given = GIVEN_STARTS.get(unminted(unknown).spelling)
     if given is None:
         return fallback
     return jnp.full_like(jnp.asarray(fallback, dtype=float), given)
@@ -209,7 +210,7 @@ only when the value seeded from `data` is unusable (see `SeededNewtonDriver`).
 def _var(context, path_str):
     """The `VarPath` in `context` spelled `path_str`."""
     for var in context:
-        if var.path_str() == path_str:
+        if var.spelling == path_str:
             return var
     raise KeyError(
         f"{path_str} is not in this block's context, so no starting guess can be "
@@ -220,7 +221,7 @@ def _var(context, path_str):
 def _root_find_seed(conditions):
     """A `SeededNewtonDriver`'s starting guess for whichever block it is driving."""
     for var in conditions.unknowns:
-        entry = ROOT_FIND_SEEDS.get(var.path_str())
+        entry = ROOT_FIND_SEEDS.get(var.spelling)
         if entry is not None:
             return entry(conditions.context)
     raise KeyError(
@@ -243,14 +244,14 @@ def supply_starts(graph: Graph) -> Graph:
             continue
         onto = {}
         for unknown, start in starts_for(graph, problem):
-            target = SUPPLIED_STARTS.get(unknown.path_str())
+            target = SUPPLIED_STARTS.get(unknown.spelling)
             if target is None:
                 continue
             producer = next(
                 (
                     (var, owner)
                     for var, owner in graph.owners.items()
-                    if var.path_str() == target
+                    if var.spelling == target
                 ),
                 None,
             )
@@ -261,7 +262,7 @@ def supply_starts(graph: Graph) -> Graph:
                 continue  # inside the block -- see this function's own docstring
             onto[start] = var
         if onto:
-            graph = Supply(problem, path_map(onto)).apply(graph)
+            graph = Supply(problem, PathMap(onto)).apply(graph)
     return graph
 
 

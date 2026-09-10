@@ -20,7 +20,7 @@ import functools
 import pytest
 from cottax.interfaces.pytree_namespace_module import Output, to_graph
 from cottax.problem import FixedPoint, is_fixed_point
-from cottax.spec import Implemented, ImplementedFunction
+from cottax.nodes import Implemented, ImplementedFunction
 
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax._harness.process_reference import (

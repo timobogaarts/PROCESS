@@ -349,7 +349,7 @@ def test_non_aspect_arms_do_not_read_aspect():
         Martin08UpperLHThresholdPower,
         Martin08LowerLHThresholdPower,
     ):
-        reads = {i.var.path_str() for i in cls().inputs}
+        reads = {i.var.spelling for i in cls().inputs}
         assert reads == {
             ".physics.nd_plasma_electron_line",
             ".physics.b_plasma_toroidal_on_axis",
@@ -368,7 +368,7 @@ def test_aspect_corrected_arms_read_one_more_field():
         Martin08AspectUpperLHThresholdPower,
         Martin08AspectLowerLHThresholdPower,
     ):
-        reads = {i.var.path_str() for i in cls().inputs}
+        reads = {i.var.spelling for i in cls().inputs}
         assert reads == {
             ".physics.nd_plasma_electron_line",
             ".physics.b_plasma_toroidal_on_axis",
@@ -388,7 +388,7 @@ def test_every_martin_occupant_owns_p_l_h_threshold_mw():
         Martin08AspectUpperLHThresholdPower,
         Martin08AspectLowerLHThresholdPower,
     ):
-        outputs = {o.var.path_str() for o in cls().outputs}
+        outputs = {o.var.spelling for o in cls().outputs}
         assert outputs == {".physics.p_l_h_threshold_mw"}, f"{cls.__name__}: {outputs}"
 
 

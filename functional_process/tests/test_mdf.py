@@ -44,7 +44,7 @@ from cottax.problem import (
     unknowns_of,
     is_root_find,
 )
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax import mdf, sand
 from functional_process.cottax.core.solver.drivers import SeededNewtonDriver
@@ -79,12 +79,12 @@ def test_the_optimisers_problem_is_exactly_the_one_process_states(problem):
     Schur-reduced before it can be compared with PROCESS's. If this test ever passes with
     more than `len(ixc)` design variables, the module has stopped being MDF.
     """
-    assert [v.path_str() for v in problem.design] == [
-        sand.iteration_variable_path(i).path_str() for i in REFERENCE_IXC
+    assert [v.spelling for v in problem.design] == [
+        sand.iteration_variable_path(i).spelling for i in REFERENCE_IXC
     ]
     assert len(problem.conditions) == 1 + len(REFERENCE_ICC)
-    assert problem.conditions[0].path_str() == "^cond.numerics.objf"
-    assert [c.path_str() for c in problem.conditions[1:]] == [
+    assert problem.conditions[0].spelling == "^cond.numerics.objf"
+    assert [c.spelling for c in problem.conditions[1:]] == [
         f"^cond.constraints.c{cid}" for cid in REFERENCE_ICC
     ]
     assert problem.n_equality == REFERENCE_N_EQUALITY
@@ -107,7 +107,7 @@ def test_no_coupling_variable_reaches_the_optimiser(problem):
     assert not inner & set(problem.design)
     assert not inner & set(problem.conditions)
     for condition in problem.conditions:
-        assert condition.path_str().startswith((
+        assert condition.spelling.startswith((
             "^cond.constraints.c",
             "^cond.numerics.objf",
         ))
@@ -263,7 +263,7 @@ def test_the_conditions_are_finite_at_a_cold_start(cold_run):
     values = np.asarray([float(np.asarray(v)) for v in conditions(*start)])
     assert np.all(np.isfinite(values)), dict(
         zip(
-            [c.path_str() for c in conditions.conditions],
+            [c.spelling for c in conditions.conditions],
             values.tolist(),
             strict=True,
         )
@@ -298,7 +298,7 @@ def test_the_gradient_through_the_inner_solve_is_correct(cold_run):
     relative = np.abs(full - finite) / np.maximum(np.abs(finite), 1e-300)
     worst = float(relative[alive].max())
     off = [
-        (conditions.conditions[i].path_str(), int(j))
+        (conditions.conditions[i].spelling, int(j))
         for i, j in zip(*np.where(alive & (relative > 1e-4)), strict=True)
     ]
     assert worst < 1e-4, (
@@ -319,11 +319,11 @@ def test_the_inner_solve_is_actually_converged_at_that_point(problem, cold_run):
     conditions, start = cold_run
     env = dict(conditions.context)
     env.update(zip(problem.design, start, strict=True))
-    rows = mdf.inner_residuals(problem.eager, dict(problem.eager.run(path_map(env))))
+    rows = mdf.inner_residuals(problem.eager, dict(problem.eager.run(PathMap(env))))
     assert rows
     worst = max(rows, key=operator.itemgetter(3))
     assert worst[3] < 1e-6, (
-        f"{worst[1].path_str()} is only converged to {worst[3]:.2e} relative"
+        f"{worst[1].spelling} is only converged to {worst[3]:.2e} relative"
     )
 
 
@@ -348,16 +348,16 @@ def test_one_pass_of_the_schedule_is_idempotent(problem, cold_run):
     conditions, start = cold_run
     env = dict(conditions.context)
     env.update(zip(problem.design, start, strict=True))
-    once = dict(problem.eager.run(path_map(dict(env))))
+    once = dict(problem.eager.run(PathMap(dict(env))))
     # A schedule refuses values at owned names now, so its own output cannot be fed
     # back wholesale: `restart` keeps the inputs and re-seeds every `Start` port from
     # the unknown its driver converged -- the second pass starts where the first ended.
-    twice = dict(problem.eager.run(path_map(mdf.restart(problem, once))))
+    twice = dict(problem.eager.run(PathMap(mdf.restart(problem, once))))
     for condition in problem.conditions:
         first = np.asarray(once[condition], dtype=float)
         second = np.asarray(twice[condition], dtype=float)
         assert np.allclose(first, second, rtol=1e-6, equal_nan=True), (
-            f"{condition.path_str()} moved from {first} to {second} on a second pass, "
+            f"{condition.spelling} moved from {first} to {second} on a second pass, "
             f"so one pass of the schedule is not the converged MDA"
         )
 
@@ -408,8 +408,9 @@ def _array_fixed_point(max_iter):
     is the worst is a fact and not a coincidence.
     """
     from cottax.rewrites import Assign, NestInside
-    from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
-    from cottax.tools.path import path_map
+    from cottax.spec import In, NodePath, Out, VarPath
+    from cottax.nodes import ImplementedFunction
+    from cottax.tools.path import PathMap
     from jax.tree_util import GetAttrKey
 
     from functional_process.cottax.core.solver.drivers import PicardDriver
@@ -419,7 +420,7 @@ def _array_fixed_point(max_iter):
     problem = NodePath((GetAttrKey("P"),))
     rate, offset = (0.1, 0.5, 0.95), (1.0, 1.0, 1.0)
     graph = Graph(
-        path_map([
+        PathMap([
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
@@ -432,7 +433,7 @@ def _array_fixed_point(max_iter):
     graph = Assign(problem, PicardDriver(max_steps=max_iter)).apply(graph)
     (start,) = driver_vars(graph[problem], Start)
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule.run(path_map({start: jnp.zeros(3)}))
+    out = schedule.run(PathMap({start: jnp.zeros(3)}))
     return schedule, out, u, np.asarray(rate), np.asarray(offset)
 
 
@@ -540,10 +541,10 @@ def test_a_root_find_forms_no_objective_at_all(square_problem):
     """Not "an objective nobody reads" -- no objective node in the graph."""
     assert square_problem.report["objective"] is None
     assert not any(
-        v.path_str() == "^cond.numerics.objf" for v in square_problem.conditions
+        v.spelling == "^cond.numerics.objf" for v in square_problem.conditions
     )
     assert "^cond.numerics.objf" not in {
-        v.path_str() for v in square_problem.graph.variables
+        v.spelling for v in square_problem.graph.variables
     }
 
 
@@ -780,7 +781,7 @@ def test_the_driver_reports_its_verdict_through_ports_the_node_owns(square_probl
     """
     built = mdf.in_graph_root_find(square_problem)
     node = built.graph[built.problem]
-    assert [p.var.path_str() for p in node.driver_out] == [
+    assert [p.var.spelling for p in node.driver_out] == [
         "^driver_out.steps.RootFind",
         "^driver_out.converged.RootFind",
         "^driver_out.status.RootFind",

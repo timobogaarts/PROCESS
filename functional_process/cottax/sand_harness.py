@@ -15,7 +15,7 @@ from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.plan import Delete
 from cottax.tools.minting import unminted
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 from cottax.tools.pytree import get_at
 
 from functional_process.cottax._harness.finite_difference import fd_gradient_with_error
@@ -170,10 +170,10 @@ def ground_truth(data, var):
     """`data`'s own value at `var` -- `mda_harness._ground_truth`'s rule, restated here
     with two caveats that matter for this module and not for that one.
     """
-    known = KNOWN_MINT_VALUES.get(var.path_str())
+    known = KNOWN_MINT_VALUES.get(var.spelling)
     if known is not None:
         return known(data)
-    value = get_at(data, unminted(var).keys)
+    value = get_at(data, unminted(var).segments)
     return UNWRITTEN_BY_PROCESS if value is None else value
 
 
@@ -220,7 +220,7 @@ def run_schedule(schedule, env, whole=None, fuse_upstream=True):
     """
     if stale := [var for var in env if var in schedule._owned]:
         raise ValueError(
-            f"value(s) at {sorted(v.path_str() for v in stale)}, which this schedule's "
+            f"value(s) at {sorted(v.spelling for v in stale)}, which this schedule's "
             f"own nodes produce -- hand the run its inputs and take results from the "
             f"env it returns"
         )
@@ -235,7 +235,7 @@ def run_schedule(schedule, env, whole=None, fuse_upstream=True):
     if whole is None:
         whole = _SCHEDULE_WHOLE[schedule] = _mda_runner(schedule)
         try:
-            out = dict(whole(path_map(env)))
+            out = dict(whole(PathMap(env)))
         except Exception as refusal:  # noqa: BLE001 -- the verdict, not an error
             # A driver that does not trace. Recorded rather than raised: the walk below
             # computes the same values from the same nodes in the same order, so this
@@ -246,7 +246,7 @@ def run_schedule(schedule, env, whole=None, fuse_upstream=True):
             _SCHEDULE_VERDICT[schedule] = None
             return out
     if whole is not False:
-        return dict(whole(path_map(env)))
+        return dict(whole(PathMap(env)))
     key = (schedule, bool(fuse_upstream))
     runners = _SCHEDULE_RUNNERS.get(key)
     if runners is None:
@@ -312,10 +312,10 @@ def _jitted_group(steps):
         env = dict(values)
         for step in steps:
             env = step._run(env)
-        return path_map(env)
+        return PathMap(env)
 
     def run(env):
-        return dict(jitted(path_map(env)))
+        return dict(jitted(PathMap(env)))
 
     return run
 
@@ -352,15 +352,15 @@ def _driven_runner(step, fuse_upstream=True):
         if len(answered) != len(bound):
             reported = (
                 f" and {len(step.reports)} report(s) "
-                f"{[v.path_str() for v in step.reports]}"
+                f"{[v.spelling for v in step.reports]}"
                 if step.reports
                 else ""
             )
             raise ValueError(
                 f"{type(step.driver).__name__} for block "
-                f"{[n.path_str() for n in step.nodes]} returned {len(answered)} "
+                f"{[n.spelling for n in step.nodes]} returned {len(answered)} "
                 f"value(s) for {len(step.unknowns)} unknown(s) "
-                f"{[v.path_str() for v in step.unknowns]}{reported}"
+                f"{[v.spelling for v in step.unknowns]}{reported}"
             )
         env.update(zip(bound, answered, strict=True))
         return body(env)
@@ -411,7 +411,7 @@ def mda_env(reference, graph=None, data=None):
         if var in guesses:
             grounded = given_start(source, grounded)
         env[var] = _strongly_typed(grounded)
-    return driven, dict(run(path_map(env)))
+    return driven, dict(run(PathMap(env)))
 
 
 def _strongly_typed(value):

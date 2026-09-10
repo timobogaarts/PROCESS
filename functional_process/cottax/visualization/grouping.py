@@ -15,7 +15,8 @@ from jax.tree_util import DictKey, GetAttrKey
 
 from cottax.blocking import Blocking
 from cottax.graph import Graph
-from cottax.spec import ConditionNode, NodePath, VarPath
+from cottax.spec import NodePath, VarPath
+from cottax.nodes import ConditionNode
 from cottax.tools.minting import is_minted, unminted
 from cottax.visualization.xdsm import Formatter, NoFormat, _xesc
 from cottax.visualization.xdsm_html import HtmlDoc
@@ -32,7 +33,7 @@ UNGROUPED_LABEL = "(ungrouped)"
 def _tree_keys(path: NodePath) -> tuple[str, ...]:
     """The leading run of namespace keys of `path`, once any minted root is dropped."""
     out: list[str] = []
-    for key in unminted(path).keys:
+    for key in unminted(path).segments:
         if isinstance(key, DictKey) and isinstance(key.key, str):
             out.append(key.key)
         elif isinstance(key, GetAttrKey):
@@ -48,7 +49,7 @@ def _cut_owner(
     """The node that owns the variable a problem-over-a-variable was minted over, or
     `None`.
     """
-    keys = unminted(path).keys
+    keys = unminted(path).segments
     for end in range(len(keys), 0, -1):
         var = VarPath(keys[:end])
         if var in owners:

@@ -134,25 +134,25 @@ class NonFiniteProblemError(ValueError):
     """The three lists in one line, for a caller with one cell to put them in."""
 
     bad_values: tuple = ()
-    """Conditions whose **value** is not finite, by `path_str()`."""
+    """Conditions whose **value** is not finite, by `spelling`."""
     bad_rows: tuple = ()
-    """Conditions whose **derivative row** holds a non-finite cell, by `path_str()`."""
+    """Conditions whose **derivative row** holds a non-finite cell, by `spelling`."""
     zero_columns: tuple = ()
-    """Unknowns whose Jacobian column is identically zero, by `path_str()`."""
+    """Unknowns whose Jacobian column is identically zero, by `spelling`."""
     n_conditions: int = 0
     """How many conditions the block declares, so a caller can say "3 of 30"."""
 
 
 def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     """Raise if any condition value or derivative is not finite, naming which."""
-    names = [c.path_str() for c in conditions.conditions]
+    names = [c.spelling for c in conditions.conditions]
     bad_values = [n for n, v in zip(names, values, strict=True) if not np.isfinite(v)]
     bad_rows = [
         n for n, row in zip(names, jacobian, strict=True) if not np.all(np.isfinite(row))
     ]
     if not bad_values and not bad_rows:
         return
-    unknowns = [u.path_str() for u in conditions.unknowns]
+    unknowns = [u.spelling for u in conditions.unknowns]
     zeroed = [
         u for u, col in zip(unknowns, jacobian.T, strict=True) if not np.any(col != 0.0)
     ]
@@ -205,7 +205,7 @@ def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
     jacobian = np.asarray(jacobian, dtype=float)
     if jacobian.size == 0 or np.any(jacobian[0] != 0.0):
         return
-    names = [c.path_str() for c in conditions.conditions]
+    names = [c.spelling for c in conditions.conditions]
     others = [
         n
         for n, row in zip(names[1:], jacobian[1:], strict=True)
@@ -216,7 +216,7 @@ def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
         f"all {jacobian.shape[1]} design variable(s), so this is not an optimisation: "
         "the SQP will solve the feasibility problem that remains and report it as "
         "converged.\n"
-        f"  design variables: {[u.path_str() for u in conditions.unknowns]}\n"
+        f"  design variables: {[u.spelling for u in conditions.unknowns]}\n"
         f"  other conditions with an all-zero row: {others or 'none'}\n"
         "The usual cause is a MISSING PRODUCER -- the objective reads a path this "
         "configuration's graph does not own, so it is a boundary input frozen at its "
@@ -232,7 +232,7 @@ def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> N
     block = jacobian[1 : 1 + meq]
     if block.size == 0:
         return
-    names = [c.path_str() for c in conditions.conditions][1 : 1 + meq]
+    names = [c.spelling for c in conditions.conditions][1 : 1 + meq]
     # **Inert relative to the block, not literally `!= 0.0`.** An exact test was tried
     # and is a false negative on the case this function exists for: `helias_5b` with
     # `ixc = 3` added leaves `c11`'s row at `[-1.6e-16, -0.0, -0.0, -0.0]`, sixteen
@@ -257,7 +257,7 @@ def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> N
         f"SLSQP reported a singular LSQ subproblem, and the equality block "
         f"({block.shape[0]}x{block.shape[1]}) is degenerate at this point -- {detail}. "
         f"An equality whose row is inert is one the design variables "
-        f"{[u.path_str() for u in conditions.unknowns]} cannot move: it is satisfied "
+        f"{[u.spelling for u in conditions.unknowns]} cannot move: it is satisfied "
         f"or not by the boundary values alone. `pyvmcon` tolerates such a row and "
         f"scipy does not, so this is a statement about the problem rather than about "
         f"the solver; see `_audit/optimise_design.md` §46.",
@@ -381,7 +381,7 @@ def start_from(data, driver_name: str, conditions: ConditionMap) -> tuple:
     if start is None:
         raise ValueError(
             f"{driver_name} needs a starting value for every unknown "
-            f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply one "
+            f"({', '.join(v.spelling for v in conditions.unknowns)}) -- supply one "
             f"in env at its `^guess.*` port, or give this driver a `seed`"
         )
     return start
@@ -608,7 +608,7 @@ class SeededNewtonDriver(AbstractDriver):
         if start is None:
             raise ValueError(
                 f"SeededNewtonDriver needs a starting value for every unknown "
-                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
+                f"({', '.join(v.spelling for v in conditions.unknowns)}) -- supply "
                 f"one in env at its `^guess.*` port, or give this driver a `seed`"
             )
         flat_guess, unravel = ravel_pytree(start)

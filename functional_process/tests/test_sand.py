@@ -32,8 +32,9 @@ from cottax.problem import (
     is_fixed_point,
 )
 from cottax.rewrites import Assign
-from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
-from cottax.tools.path import path_map
+from cottax.spec import In, NodePath, Out, VarPath
+from cottax.nodes import ImplementedFunction
+from cottax.tools.path import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -215,7 +216,7 @@ def test_the_whole_impurity_array_is_read_by_nobody():
         GetAttrKey("f_nd_impurity_electron_array"),
     ))
     readers = [
-        node.path_str()
+        node.spelling
         for node in graph.nodes
         if any(read == array for read in graph[node].reads)
     ]
@@ -332,7 +333,7 @@ def test_constraint_16_is_an_equality_despite_its_geq_body():
     )
     assert omitted == {}
     assert len(nodes) == len(REFERENCE_ICC)
-    assert [v.path_str() for v in equalities] == [
+    assert [v.spelling for v in equalities] == [
         "^cond.constraints.c2",
         "^cond.constraints.c16",
     ]
@@ -379,8 +380,8 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     minimise, var = objective_nodes(
         GRAPH, objective_selection(REFERENCE_FIGURE_OF_MERIT)
     )
-    assert var.path_str() == "^cond.numerics.objf"
-    assert [n.path_str() for n in minimise] == [".Objective"]
+    assert var.spelling == "^cond.numerics.objf"
+    assert [n.spelling for n in minimise] == [".Objective"]
     assert len(minimise[NodePath((GetAttrKey("Objective"),))].outputs) == 1
 
     maximise, negated_var = objective_nodes(
@@ -389,11 +390,11 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     # Same place minimised, so no report changes; one more node, so the direction is in
     # the graph.
     assert negated_var == var
-    assert [n.path_str() for n in maximise] == [".Objective", ".ObjectiveNegated"]
+    assert [n.spelling for n in maximise] == [".Objective", ".ObjectiveNegated"]
     metric = maximise[NodePath((GetAttrKey("Objective"),))]
     negate = maximise[NodePath((GetAttrKey("ObjectiveNegated"),))]
-    assert [o.var.path_str() for o in metric.outputs] == ["^metric.numerics.objf"]
-    assert [i.var.path_str() for i in negate.inputs] == ["^metric.numerics.objf"]
+    assert [o.var.spelling for o in metric.outputs] == ["^metric.numerics.objf"]
+    assert [i.var.spelling for i in negate.inputs] == ["^metric.numerics.objf"]
 
     coe = 121.5
     body = minimise[NodePath((GetAttrKey("Objective"),))]
@@ -425,21 +426,21 @@ def test_sand_assembles_and_orders_its_conditions():
     shape = sand_shape(schedule)
     drive = shape["drive"]
 
-    names = [c.path_str() for c in drive.conditions]
+    names = [c.spelling for c in drive.conditions]
     assert names[0] == "^cond.numerics.objf"
     # `.problem` because the node is `Driven` now: it *has* a problem rather than
     # being one, and cottax forwards only the graph-facing surface.
     definition = drive.subgraph[drive.problem].problem
     assert names[1 : 1 + len(definition.equalities)] == [
-        c.var.path_str() for c in definition.equalities
+        c.var.spelling for c in definition.equalities
     ]
     assert names[1 + len(definition.equalities) :] == [
-        c.var.path_str() for c in definition.inequalities
+        c.var.spelling for c in definition.inequalities
     ]
     # The eight design variables come first among the unknowns, so the Schur reduction
     # in `sand_harness` can index them positionally.
-    assert [v.path_str() for v in drive.unknowns[: len(REFERENCE_IXC)]] == [
-        iteration_variable_path(i).path_str() for i in REFERENCE_IXC
+    assert [v.spelling for v in drive.unknowns[: len(REFERENCE_IXC)]] == [
+        iteration_variable_path(i).spelling for i in REFERENCE_IXC
     ]
     # Not the whole graph in one block: the acyclic remainder still runs as `Call` steps.
     assert shape["drive_nodes"] < len(combined.nodes)
@@ -523,7 +524,7 @@ def test_design_bounds_are_processs_own_table():
         assert var in {iteration_variable_path(i) for i in REFERENCE_IXC}
 
 
-_EMPTY_GRAPH = Graph(path_map({}))
+_EMPTY_GRAPH = Graph(PathMap({}))
 """A graph with no nodes: stage one can never hit, so stage two is what is tested."""
 
 
@@ -783,7 +784,7 @@ def _toy_problem(driver=None, objective=None):
     f = VarPath((GetAttrKey("c"), GetAttrKey("f")))
     g = VarPath((GetAttrKey("c"), GetAttrKey("g")))
     graph = Graph(
-        path_map([
+        PathMap([
             (
                 NodePath((GetAttrKey("F"),)),
                 ImplementedFunction(
@@ -855,7 +856,7 @@ def test_vmcon_driver_reaches_a_known_constrained_optimum():
         VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     )
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
+    out = schedule.run(PathMap({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -874,7 +875,7 @@ def test_vmcon_driver_honours_bounds_as_bounds():
         )
     )
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
+    out = schedule.run(PathMap({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
     assert float(out[x]) <= 2.0 + 1e-9
 
 
@@ -885,7 +886,7 @@ def test_vmcon_driver_scaling_does_not_move_the_answer():
         VmconDriver(n_equality=0, n_inequality=1, scaled=True)
     )
     out = Schedule(Blocking.scc(graph)).run(
-        path_map({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
+        PathMap({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
     )
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
@@ -901,7 +902,7 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     )
     schedule = Schedule(Blocking.scc(graph))
     with pytest.raises(ValueError, match="equalities"):
-        schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
+        schedule.run(PathMap({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
 
 
 class _UnboundedSlope:
@@ -933,7 +934,7 @@ def _non_finite_toy():
         VmconDriver(n_equality=0, n_inequality=1, scaled=False),
         objective=_UnboundedSlope(),
     )
-    return graph, path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(1.0)})
+    return graph, PathMap({gx: jnp.asarray(0.0), gy: jnp.asarray(1.0)})
 
 
 def test_the_non_finite_refusal_carries_its_lists_and_a_one_line_summary():
@@ -962,11 +963,11 @@ def test_the_non_finite_refusal_carries_its_lists_and_a_one_line_summary():
     refusal = raised.value
     assert isinstance(refusal, ValueError)  # every existing `except` still catches it
     assert refusal.bad_values == ()
-    assert refusal.bad_rows == (f.path_str(),)
+    assert refusal.bad_rows == (f.spelling,)
     assert refusal.zero_columns == ()
     assert refusal.n_conditions == 2
     assert "0/2 non-finite in VALUE" in refusal.summary
-    assert f"1/2 non-finite in DERIVATIVE ({f.path_str()})" in refusal.summary
+    assert f"1/2 non-finite in DERIVATIVE ({f.spelling})" in refusal.summary
 
 
 @pytest.mark.parametrize("whole", [False, None])
@@ -1022,9 +1023,9 @@ def test_the_status_is_turned_back_into_names_by_non_finite_summary():
     conditions = drive.condition_map(context)
     # The env holds the starts at their `^guess.*` ports; the unknowns are the bare
     # names, so the start for each is looked up by that correspondence.
-    guesses = {v.path_str().removeprefix("^guess"): env[v] for v in env.keys()}
+    guesses = {v.spelling.removeprefix("^guess"): env[v] for v in env.keys()}
     bad, unravel = ravel_pytree(
-        tuple(jnp.asarray(guesses[u.path_str()]) for u in conditions.unknowns)
+        tuple(jnp.asarray(guesses[u.spelling]) for u in conditions.unknowns)
     )
     summary = non_finite_summary(conditions, unravel, bad)
     assert summary is not None
@@ -1133,7 +1134,7 @@ def test_driven_runner_and_whole_jit_agree_on_the_verdict():
     schedule = Schedule(Blocking.scc(graph))
     env = {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
-    jitted = Schedule(Blocking.scc(graph)).run(path_map(dict(env)))
+    jitted = Schedule(Blocking.scc(graph)).run(PathMap(dict(env)))
     for var in (x, y, Steps.name_for(TOY_PROBLEM), Status.name_for(TOY_PROBLEM)):
         # Exact, deliberately: the claim is that the two paths bind the *same*
         # value, not a nearby one.
@@ -1184,10 +1185,10 @@ def test_vmcon_driver_answer_survives_the_callback_boundary_bitwise():
     env = {gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
     jitted = jax.jit(
-        lambda values: path_map(
-            Schedule(Blocking.scc(graph)).run(path_map(dict(values)))
+        lambda values: PathMap(
+            Schedule(Blocking.scc(graph)).run(PathMap(dict(values)))
         )
-    )(path_map(env))
+    )(PathMap(env))
     jitted = dict(jitted)
     assert float(walked[x]) == float(jitted[x])  # noqa: RUF069 -- bitwise is the point
     assert float(walked[y]) == float(jitted[y])  # noqa: RUF069 -- bitwise is the point
@@ -1361,7 +1362,7 @@ def test_the_pf_ring_is_detected_as_an_array_unknown_problem():
         p
         for p in graph.declared
         if is_fixed_point(graph[p])
-        and any("pf_coil" in u.path_str() for u in graph[p].owns)
+        and any("pf_coil" in u.spelling for u in graph[p].owns)
     ]
     assert len(pf) == 1
     unknowns = graph[pf[0]].owns
@@ -1398,7 +1399,7 @@ def test_tokamak_sand_assembles_and_orders_its_conditions():
         switch_values=switch_values,
     )
     assert report["omitted"] == {}
-    assert [v.path_str() for v in report["equalities"]] == [
+    assert [v.spelling for v in report["equalities"]] == [
         "^cond.constraints.c1",
         "^cond.constraints.c2",
     ]
@@ -1407,14 +1408,14 @@ def test_tokamak_sand_assembles_and_orders_its_conditions():
     schedule = sand_schedule(combined, None)
     shape = sand_shape(schedule)
     drive = shape["drive"]
-    names = [c.path_str() for c in drive.conditions]
+    names = [c.spelling for c in drive.conditions]
     assert names[0] == "^cond.numerics.objf"
     definition = drive.subgraph[drive.problem].problem
     assert names[1 : 1 + len(definition.equalities)] == [
-        c.var.path_str() for c in definition.equalities
+        c.var.spelling for c in definition.equalities
     ]
-    assert [v.path_str() for v in drive.unknowns[: len(TOKAMAK_IXC)]] == [
-        iteration_variable_path(i).path_str() for i in TOKAMAK_IXC
+    assert [v.spelling for v in drive.unknowns[: len(TOKAMAK_IXC)]] == [
+        iteration_variable_path(i).spelling for i in TOKAMAK_IXC
     ]
     assert shape["drive_nodes"] < len(combined.nodes)
     assert shape["schedule_steps"] > 1
@@ -1469,7 +1470,7 @@ def _chain_fixed_point(second):
     hat = VarPath((GetAttrKey("^hat"), GetAttrKey("toy"), GetAttrKey("u")))
     problem = NodePath((GetAttrKey("P"),))
     graph = Graph(
-        path_map([
+        PathMap([
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
@@ -1541,7 +1542,7 @@ def test_an_unmeasurable_block_is_reported_rather_than_called_healthy():
     )
 
     graph, _problem, env = _chain_fixed_point(0.25)
-    starved = {k: v for k, v in env.items() if k.path_str() != ".toy.u"}
+    starved = {k: v for k, v in env.items() if k.spelling != ".toy.u"}
     (measured,) = fixed_point_residuals(graph, starved)
     assert measured.jacobian is None
     assert measured.rank is None
@@ -1564,7 +1565,7 @@ def test_an_array_valued_fixed_point_is_still_measurable():
     hat = VarPath((GetAttrKey("^hat"), GetAttrKey("toy"), GetAttrKey("v")))
     problem = NodePath((GetAttrKey("P"),))
     graph = Graph(
-        path_map([
+        PathMap([
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
@@ -1610,10 +1611,10 @@ def test_boundary_seeds_agree_with_guess_sources():
     assert set(seeded) == {v for v in schedule.inputs if v in guesses}
     for port, place in seeded.items():
         assert unminted(guesses[port]) == place, (
-            f"{port.path_str()} is seeded from {place.path_str()} by the boundary and "
-            f"from {guesses[port].path_str()} here, and they are not the same place"
+            f"{port.spelling} is seeded from {place.spelling} by the boundary and "
+            f"from {guesses[port].spelling} here, and they are not the same place"
         )
-        assert guesses[port].path_str() not in KNOWN_MINT_VALUES, (
-            f"{guesses[port].path_str()} now has an analytic mint value, so "
+        assert guesses[port].spelling not in KNOWN_MINT_VALUES, (
+            f"{guesses[port].spelling} now has an analytic mint value, so "
             f"`ground_truth` no longer agrees with the boundary's `unminted` seed"
         )

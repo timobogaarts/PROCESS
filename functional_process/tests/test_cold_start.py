@@ -133,14 +133,14 @@ def test_process_s_cold_state_is_settled_far_below_every_disagreement(reports):
         unattributable = [
             d
             for d in report.real
-            if d.rel_diff <= floor and (name, d.var.path_str()) not in ACCEPTED
+            if d.rel_diff <= floor and (name, d.var.spelling) not in ACCEPTED
         ]
         assert not unattributable, (
             f"{name}: PROCESS's cold state moves by {report.state.drift:.2e} after "
             f"{EXTRA_PASSES} further passes, and these rows are not ten times above "
             f"that and carry no `ACCEPTED` reason, so they cannot be attributed to the "
             f"port -- read cold_start.py's docstring, question 3: "
-            + ", ".join(f"{d.var.path_str()} ({d.rel_diff:.2e})" for d in unattributable)
+            + ", ".join(f"{d.var.spelling} ({d.rel_diff:.2e})" for d in unattributable)
         )
 
 
@@ -185,7 +185,7 @@ def test_a_variable_process_s_solve_pass_never_writes_is_not_scored(reports):
         for d in report.output_pass_only:
             assert _area_field(d.var) not in report.state.written, name
     tokamak = reports["large_tokamak_eval.IN.DAT"]
-    assert {d.var.path_str() for d in tokamak.output_pass_only} == {
+    assert {d.var.spelling for d in tokamak.output_pass_only} == {
         ".physics.beta_mcdonald",
         ".physics.nu_star",
         ".physics.rho_star",
@@ -238,7 +238,7 @@ def test_the_reason_table_has_no_rows_that_no_longer_disagree(reports):
     entries fail this test, which is the point.
     """
     live = {
-        (name, d.var.path_str()) for name, report in reports.items() for d in report.real
+        (name, d.var.spelling) for name, report in reports.items() for d in report.real
     }
     assert set(ACCEPTED) == live, (
         "cold_start.ACCEPTED and the measured disagreements have diverged. Rows in "
@@ -362,7 +362,7 @@ def test_the_landed_stresscl_producer_closed_its_own_seven_rows(reports):
         "low_aspect_ratio_DEMO.IN.DAT",
         "large_tokamak_eval.IN.DAT",
     ):
-        off = {d.var.path_str() for d in reports[name].real}
+        off = {d.var.spelling for d in reports[name].real}
         for row in closed:
             assert row not in off, f"{name}: {row} disagrees again -- stresscl unwired?"
 
@@ -446,13 +446,13 @@ def test_the_stellarator_chain_is_process_s_own_other_arm(reports):
     converged point, from the other side.
     """
     stellarator = reports["stellarator_helias.IN.DAT"]
-    off = {d.var.path_str(): d for d in stellarator.real}
+    off = {d.var.spelling: d for d in stellarator.real}
     z = off[".build.z_tf_inside_half"]
     assert z.expected == pytest.approx(3.611990999471611, rel=1e-12)
     assert z.got == pytest.approx(5.513665371874896, rel=1e-12)
     # No tokamak shows it: `caller.py:272-275` never reaches `Stellarator.run`.
     for name in (TOKAMAK_NOF, TOKAMAK_EVAL):
         other = reports[Path(name).name]
-        assert ".build.z_tf_inside_half" not in {d.var.path_str() for d in other.real}, (
+        assert ".build.z_tf_inside_half" not in {d.var.spelling for d in other.real}, (
             name
         )

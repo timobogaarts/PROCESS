@@ -204,7 +204,7 @@ def test_a_declared_node_takes_its_nested_name_from_its_slot():
 
     for node_class in (Written, Declared):
         graph = to_graph(machine(node_class))
-        assert [n.path_str() for n in graph.nodes] == [
+        assert [n.spelling for n in graph.nodes] == [
             ".physics.greenwald_density_limit"
         ], node_class.__name__
 

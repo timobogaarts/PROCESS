@@ -28,8 +28,9 @@ import pytest
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
-from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
-from cottax.tools.path import path_map
+from cottax.spec import In, NodePath, Out, VarPath
+from cottax.nodes import ImplementedFunction
+from cottax.tools.path import PathMap
 from jax.tree_util import GetAttrKey
 
 from functional_process.cottax.visualization.grouping import (
@@ -77,7 +78,7 @@ _WIDE_READS = [V("g", "lean_out"), *_EXTERNAL, *_BACK]
 @pytest.fixture
 def fixture_graph() -> Graph:
     return Graph(
-        path_map({
+        PathMap({
             _LEAN: call([V("ext", "seed")], [V("g", "lean_out")]),
             _WIDE: call(_WIDE_READS, [V("g", "wide_a"), V("g", "wide_b")]),
             _SINK: call([V("g", "wide_a")], _BACK),
@@ -212,7 +213,7 @@ def test_a_diagonal_hover_with_many_ports_stops_and_says_how_many_are_left(page)
 
 def test_a_node_with_no_reads_says_none_rather_than_drawing_an_empty_block():
     """A source node -- every `initialisation.*` node in the real graph is one."""
-    graph = Graph(path_map({N("g", "src"): call([], [V("g", "out")])}))
+    graph = Graph(PathMap({N("g", "src"): call([], [V("g", "out")])}))
     page = str(
         render_grouped_dsm_html(
             Blocking.scc(graph), order=(N("g", "src"),), formatter=SPELLING

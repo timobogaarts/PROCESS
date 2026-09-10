@@ -958,8 +958,8 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
     read follows from the law, which is why `CONFINEMENT_SCALING` is keyed on
     `i_confinement_time` and not on `istell`.
     """
-    iss04 = [i.var.path_str() for i in Iss04ConfinementTime().inputs]
-    ipb98 = [i.var.path_str() for i in IterIpb98y2ConfinementTime().inputs]
+    iss04 = [i.var.spelling for i in Iss04ConfinementTime().inputs]
+    ipb98 = [i.var.spelling for i in IterIpb98y2ConfinementTime().inputs]
 
     assert ".stellarator.iotabar" in iss04
     assert ".physics.q95" not in iss04
@@ -983,9 +983,9 @@ def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
     built -- one read more, nothing else, and the same owned field either way, which is
     what makes them alternatives for one slot rather than two different nodes.
     """
-    ignited = [i.var.path_str() for i in PlasmaPowerLossIgnitedCoreRadiation().inputs]
+    ignited = [i.var.spelling for i in PlasmaPowerLossIgnitedCoreRadiation().inputs]
     non_ignited = [
-        i.var.path_str() for i in PlasmaPowerLossNonIgnitedCoreRadiation().inputs
+        i.var.spelling for i in PlasmaPowerLossNonIgnitedCoreRadiation().inputs
     ]
 
     assert set(non_ignited) - set(ignited) == {".current_drive.p_hcd_injected_total_mw"}

@@ -170,9 +170,9 @@ def _how_the_port_reads(name: str, graph) -> str:
             "a static kwarg (`sand.SWITCH_PARAMETER_NAMES`) -- read, outside the tree"
         )
     declared = {
-        var.path_str()
+        var.spelling
         for var in graph.variables
-        if var.keys and getattr(var.keys[-1], "name", None) == name
+        if var.segments and getattr(var.segments[-1], "name", None) == name
     }
     if declared:
         return (

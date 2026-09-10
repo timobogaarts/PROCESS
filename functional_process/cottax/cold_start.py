@@ -319,15 +319,15 @@ class ColdReport:
                 f"    still moving: .{area}.{name_} {was!r} -> {now!r} {rel:.2e}"
             )
         for d in sorted(self.real, key=lambda d: -d.rel_diff):
-            reason = ACCEPTED.get((name, d.var.path_str()))
+            reason = ACCEPTED.get((name, d.var.spelling))
             lines.append(
-                f"    {d.rel_diff:11.3e}  {d.var.path_str()}  got={d.got!r} "
+                f"    {d.rel_diff:11.3e}  {d.var.spelling}  got={d.got!r} "
                 f"expected={d.expected!r}{d.where}"
                 + ("" if reason else "   <-- NO REASON PINNED")
             )
         for d in sorted(self.output_pass_only, key=lambda d: -d.rel_diff):
             lines.append(
-                f"    (output-pass-only) {d.var.path_str()} port={d.got!r} "
+                f"    (output-pass-only) {d.var.spelling} port={d.got!r} "
                 f"PROCESS's solve pass leaves {d.expected!r}"
             )
         return "\n".join(lines)
@@ -355,7 +355,7 @@ def cold_report(input_file: str, state: ColdState | None = None) -> ColdReport:
 
 def _area_field(var) -> tuple[str, str] | None:
     """`(area, field)` for a plain `.area.field` `VarPath`, `None` for anything else."""
-    keys = var.path_str().lstrip(".").split(".")
+    keys = var.spelling.lstrip(".").split(".")
     return (keys[0], keys[1]) if len(keys) == 2 and "[" not in keys[1] else None
 
 
@@ -861,9 +861,9 @@ def check_reasons(report: ColdReport) -> tuple[str, ...]:
     name = os.path.basename(report.input_file)
     return tuple(
         sorted({
-            d.var.path_str()
+            d.var.spelling
             for d in report.real
-            if (name, d.var.path_str()) not in ACCEPTED
+            if (name, d.var.spelling) not in ACCEPTED
         })
     )
 
@@ -878,9 +878,9 @@ def rows(report: ColdReport) -> tuple[str, ...]:
         f"{name} agree {report.comparison.agreements}",
         f"{name} errors {len(report.comparison.errors)}",
     ]
-    lines += sorted(f"{name} off {d.var.path_str()}" for d in report.real)
+    lines += sorted(f"{name} off {d.var.spelling}" for d in report.real)
     lines += sorted(
-        f"{name} nocompare {d.var.path_str()}" for d in report.output_pass_only
+        f"{name} nocompare {d.var.spelling}" for d in report.output_pass_only
     )
     return tuple(lines)
 

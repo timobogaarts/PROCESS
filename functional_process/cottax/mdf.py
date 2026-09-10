@@ -28,7 +28,7 @@ from cottax.problem import (
     Steps,
 )
 from cottax.spec import In, NodePath, Out, VarPath
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
 
@@ -92,7 +92,7 @@ def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=(
             graph, objective_selection(i_figure_merit), switch_values
         )
         nodes.update(objective_built)
-    inserted = (Plan(graph) + Insert(path_map(nodes.items()))).graph
+    inserted = (Plan(graph) + Insert(PathMap(nodes.items()))).graph
     return (
         inserted,
         ((objective,) if objective is not None else ()) + (*equalities, *inequalities),
@@ -159,7 +159,7 @@ def assemble(
     missing = [d for d in design if d not in eager.inputs]
     if missing:
         raise ValueError(
-            f"design variable(s) {[d.path_str() for d in missing]} are not boundary "
+            f"design variable(s) {[d.spelling for d in missing]} are not boundary "
             f"inputs of the MDA graph -- a node already produces them, so the optimiser "
             f"cannot own them (see `sand.optimise_graph` on the same conflict)"
         )
@@ -268,11 +268,11 @@ class MdfConditionMap(ConditionMap):
         if len(design) != len(self.unknowns):
             raise TypeError(
                 f"MDF condition map takes {len(self.unknowns)} design variable(s) "
-                f"({', '.join(v.path_str() for v in self.unknowns)}), got {len(design)}"
+                f"({', '.join(v.spelling for v in self.unknowns)}), got {len(design)}"
             )
         env = dict(self.context)
         env.update(zip(self.unknowns, design, strict=True))
-        at = self.schedule.run(path_map(env))
+        at = self.schedule.run(PathMap(env))
         return tuple(at[condition] for condition in self.conditions)
 
 
@@ -305,7 +305,7 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
         unknowns=mdf.design,
         conditions=mdf.conditions,
         roles=roles,
-        context=path_map(context.items()),
+        context=PathMap(context.items()),
         schedule=mdf.traceable if traceable else mdf.eager,
     )
 
@@ -339,7 +339,7 @@ class MdfNewtonDriver(SeededNewtonDriver):
         if start is None:
             raise ValueError(
                 f"MdfNewtonDriver needs a starting value for every design variable "
-                f"({', '.join(v.path_str() for v in conditions.unknowns)})"
+                f"({', '.join(v.spelling for v in conditions.unknowns)})"
             )
         flat_guess, unravel = ravel_pytree(start)
 
@@ -635,7 +635,7 @@ def in_graph_root_find(
             f"{place!r} is already a node of this graph -- pass `place` to bind the "
             f"root find somewhere else"
         )
-    with_problem = (Plan(mdf.graph) + Insert(path_map([(place, node)]))).graph
+    with_problem = (Plan(mdf.graph) + Insert(PathMap([(place, node)]))).graph
     drivers = default_drivers(with_problem)
     if traceable:
         drivers = traceable_drivers(drivers)
@@ -672,7 +672,7 @@ def in_graph_inputs(built: InGraphRootFind, env):
     if missing:
         raise KeyError(
             f"no value for schedule input(s) "
-            f"{[v.path_str() for v in missing]} -- `seed` then `prime` is what fills "
+            f"{[v.spelling for v in missing]} -- `seed` then `prime` is what fills "
             f"this env, and a `^guess.*` port is filled from the unknown it starts"
         )
     return out
@@ -696,7 +696,7 @@ def in_graph_solve(built: InGraphRootFind, env, whole=None):
     else:
         # The walk computes the same values by the same nodes in the same order -- it is
         # the cost that differs, not the answer (`_audit/in_graph_rootfind.md` §6).
-        out = dict(built.schedule.run(path_map(inputs)))
+        out = dict(built.schedule.run(PathMap(inputs)))
     return (
         tuple(out[var] for var in built.design),
         out,

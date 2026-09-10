@@ -48,9 +48,9 @@ to it."""
 def category(var: VarPath) -> str:
     """Which kind of boundary entry `var` is -- see this module's docstring."""
     if is_minted(var):
-        if var.keys[0] == GUESS:
+        if var.segments[0] == GUESS:
             return GUESSED
-        if var.keys[0] == STATED_MINT:
+        if var.segments[0] == STATED_MINT:
             return STATED
     return INPUT
 
@@ -60,7 +60,7 @@ def boundary(graph: Graph) -> tuple[tuple[str, VarPath], ...]:
     return tuple(
         sorted(
             ((category(v), v) for v in graph.unowned_inputs),
-            key=lambda row: (row[0], row[1].path_str()),
+            key=lambda row: (row[0], row[1].spelling),
         )
     )
 
@@ -77,8 +77,8 @@ def check_boundary(graph: Graph, allowed: Iterable[VarPath], pin: str = PIN) -> 
     if not orphans:
         return
     lines = [
-        f"  {kind:5} {var.path_str()}  <- read by "
-        + ", ".join(name.path_str() for name in readers_of(graph, var))
+        f"  {kind:5} {var.spelling}  <- read by "
+        + ", ".join(name.spelling for name in readers_of(graph, var))
         for kind, var in orphans
     ]
     inputs = sum(1 for kind, _ in orphans if kind == INPUT)
@@ -114,7 +114,7 @@ def unproduced_but_computed(
     for kind, var in boundary(graph):
         if kind != INPUT or var in design:
             continue
-        keys = var.path_str().lstrip(".").split(".")
+        keys = var.spelling.lstrip(".").split(".")
         if len(keys) == 2 and (keys[0], keys[1]) in computed:
             found.append(var)
     return tuple(found)
@@ -153,7 +153,7 @@ def frozen_reads(
     outside = _frozen(graph, design)
     return tuple(
         sorted(
-            (v for v in graph[name].reads if v in outside), key=lambda v: v.path_str()
+            (v for v in graph[name].reads if v in outside), key=lambda v: v.spelling
         )
     )
 
@@ -202,9 +202,9 @@ def refuse_inert_conditions(
     if not inert:
         return
     lines = [
-        f"  {row.node.path_str()}  ({row.condition.path_str()})  "
+        f"  {row.node.spelling}  ({row.condition.spelling})  "
         f"{len(row.frozen)} of its {row.operands} operand(s) frozen"
-        + (": " + ", ".join(v.path_str() for v in row.frozen) if row.frozen else "")
+        + (": " + ", ".join(v.spelling for v in row.frozen) if row.frozen else "")
         + f"; {row.cone} boundary input(s) in its cone"
         for row in inert
     ]
@@ -241,7 +241,7 @@ def orphaned_by(base: Graph, swapped: Graph) -> tuple[VarPath, ...]:
     return tuple(
         sorted(
             (var for var in swapped.unowned_inputs if var in base.owners),
-            key=lambda v: v.path_str(),
+            key=lambda v: v.spelling,
         )
     )
 
@@ -259,7 +259,7 @@ def write_pin(graph: Graph, path: str = PIN) -> tuple[tuple[str, VarPath], ...]:
             "functional_process/cottax/boundary.py.\n"
         )
         for kind, var in rows:
-            handle.write(f"{kind} {var.path_str()}\n")
+            handle.write(f"{kind} {var.spelling}\n")
     return rows
 
 
@@ -274,7 +274,7 @@ def missing_producers(input_file: str = MISSING_PRODUCERS_INPUT_FILE) -> tuple[s
     design = {iteration_variable_path(i) for i in reference_run(input_file).ixc}
     computed = computed_by_process(input_file)
     return tuple(
-        var.path_str() for var in unproduced_but_computed(graph, computed, design)
+        var.spelling for var in unproduced_but_computed(graph, computed, design)
     )
 
 
@@ -387,9 +387,9 @@ def _main_inert(argv: list[str]) -> int:
         for label, found in (("", rows), ("reported-only ", loose)):
             for row in found:
                 print(
-                    f"    {label}{row.node.path_str():16} {len(row.frozen)}/"
+                    f"    {label}{row.node.spelling:16} {len(row.frozen)}/"
                     f"{row.operands} operand(s) frozen, {row.cone} in cone: "
-                    + ", ".join(v.path_str() for v in row.frozen)
+                    + ", ".join(v.spelling for v in row.frozen)
                 )
     return 1 if total else 0
 
@@ -422,10 +422,10 @@ def _main(argv: list[str]) -> int:
     )
     check_boundary(
         driven,
-        {v for _, v in rows if v.path_str() in {name for _, name in pinned}},
+        {v for _, v in rows if v.spelling in {name for _, name in pinned}},
         pin=pin,
     )
-    gone = {name for _, name in pinned} - {v.path_str() for _, v in rows}
+    gone = {name for _, name in pinned} - {v.spelling for _, v in rows}
     if gone:
         print(
             f"{len(gone)} pinned read(s) no longer on the boundary -- a producer "

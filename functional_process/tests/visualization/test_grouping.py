@@ -16,9 +16,10 @@ import pytest
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
-from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
+from cottax.spec import In, NodePath, Out, VarPath
+from cottax.nodes import ImplementedFunction
 from cottax.tools.minting import MintKey
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 from jax.tree_util import DictKey, GetAttrKey
 
 from functional_process.cottax.visualization.grouping import (
@@ -124,7 +125,7 @@ def test_a_name_minted_over_a_variable_place_is_ungrouped():
     assert group_of(minted, among=[]) == UNGROUPED
     # The other half of the rule: a name minted over a node that *is* there keeps its
     # group, so a block's problem sits beside its block.
-    assert group_of(NodePath((MintKey("problem"), *real.keys)), among=[real]) == (
+    assert group_of(NodePath((MintKey("problem"), *real.segments)), among=[real]) == (
         "physics",
     )
     # Nothing to ask: the prefix is read as written. Pinned so the fallback is
@@ -169,7 +170,7 @@ def test_a_name_minted_over_a_variable_place_falls_back_to_its_owner_s_group():
     ))
 
     graph = Graph(
-        path_map({
+        PathMap({
             divertor: call([], [f_ster]),
             fusion_rates: call([], [proton]),
             fusion_totals: call([], [fusden]),
@@ -217,7 +218,7 @@ def coupled():
     them has missed.
     """
     return Graph(
-        path_map({
+        PathMap({
             N("a", "p"): call([V("r")], [V("p")]),
             N("b", "q"): call([V("p")], [V("q")]),
             N("a", "r"): call([V("q")], [V("r")]),
@@ -287,7 +288,7 @@ also the tie that the fallback to declaration order has to break.
 
 @pytest.fixture
 def layered():
-    return Graph(path_map(dict(_LAYERED)))
+    return Graph(PathMap(dict(_LAYERED)))
 
 
 def test_the_dependency_axis_puts_a_sink_group_last(layered):
@@ -329,7 +330,7 @@ def test_the_tie_break_is_declaration_order_and_is_stable(layered):
     added node reads `a` and is in `m`, so it adds no group edge that was not there.
     """
     assert dependency_group_sequence(layered) == dependency_group_sequence(layered)
-    grown = Graph(path_map({**_LAYERED, N("m", "extra"): call([V("a")], [V("extra")])}))
+    grown = Graph(PathMap({**_LAYERED, N("m", "extra"): call([V("a")], [V("extra")])}))
     assert dependency_group_sequence(grown) == dependency_group_sequence(layered)
 
 
@@ -344,7 +345,7 @@ def test_mutually_dependent_groups_collapse_into_one_scc():
     ahead of the sink `z` that reads it.
     """
     mutual = Graph(
-        path_map({
+        PathMap({
             N("z", "sink"): call([V("q")], [V("z")]),
             N("a", "p"): call([V("r")], [V("p")]),
             N("b", "q"): call([V("p")], [V("q")]),
@@ -394,7 +395,7 @@ def test_a_minted_problem_beside_its_node_is_not_coupling():
     feedback loop, which is § 11's reason for saying "SCCs with more than one real node".
     """
     graph = Graph(
-        path_map({
+        PathMap({
             N("g", "x"): call([V("u")], [V("c")]),
             M("problem", "g", "x"): call([V("c")], [V("u")]),
         })
@@ -407,7 +408,7 @@ def test_a_minted_problem_beside_its_node_is_not_coupling():
 
 def test_an_ungrouped_member_does_not_make_a_block_cross():
     graph = Graph(
-        path_map({
+        PathMap({
             N("g", "x"): call([V("u")], [V("c")]),
             N("g", "y"): call([V("c")], [V("d")]),
             N("loose"): call([V("d")], [V("u")]),
@@ -532,7 +533,7 @@ def nested():
     `depth=1` it vanishes entirely, which is also false.
     """
     return Graph(
-        path_map({
+        PathMap({
             N("p", "x"): call([V("c")], [V("a")]),
             N("p", "q", "y"): call([V("a")], [V("b")]),
             N("p", "q", "r", "z"): call([V("b")], [V("c")]),

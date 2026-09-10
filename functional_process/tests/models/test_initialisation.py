@@ -281,9 +281,9 @@ def test_the_seed_owned_field_list_covers_every_output_these_nodes_declare():
     for input_file in CONFIGURATIONS:
         graph = graph_for(machine_from_indat(input_file))
         for path, node in graph.definitions.items():
-            if not path.path_str().startswith(".initialisation"):
+            if not path.spelling.startswith(".initialisation"):
                 continue
-            owned |= {out.var.path_str().rsplit(".", 1)[-1] for out in node.outputs}
+            owned |= {out.var.spelling.rsplit(".", 1)[-1] for out in node.outputs}
     assert owned <= set(indat.SEED_OWNED_FIELDS), owned - set(indat.SEED_OWNED_FIELDS)
     # And nothing in the list is dead: every name is a field some machine's seed nodes
     # actually own, across the seven.

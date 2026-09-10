@@ -145,8 +145,8 @@ def test_the_summary_names_value_and_derivative_separately():
         )
     summary = raised.value.summary
     assert "0/2 non-finite in VALUE (none)" in summary  # must not imply one that is not
-    assert f"1/2 non-finite in DERIVATIVE ({f.path_str()})" in summary
-    assert f"1 unknown(s) with an all-zero column ({y.path_str()})" in summary
+    assert f"1/2 non-finite in DERIVATIVE ({f.spelling})" in summary
+    assert f"1 unknown(s) with an all-zero column ({y.spelling})" in summary
 
 
 def test_a_cell_with_no_measurement_is_a_dash():

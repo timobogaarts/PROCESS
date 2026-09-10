@@ -69,7 +69,7 @@ def _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(graph, machine):
     profile arm needs a third density cut.
     """
     for cycle in graph.cycles:
-        names = {n.path_str() for n in cycle}
+        names = {n.spelling for n in cycle}
         if any(n.startswith("^problem") for n in names):
             continue  # already a declared block, not a raw cycle to cut
         sub = graph.subgraph(cycle)
@@ -80,13 +80,13 @@ def _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(graph, machine):
         )
         assert _cut_all(sub, cutting_vars).is_acyclic, (
             f"[{machine}] cycle {sorted(names)} is still cyclic after cutting "
-            f"{[v.path_str() for v in cutting_vars]}"
+            f"{[v.spelling for v in cutting_vars]}"
         )
         for dropped in cutting_vars:
             rest = [v for v in cutting_vars if v != dropped]
             without = _cut_all(sub, rest)
             assert without is None or not without.is_acyclic, (
-                f"[{machine}] {dropped.path_str()} is redundant: cycle {sorted(names)} "
+                f"[{machine}] {dropped.spelling} is redundant: cycle {sorted(names)} "
                 f"is already acyclic without it, so it should not be in CUTS"
             )
 
@@ -136,7 +136,7 @@ def test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale()
     (cycle,) = [
         c
         for c in graph.cycles
-        if {n.path_str() for n in c}
+        if {n.spelling for n in c}
         == {
             ".tokamak.build.tf_outboard_mid",
             ".tokamak.build.wp_conductor_max_width",
@@ -155,7 +155,7 @@ def test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale()
         if not readers:
             continue
         if Cut(var=var, readers=readers).apply(sub).is_acyclic:
-            sufficient.add(var.path_str())
+            sufficient.add(var.spelling)
     assert sufficient == {
         ".superconducting_tfcoil.tan_theta_coil",
         ".tfcoil.dx_tf_wp_primary_toroidal",
@@ -164,7 +164,7 @@ def test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale()
     }
 
     # ... and the one `CUTS` picks out of those four is the stale-read edge.
-    chosen = [v.path_str() for v in CUTS if v in sub.owners]
+    chosen = [v.spelling for v in CUTS if v in sub.owners]
     assert chosen == [".tfcoil.dx_tf_wp_primary_toroidal"]
     # Minimal, i.e. not vacuous: without it the cycle is still a cycle.
     assert not sub.is_acyclic
@@ -190,19 +190,19 @@ def test_the_tokamak_density_cycle_is_cut_at_the_variable_process_bootstraps():
     (cycle,) = [
         c
         for c in graph.cycles
-        if any(n.path_str() == ".physics.profiles.density_profile" for n in c)
-        and not any(n.path_str().startswith("^problem") for n in c)
+        if any(n.spelling == ".physics.profiles.density_profile" for n in c)
+        and not any(n.spelling.startswith("^problem") for n in c)
     ]
     sub = graph.subgraph(cycle)
     shared = {".physics.proton_rate_density", ".physics.fusden_alpha_total"}
-    first_two = [v for v in CUTS if v.path_str() in shared]
+    first_two = [v for v in CUTS if v.spelling in shared]
     partial = _cut_all(sub, first_two)
     assert not partial.is_acyclic, (
         "the stellarator's two density cuts already break the tokamak's cycle -- the "
         "third cut would be redundant and belongs out of CUTS"
     )
     finishes = {
-        v.path_str()
+        v.spelling
         for v in sub.owners
         if v not in first_two and (g := _cut_all(sub, [*first_two, v])) and g.is_acyclic
     }
@@ -212,7 +212,7 @@ def test_the_tokamak_density_cycle_is_cut_at_the_variable_process_bootstraps():
         ".physics.nd_plasma_electron_profile",
         ".physics.nd_plasma_ions_total_vol_avg",
     }
-    chosen = [v.path_str() for v in CUTS if v in sub.owners]
+    chosen = [v.spelling for v in CUTS if v in sub.owners]
     assert chosen[2:] == [".physics.f_temp_plasma_electron_density_vol_avg"]
 
 
@@ -240,7 +240,7 @@ def test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts():
     (cycle,) = [
         c
         for c in graph.cycles
-        if {n.path_str() for n in c}
+        if {n.spelling for n in c}
         == {
             ".tokamak.cs_coil.flux_swing",
             ".tokamak.pf_coil.inductance",
@@ -258,14 +258,14 @@ def test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts():
     candidates = [v for v in sub.owners if sub.closing_readers(v)]
     assert len(candidates) == 18
     sufficient_single = {
-        v.path_str()
+        v.spelling
         for v in candidates
         if Cut(var=v, readers=sub.closing_readers(v)).apply(sub).is_acyclic
     }
     assert sufficient_single == set()
 
     chosen = [v for v in CUTS if v in sub.owners]
-    assert [v.path_str() for v in chosen] == [
+    assert [v.spelling for v in chosen] == [
         ".times.t_plant_pulse_burn",
         ".pf_coil.ind_pf_cs_plasma_mutual",
         ".pf_coil.n_pf_coil_turns",
@@ -276,7 +276,7 @@ def test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts():
     for dropped in chosen:
         rest = [v for v in chosen if v != dropped]
         without = _cut_all(sub, rest)
-        assert without is None or not without.is_acyclic, dropped.path_str()
+        assert without is None or not without.is_acyclic, dropped.spelling
 
     # And the whole tokamak graph is runnable with the cuts -- every cyclic block
     # declares a problem and carries a driver.
@@ -311,10 +311,10 @@ def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
         # t_plant_pulse_burn` legitimately IS one on the stellarator (`PulseDurations`
         # reads it, nothing produces it, and the pin records it as `input`).
         assert not any(
-            name in v.path_str() and v.path_str().startswith("^guess")
+            name in v.spelling and v.spelling.startswith("^guess")
             for v in graph.unowned_inputs
         ), name
-        assert not any(name in p.path_str() for p in graph.declared), name
+        assert not any(name in p.spelling for p in graph.declared), name
 
 
 def test_driven_graph_has_no_raw_cycles_left():
@@ -384,9 +384,9 @@ def test_every_root_find_unknown_has_a_starting_guess_that_does_not_need_data():
         # A `Supply`-ed start is a `Start` port the graph owns -- `starts_for` filters
         # exactly those out, since there is nothing left for a caller to seed.
         supplied = {u for u, _ in starts_for(graph, problem)} != set(unknowns)
-        assert supplied or any(u.path_str() in ROOT_FIND_SEEDS for u in unknowns), (
-            f"{problem.path_str()} solves for "
-            f"{[u.path_str() for u in unknowns]}: no `Start` is supplied by a node and "
+        assert supplied or any(u.spelling in ROOT_FIND_SEEDS for u in unknowns), (
+            f"{problem.spelling} solves for "
+            f"{[u.spelling for u in unknowns]}: no `Start` is supplied by a node and "
             f"none has a `ROOT_FIND_SEEDS` entry -- it would fail from a cold start"
         )
 
@@ -400,13 +400,13 @@ def test_the_intersect_start_is_supplied_by_the_winding_pack_occupant():
     (problem,) = [
         name
         for name in graph.declared
-        if name.path_str() == "^problem.stellarator.coils.intersect"
+        if name.spelling == "^problem.stellarator.coils.intersect"
     ]
     starts = driver_vars(graph[problem], Start)
-    assert [s.path_str() for s in starts] == [".stellarator.wp_width_r_min_guess"]
+    assert [s.spelling for s in starts] == [".stellarator.wp_width_r_min_guess"]
     assert starts[0] in graph.owners
     assert not any(
-        v.path_str().startswith("^guess.stellarator.wp_width_r_min")
+        v.spelling.startswith("^guess.stellarator.wp_width_r_min")
         for v in graph.unowned_inputs
     )
 
@@ -432,7 +432,7 @@ def test_every_superconductor_schedules_and_only_bi2212_keeps_its_guess():
         at_boundary = [
             v
             for v in graph.unowned_inputs
-            if v.path_str() == "^guess.stellarator.wp_width_r_min"
+            if v.spelling == "^guess.stellarator.wp_width_r_min"
         ]
         assert bool(at_boundary) == (material is SuperconductorModel.BI2212), material
 

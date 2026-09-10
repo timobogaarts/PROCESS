@@ -15,7 +15,7 @@ from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.problem import Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
-from cottax.tools.path import path_map
+from cottax.tools.path import PathMap
 
 from functional_process.cottax.core.solver.drivers import (
     PicardDriver,
@@ -156,7 +156,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
         for name, (area, value) in reads.items()
     })
 
-    out = schedule.run(path_map(env))
+    out = schedule.run(PathMap(env))
 
     got = out[vpath(power.delta_eta)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)
@@ -246,7 +246,7 @@ def test_an_objective_row_of_zeros_is_refused_and_the_message_says_why():
     message = str(caught.value)
     assert "feasibility" in message
     assert "MISSING PRODUCER" in message
-    assert vpath(toy.u).path_str() in message  # the design variables, named
+    assert vpath(toy.u).spelling in message  # the design variables, named
 
 
 def test_other_zero_rows_are_named_and_not_refused_on():
@@ -257,8 +257,8 @@ def test_other_zero_rows_are_named_and_not_refused_on():
     _refuse_inert_objective([[1.0, 0.0], [0.0, 0.0], [1.0, 1.0]], _rows())
     with pytest.raises(ValueError, match=r"identically zero gradient") as caught:
         _refuse_inert_objective([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0]], _rows())
-    assert vpath(toy.c1).path_str() in str(caught.value)
-    assert vpath(toy.c2).path_str() not in str(caught.value)
+    assert vpath(toy.c1).spelling in str(caught.value)
+    assert vpath(toy.c2).spelling not in str(caught.value)
 
 
 def test_an_empty_jacobian_is_not_refused():

@@ -38,8 +38,9 @@ from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import is_feasibility, is_root_find
 from cottax.rewrites import Assign
-from cottax.spec import Implemented, NodePath
-from cottax.tools.path import path_map
+from cottax.spec import NodePath
+from cottax.nodes import Implemented
+from cottax.tools.path import PathMap
 from jax.tree_util import DictKey
 
 from functional_process.cottax._harness import (
@@ -296,7 +297,7 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
 
     for sample in _duct_diameter_samples():
         kw = sample.kwargs
-        out = schedule.run(path_map(_duct_diameter_env(kw)))
+        out = schedule.run(PathMap(_duct_diameter_env(kw)))
         expected = solve_duct_diameter(
             kw["l1"], kw["l2"], kw["l3"], kw["xmult_i"], kw["ceff_i"]
         )
@@ -317,7 +318,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
     kw = sample.kwargs
-    out = schedule.run(path_map(_duct_diameter_env(kw)))
+    out = schedule.run(PathMap(_duct_diameter_env(kw)))
     residual = duct_diameter_residual(out[vpath(".vacuum.d_duct")], **kw)
     assert abs(float(residual)) < 1e-8
 
@@ -359,7 +360,7 @@ def test_duct_feasibility_forms_one_combined_cycle_with_the_root_find():
     assert len(graph.definitions) == 4
     assert not graph.is_acyclic
     (cycle,) = graph.cycles
-    assert {n.path_str() for n in cycle} == {
+    assert {n.spelling for n in cycle} == {
         "['DuctFeasibility']",
         "['DuctFeasibilityConditions']",
         "['DuctDiameterRootFind']",
@@ -459,7 +460,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     joined = DuctFeasibility + root_find_problem
 
     body = graph.runnable  # every plain node, problem nodes dropped
-    merged = Graph(path_map({**dict(body.definitions), name: joined}))
+    merged = Graph(PathMap({**dict(body.definitions), name: joined}))
 
     schedule = Schedule(
         Blocking.scc(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
@@ -472,7 +473,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
         vpath(".vacuum.a1max"): a1max,
         vpath(".vacuum.s_i"): s_i,
     }
-    out = schedule.run(path_map(env))
+    out = schedule.run(PathMap(env))
 
     d_duct = out[vpath(".vacuum.d_duct")]
     ceff_i = out[vpath(".vacuum.ceff_i")]
