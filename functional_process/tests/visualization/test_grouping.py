@@ -18,8 +18,8 @@ from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
 from cottax.spec import In, NodePath, Out, VarPath
 from cottax.nodes import ImplementedFunction
-from cottax.tools.minting import MintKey
-from cottax.tools.path import PathMap
+from cottax.names import MintKey
+from cottax.names import PathMap
 from jax.tree_util import DictKey, GetAttrKey
 
 from functional_process.cottax.visualization.grouping import (

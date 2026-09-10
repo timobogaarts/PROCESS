@@ -53,8 +53,6 @@ class IonElectronEquilibration(ExplicitFunction):
 class AuxiliaryPhysicsQuantities(ExplicitFunction):
     """cottax node: `phyaux`, ports declared."""
 
-    sbar: float = 1.0
-
     burnup = OutputInto(physics)
     figmer = OutputInto(physics)
     fusrat = OutputInto(physics)
@@ -82,7 +80,7 @@ class AuxiliaryPhysicsQuantities(ExplicitFunction):
             fusden_total,
             fusden_alpha_total,
             plasma_current,
-            self.sbar,
+            1.0,        # `sbar`: fixed at 1.0 in PROCESS, and never varied here
             nd_plasma_alphas_thermal_vol_avg,
             t_energy_confinement,
             vol_plasma,

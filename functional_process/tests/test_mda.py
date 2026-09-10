@@ -10,8 +10,8 @@ runnable."
 """
 
 import equinox as eqx
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import Driven, FixedPoint, RootFind, Start, driver_vars
 from cottax.rewrites import Cut
@@ -314,7 +314,7 @@ def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
             name in v.spelling and v.spelling.startswith("^guess")
             for v in graph.unowned_inputs
         ), name
-        assert not any(name in p.spelling for p in graph.declared), name
+        assert not any(name in p.spelling for p in declared(graph)), name
 
 
 def test_driven_graph_has_no_raw_cycles_left():
@@ -399,7 +399,7 @@ def test_the_intersect_start_is_supplied_by_the_winding_pack_occupant():
     graph = driven_graph()
     (problem,) = [
         name
-        for name in graph.declared
+        for name in declared(graph)
         if name.spelling == "^problem.stellarator.coils.intersect"
     ]
     starts = driver_vars(graph[problem], Start)

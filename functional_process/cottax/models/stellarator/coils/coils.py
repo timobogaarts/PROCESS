@@ -3,7 +3,7 @@
 import jax  # noqa: F401
 import jax.numpy as jnp
 import optimistix as optx  # noqa: F401
-from cottax.evaluate import (
+from cottax.evaluation.schedule import (
     AbstractDriver,
     ConditionMap,
 )

@@ -13,7 +13,7 @@ import inspect
 
 import numpy as np
 from cottax.graph import Graph
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 
 from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
 from functional_process.cottax.indat import (

@@ -5,13 +5,13 @@ from types import MappingProxyType
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, declared, problem
+from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 
 from functional_process.cottax._harness import (
     Sample,
@@ -469,8 +469,8 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     graph = to_graph(node)
     assert len(graph.definitions) == 2
     assert not graph.is_acyclic
-    assert graph.declared == (node.problem_name,)
-    assert shape_of(graph[graph.problem]) == "root-find"
+    assert declared(graph) == (node.problem_name,)
+    assert shape_of(graph[problem(graph)]) == "root-find"
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():

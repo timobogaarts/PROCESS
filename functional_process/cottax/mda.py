@@ -1,7 +1,7 @@
 """Turning `indat.GRAPH` into something that can actually be run."""
 
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.problem import (
     Driven,
@@ -17,7 +17,7 @@ from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
 from cottax.nodes import ConditionNode
-from cottax.tools.path import PathMap, written
+from cottax.names import PathMap, written
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
 
@@ -63,7 +63,7 @@ def cut_graph(graph=GRAPH):
     # had rather than ones a sibling cut already moved.
     by_cycle: dict = {}
     cycles = [frozenset(c) for c in graph.cycles]
-    declared = frozenset(graph.declared)
+    statements = frozenset(declared(graph))
     for var in CUTS:
         if var not in graph.owners:
             # Not produced in this configuration at all -- `closing_readers` refuses
@@ -78,7 +78,7 @@ def cut_graph(graph=GRAPH):
             continue  # this cycle does not exist in this configuration
         owner = graph.owners[var]
         key = next((i for i, c in enumerate(cycles) if owner in c), var)
-        if key is not var and any(n in declared for n in cycles[key]):
+        if key is not var and any(n in statements for n in cycles[key]):
             # **The SCC already declares its own problem, so it needs no cut.**
             # `Blocking` allows a block exactly one problem -- *"one driver answers one
             # problem, so `Combine` them into a single problem over every unknown, or
@@ -117,7 +117,7 @@ def cut_graph(graph=GRAPH):
 
     # Every problem gets `Start` ports, one per unknown, read from `^guess.<place>`.
     #
-    # `cottax.evaluate.AbstractDriver` takes its starting values as *declared driver
+    # `cottax.evaluation.schedule.AbstractDriver` takes its starting values as *declared driver
     # data* rather than reading them off the unknowns' own names: `Drive.role_data`
     # walks the driver's `requires` and looks up the ports the problem declares, and
     # `Drive.__check_init__` refuses both directions -- a driver requiring a kind the
@@ -161,7 +161,7 @@ def guess_sources(graph) -> dict:
     """`{guess_port: unknown}` over every problem in `graph`."""
     return {
         guess: unknown
-        for problem in graph.declared
+        for problem in declared(graph)
         for unknown, guess in starts_for(graph, problem)
     }
 
@@ -182,7 +182,7 @@ GIVEN_STARTS = {
 
 def given_start(unknown, fallback):
     """`GIVEN_STARTS`' value for `unknown`, shaped like `fallback`, or `fallback`."""
-    from cottax.tools.minting import unminted  # noqa: PLC0415
+    from cottax.names import unminted  # noqa: PLC0415
 
     # Keyed on the **quantity**, not on the minted copy. A `FixedPointCut`'s unknown is
     # `^hat.pf_coil.n_pf_coil_turns`; the number PROCESS writes is for
@@ -238,7 +238,7 @@ def driven_graph(graph=GRAPH, **driver_options):
 
 def supply_starts(graph: Graph) -> Graph:
     """Point every `Start` port `SUPPLIED_STARTS` names at the node that computes it."""
-    for problem in tuple(graph.declared):
+    for problem in tuple(declared(graph)):
         node = graph[problem]
         if not isinstance(node, Driven):
             continue

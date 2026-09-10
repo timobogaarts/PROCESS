@@ -11,11 +11,11 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Schedule
 from cottax.plan import Delete
-from cottax.tools.minting import unminted
-from cottax.tools.path import PathMap
+from cottax.names import unminted
+from cottax.names import PathMap
 from cottax.tools.pytree import get_at
 
 from functional_process.cottax._harness.finite_difference import fd_gradient_with_error
@@ -274,7 +274,7 @@ def _schedule_runners(schedule, fuse_upstream=True):
     """`schedule.steps` as `Env -> Env` callables: every undriven group one jit, every
     driver eager.
     """
-    from cottax.evaluate import Drive  # noqa: PLC0415, Schedule
+    from cottax.evaluation.schedule import Drive  # noqa: PLC0415, Schedule
 
     upstream_group = _jitted_group if fuse_upstream else _eager_group
     runners, group = [], []
@@ -322,7 +322,7 @@ def _jitted_group(steps):
 
 def _driven_runner(step, fuse_upstream=True):
     """`Drive.__call__`, with the body's re-run jitted and the driver left eager."""
-    from cottax.evaluate import Schedule  # noqa: PLC0415
+    from cottax.evaluation.schedule import Schedule  # noqa: PLC0415
 
     body = (
         (lambda env: run_schedule(step.body, env, fuse_upstream=fuse_upstream))
@@ -335,7 +335,7 @@ def _driven_runner(step, fuse_upstream=True):
         # **`Drive.__call__`'s own contract, and this used to get it wrong.** A driver
         # returns one value per unknown *and then* one per kind in `driver.reports`
         # (`cottax.problem.AbstractDriver.__call__`), which `Drive` binds as
-        # `self.unknowns + self.reports` (`cottax.evaluate.Drive.__call__`). This
+        # `self.unknowns + self.reports` (`cottax.evaluation.schedule.Drive.__call__`). This
         # re-implementation checked and bound `step.unknowns` alone, which was invisible
         # only because every driver reaching it reported nothing. The moment
         # `VmconDriver` gained `(Steps, Converged, Status)` it became a spurious
@@ -389,7 +389,7 @@ def mda_env(reference, graph=None, data=None):
     # grounded from the unknown it starts (`guess_sources`); there is nothing in `data`
     # spelled `^guess.*`.
     #
-    # `cottax.boundary.seeds` answers the same question a different way -- it maps a
+    # `cottax.evaluation.boundary.seeds` answers the same question a different way -- it maps a
     # `Start` port to `unminted(port)`, the place in the caller's structure, where
     # `guess_sources` maps it to the *unknown*, which for a `FixedPointCut` is the
     # minted copy `^hat.X`. On this graph the two disagree by name on three of five
@@ -427,7 +427,7 @@ def assemble(reference, driven, env, omit=(), switch_values=None, keep=()):
     array_valued = tuple(
         p
         for p in array_valued_problems(
-            driven, env, tuple(p for p in driven.declared if p not in set(degenerate))
+            driven, env, tuple(p for p in declared(driven) if p not in set(degenerate))
         )
         if p not in keep
     )

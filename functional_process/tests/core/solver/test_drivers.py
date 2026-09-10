@@ -3,19 +3,19 @@
 Two levels: a synthetic contraction mapping (exact, hand-computable fixed point --
 proves the iteration mechanics themselves, independent of any real node), and a real
 `FixedPointFunction` already registered in this codebase, driven end to end through
-`cottax.evaluate.Drive` (proves genuine integration, not just the driver in isolation).
+`cottax.evaluation.schedule.Drive` (proves genuine integration, not just the driver in isolation).
 """
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.problem import Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 
 from functional_process.cottax.core.solver.drivers import (
     PicardDriver,
@@ -141,7 +141,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     # `^guess.*` rather than at the unknown's own name; writing the latter would be
     # seeding the answer. `mda.driven_graph` does exactly this to every problem in the
     # real graph.
-    (problem,) = graph.declared
+    (problem,) = declared(graph)
     graph = Assign(problem, PicardDriver()).apply(graph)
     # Built through `schedule_for` rather than by constructing a `Drive` directly: the
     # schedule is what the port actually runs, and it assembles the `Drive` itself, so

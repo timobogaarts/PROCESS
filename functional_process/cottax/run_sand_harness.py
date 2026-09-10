@@ -10,7 +10,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
 from cottax.problem import Driven  # noqa: E402
-from cottax.tools.minting import unminted  # noqa: E402
+from cottax.names import unminted  # noqa: E402
 
 from functional_process.cottax import sand  # noqa: E402
 from functional_process.cottax.indat import (  # noqa: E402

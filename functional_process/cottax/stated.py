@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction
 from cottax.spec import In
-from cottax.tools.minting import MintKey, prefix_path
+from cottax.names import MintKey, prefix_path
 
 __all__ = ["STATED", "StatesValues", "stated_port"]
 

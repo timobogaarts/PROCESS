@@ -4,6 +4,8 @@
 solver `stresscl` calls (`:3659-3717`, `:4236-4670`).
 """
 
+import equinox as eqx
+
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -71,7 +73,7 @@ class TfStress(ExplicitFunction):
 class TfStressPlaneStressBuckedCase(TfStress):
     """`i_tf_stress_model == 1` (generalised plane stress) with `i_tf_bucking == 1`."""
 
-    n_tf_graded_layers: int = 1
+    n_tf_graded_layers: int = eqx.field(static=True, default=1)
 
     sig_tf_wp = OutputInto(tfcoil)
     sig_tf_case = OutputInto(tfcoil)
@@ -261,7 +263,7 @@ class TfStressExtendedPlaneStrainBuckedCaseAveragedTurn(TfStress):
     `i_tf_turns_integer == 0`.
     """
 
-    n_tf_graded_layers: int = 1
+    n_tf_graded_layers: int = eqx.field(static=True, default=1)
 
     sig_tf_wp = OutputInto(tfcoil)
     sig_tf_case = OutputInto(tfcoil)

@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping
 
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
-from cottax.tools.minting import MintKey, is_minted
+from cottax.names import MintKey, is_minted
 
 STATED_MINT = MintKey("stated")
 """`models/stated.STATED`, restated for the same reason `GUESS` is: reading the pin

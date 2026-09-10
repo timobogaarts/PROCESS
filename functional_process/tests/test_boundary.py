@@ -14,8 +14,8 @@ import pytest
 from cottax.graph import Graph
 from cottax.spec import In, NodePath, Out, VarPath
 from cottax.nodes import ImplementedFunction
-from cottax.tools.minting import MintKey, unminted
-from cottax.tools.path import PathMap
+from cottax.names import MintKey, unminted
+from cottax.names import PathMap
 
 from functional_process.cottax.boundary import (
     GUESSED,

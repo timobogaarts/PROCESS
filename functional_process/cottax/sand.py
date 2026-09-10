@@ -10,8 +10,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.blocking import Blocking
-from cottax.evaluate import Drive, Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of, is_fixed_point, is_optimise
@@ -19,8 +19,8 @@ from cottax.rewrites import Assign, Combine, NestInside, Residualise
 
 from cottax.spec import In, NodePath, Out, VarPath
 from cottax.nodes import ImplementedFunction
-from cottax.tools.minting import MintKey, prefix_path
-from cottax.tools.path import PathMap
+from cottax.names import MintKey, prefix_path
+from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -516,10 +516,10 @@ class FixedPointResidual:
 
 def fixed_point_residuals(graph, env, problems=None):
     """`d(g(u) - u)/du` for every `FixedPoint` in `graph`, differentiated at `env`."""
-    from cottax.evaluate import _run_acyclic
+    from cottax.evaluation.schedule import _run_acyclic
 
     if problems is None:
-        problems = tuple(n for n in graph.declared if is_fixed_point(graph[n]))
+        problems = tuple(n for n in declared(graph) if is_fixed_point(graph[n]))
     residuals = []
     for problem in problems:
         definition = graph[problem]
@@ -534,7 +534,7 @@ def fixed_point_residuals(graph, env, problems=None):
         owns, reads = definition.owns, conditions_of(definition)
         producers = {r: graph.owners[r] for r in reads if r in graph.owners}
         inside = graph.ancestors(set(producers.values()))
-        body = graph.subgraph([n for n in inside if n not in graph.declared])
+        body = graph.subgraph([n for n in inside if n not in declared(graph)])
 
         def residual(flat, _body=body, _owns=owns, _reads=reads, _unravel=None):
             values = dict(env)
@@ -601,7 +601,7 @@ def array_valued_problems(graph, env, problems=None):
     ones today's SAND layer cannot absorb, detected rather than listed.
     """
     if problems is None:
-        problems = tuple(n for n in graph.declared if is_fixed_point(graph[n]))
+        problems = tuple(n for n in declared(graph) if is_fixed_point(graph[n]))
     return tuple(
         problem
         for problem in problems
@@ -619,7 +619,7 @@ def sand_graph(graph, skip=(), keep=()):
     keep = frozenset(keep)
     plan = Plan(graph)
     residualised = []
-    for problem in graph.declared:
+    for problem in declared(graph):
         if problem in skip or problem in keep:
             continue
         if not is_fixed_point(graph[problem]):
@@ -629,7 +629,7 @@ def sand_graph(graph, skip=(), keep=()):
     # The optimiser first: `+` concatenates and is order-preserving now (it used to
     # absorb from whichever side it was written on), so the design variables lead the
     # combined unknowns -- which `sand_harness`'s Schur reduction indexes positionally.
-    folding = [p for p in plan.graph.declared if p not in keep]
+    folding = [p for p in declared(plan.graph) if p not in keep]
     folding.sort(key=lambda p: not is_optimise(plan.graph[p]))
     plan = plan + Combine(NodePath((GetAttrKey("sand"),)), tuple(folding))
     return plan.graph, tuple(residualised)
@@ -661,7 +661,7 @@ def residual_condition_scales(drive, env, floor=1e-12):
     """`((condition, factor), ...)` for exactly the SAND residual conditions, ready for
     `VmconDriver.condition_scale`.
     """
-    from cottax.tools.minting import unminted
+    from cottax.names import unminted
 
     def place(path):
         while (stripped := unminted(path)) != path:

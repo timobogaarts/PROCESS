@@ -33,14 +33,14 @@ from cottax import (
     RootFind,
     Start,
 )
-from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.blocking import Blocking, runnable
+from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import is_feasibility, is_root_find
 from cottax.rewrites import Assign
 from cottax.spec import NodePath
 from cottax.nodes import Implemented
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 from jax.tree_util import DictKey
 
 from functional_process.cottax._harness import (
@@ -459,7 +459,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     root_find_problem = graph[DuctDiameterRootFind().problem_name]
     joined = DuctFeasibility + root_find_problem
 
-    body = graph.runnable  # every plain node, problem nodes dropped
+    body = runnable(graph)  # every plain node, problem nodes dropped
     merged = Graph(PathMap({**dict(body.definitions), name: joined}))
 
     schedule = Schedule(

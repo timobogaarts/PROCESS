@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
 from cottax.rewrites import NestInside
-from cottax.evaluate import ConditionMap, Drive, Schedule
+from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import (
@@ -28,7 +28,7 @@ from cottax.problem import (
     Steps,
 )
 from cottax.spec import In, NodePath, Out, VarPath
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
 

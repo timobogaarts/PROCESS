@@ -14,9 +14,9 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 from cottax.blocking import Blocking
-from cottax.evaluate import Schedule
+from cottax.evaluation.schedule import Schedule
 from cottax.plan import Delete
 from cottax.spec import NodePath, VarPath
 
@@ -805,7 +805,7 @@ class ComparisonReport:
 
 def _ground_truth(data, var: VarPath):
     """`data`'s own value at `var`, resolved in order: 1."""
-    from cottax.tools.minting import unminted
+    from cottax.names import unminted
     from cottax.tools.pytree import get_at
 
     known = KNOWN_MINT_VALUES.get(var.spelling)

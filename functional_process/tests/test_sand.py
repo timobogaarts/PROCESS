@@ -19,8 +19,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.blocking import Blocking
-from cottax.evaluate import Drive, Schedule
+from cottax.blocking import Blocking, declared
+from cottax.evaluation.schedule import Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
     Converged,
@@ -34,7 +34,7 @@ from cottax.problem import (
 from cottax.rewrites import Assign
 from cottax.spec import In, NodePath, Out, VarPath
 from cottax.nodes import ImplementedFunction
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -730,7 +730,7 @@ def test_a_residual_whose_unknown_has_no_scale_keeps_a_factor_of_one():
     `max_iter` without converging at all. `1.0` is what `VmconDriver.scaled` already
     degrades to for a design variable starting at `0.0`, so the two scalings agree.
     """
-    from cottax.tools.minting import prefix_path
+    from cottax.names import prefix_path
 
     from functional_process.cottax.sand import COND, residual_condition_scales
 
@@ -1088,7 +1088,7 @@ def test_driven_runner_binds_reports_not_unknowns():
     """`sand_harness._driven_runner` must bind `unknowns + reports`, as `Drive` does.
 
     **The regression this exists for.** `_driven_runner` re-implements
-    `cottax.evaluate.Drive.__call__` so that the driver can stay eager while the body is
+    `cottax.evaluation.schedule.Drive.__call__` so that the driver can stay eager while the body is
     jitted, and its binding read
 
         if len(converged) != len(step.unknowns): raise ...
@@ -1360,7 +1360,7 @@ def test_the_pf_ring_is_detected_as_an_array_unknown_problem():
     graph = cut_graph(_without_excluded(_tokamak_graph()))
     pf = [
         p
-        for p in graph.declared
+        for p in declared(graph)
         if is_fixed_point(graph[p])
         and any("pf_coil" in u.spelling for u in graph[p].owns)
     ]
@@ -1584,7 +1584,7 @@ def test_an_array_valued_fixed_point_is_still_measurable():
 
 
 def test_boundary_seeds_agree_with_guess_sources():
-    """`cottax.boundary.seeds` and `mda.guess_sources` name the same start values.
+    """`cottax.evaluation.boundary.seeds` and `mda.guess_sources` name the same start values.
 
     The two answer "where does this `^guess.*` port's value come from" differently:
     `seeds` says `unminted(port)` -- the place in a caller's own structure -- and
@@ -1597,8 +1597,8 @@ def test_boundary_seeds_agree_with_guess_sources():
     A *missing* start raises in either shape and is the loud case; a start pointed at a
     different place is silent, which is what this test exists for.
     """
-    from cottax.boundary import seeds
-    from cottax.tools.minting import unminted
+    from cottax.evaluation.boundary import seeds
+    from cottax.names import unminted
 
     from functional_process.cottax.mda import guess_sources
     from functional_process.cottax.mda_harness import KNOWN_MINT_VALUES

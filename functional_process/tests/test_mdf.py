@@ -29,7 +29,7 @@ import numpy as np
 import pytest
 from cottax.blocking import Blocking
 from cottax.rewrites import NestInside
-from cottax.evaluate import ConditionMap, Drive, Schedule
+from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
     Converged,
@@ -44,7 +44,7 @@ from cottax.problem import (
     unknowns_of,
     is_root_find,
 )
-from cottax.tools.path import PathMap
+from cottax.names import PathMap
 
 from functional_process.cottax import mdf, sand
 from functional_process.cottax.core.solver.drivers import SeededNewtonDriver
@@ -410,7 +410,7 @@ def _array_fixed_point(max_iter):
     from cottax.rewrites import Assign, NestInside
     from cottax.spec import In, NodePath, Out, VarPath
     from cottax.nodes import ImplementedFunction
-    from cottax.tools.path import PathMap
+    from cottax.names import PathMap
     from jax.tree_util import GetAttrKey
 
     from functional_process.cottax.core.solver.drivers import PicardDriver

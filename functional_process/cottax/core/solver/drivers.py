@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 from cottax.drivers import PicardDriver as CottaxPicardDriver
-from cottax.evaluate import AbstractDriver, ConditionMap
+from cottax.evaluation.schedule import AbstractDriver, ConditionMap
 from cottax.problem import (
     Converged,
     DriverOut,
@@ -22,7 +22,7 @@ from cottax.problem import (
     is_optimise, is_root_find,
 )
 from cottax.spec import VarPath
-from cottax.tools.path import written
+from cottax.names import written
 from jax.flatten_util import ravel_pytree
 
 from functional_process.cottax.core.solver.host_cache import bind
