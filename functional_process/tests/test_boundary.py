@@ -80,8 +80,8 @@ def N(*keys) -> NodePath:
 
 def call(reads, owns):
     return ImplementedFunction(
-        inputs=tuple(r for r in reads),
-        outputs=tuple(o for o in owns),
+        reads=tuple(r for r in reads),
+        owns=tuple(o for o in owns),
         fn=lambda *a: None,
     )
 
@@ -266,7 +266,7 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
         for name, node in tokamak.definitions.items()
         if name.spelling == ".costs.pf_magnet_cost"
     )
-    reads = {port.spelling for port in account.inputs}
+    reads = {port.spelling for port in account.reads}
     assert not (
         reads
         & {

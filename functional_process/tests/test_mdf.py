@@ -425,10 +425,10 @@ def _array_fixed_point(max_iter):
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
-                    inputs=(u,), outputs=(hat,), fn=_Affine(rate, offset)
+                    reads=(u,), owns=(hat,), fn=_Affine(rate, offset)
                 ),
             ),
-            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
+            (problem, FixedPoint(conditions=(hat,), unknowns=(u,))),
         ])
     )
     graph = Assign(problem, PicardDriver(max_steps=max_iter)).apply(graph)

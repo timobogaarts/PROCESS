@@ -103,7 +103,7 @@ class DuctFeasibilityConditions(WrapsFunction):
 
 
 DuctFeasibility = Feasibility(
-    design=(resolve(vacuum.ceff_i, VarPath),),
+    unknowns=(resolve(vacuum.ceff_i, VarPath),),
     inequalities=(
         resolve(vacuum.duct_fits_residual, VarPath),
         resolve(vacuum.pumping_speed_floor_residual, VarPath),

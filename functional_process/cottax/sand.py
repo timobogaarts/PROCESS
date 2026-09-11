@@ -334,8 +334,8 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
             VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}"))), COND
         )
         nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = ImplementedFunction(
-            inputs=inputs,
-            outputs=(condition,),
+            reads=inputs,
+            owns=(condition,),
             # index 1 of `(residual, normalised_residual, value, bound)` -- see the
             # module docstring.
             fn=_NormalisedResidual(fn, tuple(read), static),
@@ -409,15 +409,15 @@ def objective_nodes(graph, selection, switch_values=None):
     )
     nodes = {
         NodePath((GetAttrKey("Objective"),)): ImplementedFunction(
-            inputs=inputs,
-            outputs=(metric,),
+            reads=inputs,
+            owns=(metric,),
             fn=_Metric(selection.metric, tuple(read), static),
         )
     }
     if selection.maximise:
         nodes[NodePath((GetAttrKey("ObjectiveNegated"),))] = ImplementedFunction(
-            inputs=(metric,),
-            outputs=(objective,),
+            reads=(metric,),
+            owns=(objective,),
             fn=_Negate(),
         )
     return nodes, objective
@@ -449,7 +449,7 @@ def optimise_graph(
     problem_name = NodePath((GetAttrKey("Opt"),))
     nodes[problem_name] = Optimise(
         objective=objective,
-        design=tuple(v for v in design),
+        unknowns=tuple(v for v in design),
         equalities=tuple(c for c in equalities),
         inequalities=tuple(c for c in inequalities),
     )
@@ -731,7 +731,7 @@ def sand_shape(schedule: Schedule) -> dict:
         "unknowns": len(drive.unknowns),
         "conditions": len(drive.conditions),
         "context": len(drive.context),
-        "design": len(definition.design),
+        "design": len(definition.unknowns),
         "equalities": len(definition.equalities),
         "inequalities": len(definition.inequalities),
         "schedule_steps": len(schedule.steps),

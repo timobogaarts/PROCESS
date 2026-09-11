@@ -614,8 +614,8 @@ def root_find_node(mdf: Mdf) -> RootFind:
             f"`VmconDriver`, which does not trace, so that is a separate change"
         )
     return RootFind(
-        inputs=tuple(c for c in mdf.conditions),
-        outputs=tuple(v for v in mdf.design),
+        conditions=tuple(c for c in mdf.conditions),
+        unknowns=tuple(v for v in mdf.design),
     )
 
 

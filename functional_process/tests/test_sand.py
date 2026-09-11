@@ -393,8 +393,8 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     assert [n.spelling for n in maximise] == [".Objective", ".ObjectiveNegated"]
     metric = maximise[NodePath((GetAttrKey("Objective"),))]
     negate = maximise[NodePath((GetAttrKey("ObjectiveNegated"),))]
-    assert [o.spelling for o in metric.outputs] == ["^metric.numerics.objf"]
-    assert [i.spelling for i in negate.inputs] == ["^metric.numerics.objf"]
+    assert [o.spelling for o in metric.owns] == ["^metric.numerics.objf"]
+    assert [i.spelling for i in negate.reads] == ["^metric.numerics.objf"]
 
     coe = 121.5
     body = minimise[NodePath((GetAttrKey("Objective"),))]
@@ -788,16 +788,16 @@ def _toy_problem(driver=None, objective=None):
             (
                 NodePath((GetAttrKey("F"),)),
                 ImplementedFunction(
-                    inputs=(x, y),
-                    outputs=(f,),
+                    reads=(x, y),
+                    owns=(f,),
                     fn=_Objective() if objective is None else objective,
                 ),
             ),
             (
                 NodePath((GetAttrKey("G"),)),
                 ImplementedFunction(
-                    inputs=(x, y),
-                    outputs=(g,),
+                    reads=(x, y),
+                    owns=(g,),
                     fn=_Constraint(),
                 ),
             ),
@@ -805,7 +805,7 @@ def _toy_problem(driver=None, objective=None):
                 NodePath((GetAttrKey("Opt"),)),
                 Optimise(
                     objective=f,
-                    design=(x, y),
+                    unknowns=(x, y),
                     inequalities=(g,),
                 ),
             ),
@@ -1473,15 +1473,15 @@ def _chain_fixed_point(second):
         PathMap([
             (
                 NodePath((GetAttrKey("A"),)),
-                ImplementedFunction(inputs=(u,), outputs=(a,), fn=_Scale(3.0)),
+                ImplementedFunction(reads=(u,), owns=(a,), fn=_Scale(3.0)),
             ),
             (
                 NodePath((GetAttrKey("B"),)),
                 ImplementedFunction(
-                    inputs=(a,), outputs=(hat,), fn=_Scale(second)
+                    reads=(a,), owns=(hat,), fn=_Scale(second)
                 ),
             ),
-            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
+            (problem, FixedPoint(conditions=(hat,), unknowns=(u,))),
         ])
     )
     env = {
@@ -1569,10 +1569,10 @@ def test_an_array_valued_fixed_point_is_still_measurable():
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
-                    inputs=(u,), outputs=(hat,), fn=_Scale(0.5)
+                    reads=(u,), owns=(hat,), fn=_Scale(0.5)
                 ),
             ),
-            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
+            (problem, FixedPoint(conditions=(hat,), unknowns=(u,))),
         ])
     )
     env = {u: jnp.ones((4,)), hat: jnp.full((4,), 0.5)}

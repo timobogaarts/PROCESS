@@ -4662,11 +4662,11 @@ validated against.
 
 if __name__ == "__main__":
     n_vars = sum(
-        len(node.inputs) + len(node.outputs) for node in GRAPH.definitions.values()
+        len(node.reads) + len(node.owns) for node in GRAPH.definitions.values()
     )
     print(f"{len(GRAPH.definitions)} nodes, {n_vars} ports (inputs + outputs, unmerged)")
     for name, node in GRAPH.definitions.items():
-        print(f"  {name.spelling}: {len(node.inputs)} in, {len(node.outputs)} out")
+        print(f"  {name.spelling}: {len(node.reads)} in, {len(node.owns)} out")
 
     print("\ncycles, per machine:")
     for label, machine in (

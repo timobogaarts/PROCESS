@@ -283,7 +283,7 @@ def test_the_seed_owned_field_list_covers_every_output_these_nodes_declare():
         for path, node in graph.definitions.items():
             if not path.spelling.startswith(".initialisation"):
                 continue
-            owned |= {out.spelling.rsplit(".", 1)[-1] for out in node.outputs}
+            owned |= {out.spelling.rsplit(".", 1)[-1] for out in node.owns}
     assert owned <= set(indat.SEED_OWNED_FIELDS), owned - set(indat.SEED_OWNED_FIELDS)
     # And nothing in the list is dead: every name is a field some machine's seed nodes
     # actually own, across the seven.

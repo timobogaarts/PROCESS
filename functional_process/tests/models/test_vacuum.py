@@ -382,7 +382,7 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
 
     joined = DuctFeasibility + root_find_problem
     assert is_feasibility(joined)
-    assert joined.design == DuctFeasibility.design + root_find_problem.owns
+    assert joined.unknowns == DuctFeasibility.unknowns + root_find_problem.unknowns
     assert joined.equalities == root_find_problem.reads
     assert joined.inequalities == DuctFeasibility.inequalities
 
