@@ -19,7 +19,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.blocking import Blocking, declared
+from cottax.abstract import problems as declared
+from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (

@@ -1,6 +1,7 @@
 """Turning `indat.GRAPH` into something that can actually be run."""
 
-from cottax.blocking import Blocking, declared
+from cottax.abstract import problems as declared
+from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.problem import (
