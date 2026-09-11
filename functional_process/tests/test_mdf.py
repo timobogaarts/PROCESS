@@ -159,7 +159,7 @@ def test_the_undriven_nesting_is_refused_for_want_of_an_assign():
     with pytest.raises(
         ValueError,
         match=(
-            r"carries no driver, so nothing answers block .* structure says it must be "
+            r"carries no driver, so nothing answers it -- structure says it must be "
             r"driven, and `Assign` is how the algorithm is said"
         ),
     ):
