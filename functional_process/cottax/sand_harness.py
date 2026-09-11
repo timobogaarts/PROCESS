@@ -11,7 +11,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.abstract import problems as declared
+from functional_process.cottax.queries import declared
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.plan import Delete

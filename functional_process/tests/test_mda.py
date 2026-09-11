@@ -10,7 +10,7 @@ runnable."
 """
 
 import equinox as eqx
-from cottax.abstract import problems as declared
+from functional_process.cottax.queries import declared
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph

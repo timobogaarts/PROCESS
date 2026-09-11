@@ -25,7 +25,7 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.abstract import problems as declared
+from functional_process.cottax.queries import declared
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import AbstractDriver, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph

@@ -9,7 +9,7 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.abstract import problems as declared
+from functional_process.cottax.queries import declared
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
