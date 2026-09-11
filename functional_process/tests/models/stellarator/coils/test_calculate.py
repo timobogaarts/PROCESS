@@ -933,7 +933,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.is_acyclic
-    (block,) = [b for b in graph.scc_blocks if declared(b)]
+    (block,) = [b for b in Blocking.scc(graph).subgraphs if declared(b)]
     assert Blocking.scc(block).problem_types == ("root-find",)
 
 
