@@ -16,7 +16,7 @@ from cottax.problem import (
 from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
-from cottax.nodes import ConditionNode
+from cottax.problem import ConditionNode
 from cottax.names import PathMap, written
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey

@@ -16,7 +16,7 @@ from jax.tree_util import DictKey, GetAttrKey
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
-from cottax.nodes import ConditionNode
+from cottax.problem import ConditionNode
 from cottax.names import is_minted, unminted
 from cottax.visualization.xdsm import Formatter, NoFormat, _xesc
 from cottax.visualization.xdsm_html import HtmlDoc
