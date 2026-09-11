@@ -1044,7 +1044,7 @@ def test_cplife_avail_st_next_matches_avail_st(i_tf_sup, itart):
 # classes, standalone and (for one representative pair each) combined.
 # ---------------------------------------------------------------------------
 
-CPLIFE_VAR = Output(costs.cplife).port()
+CPLIFE_VAR = Output(costs.cplife).place()
 """`.costs.cplife` as a `VarPath`, for the assembly assertions below."""
 
 
