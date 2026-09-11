@@ -69,12 +69,8 @@ IDS = [written.__name__ for written, _ in PAIRS]
 @pytest.mark.parametrize(("written", "declared"), PAIRS, ids=IDS)
 def test_the_two_forms_declare_the_same_ports(written, declared):
     """Same reads, same writes, in the same order."""
-    assert [str(i.var) for i in declared().inputs] == [
-        str(i.var) for i in written().inputs
-    ]
-    assert [str(o.var) for o in declared().outputs] == [
-        str(o.var) for o in written().outputs
-    ]
+    assert [str(i) for i in declared().inputs] == [str(i) for i in written().inputs]
+    assert [str(o) for o in declared().outputs] == [str(o) for o in written().outputs]
 
 
 @pytest.mark.parametrize(("written", "declared"), PAIRS, ids=IDS)
@@ -148,8 +144,8 @@ def test_an_arm_overrides_only_the_formula():
 
         fn = calculate_greenwald_density_limit
 
-    assert [str(i.var) for i in Arm().inputs] == [str(i.var) for i in Family().inputs]
-    assert [str(o.var) for o in Arm().outputs] == [str(o.var) for o in Family().outputs]
+    assert [str(i) for i in Arm().inputs] == [str(i) for i in Family().inputs]
+    assert [str(o) for o in Arm().outputs] == [str(o) for o in Family().outputs]
     assert Arm()(c_plasma=1.2e7, rminor=2.0) == calculate_greenwald_density_limit(
         c_plasma=1.2e7, rminor=2.0
     )
@@ -246,7 +242,7 @@ def test_an_arm_that_writes_its_own_body_keeps_it():
 
     assert Arm()(c_plasma=1.2e7, rminor=2.0) == other_formula(1.2e7, 2.0)
     assert Arm()(c_plasma=1.2e7, rminor=2.0) != Family()(c_plasma=1.2e7, rminor=2.0)
-    assert [str(i.var) for i in Arm().inputs] == [str(i.var) for i in Family().inputs]
+    assert [str(i) for i in Arm().inputs] == [str(i) for i in Family().inputs]
 
 
 def test_an_output_shadowing_fn_is_refused():

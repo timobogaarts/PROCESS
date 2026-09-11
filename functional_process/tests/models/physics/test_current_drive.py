@@ -263,8 +263,8 @@ class TestCurrentDriveFreethyEcrhPrimaryNoSecondary(Tier1Contract):
 
 
 def _paths(node):
-    return [i.var.spelling for i in node.inputs], [
-        o.var.spelling for o in node.outputs
+    return [i.spelling for i in node.inputs], [
+        o.spelling for o in node.outputs
     ]
 
 
@@ -474,7 +474,7 @@ def test_the_three_boundary_reads_are_produced():
         HcdInjectedPowerTotal(),
         HcdElectricTotalNonIgnited(),
     ):
-        owned.update(o.var.spelling for o in node.outputs)
+        owned.update(o.spelling for o in node.outputs)
 
     assert {
         ".current_drive.p_hcd_ecrh_injected_total_mw",

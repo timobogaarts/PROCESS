@@ -445,8 +445,8 @@ def test_plasma_composition_owns_h_and_he_fractions():
     graph = to_graph(node)
     assert graph.definitions
 
-    owned = {out.var for out in node.outputs}
-    read = {inp.var for inp in node.inputs}
+    owned = {out for out in node.outputs}
+    read = {inp for inp in node.inputs}
 
     h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
     he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)

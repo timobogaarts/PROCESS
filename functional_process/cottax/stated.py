@@ -4,8 +4,7 @@
 from __future__ import annotations
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction
-from cottax.spec import In
-from cottax.names import MintKey, prefix_path
+from cottax.names import MintKey, VarPath, prefix_path
 
 __all__ = ["STATED", "StatesValues", "stated_port"]
 
@@ -13,9 +12,9 @@ STATED = MintKey("stated")
 """The namespace a stated value is read from: `^stated.<the place it is for>`."""
 
 
-def stated_port(out) -> In:
-    """The read that supplies one declared output: `^stated.<out.var>`."""
-    return In(prefix_path(out.var, STATED))
+def stated_port(out) -> VarPath:
+    """The read that supplies one declared output: `^stated.<out>`."""
+    return prefix_path(out, STATED)
 
 
 class StatesValues(ExplicitFunction):

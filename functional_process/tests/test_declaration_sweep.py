@@ -78,7 +78,7 @@ def test_declaration_owns_exactly_what_it_declares(declaration):
         node = declaration()
     except TypeError as needs_arguments:
         pytest.skip(f"needs constructor arguments: {needs_arguments}")
-    owned = {out.var for out in node.outputs}
+    owned = {out for out in node.outputs}
     if not owned:
         # A family HEAD may own nothing: `StatesValues` exists to be subclassed, and
         # each occupant names its own path. A leaf that owns nothing is a real defect,

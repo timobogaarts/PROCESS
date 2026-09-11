@@ -1013,7 +1013,7 @@ def test_nodes_assemble_and_the_sauter_arm_does_not_read_triangularity():
     )
     assert len(graph.definitions) == 4
 
-    read = {inp.var for inp in node.inputs}
+    read = {inp for inp in node.inputs}
     assert resolve(physics.triang, VarPath) not in read
     assert resolve(physics.rminor, VarPath) in read
 

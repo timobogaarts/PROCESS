@@ -17,7 +17,7 @@ from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of, is_fixed_point, is_optimise
 from cottax.rewrites import Assign, Combine, NestInside, Residualise
 
-from cottax.spec import In, NodePath, Out, VarPath
+from cottax.spec import NodePath, VarPath
 from cottax.nodes import ImplementedFunction
 from cottax.names import MintKey, prefix_path
 from cottax.names import PathMap
@@ -302,7 +302,7 @@ def _bind(fn, resolve, switch_values):
     parameters = list(inspect.signature(fn).parameters)
     static = tuple((p, switch_values[p]) for p in parameters if p in switch_values)
     read = [p for p in parameters if p not in switch_values]
-    return static, read, tuple(In(resolve(p)) for p in read)
+    return static, read, tuple(resolve(p) for p in read)
 
 
 def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
@@ -335,7 +335,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
         )
         nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = ImplementedFunction(
             inputs=inputs,
-            outputs=(Out(condition),),
+            outputs=(condition,),
             # index 1 of `(residual, normalised_residual, value, bound)` -- see the
             # module docstring.
             fn=_NormalisedResidual(fn, tuple(read), static),
@@ -410,14 +410,14 @@ def objective_nodes(graph, selection, switch_values=None):
     nodes = {
         NodePath((GetAttrKey("Objective"),)): ImplementedFunction(
             inputs=inputs,
-            outputs=(Out(metric),),
+            outputs=(metric,),
             fn=_Metric(selection.metric, tuple(read), static),
         )
     }
     if selection.maximise:
         nodes[NodePath((GetAttrKey("ObjectiveNegated"),))] = ImplementedFunction(
-            inputs=(In(metric),),
-            outputs=(Out(objective),),
+            inputs=(metric,),
+            outputs=(objective,),
             fn=_Negate(),
         )
     return nodes, objective
@@ -448,10 +448,10 @@ def optimise_graph(
     nodes.update(objective_built)
     problem_name = NodePath((GetAttrKey("Opt"),))
     nodes[problem_name] = Optimise(
-        objective=In(objective),
-        design=tuple(Out(v) for v in design),
-        equalities=tuple(In(c) for c in equalities),
-        inequalities=tuple(In(c) for c in inequalities),
+        objective=objective,
+        design=tuple(v for v in design),
+        equalities=tuple(c for c in equalities),
+        inequalities=tuple(c for c in inequalities),
     )
     inserted = (Plan(graph) + Insert(PathMap(nodes.items()))).graph
     # **No driver is attached here by default, and that is the ordering the new API

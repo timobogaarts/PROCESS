@@ -32,7 +32,7 @@ from cottax.problem import (
     is_fixed_point,
 )
 from cottax.rewrites import Assign
-from cottax.spec import In, NodePath, Out, VarPath
+from cottax.spec import NodePath, VarPath
 from cottax.nodes import ImplementedFunction
 from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
@@ -382,7 +382,7 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     )
     assert var.spelling == "^cond.numerics.objf"
     assert [n.spelling for n in minimise] == [".Objective"]
-    assert len(minimise[NodePath((GetAttrKey("Objective"),))].outputs) == 1
+    assert len(minimise[NodePath((GetAttrKey("Objective"),))].owns) == 1
 
     maximise, negated_var = objective_nodes(
         GRAPH, objective_selection(-REFERENCE_FIGURE_OF_MERIT)
@@ -393,8 +393,8 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     assert [n.spelling for n in maximise] == [".Objective", ".ObjectiveNegated"]
     metric = maximise[NodePath((GetAttrKey("Objective"),))]
     negate = maximise[NodePath((GetAttrKey("ObjectiveNegated"),))]
-    assert [o.var.spelling for o in metric.outputs] == ["^metric.numerics.objf"]
-    assert [i.var.spelling for i in negate.inputs] == ["^metric.numerics.objf"]
+    assert [o.spelling for o in metric.outputs] == ["^metric.numerics.objf"]
+    assert [i.spelling for i in negate.inputs] == ["^metric.numerics.objf"]
 
     coe = 121.5
     body = minimise[NodePath((GetAttrKey("Objective"),))]
@@ -432,10 +432,10 @@ def test_sand_assembles_and_orders_its_conditions():
     # being one, and cottax forwards only the graph-facing surface.
     definition = drive.subgraph[drive.problem].problem
     assert names[1 : 1 + len(definition.equalities)] == [
-        c.var.spelling for c in definition.equalities
+        c.spelling for c in definition.equalities
     ]
     assert names[1 + len(definition.equalities) :] == [
-        c.var.spelling for c in definition.inequalities
+        c.spelling for c in definition.inequalities
     ]
     # The eight design variables come first among the unknowns, so the Schur reduction
     # in `sand_harness` can index them positionally.
@@ -788,25 +788,25 @@ def _toy_problem(driver=None, objective=None):
             (
                 NodePath((GetAttrKey("F"),)),
                 ImplementedFunction(
-                    inputs=(In(x), In(y)),
-                    outputs=(Out(f),),
+                    inputs=(x, y),
+                    outputs=(f,),
                     fn=_Objective() if objective is None else objective,
                 ),
             ),
             (
                 NodePath((GetAttrKey("G"),)),
                 ImplementedFunction(
-                    inputs=(In(x), In(y)),
-                    outputs=(Out(g),),
+                    inputs=(x, y),
+                    outputs=(g,),
                     fn=_Constraint(),
                 ),
             ),
             (
                 NodePath((GetAttrKey("Opt"),)),
                 Optimise(
-                    objective=In(f),
-                    design=(Out(x), Out(y)),
-                    inequalities=(In(g),),
+                    objective=f,
+                    design=(x, y),
+                    inequalities=(g,),
                 ),
             ),
         ])
@@ -1412,7 +1412,7 @@ def test_tokamak_sand_assembles_and_orders_its_conditions():
     assert names[0] == "^cond.numerics.objf"
     definition = drive.subgraph[drive.problem].problem
     assert names[1 : 1 + len(definition.equalities)] == [
-        c.var.spelling for c in definition.equalities
+        c.spelling for c in definition.equalities
     ]
     assert [v.spelling for v in drive.unknowns[: len(TOKAMAK_IXC)]] == [
         iteration_variable_path(i).spelling for i in TOKAMAK_IXC
@@ -1473,15 +1473,15 @@ def _chain_fixed_point(second):
         PathMap([
             (
                 NodePath((GetAttrKey("A"),)),
-                ImplementedFunction(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
+                ImplementedFunction(inputs=(u,), outputs=(a,), fn=_Scale(3.0)),
             ),
             (
                 NodePath((GetAttrKey("B"),)),
                 ImplementedFunction(
-                    inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)
+                    inputs=(a,), outputs=(hat,), fn=_Scale(second)
                 ),
             ),
-            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
         ])
     )
     env = {
@@ -1569,10 +1569,10 @@ def test_an_array_valued_fixed_point_is_still_measurable():
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
-                    inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)
+                    inputs=(u,), outputs=(hat,), fn=_Scale(0.5)
                 ),
             ),
-            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
         ])
     )
     env = {u: jnp.ones((4,)), hat: jnp.full((4,), 0.5)}

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from cottax.graph import Graph
-from cottax.spec import In, NodePath, Out, VarPath
+from cottax.spec import NodePath, VarPath
 from cottax.nodes import ImplementedFunction
 from cottax.names import MintKey, unminted
 from cottax.names import PathMap
@@ -80,8 +80,8 @@ def N(*keys) -> NodePath:
 
 def call(reads, owns):
     return ImplementedFunction(
-        inputs=tuple(In(r) for r in reads),
-        outputs=tuple(Out(o) for o in owns),
+        inputs=tuple(r for r in reads),
+        outputs=tuple(o for o in owns),
         fn=lambda *a: None,
     )
 
@@ -266,7 +266,7 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
         for name, node in tokamak.definitions.items()
         if name.spelling == ".costs.pf_magnet_cost"
     )
-    reads = {port.var.spelling for port in account.inputs}
+    reads = {port.spelling for port in account.inputs}
     assert not (
         reads
         & {

@@ -103,8 +103,8 @@ def test_inboard_toroidal_field_node_reads_and_writes():
     pinned so a future edit cannot silently rebind either side.
     """
     node = PlasmaInboardToroidalField()
-    reads = {i.var.spelling for i in node.inputs}
-    writes = {o.var.spelling for o in node.outputs}
+    reads = {i.spelling for i in node.inputs}
+    writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_toroidal_on_axis",
         ".physics.rmajor",
@@ -116,8 +116,8 @@ def test_inboard_toroidal_field_node_reads_and_writes():
 def test_outboard_toroidal_field_node_reads_and_writes():
     """`PlasmaOutboardToroidalField`'s counterpart to the test above."""
     node = PlasmaOutboardToroidalField()
-    reads = {i.var.spelling for i in node.inputs}
-    writes = {o.var.spelling for o in node.outputs}
+    reads = {i.spelling for i in node.inputs}
+    writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_toroidal_on_axis",
         ".physics.rmajor",
@@ -134,8 +134,8 @@ def test_total_magnetic_field_inboard_reads_the_inboard_toroidal_component():
     `physics.py`, one toroidal-field argument differing between them).
     """
     node = TotalMagneticFieldInboard()
-    reads = {i.var.spelling for i in node.inputs}
-    writes = {o.var.spelling for o in node.outputs}
+    reads = {i.spelling for i in node.inputs}
+    writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_inboard_toroidal",
         ".physics.b_plasma_surface_poloidal_average",
@@ -150,8 +150,8 @@ def test_total_magnetic_field_outboard_reads_the_outboard_toroidal_component():
     `.physics.b_plasma_outboard_total` with no other producer.
     """
     node = TotalMagneticFieldOutboard()
-    reads = {i.var.spelling for i in node.inputs}
-    writes = {o.var.spelling for o in node.outputs}
+    reads = {i.spelling for i in node.inputs}
+    writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_outboard_toroidal",
         ".physics.b_plasma_surface_poloidal_average",

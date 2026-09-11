@@ -131,6 +131,6 @@ def test_reads_are_derived_from_writes():
             ]
             if not reads:
                 continue
-            assert reads == [stated_port(out).var.spelling for out in node.outputs], (
+            assert reads == [stated_port(out).spelling for out in node.outputs], (
                 name.spelling
             )

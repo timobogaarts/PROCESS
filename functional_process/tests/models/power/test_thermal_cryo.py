@@ -629,8 +629,8 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
     change is the finding.**
     """
     node = _component_thermal_powers()
-    owned = {o.var.spelling for o in node.outputs}
-    read = {i.var.spelling for i in node.inputs}
+    owned = {o.spelling for o in node.outputs}
+    read = {i.spelling for i in node.inputs}
     for path in _SIX_SELF_LOOP_VARPATHS:
         assert path not in owned
     assert ".primary_pumping.p_fw_blkt_coolant_pump_mw" in read
@@ -1281,7 +1281,7 @@ def test_cryo_split_ownership_is_a_partition():
         )
     ]()
 
-    owned = [{o.var.spelling for o in n.outputs} for n in (qnuc_node, q_node, loads)]
+    owned = [{o.spelling for o in n.outputs} for n in (qnuc_node, q_node, loads)]
     assert owned[0] == {".fwbs.qnuc"}
     assert owned[1] == {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     assert owned[2] == {
@@ -1294,7 +1294,7 @@ def test_cryo_split_ownership_is_a_partition():
     assert (owned[0] | owned[1]) & owned[2] == set()
 
     # `CryoLoads` must still *read* every `q*` -- it builds `helpow` from them.
-    read = {i.var.spelling for i in loads.inputs}
+    read = {i.spelling for i in loads.inputs}
     assert owned[0] | owned[1] <= read
 
 
@@ -1416,8 +1416,8 @@ def test_cryo_q_nuc_has_no_self_read_on_the_computing_arm(
         assert occupant is None
         return
     node = occupant()
-    assert {o.var.spelling for o in node.outputs} == {".fwbs.qnuc"}
-    assert ".fwbs.qnuc" not in {i.var.spelling for i in node.inputs}
+    assert {o.spelling for o in node.outputs} == {".fwbs.qnuc"}
+    assert ".fwbs.qnuc" not in {i.spelling for i in node.inputs}
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
@@ -1425,8 +1425,8 @@ def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
     owned = {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     for arm in (0, 1):
         node = CRYO_Q_LOADS[arm]()
-        assert {o.var.spelling for o in node.outputs} == owned
-        assert owned & {i.var.spelling for i in node.inputs} == set()
+        assert {o.spelling for o in node.outputs} == owned
+        assert owned & {i.spelling for i in node.inputs} == set()
     assert (
         CRYO_Q_LOADS[
             _cryo_q_loads_arm(

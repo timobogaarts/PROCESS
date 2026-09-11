@@ -27,7 +27,7 @@ from cottax.problem import (
     Start,
     Steps,
 )
-from cottax.spec import In, NodePath, Out, VarPath
+from cottax.spec import NodePath, VarPath
 from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
@@ -614,8 +614,8 @@ def root_find_node(mdf: Mdf) -> RootFind:
             f"`VmconDriver`, which does not trace, so that is a separate change"
         )
     return RootFind(
-        inputs=tuple(In(c) for c in mdf.conditions),
-        outputs=tuple(Out(v) for v in mdf.design),
+        inputs=tuple(c for c in mdf.conditions),
+        outputs=tuple(v for v in mdf.design),
     )
 
 

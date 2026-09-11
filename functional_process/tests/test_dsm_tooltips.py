@@ -28,7 +28,7 @@ import pytest
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
-from cottax.spec import In, NodePath, Out, VarPath
+from cottax.spec import NodePath, VarPath
 from cottax.nodes import ImplementedFunction
 from cottax.names import PathMap
 from jax.tree_util import GetAttrKey
@@ -55,8 +55,8 @@ def N(*keys) -> NodePath:
 
 def call(reads, owns):
     return ImplementedFunction(
-        inputs=tuple(In(r) for r in reads),
-        outputs=tuple(Out(o) for o in owns),
+        inputs=tuple(r for r in reads),
+        outputs=tuple(o for o in owns),
         fn=lambda *a: None,
     )
 

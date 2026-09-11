@@ -395,8 +395,8 @@ def test_pedestal_profile_values_owns_cross_area_prn1():
     "The four that are a shared subsystem's gap" lists, which must land in `.physics`.
     """
     node = PedestalProfileValues()
-    owned = {out.var for out in node.outputs}
-    read = {inp.var for inp in node.inputs}
+    owned = {out for out in node.outputs}
+    read = {inp for inp in node.inputs}
 
     prn1_path = resolve(divertor.prn1, VarPath)
     assert prn1_path in owned

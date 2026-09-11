@@ -32,6 +32,7 @@ from cottax.rewrites import NestInside
 from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
+    report_vars,
     Converged,
     FixedPoint,
     Optimise,
@@ -408,7 +409,7 @@ def _array_fixed_point(max_iter):
     is the worst is a fact and not a coincidence.
     """
     from cottax.rewrites import Assign, NestInside
-    from cottax.spec import In, NodePath, Out, VarPath
+    from cottax.spec import NodePath, VarPath
     from cottax.nodes import ImplementedFunction
     from cottax.names import PathMap
     from jax.tree_util import GetAttrKey
@@ -424,10 +425,10 @@ def _array_fixed_point(max_iter):
             (
                 NodePath((GetAttrKey("A"),)),
                 ImplementedFunction(
-                    inputs=(In(u),), outputs=(Out(hat),), fn=_Affine(rate, offset)
+                    inputs=(u,), outputs=(hat,), fn=_Affine(rate, offset)
                 ),
             ),
-            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+            (problem, FixedPoint(inputs=(hat,), outputs=(u,))),
         ])
     )
     graph = Assign(problem, PicardDriver(max_steps=max_iter)).apply(graph)
@@ -781,7 +782,7 @@ def test_the_driver_reports_its_verdict_through_ports_the_node_owns(square_probl
     """
     built = mdf.in_graph_root_find(square_problem)
     node = built.graph[built.problem]
-    assert [p.var.spelling for p in node.driver_out] == [
+    assert [p.spelling for p in report_vars(node)] == [
         "^driver_out.steps.RootFind",
         "^driver_out.converged.RootFind",
         "^driver_out.status.RootFind",

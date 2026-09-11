@@ -266,7 +266,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     graph = to_graph(node)
     assert graph.definitions
 
-    owned = {out.var for out in node.outputs}
+    owned = {out for out in node.outputs}
     z_tf_inside_half_path = resolve(build.z_tf_inside_half, VarPath)
     assert z_tf_inside_half_path in owned
 
@@ -313,7 +313,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     graph = to_graph(node)
     assert graph.definitions
 
-    owned = {out.var for out in node.outputs}
+    owned = {out for out in node.outputs}
     assert resolve(tfcoil.len_tf_coil, VarPath) in owned
 
 
@@ -364,7 +364,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     graph = to_graph(node)
     assert graph.definitions
 
-    owned = {out.var for out in node.outputs}
+    owned = {out for out in node.outputs}
     assert resolve(tfcoil.tfcryoarea, VarPath) in owned
 
 
@@ -842,14 +842,14 @@ def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occup
     node = occupant()
     graph = to_graph(node)
     assert graph.definitions
-    owned = {out.var.spelling for out in node.outputs}
+    owned = {out.spelling for out in node.outputs}
     assert owned == {
         ".stellarator.wp_width_r",
         ".stellarator.lhs",
         ".stellarator.rhs",
         ".stellarator.wp_width_r_min_guess",
     }
-    assert resolve(tfcoil.j_tf_wp, VarPath) not in {out.var for out in node.outputs}
+    assert resolve(tfcoil.j_tf_wp, VarPath) not in {out for out in node.outputs}
 
 
 def test_only_the_bi2212_occupant_reads_j_tf_wp():
@@ -859,9 +859,9 @@ def test_only_the_bi2212_occupant_reads_j_tf_wp():
     the coils SCC. Each occupant's extra reads over the shared fourteen are its own
     material's, and no others.
     """
-    shared = {i.var.spelling for i in IterNb3snWindingPackIntersectInputs().inputs}
+    shared = {i.spelling for i in IterNb3snWindingPackIntersectInputs().inputs}
     extra = {
-        material: {i.var.spelling for i in occupant().inputs} - shared
+        material: {i.spelling for i in occupant().inputs} - shared
         for material, occupant in _WINDING_PACK_OCCUPANTS.items()
     }
     assert extra == {
@@ -915,7 +915,7 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
     node = WindingPackTotalSizePost()
     graph = to_graph(node)
     assert graph.definitions
-    owned = {out.var for out in node.outputs}
+    owned = {out for out in node.outputs}
     j_tf_wp_path = resolve(tfcoil.j_tf_wp, VarPath)
     assert j_tf_wp_path in owned
 
@@ -944,7 +944,7 @@ def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     post = WindingPackTotalSizePost()
     wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
     assert wp_width_r_min_path in post.node_definition.reads
-    assert wp_width_r_min_path not in {out.var for out in post.outputs}
+    assert wp_width_r_min_path not in {out for out in post.outputs}
 
 
 def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():

@@ -18,9 +18,7 @@ from cottax.problem import (
     Start,
     is_root_find,
 )
-from cottax.spec import (
-    VarPath,
-)
+from cottax.spec import VarPath
 
 from functional_process.cottax.paths import (
     stellarator,

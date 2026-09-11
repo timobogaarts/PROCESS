@@ -532,8 +532,8 @@ def _explained_by(reference, graph, switch_values):
     except Exception:  # noqa: BLE001 -- an unmarked row, never a lost row
         return None
     for node in nodes.values():
-        for port in node.inputs:
-            read = port.var.spelling
+        for port in node.reads:
+            read = port.spelling
             if read in EXPLAINED_OBJECTIVE_READS:
                 return EXPLAINED_OBJECTIVE_READS[read], read
     return None

@@ -10,7 +10,7 @@ from cottax.interfaces.pytree_namespace_module import (
     resolve,
 )
 from cottax.problem import Feasibility
-from cottax.spec import In, Out, VarPath
+from cottax.spec import VarPath
 
 from functional_process.cottax.paths import (
     blanket,
@@ -103,10 +103,10 @@ class DuctFeasibilityConditions(WrapsFunction):
 
 
 DuctFeasibility = Feasibility(
-    design=(Out(resolve(vacuum.ceff_i, VarPath)),),
+    design=(resolve(vacuum.ceff_i, VarPath),),
     inequalities=(
-        In(resolve(vacuum.duct_fits_residual, VarPath)),
-        In(resolve(vacuum.pumping_speed_floor_residual, VarPath)),
+        resolve(vacuum.duct_fits_residual, VarPath),
+        resolve(vacuum.pumping_speed_floor_residual, VarPath),
     ),
 )
 """The declared problem itself: "find a feasible `ceff_i`", no objective."""
