@@ -240,7 +240,7 @@ def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
         shape = mdf.in_graph_shape(built)
         x, out, seconds = mdf.in_graph_solve(built, env)
         # The driver's own verdict, out of the env the run returned. `MdfNewtonDriver`
-        # reports it through `DriverOut` ports the problem node owns, so there is no
+        # reports it through `DriverReport` ports the problem node owns, so there is no
         # results sink to hand in and no `jax.debug.callback` to carry it. Both survived
         # the whole-schedule jit as traced arrays, which is why they are rendered here
         # rather than used raw.

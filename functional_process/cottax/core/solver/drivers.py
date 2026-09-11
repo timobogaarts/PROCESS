@@ -13,7 +13,7 @@ from cottax.drivers import PicardDriver as CottaxPicardDriver
 from cottax.evaluation.schedule import AbstractDriver, ConditionMap
 from cottax.problem import (
     Converged,
-    DriverOut,
+    DriverReport,
     FixedPoint,
     Optimise,
     RootFind,
@@ -266,7 +266,7 @@ def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> N
     )
 
 
-class Status(DriverOut):
+class Status(DriverReport):
     """The integer code the driver's own solver library stopped with."""
 
     label = "status"

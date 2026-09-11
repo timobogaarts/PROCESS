@@ -16,7 +16,7 @@ from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import (
     Converged,
-    DriverOut,
+    DriverReport,
     Equality,
     FixedPoint,
     Inequality,
@@ -428,7 +428,7 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     return tuple(x), out, elapsed
 
 
-def verdict(out, kind: type[DriverOut], place: NodePath = None):
+def verdict(out, kind: type[DriverReport], place: NodePath = None):
     """What a driver said about its own run, out of the env a solve returned."""
     return out.get(kind.name_for(IN_GRAPH_PLACE if place is None else place))
 
@@ -555,7 +555,7 @@ class InGraphRootFind:
     schedule: Schedule
     problem: NodePath
 
-    def verdict(self, out, kind: type[DriverOut]):
+    def verdict(self, out, kind: type[DriverReport]):
         """What the outer driver said about its own run, out of a run's env."""
         return out.get(kind.name_for(self.problem))
 

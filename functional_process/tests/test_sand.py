@@ -924,7 +924,7 @@ class _UnboundedSlope:
 
 
 TOY_PROBLEM = NodePath((GetAttrKey("Opt"),))
-"""Where `_toy_problem` binds its `Optimise`, which is the place every `DriverOut` port
+"""Where `_toy_problem` binds its `Optimise`, which is the place every `DriverReport` port
 it mints is named from (`^driver_out.<label>.Opt`)."""
 
 
@@ -1126,7 +1126,7 @@ def test_driven_runner_and_whole_jit_agree_on_the_verdict():
     """The two `run_schedule` paths bind the same reports to the same names.
 
     They are different code -- cottax's `Drive.__call__` under one jit, this port's
-    `_driven_runner` walking the steps -- and the point of the `DriverOut` change is
+    `_driven_runner` walking the steps -- and the point of the `DriverReport` change is
     that a caller reads the verdict the same way whichever ran.
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
@@ -1219,7 +1219,7 @@ def test_slsqp_driver_reports_scipys_own_alphabet():
 def test_outcome_sink_is_gone():
     """The mutable results sink both SQP drivers used to write into is deleted.
 
-    A `DriverOut` port and an `Outcome` dict are two channels for one fact, and keeping
+    A `DriverReport` port and an `Outcome` dict are two channels for one fact, and keeping
     both is how they drift apart. This asserts the deletion rather than trusting a grep:
     a re-added field would restore a hashability trap (`Schedule.__hash__` reaches a
     driver's fields) that cost a whole investigation once already.
