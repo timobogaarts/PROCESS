@@ -35,6 +35,34 @@ from cottax.visualization.xdsm_html import HtmlDoc
 type Group = tuple[str, ...]
 
 UNGROUPED: Group = ()
+
+CONDITIONS: Group = ("conditions",)
+"""The group the optimiser's condition nodes are drawn in -- `.Constraint<n>` and
+`.Objective`, top-level names `sand.constraint_nodes` / `objective_nodes` mint with no
+subsystem of their own. They are what the optimiser reads; a reader looks for them."""
+
+OPTIMISER: Group = ("optimiser",)
+"""The group the outer problem is drawn in: `.Opt`, `.RootFind`, `^problem.sand`."""
+
+FIXED_GROUP_COLOUR = {CONDITIONS: "#c1704f", OPTIMISER: "#77609a"}
+"""Colours these two groups take regardless of `PALETTE`'s order: terracotta for the
+conditions (the paper's variable colour, off every subsystem hue) and the optimiser's
+violet, the same the kind ring uses."""
+
+
+def _synthetic(path: NodePath) -> "Group | None":
+    """`CONDITIONS` / `OPTIMISER` for the names those groups collect, else `None`."""
+    keys = _tree_keys(path)
+    if is_minted(path):
+        return OPTIMISER if unminted(path).spelling in (".sand",) else None
+    if len(keys) != 1:
+        return None
+    leaf = keys[0]
+    if leaf.startswith("Constraint") or leaf.startswith("Objective"):
+        return CONDITIONS
+    if leaf in ("Opt", "RootFind"):
+        return OPTIMISER
+    return None
 """The group of a node whose name carries no prefix at all."""
 
 UNGROUPED_LABEL = "(ungrouped)"
@@ -79,6 +107,9 @@ def group_of(
     """
     if depth is not None and depth < 1:
         raise ValueError(f"depth must be at least 1, not {depth}")
+    synthetic = _synthetic(path)
+    if synthetic is not None:
+        return synthetic
     if among is not None and is_minted(path) and unminted(path) not in among:
         if owners is not None:
             owner = _cut_owner(path, owners)
@@ -271,7 +302,12 @@ def _run_order(blocking: Blocking) -> Iterator[NodePath]:
         if lead is not None:
             head = [lead]
         else:
-            head = [name for name in block if is_problem(blocking.graph[name])]
+            # Every problem ahead of every body, the outer kind first: an optimiser is
+            # what a reader looks for at the top left of a block.
+            head = sorted(
+                (name for name in block if is_problem(blocking.graph[name])),
+                key=lambda name: 0 if problem_kind(blocking.graph[name]) in ("optimise", COMBINED) else 1,
+            )
         yield from head
         yield from (name for name in block if name not in head)
 
@@ -621,7 +657,11 @@ def group_palette(groups: Iterable[Group]) -> dict[Group, Shade]:
     named = tuple(dict.fromkeys(g for g in groups if g != UNGROUPED))
     closure = tuple(dict.fromkeys(g[: i + 1] for g in named for i in range(len(g))))
     subsystems = tuple(dict.fromkeys(top_of(g) for g in closure))
-    base = {top: group_style(i) for i, top in enumerate(subsystems)}
+    # The two synthetic groups take fixed colours and no slot of the palette, so a
+    # subsystem's hue does not shift when an optimiser is inserted.
+    real = [top for top in subsystems if top not in FIXED_GROUP_COLOUR]
+    base = {top: group_style(i) for i, top in enumerate(real)}
+    base.update({top: (FIXED_GROUP_COLOUR[top], None) for top in subsystems if top in FIXED_GROUP_COLOUR})
     out = {UNGROUPED: Shade(UNGROUPED_COLOUR, None, UNGROUPED_COLOUR)}
     for top in subsystems:
         colour, overlay = base[top]
@@ -945,9 +985,9 @@ text { fill:var(--fg); }
 .lbl.prob { font-weight:700; }
 .grid { stroke:var(--rule); stroke-width:.4; }
 .sep { stroke:var(--fg); stroke-width:.7; opacity:.35; }
-.fb { stroke:var(--accent); stroke-width:1.1; }
-.box { fill:none; stroke:var(--accent); stroke-width:1.4; }
-.box.ok { stroke:var(--fg); opacity:.55; }
+.fb { stroke:none; }  /* below the diagonal is what says feedback; full weight, no ring */
+.box { fill:none; stroke:#9d9d9d; stroke-width:1.4; }
+.box.ok { stroke:#9d9d9d; opacity:.7; }
 /* A solve's box on the structure page: its ring is the kind of problem the level
    answers (`.solve`, stroke set per box), and its *area* is one more coat of the page's
    ink over whatever it sits in (`.area`) -- so a level nested two deep is darker than the
@@ -1170,7 +1210,11 @@ root.appendChild(marks);
 const boxes = el('g');
 for (const b of BOXES) {
   const x = X0 + b.from * CELL, y = Y0 + b.from * CELL, w = (b.to - b.from + 1) * CELL;
-  const kind = STRUCT ? ringOf(b) : null;
+  /* Rings are the structure page's: a solve in its kind's colour, a cycle nothing yet
+     answers in the paper's grey. The provenance page draws no rings -- an SCC's members
+     are located there by their marks, and a red ring said nothing the marks did not. */
+  if (!STRUCT) continue;
+  const kind = ringOf(b);
   const style = kind
     ? {class: 'solve', stroke: kind, 'stroke-width': Math.max(1, 2.8 - 0.6 * b.level)}
     : {class: 'box' + (b.crosses ? '' : ' ok')};
@@ -1193,9 +1237,9 @@ for (const b of BOXES) {
   if (STRUCT) {
     const gx = X0 + n * CELL + solveX + 8 * boxDepth(b), gy = y + CELL / 2 + 3;
     boxes.appendChild(el('line', {x1: x + w + 1.5, y1: y + CELL / 2, x2: gx - 3,
-      y2: y + CELL / 2, stroke: kind || 'var(--accent)', 'stroke-width': .5,
+      y2: y + CELL / 2, stroke: kind || '#9d9d9d', 'stroke-width': .5,
       'stroke-opacity': .5, 'stroke-dasharray': '2 3'}));
-    const t = el('text', {class: 'slabel', x: gx, y: gy, fill: kind || 'var(--accent)'});
+    const t = el('text', {class: 'slabel', x: gx, y: gy, fill: kind || '#9d9d9d'});
     t.textContent = boxLabel(b) + ' (' + b.size + ')';
     t.dataset.i = JSON.stringify({box: b});
     boxes.appendChild(t);
@@ -1229,7 +1273,7 @@ side.innerHTML =
    problem row is marked by its kind wherever it sits. */
 if (STRUCT && BOXES.length) {
   side.innerHTML = '<h2>Solve strategy</h2><div class="tree">' + BOXES.map(b => {
-    const colour = ringOf(b) || 'var(--accent)';
+    const colour = ringOf(b) || '#9d9d9d';
     return `<div class="sw" style="border-color:${colour}"></div>` +
       `<div class="nm" style="padding-left:${boxDepth(b) * 11}px" title="${esc(
         b.problem === null ? 'nothing drives this block' : D.rows[b.problem].name)}">` +
