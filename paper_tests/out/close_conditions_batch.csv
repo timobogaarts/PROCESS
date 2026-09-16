@@ -1,0 +1,5 @@
+shape,N,vmap,first_call_s,warm_s,us_per_point,max_abs_eq,newton_steps_max,all_converged
+plain,1,False,3.273666354,0.007995920001,7995.920001,,,
+plain,1024,True,7.400093422,0.276930872,270.4403047,,,
+closed,1,False,10.98951819,0.009719360001,9719.360001,1.231459379e-12,0,True
+closed,1024,True,16.31736622,0.484102171,472.7560264,9.969469694e-11,5,True
