@@ -1090,8 +1090,8 @@ root.appendChild(band);
 /* ---- row and column labels ---- */
 const labels = el('g');
 /* A problem row is the one kind of row the strategy is *about*, so its label and its
-   diagonal are written in its kind's colour rather than its group's: the group is still
-   on its marks and its band, and what the row answers is what a reader is looking for. */
+   label is written in its kind's colour: the group stays on its diagonal, its marks and
+   its band, and what the row answers is what a reader of the label is looking for. */
 const kindOf = r => r.kind && KIND_COLOUR[r.kind];
 D.rows.forEach((r, i) => {
   const y = Y0 + i * CELL + CELL / 2 + 3;
@@ -1126,14 +1126,16 @@ if (STRUCT) for (const b of BOXES) {
 }
 root.appendChild(areas);
 
+/* The diagonal keeps the row's GROUP hue on both pages, exactly as the provenance page
+   paints it -- the kind is on the label and the box ring, and a reader scanning the
+   diagonal is reading provenance. A problem row's cell is outlined rather than filled. */
 const diag = el('g');
 D.rows.forEach((r, i) => {
   const x = X0 + i * CELL, y = Y0 + i * CELL;
-  const kind = kindOf(r);
   diag.appendChild(el('rect', {x, y, width: CELL, height: CELL,
-    fill: kind || r.colour, 'fill-opacity': kind ? .9 : r.problem ? .45 : .95,
-    stroke: r.problem && !kind ? r.colour : 'none', 'stroke-width': 1.4}));
-  if (r.overlay && !kind)
+    fill: r.colour, 'fill-opacity': r.problem ? .45 : .95,
+    stroke: r.problem ? r.colour : 'none', 'stroke-width': 1.4}));
+  if (r.overlay)
     diag.appendChild(el('rect', {x, y, width: CELL, height: CELL, fill: `url(#${r.overlay})`}));
 });
 root.appendChild(diag);
