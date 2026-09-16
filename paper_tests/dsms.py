@@ -1,8 +1,10 @@
 """The interactive DSM pages -- the GitHub Pages kind (`grouping.render_grouped_dsm_html`,
 self-contained, no ragraph) -- for every configuration and every architecture.
 
-Per configuration, under `out/dsm/<configuration>/`, each drawn twice (ordered by
-provenance and by structure, i.e. SCC membership):
+Per configuration, under `out/dsm/<configuration>/`, each drawn twice -- ordered by
+provenance (namespace bands, the top level's coupled blocks boxed) and by structure (the
+run order at every nesting level, every solve boxed inside the solve it is nested in,
+ringed by the kind of problem it answers and labelled with its driver):
 
     uncut               the graph as `indat` declares it: no cut, no optimiser -- what
                         the Pages site shows
@@ -34,7 +36,7 @@ from cottax.problem import RootFind
 
 from functional_process.cottax import mdf, sand, session
 from functional_process.cottax.indat import graph_for
-from functional_process.cottax.mda import cut_graph
+from functional_process.cottax.mda import assign_drivers, cut_graph, default_drivers
 from functional_process.cottax.mda_harness import _without_excluded
 from functional_process.cottax.render_xdsm import SPELLING
 from functional_process.cottax.run_cold_matrix import (
@@ -60,13 +62,15 @@ def draw(blocking: Blocking, outdir, name: str, title: str) -> list[str]:
         order=provenance_order(graph.nodes, depth=None, owners=graph.owners, groups=axis),
         title=f"{title} -- ordered by provenance",
         file_name=f"{name}_provenance",
+        mode="provenance",
         **common,
     )
     render_grouped_dsm_html(
         blocking,
         order=structure_order(blocking),
-        title=f"{title} -- ordered by structure (SCC membership)",
+        title=f"{title} -- ordered by structure (run order, solves nested)",
         file_name=f"{name}_scc",
+        mode="structure",
         **common,
     )
     return [f"{name}_provenance.html", f"{name}_scc.html"]
@@ -108,7 +112,12 @@ def mdf_blocking(live, recipe: str):
         ref.ixc, ref.icc, ref.n_equality, ref.i_figure_merit,
         graph=live.machine_graph, cut=cut, switch_values=live.switch_values,
     )
-    return blocking
+    # `nested_blocking` states the structure and no algorithm; the page names the driver
+    # of every solve, so the default one is `Assign`ed on -- the same choice `mdf.assemble`
+    # makes for the inner problems, and the file's own `VmconDriver` for the `Optimise`.
+    # `Assign` carries `within`, so the nesting survives and the blocking is re-read.
+    graph = blocking.graph
+    return Blocking.scc(assign_drivers(graph, default_drivers(graph)))
 
 
 def sand_blocking(live, recipe: str):

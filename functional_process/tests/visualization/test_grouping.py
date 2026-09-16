@@ -22,13 +22,22 @@ from cottax.names import MintKey
 from cottax.names import PathMap
 from jax.tree_util import DictKey, GetAttrKey
 
+from cottax.drivers import PicardDriver, SLSQPDriver
+from cottax.plan import Plan
+from cottax.problem import FixedPoint, Optimise, RootFind
+from cottax.rewrites import Assign, Combine, Cut, FixedPointCut, NestInside
+
 from functional_process.cottax.visualization.grouping import (
+    COMBINED,
+    KIND_COLOUR,
     PALETTE,
     TIER_OVERLAY,
+    UNDRIVEN,
     UNGROUPED,
     _matrix_struct,
     containing,
     dependency_group_sequence,
+    driver_name,
     group_label,
     group_of,
     group_palette,
@@ -36,9 +45,11 @@ from functional_process.cottax.visualization.grouping import (
     group_style,
     grouping_report,
     hierarchical,
+    problem_kind,
     provenance_order,
     render_grouped_dsm_html,
     shade,
+    solve_levels,
     structure_order,
     top_of,
 )
@@ -664,3 +675,337 @@ def test_the_legend_is_hierarchical_and_indented(nested):
 
 def test_hierarchical_puts_a_namespace_before_what_is_inside_it():
     assert hierarchical([("t",), ("p", "q"), ("p",)]) == (("t",), ("p",), ("p", "q"))
+
+
+# ============================================================== the solve strategy
+def A(*keys) -> NodePath:
+    """A node name over `GetAttrKey`s, as the port's own machine-tree names are."""
+    return NodePath(tuple(GetAttrKey(k) for k in keys))
+
+
+@pytest.fixture
+def sellar_mdf():
+    """
+    Sellar under MDF, stated as structure: the optimiser nested around a cut MDA.
+
+    `D1 <-> D2` is the coupling; `FixedPointCut` on `y2` turns it into a fixed point
+    `^problem.y2` over `D1, D2`; `NestInside(opt)` states that this fixed point is
+    answered *inside* the optimiser's iteration. Both problems get a driver, so the
+    page has an algorithm to name. The shape `mdf.nested_blocking` gives the port's own
+    graphs, in five nodes.
+    """
+    g = Graph(
+        PathMap({
+            A("mdo", "opt"): Optimise(
+                objective=V("f"), unknowns=(V("z"),), inequalities=(V("g"),)
+            ),
+            A("mda", "D1"): call([V("z"), V("y2")], [V("y1")]),
+            A("mda", "D2"): call([V("z"), V("y1")], [V("y2")]),
+            A("mdo", "obj"): call([V("z"), V("y1"), V("y2")], [V("f")]),
+            A("mdo", "con"): call([V("y1")], [V("g")]),
+        })
+    )
+    cut = (Plan(g) + FixedPointCut(Cut(V("y2"), readers=[A("mda", "D1")]))).graph
+    (inner,) = [n for n in cut.nodes if n not in g.nodes]
+    driven = Assign(inner, PicardDriver()).apply(
+        Assign(A("mdo", "opt"), SLSQPDriver()).apply(cut)
+    )
+    return Blocking.scc((Plan(driven) + NestInside(A("mdo", "opt"))).graph), inner
+
+
+def _spelt(names):
+    return [n.spelling for n in names]
+
+
+def test_structure_order_answers_each_level_first_and_runs_its_body_in_order(sellar_mdf):
+    """
+    The optimiser heads the whole block; inside it the fixed point heads *its* block,
+    and the MDA runs `D1` then `D2` -- the order one Picard sweep evaluates them in --
+    before the objective and the constraint the optimiser reads once per outer iterate.
+
+    Under the blocking's own member order the fixed point sat last (binding order puts
+    a minted node after what it was minted around) and the interior was in binding
+    order too; that is what the run order at every level replaces.
+    """
+    blocking, inner = sellar_mdf
+    assert _spelt(structure_order(blocking)) == [
+        ".mdo.opt",
+        inner.spelling,
+        ".mda.D1",
+        ".mda.D2",
+        ".mdo.obj",
+        ".mdo.con",
+    ]
+    # A permutation of the graph, whatever else: nothing dropped, nothing doubled.
+    assert set(structure_order(blocking)) == set(blocking.graph.nodes)
+    assert len(structure_order(blocking)) == len(blocking.graph.nodes)
+
+
+def test_structure_order_of_a_flat_blocking_puts_every_problem_ahead_of_its_body():
+    """No nesting: a block declaring one problem is that problem, then its body in run
+    order -- and a block declaring none is untouched.
+    """
+    g = Graph(
+        PathMap({
+            A("a", "x"): call([V("u")], [V("p")]),
+            A("a", "y"): call([V("p")], [V("u")]),
+            A("b", "z"): call([V("u")], [V("w")]),
+        })
+    )
+    cut = (Plan(g) + FixedPointCut(Cut(V("u"), readers=[A("a", "x")]))).graph
+    order = _spelt(structure_order(Blocking.scc(cut)))
+    assert order[0].startswith("^problem.")
+    assert order[1:] == [".a.x", ".a.y", ".b.z"]
+
+
+def test_provenance_order_is_untouched_by_the_nesting(sellar_mdf):
+    """The other page is about where a node was *written*, and stays so: the groups in
+    first-appearance order, the fixed point filed with the `mda` it was cut from.
+    """
+    blocking, inner = sellar_mdf
+    names = blocking.graph.nodes
+    assert _spelt(provenance_order(names, owners=blocking.graph.owners)) == [
+        ".mdo.opt",
+        ".mdo.obj",
+        ".mdo.con",
+        ".mda.D1",
+        ".mda.D2",
+        inner.spelling,
+    ]
+
+
+def test_solve_levels_reads_the_nesting_off_the_blocking(sellar_mdf):
+    blocking, inner = sellar_mdf
+    outer, held = solve_levels(blocking)
+    assert (outer.level, outer.parent) == (0, None)
+    assert outer.problem == A("mdo", "opt")
+    assert (outer.kind, outer.driver) == ("optimise", "SLSQPDriver")
+    assert len(outer.members) == 6
+    assert (held.level, held.parent) == (1, 0)
+    assert held.problem == inner
+    assert (held.kind, held.driver) == ("fixed-point", "PicardDriver")
+    assert set(held.members) == {inner, A("mda", "D1"), A("mda", "D2")}
+
+
+def test_the_struct_boxes_every_level_with_its_parent_and_its_kind(sellar_mdf):
+    blocking, inner = sellar_mdf
+    order = structure_order(blocking)
+    struct = _matrix_struct(
+        blocking, order, depth=None, formatter=xDSMFormatterFlat(), mode="structure"
+    )
+    outer, held = struct["boxes"]
+    assert (outer["level"], outer["parent"]) == (0, None)
+    assert (outer["from"], outer["to"], outer["size"]) == (0, 5, 6)
+    assert (outer["kind"], outer["driver"]) == ("optimise", "SLSQPDriver")
+    assert struct["rows"][outer["problem"]]["name"] == ".mdo.opt"
+    assert (held["level"], held["parent"]) == (1, 0)
+    assert (held["from"], held["to"], held["size"]) == (1, 3, 3)
+    assert (held["kind"], held["driver"]) == ("fixed-point", "PicardDriver")
+    assert struct["rows"][held["problem"]]["name"] == inner.spelling
+    # Every key the print generator reads is still there and still means the same.
+    for key in (
+        "real",
+        "crosses",
+        "nests",
+        "container",
+        "contiguous",
+        "groups",
+        "members",
+        "at",
+    ):
+        assert key in outer
+    assert outer["contiguous"] and held["contiguous"]
+    assert struct["mode"] == "structure"
+    assert struct["solves"] == 2
+
+
+def test_a_row_knows_its_depth_and_the_bands_run_over_it(sellar_mdf):
+    """Depth is how many solves hold the row: the optimiser's own row is 1 deep, the
+    MDA's rows 2, and the structure page's lane is the run of those numbers.
+    """
+    blocking, _inner = sellar_mdf
+    struct = _matrix_struct(
+        blocking,
+        structure_order(blocking),
+        depth=None,
+        formatter=xDSMFormatterFlat(),
+        mode="structure",
+    )
+    assert [r["depth"] for r in struct["rows"]] == [1, 2, 2, 2, 1, 1]
+    assert struct["depths"] == 2
+    assert [(b["from"], b["to"], b["depth"]) for b in struct["depthBands"]] == [
+        (0, 0, 1),
+        (1, 3, 2),
+        (4, 5, 1),
+    ]
+
+
+def test_a_problem_row_carries_its_kind_and_driver_and_a_body_row_none(sellar_mdf):
+    blocking, inner = sellar_mdf
+    struct = _matrix_struct(
+        blocking,
+        structure_order(blocking),
+        depth=None,
+        formatter=xDSMFormatterFlat(),
+        mode="structure",
+    )
+    rows = {r["name"]: r for r in struct["rows"]}
+    assert (rows[".mdo.opt"]["kind"], rows[".mdo.opt"]["driver"]) == (
+        "optimise",
+        "SLSQPDriver",
+    )
+    assert (rows[inner.spelling]["kind"], rows[inner.spelling]["driver"]) == (
+        "fixed-point",
+        "PicardDriver",
+    )
+    assert (rows[".mda.D1"]["kind"], rows[".mda.D1"]["driver"]) == (None, None)
+    assert [(k["kind"], k["count"]) for k in struct["kinds"]] == [
+        ("optimise", 1),
+        ("fixed-point", 1),
+    ]
+    assert all(k["colour"] == KIND_COLOUR[k["kind"]] for k in struct["kinds"])
+
+
+def test_the_provenance_struct_keeps_the_top_level_s_coupled_boxes_only():
+    """
+    What the print generator reads: on a blocking with no nesting, `boxes` is exactly
+    the coupled blocks it always was -- a driven block over one real node is *not* a
+    box there (`test_a_minted_problem_beside_its_node_is_not_coupling`), while the
+    structure page does box it, since a solve is what that page draws.
+    """
+    g = Graph(
+        PathMap({
+            A("g", "x"): call([V("u")], [V("c")]),
+            A("g", "y"): call([V("c")], [V("u")]),
+        })
+    )
+    cut = (Plan(g) + FixedPointCut(Cut(V("u"), readers=[A("g", "x")]))).graph
+    blocking = Blocking.scc(cut)
+    (block,) = [b for b in blocking.blocks if len(b) > 1]
+    assert grouping_report(blocking).coupled and len(block) == 3
+    fmt = xDSMFormatterFlat()
+    prov = _matrix_struct(blocking, structure_order(blocking), depth=None, formatter=fmt)
+    assert prov["mode"] == "provenance"
+    assert [b["size"] for b in prov["boxes"]] == [3]
+    assert prov["boxes"][0]["level"] == 0 and prov["boxes"][0]["parent"] is None
+
+    single = Graph(
+        PathMap({
+            A("g", "x"): call([V("hat", "u")], [V("u")]),
+            M("problem", "g", "x"): FixedPoint(
+                conditions=(V("u"),), unknowns=(V("hat", "u"),)
+            ),
+        })
+    )
+    single = Blocking.scc(single)
+    by_provenance = _matrix_struct(
+        single, structure_order(single), depth=None, formatter=fmt
+    )
+    by_structure = _matrix_struct(
+        single, structure_order(single), depth=None, formatter=fmt, mode="structure"
+    )
+    assert by_provenance["boxes"] == []
+    assert [(b["size"], b["kind"], b["driver"]) for b in by_structure["boxes"]] == [
+        (2, "fixed-point", UNDRIVEN)
+    ]
+
+
+def test_a_coupled_block_nothing_drives_is_boxed_with_no_kind(coupled):
+    """The uncut cycle: a box, since it is what a cut has not reached, and no solve."""
+    blocking = Blocking.scc(coupled)
+    struct = _matrix_struct(
+        blocking,
+        structure_order(blocking),
+        depth=None,
+        formatter=xDSMFormatterFlat(),
+        mode="structure",
+    )
+    (box,) = struct["boxes"]
+    assert (box["kind"], box["driver"], box["problem"]) == (None, None, None)
+    assert struct["kinds"] == []
+
+
+def test_the_renderer_picks_the_mode_from_the_order(sellar_mdf, tmp_path):
+    blocking, _inner = sellar_mdf
+    fmt = xDSMFormatterFlat()
+    by_structure = json.loads(
+        re.search(
+            r"const D = (\{.*?\});\n",
+            str(render_grouped_dsm_html(blocking, formatter=fmt)),
+            re.DOTALL,
+        ).group(1)
+    )
+    assert by_structure["mode"] == "structure"
+    by_provenance = json.loads(
+        re.search(
+            r"const D = (\{.*?\});\n",
+            str(
+                render_grouped_dsm_html(
+                    blocking,
+                    order=provenance_order(
+                        blocking.graph.nodes, owners=blocking.graph.owners
+                    ),
+                    formatter=fmt,
+                )
+            ),
+            re.DOTALL,
+        ).group(1)
+    )
+    assert by_provenance["mode"] == "provenance"
+    with pytest.raises(ValueError, match="mode"):
+        _matrix_struct(
+            blocking, structure_order(blocking), depth=None, formatter=fmt, mode="x"
+        )
+
+
+# ============================================================== kinds and drivers
+def test_a_shape_is_cottax_s_own_and_a_driver_is_its_class_name():
+    opt = Optimise(objective=V("f"), unknowns=(V("z"),), equalities=(V("h"),))
+    assert problem_kind(opt) == "optimise"
+    assert driver_name(opt) == UNDRIVEN
+    root = RootFind(conditions=(V("r"),), unknowns=(V("u"),))
+    assert problem_kind(root) == "root-find"
+    assert problem_kind(call([V("a")], [V("b")])) is None
+    assert driver_name(call([V("a")], [V("b")])) is None
+
+
+def test_a_driven_problem_names_its_driver():
+    g = Graph(
+        PathMap({
+            A("x"): call([V("z")], [V("r")]),
+            A("p"): RootFind(conditions=(V("r"),), unknowns=(V("z"),)),
+        })
+    )
+    from cottax.drivers import NewtonDriver
+
+    driven = Assign(A("p"), NewtonDriver()).apply(g)
+    assert driver_name(driven[A("p")]) == "NewtonDriver"
+    assert problem_kind(driven[A("p")]) == "root-find"
+
+
+def test_a_combined_problem_is_read_off_its_joined_residuals():
+    """
+    `Combine` leaves no mark, so the reading is structural: `Optimise(...)` writes every
+    equality into one relation, and a second `Eq`-against-zero relation under an
+    objective is the trace of a join -- SAND's `^problem.sand`, the fixed points
+    residualised and folded under the optimiser. A plain optimiser with equalities and
+    inequalities is not combined, and neither is a fixed point over several relations.
+    """
+    g = Graph(
+        PathMap({
+            A("opt"): Optimise(
+                objective=V("f"),
+                unknowns=(V("z"),),
+                equalities=(V("h"),),
+                inequalities=(V("g"),),
+            ),
+            A("rf"): RootFind(conditions=(V("r"),), unknowns=(V("u"),)),
+            A("x"): call([V("z"), V("u")], [V("f"), V("h"), V("g"), V("r")]),
+        })
+    )
+    assert problem_kind(g[A("opt")]) == "optimise"
+    joined = (Plan(g) + Combine(A("sand"), (A("opt"), A("rf")))).graph
+    (name,) = [n for n in joined.nodes if n not in g.nodes]
+    assert name.spelling == "^problem.sand"
+    assert problem_kind(joined[name]) == COMBINED
+    assert COMBINED in KIND_COLOUR

@@ -1,24 +1,35 @@
 """Grouping this port's graph by the *prefix* of its node names, and drawing the two
-orderings.
+orderings -- by provenance (where a node was written) and by structure (the run order at
+every nesting level, with every solve boxed inside the solve it is nested in, ringed by
+the kind of problem it answers and named with its driver: the solve strategy).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 import dataclasses
 import json
+import warnings
 
 import networkx as nx
 
 from jax.tree_util import DictKey, GetAttrKey
 
+from cottax.abstract import Eq, is_problem, undriven
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
-from cottax.problem import ConditionNode
+from cottax.problem import ConditionNode, Driven, shape_of
 from cottax.names import is_minted, unminted
-from cottax.visualization.xdsm import Formatter, NoFormat, _xesc
+from cottax.visualization.sequencing import sequenced
+from cottax.visualization.xdsm import (
+    PROBLEM_TYPE_TEXT,
+    Formatter,
+    NoFormat,
+    _xesc,
+    problems_at,
+)
 from cottax.visualization.xdsm_html import HtmlDoc
 
 type Group = tuple[str, ...]
@@ -206,8 +217,63 @@ def provenance_order(
 
 
 def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
-    """`blocking`'s own order, flattened: the order the graph actually runs in."""
-    return tuple(name for block in blocking.blocks for name in block)
+    """The order the graph actually runs in, **at every level**: `blocking`'s blocks in
+    their run order, each block's body in the run order of *its* level, and so on down
+    through `Blocking.inner`.
+
+    Two things are done to the blocking's own member order, and both are borrowed from
+    cottax's XDSM rather than invented here:
+
+    - the body of every block -- the block with its problems taken out -- is put in the
+      SCC order of that body wherever the stored order would draw a read from a later
+      member (`visualization.sequencing.sequenced`, which is recursive over `inner`, so a
+      nested level's interior is ordered by *its* blocking and not by the parent's
+      binding order);
+    - the problem a level answers is drawn **first** in its block, ahead of what it
+      drives (`xdsm._problem_first`'s rule): it is what the level is *for*, and pinning
+      it to the head is what leaves the interior contiguous, so a nested box can be a
+      rectangle. A block that answers no single problem -- none declared, or several
+      un-nested ones -- puts every problem it holds ahead of every body, in stored order.
+
+    Which linear extension of the body is drawn is a presentation choice, and this makes
+    no promise beyond *one the body could be run in*: every edge among body members below
+    the diagonal, and only the reads that pass through a problem above it.
+    """
+    return tuple(_run_order(sequenced(blocking)))
+
+
+def answered_at(blocking: Blocking) -> tuple[NodePath | None, ...]:
+    """`xdsm.problems_at`, without its warning: the problem each block answers at its
+    own level, `None` where none is or where several are declared and none nested.
+
+    The warning is right for a drawing that then shows nothing at that block, and wrong
+    here: a block declaring three un-nested problems is *drawn* -- every one of the
+    three marked by its kind, the block ringed as coupled with no solve named -- and the
+    page is the place a reader sees that the nesting is missing. Repeating cottax's
+    advice on the console, once per call and with the whole block spelt out, is noise
+    over a picture that already says it.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=r".*declares \d+ problems.*")
+        return problems_at(blocking)
+
+
+def _run_order(blocking: Blocking) -> Iterator[NodePath]:
+    """`structure_order`'s recursion: one level, its nested levels in place."""
+    for block, held, lead in zip(blocking.blocks, blocking.inner, answered_at(blocking)):
+        if held is not None:
+            # The level's problem is the one member its interior does not hold; the
+            # interior is a blocking of its own and states the rest of the order.
+            inside = frozenset(held.graph.nodes)
+            yield from (name for name in block if name not in inside)
+            yield from _run_order(held)
+            continue
+        if lead is not None:
+            head = [lead]
+        else:
+            head = [name for name in block if is_problem(blocking.graph[name])]
+        yield from head
+        yield from (name for name in block if name not in head)
 
 
 # ================================================================== the measurement
@@ -353,6 +419,128 @@ def grouping_report(blocking: Blocking, *, depth: int | None = None) -> Grouping
     )
 
 
+# ================================================================== the strategy
+COMBINED = "combined"
+"""The kind of a problem several were `Combine`d into -- see `problem_kind`."""
+
+KIND_ORDER = (
+    "optimise", COMBINED, "root-find", "fixed-point", "feasibility", "declared", "stated"
+)
+"""Every kind a problem row can be marked with, in the order a legend lists them:
+cottax's own shape slugs (`xdsm.PROBLEM_TYPE_ORDER`, plus `shape_of`'s two fallthroughs)
+with `combined` beside the optimise it is a special case of."""
+
+KIND_TEXT = {
+    **PROBLEM_TYPE_TEXT,
+    COMBINED: "combined (several problems as one)",
+    "declared": "declared, matching no shape",
+}
+"""What a legend entry says of each kind."""
+
+UNDRIVEN = "undriven"
+"""What `driver_name` says of a problem no algorithm has been `Assign`ed to."""
+
+
+def problem_kind(node) -> str | None:
+    """The kind a problem row is marked with: `None` for a node with a body, else
+    `cottax.problem.shape_of`'s slug -- except `combined`.
+
+    **`combined` is read off structure, and the reading is a heuristic.** `Combine`
+    leaves no mark on the node it builds: the join is `Condition.__add__`, which
+    concatenates the two statements' relations, and the result is a `Condition` like any
+    other. What *does* survive is the concatenation: the `Optimise(...)` constructor
+    writes every equality into **one** `Eq` relation against zero (and every inequality
+    into one `Le`), so an objective sitting over **two or more** `Eq` relations against
+    zero can only have been written by hand or by a join -- and in this port it is the
+    join, SAND's `^problem.sand`, every inner fixed point residualised and folded under
+    the file's optimiser. A fixed point over several relations is *not* called combined:
+    a join of pairings is still a fixed point, which is what `is_fixed_point` says of it.
+    """
+    if not isinstance(node, ConditionNode):
+        return None
+    kind = shape_of(node)
+    problem = undriven(node)
+    residual_relations = sum(
+        1 for r in problem.relations if r.op is Eq and r.against_zero
+    )
+    if kind == "optimise" and residual_relations > 1:
+        return COMBINED
+    return kind
+
+
+def driver_name(node) -> str | None:
+    """Which algorithm answers a problem: the driver's class name, `UNDRIVEN` for a
+    problem none has been `Assign`ed to yet, `None` for a node that is not a problem."""
+    if not isinstance(node, ConditionNode):
+        return None
+    return type(node.driver).__name__ if isinstance(node, Driven) else UNDRIVEN
+
+
+@dataclasses.dataclass(frozen=True)
+class Solve:
+    """One block at one level of the solve strategy: what is solved together, how deep,
+    inside which other solve, and by what."""
+
+    members: tuple[NodePath, ...]
+    level: int
+    """Nesting depth: 0 for a block of the top-level blocking, 1 inside one of those."""
+
+    parent: int | None
+    """Index into `solve_levels`' tuple of the solve this one is nested in."""
+
+    problem: NodePath | None
+    """The problem answered at this level -- `xdsm.problems_at`'s answer: `None` for a
+    block that only runs, and for one that declares several problems and nests none."""
+
+    kind: str | None
+    driver: str | None
+
+    @property
+    def real(self) -> int:
+        return sum(1 for m in self.members if not is_minted(m))
+
+    @property
+    def driven(self) -> bool:
+        return self.problem is not None
+
+    @property
+    def coupled(self) -> bool:
+        """More than one real node: `BlockGrouping.real > 1`, the coupling § 11 counts.
+        """
+        return self.real > 1
+
+
+def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
+    """Every block of `blocking` that is driven or coupled, **at every nesting level**,
+    outermost first and in run order within a level.
+
+    A block that is neither -- one node, or nothing to solve -- is left out, at every
+    level; what is kept is every solve (a driven block, whatever its size: a nesting is a
+    claim about the solve, and the point of drawing it is to see the claim) and every
+    coupled block nothing drives (`GroupingReport.coupled`'s blocks, the cycles a cut has
+    not reached). Read off `Blocking.inner` and `xdsm.problems_at`, so it never refuses:
+    a blocking no schedule could be built for still has levels, and a picture of one is
+    the picture worth having.
+    """
+    out: list[Solve] = []
+
+    def walk(level: Blocking, depth: int, parent: int | None) -> None:
+        for block, held, lead in zip(level.blocks, level.inner, answered_at(level)):
+            node = level.graph[lead] if lead is not None else None
+            solve = Solve(
+                tuple(block), depth, parent, lead, problem_kind(node), driver_name(node)
+            )
+            above = parent
+            if solve.coupled or solve.driven:
+                out.append(solve)
+                above = len(out) - 1
+            if held is not None:
+                walk(held, depth + 1, above)
+
+    walk(blocking, 0, None)
+    return tuple(out)
+
+
 # ================================================================== the drawing
 PALETTE = (
     "#4c78a8",
@@ -372,6 +560,19 @@ PALETTE = (
 """
 
 UNGROUPED_COLOUR = "#8c8c8c"
+
+KIND_COLOUR = {
+    "optimise": "#7b3294",
+    COMBINED: "#c51b7d",
+    "root-find": "#1b9e77",
+    "fixed-point": "#2166ac",
+    "feasibility": "#a6611a",
+    "declared": "#6b6b6b",
+    "stated": "#6b6b6b",
+}
+"""One colour per problem kind -- a box's ring and a problem row's diagonal. Chosen away
+from `PALETTE`'s hues where possible, since a ring sits on top of group-coloured marks; a
+coupled block nothing drives keeps the page's accent, as it always has."""
 
 TIER_OVERLAY = (None, "hatch-stripe", "hatch-dot")
 """What a group beyond the palette's length is drawn with, on top of its recycled
@@ -447,15 +648,33 @@ def _edges(graph: Graph) -> dict[tuple[NodePath, NodePath], list[VarPath]]:
     return out
 
 
+MODES = ("provenance", "structure")
+"""The two pages one struct can be drawn as. *Provenance* is the ordering that scatters
+a block, so it boxes only the coupled blocks of the top level and rings their members;
+*structure* is the run order, where every solve is contiguous, so it boxes every solve
+at every level -- a 2-row fixed point included -- and shades depth."""
+
+
 def _matrix_struct(
     blocking: Blocking,
     order: Sequence[NodePath],
     *,
     depth: int | None,
     formatter: Formatter,
+    mode: str = "provenance",
 ) -> dict:
-    """Everything the page draws, as plain data: rows, cells, group bands, block boxes.
+    """Everything the page draws, as plain data: rows, cells, group bands, block boxes,
+    and -- new with the solve strategy -- each row's nesting depth and kind, the boxes of
+    every nested level, the depth bands and the kind legend.
+
+    `mode` (`MODES`) decides one thing in the data: whether a driven block of the top
+    level with nothing coupled in it (a fixed point beside the one node it is minted
+    over) gets a box. Every other key is the same in both modes, so a caller reading the
+    struct for its numbers -- the paper's print generator -- sees exactly what it saw
+    before this argument existed.
     """
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
     graph = blocking.graph
     order = tuple(order)
     if set(order) != set(graph.nodes):
@@ -493,6 +712,15 @@ def _matrix_struct(
         seen = list(dict.fromkeys(vars_))
         return [formatter.var(v) for v in seen[:TIP_VARS]], len(seen)
 
+    # The solve strategy: every driven or coupled block at every nesting level. A row's
+    # depth is how many of those hold it -- 0 outside every solve, 1 in a top-level one,
+    # 2 in a level nested inside that -- and is the same whichever mode draws it.
+    solves = solve_levels(blocking)
+    row_depth = {name: 0 for name in order}
+    for solve in solves:
+        for member in solve.members:
+            row_depth[member] = max(row_depth[member], solve.level + 1)
+
     rows = []
     for name in order:
         reads, n_reads = _ports(graph[name].reads)
@@ -509,6 +737,9 @@ def _matrix_struct(
             "nr": n_reads,
             "writes": writes,
             "nw": n_writes,
+            "depth": row_depth[name],
+            "kind": problem_kind(graph[name]),
+            "driver": driver_name(graph[name]),
         })
 
     cells = [
@@ -553,24 +784,73 @@ def _matrix_struct(
                 run, start = key, i
 
     report = grouping_report(blocking, depth=depth)
-    boxes = [
-        {
+    # One box per solve. The top level keeps its old rule -- a box is a *coupled* block
+    # -- unless the page is the structure one, which boxes every solve; a nested level is
+    # boxed whenever it is a solve, since nesting is what the structure page exists to
+    # show. So the level-0 boxes of a provenance struct are `report.coupled`'s blocks,
+    # in the same order, with the same keys plus the strategy's.
+    kept = [
+        s
+        for s in solves
+        if s.coupled or (s.driven and (s.level > 0 or mode == "structure"))
+    ]
+    renumber = {id(s): i for i, s in enumerate(kept)}
+    boxes = []
+    for b in kept:
+        grouping = BlockGrouping(b.members, tuple(dict.fromkeys(at[m] for m in b.members)))
+        parent = None if b.parent is None else renumber.get(id(solves[b.parent]))
+        boxes.append({
             "from": min(index[m] for m in b.members),
             "to": max(index[m] for m in b.members),
             "size": len(b.members),
             "real": b.real,
-            "crosses": b.crosses,
-            "nests": b.nests,
-            "container": group_label(b.container),
+            "crosses": grouping.crosses,
+            "nests": grouping.nests,
+            "container": group_label(grouping.container),
             "contiguous": (
                 max(index[m] for m in b.members) - min(index[m] for m in b.members) + 1
             )
             == len(b.members),
-            "groups": [group_label(g) for g in b.groups],
+            "groups": [group_label(g) for g in grouping.groups],
             "members": [formatter.node((m, graph[m])) for m in b.members],
             "at": sorted(index[m] for m in b.members),
+            "level": b.level,
+            "parent": parent,
+            "problem": None if b.problem is None else index[b.problem],
+            "kind": b.kind,
+            "driver": b.driver,
+        })
+
+    # The nesting depth as a ribbon: runs of rows at one depth, the way `bands` runs
+    # rows of one group. What the structure page shows on its axes instead of the
+    # namespace, since the run order has already made every solve contiguous.
+    depth_bands: list[dict] = []
+    run_depth: int | None = None
+    start = 0
+    for i, name in enumerate((*order, None)):
+        d = row_depth[name] if name is not None else None
+        if d != run_depth:
+            if run_depth is not None:
+                depth_bands.append({"from": start, "to": i - 1, "depth": run_depth})
+            run_depth, start = d, i
+
+    present = {}
+    for row in rows:
+        if row["kind"] is not None:
+            present[row["kind"]] = present.get(row["kind"], 0) + 1
+    kinds = [
+        {
+            "kind": k,
+            "colour": KIND_COLOUR.get(k, UNGROUPED_COLOUR),
+            "text": KIND_TEXT.get(k, k),
+            "count": present[k],
         }
-        for b in report.coupled
+        for k in KIND_ORDER
+        if k in present
+    ] + [
+        {"kind": k, "colour": UNGROUPED_COLOUR, "text": k, "count": present[k]}
+        for k in present
+        if k not in KIND_ORDER
     ]
 
     legend = [
@@ -602,6 +882,11 @@ def _matrix_struct(
         "subsystemEdges": report.cross_subsystem_edges,
         "tiers": len(TIER_OVERLAY),
         "recycled": len(subsystems) > len(PALETTE) * len(TIER_OVERLAY),
+        "mode": mode,
+        "depthBands": depth_bands,
+        "depths": max((r["depth"] for r in rows), default=0),
+        "kinds": kinds,
+        "solves": len(kept),
     }
 
 
@@ -654,12 +939,27 @@ h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.01em; }
 text { fill:var(--fg); }
 .lbl { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; }
 .lbl.mint { fill:var(--dim); }
+.lbl.prob { font-weight:700; }
 .grid { stroke:var(--rule); stroke-width:.4; }
 .sep { stroke:var(--fg); stroke-width:.7; opacity:.35; }
 .fb { stroke:var(--accent); stroke-width:1.1; }
 .box { fill:none; stroke:var(--accent); stroke-width:1.4; }
 .box.ok { stroke:var(--fg); opacity:.55; }
+/* A solve's box on the structure page: its ring is the kind of problem the level
+   answers (`.solve`, stroke set per box), and its *area* is one more coat of the page's
+   ink over whatever it sits in (`.area`) -- so a level nested two deep is darker than the
+   level around it, and depth reads as shading without a second palette. */
+.area { fill:var(--fg); fill-opacity:.07; stroke:none; }
+.solve { fill:none; }
+.slabel { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8px;
+  font-weight:600; }
 .gname { font-size:10px; font-weight:600; }
+.dname { font-size:9px; fill:var(--dim); }
+.tree { display:grid; grid-template-columns:14px 1fr auto; gap:4px 8px; align-items:center; }
+.tree .sw { border:2.5px solid; border-radius:3px; background:none; }
+.tree .nm { font-family:ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.tree .ct { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
 #cross { pointer-events:none; }
 #cross rect { fill:var(--fg); opacity:.07; }
 </style>
@@ -682,15 +982,47 @@ const el = (tag, a = {}) => { const e = document.createElementNS(NS, tag);
 const n = D.rows.length;
 const charW = 5.1;
 const lblW = Math.min(340, 20 + charW * Math.max(...D.rows.map(r => r.name.length)));
+/* Which page this is (`MODES` in grouping.py). The structure page bands its axes by
+   nesting depth, boxes every solve at every level and shades depth; the provenance page
+   is the picture it always was, namespace bands and the top level's coupled blocks. */
+const STRUCT = D.mode === 'structure';
+const KIND_COLOUR = Object.fromEntries(D.kinds.map(k => [k.kind, k.colour]));
+/* Depth as ink: every level of nesting is one more coat of `AREA` over the last, so the
+   opacity a depth reads at is what `d` coats stack to -- the same number the boxes'
+   overlapping areas produce on the matrix, so the lane, the legend and the picture agree. */
+const AREA = 0.07;
+/* The depth *lane* and its legend use a steeper ramp than the areas: an 11px lane at 7%
+   grey is invisible, and what the lane has to do is be read against its neighbour. */
+const depthAlpha = d => 0.03 + 0.14 * d;
+/* Which boxes this page draws. Every box the struct carries is a solve or a coupled
+   block at some level; the provenance page draws the top level only (a nested level
+   scattered over a provenance ordering is a bounding box over most of the matrix, and
+   its rings would ring the same rows its parent's already do), the structure page draws
+   them all, outermost first so a child's area lands on top of its parent's. */
+const BOXES = STRUCT ? D.boxes : D.boxes.filter(b => b.level === 0);
+const boxLabel = b => (b.kind || 'coupled') + ' \u00b7 ' + (b.driver || 'undriven');
+const boxDepth = b => { let d = 0;
+  for (let p = b.parent; p !== null && p !== undefined; p = BOXES[p].parent) d++; return d; };
+const BANDS = STRUCT
+  ? D.depthBands.map(b => ({level: 0, from: b.from, to: b.to, label: 'depth ' + b.depth,
+      full: 'nesting depth ' + b.depth, colour: 'var(--fg)', alpha: depthAlpha(b.depth),
+      base: 'var(--dim)', overlay: null, depth: b.depth}))
+  : D.bands;
 /* One ribbon lane per level, so the axis is as wide as the tree is deep. Labels get a
    gutter column per level for the same reason: an inner stretch sits inside its outer
    one, so their labels share a y and would collide in a single column. */
-const LEVELS = Math.max(1, ...D.bands.map(b => b.level + 1));
+const LEVELS = Math.max(1, ...BANDS.map(b => b.level + 1));
 const BANDW = BAND * LEVELS;
 const lvlW = [];
-for (const b of D.bands) lvlW[b.level] = Math.max(lvlW[b.level] || 0, b.label.length);
+for (const b of BANDS) lvlW[b.level] = Math.max(lvlW[b.level] || 0, b.label.length);
 const lvlX = []; let gut = 6;
 for (let L = 0; L < LEVELS; L++) { lvlX[L] = gut; gut += 8 + 6.2 * (lvlW[L] || 0); }
+/* The structure page names every solve in a second gutter column, level-indented, on
+   the row its box starts at: inside the matrix a label of any size covers marks, and the
+   marks are the picture. */
+const solveX = gut;
+if (STRUCT && BOXES.length)
+  gut += 12 + 4.9 * Math.max(...BOXES.map(b => boxLabel(b).length + 7 + 1.6 * boxDepth(b)));
 const gutter = 10 + gut;
 const X0 = lblW + BANDW + GAP, Y0 = lblW + BANDW + GAP;
 const W = X0 + n * CELL + gutter + PAD, H = Y0 + n * CELL + PAD;
@@ -709,23 +1041,26 @@ svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%');
 
 /* ---- group ribbons, one per axis, plus the separators between groups ---- */
 const band = el('g', {class: 'band'});
-for (const b of D.bands) {
+for (const b of BANDS) {
   const len = (b.to - b.from + 1) * CELL;
   const off = lblW + b.level * BAND;
   /* Depth is drawn as tint, not as hue -- `group_palette` picked it, so a lane's colour
      is the group's own and not this level's opacity: every namespace of one subsystem
-     is a shade of that subsystem's colour, and none of them is a second palette. */
+     is a shade of that subsystem's colour, and none of them is a second palette. (On the
+     structure page the lane *is* depth, and its opacity is `depthAlpha`.) */
   for (const axis of [0, 1]) {
     const x = axis ? X0 + b.from * CELL : off, y = axis ? off : Y0 + b.from * CELL;
     const w = axis ? len : BAND, h = axis ? BAND : len;
-    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2}));
+    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2,
+      'fill-opacity': b.alpha === undefined ? 1 : b.alpha}));
     if (b.overlay)
       band.appendChild(el('rect', {x, y, width: w, height: h, fill: `url(#${b.overlay})`,
         rx: 2}));
   }
   /* Separators mark subsystems only. A rule across the whole matrix for every level of
-     every namespace would be a grid, not a separator. */
-  for (const p of (b.level ? [] : [b.from, b.to + 1])) {
+     every namespace would be a grid, not a separator -- and on the structure page the
+     boxes are the separators, so the depth lane draws none. */
+  for (const p of (b.level || STRUCT ? [] : [b.from, b.to + 1])) {
     band.appendChild(el('line', {class: 'sep', x1: X0 + p * CELL, y1: lblW,
       x2: X0 + p * CELL, y2: Y0 + n * CELL}));
     band.appendChild(el('line', {class: 'sep', x1: lblW, y1: Y0 + p * CELL,
@@ -743,7 +1078,8 @@ for (const b of D.bands) {
   if (b.to > b.from) {
     /* `b.base`, not `b.colour`: the pale end of a tint family is chosen to be a
        distinguishable *fill*, which is not the same as being readable as 10px text. */
-    const name = el('text', {class: 'gname', x: X0 + n * CELL + lvlX[b.level],
+    const name = el('text', {class: STRUCT ? 'dname' : 'gname',
+      x: X0 + n * CELL + lvlX[b.level],
       y: Y0 + (b.from + (b.to - b.from + 1) / 2) * CELL + 3.5, fill: b.base});
     name.textContent = b.label;
     band.appendChild(name);
@@ -753,14 +1089,19 @@ root.appendChild(band);
 
 /* ---- row and column labels ---- */
 const labels = el('g');
+/* A problem row is the one kind of row the strategy is *about*, so its label and its
+   diagonal are written in its kind's colour rather than its group's: the group is still
+   on its marks and its band, and what the row answers is what a reader is looking for. */
+const kindOf = r => r.kind && KIND_COLOUR[r.kind];
 D.rows.forEach((r, i) => {
   const y = Y0 + i * CELL + CELL / 2 + 3;
-  const t = el('text', {class: 'lbl' + (r.minted ? ' mint' : ''), x: lblW - 4, y,
-    'text-anchor': 'end'});
+  const cls = 'lbl' + (r.minted ? ' mint' : '') + (r.kind ? ' prob' : '');
+  const paint = kindOf(r) ? {fill: kindOf(r)} : {};
+  const t = el('text', {class: cls, x: lblW - 4, y, 'text-anchor': 'end', ...paint});
   t.textContent = r.name; labels.appendChild(t);
   const x = X0 + i * CELL + CELL / 2 + 3;
-  const u = el('text', {class: 'lbl' + (r.minted ? ' mint' : ''), x, y: lblW - 4,
-    'text-anchor': 'start', transform: `rotate(-90 ${x} ${lblW - 4})`});
+  const u = el('text', {class: cls, x, y: lblW - 4, 'text-anchor': 'start',
+    transform: `rotate(-90 ${x} ${lblW - 4})`, ...paint});
   u.textContent = r.name; labels.appendChild(u);
 });
 root.appendChild(labels);
@@ -775,13 +1116,24 @@ for (let i = 0; i <= n; i++) {
 }
 root.appendChild(grid);
 
+/* ---- the solves' areas: one coat of ink per level, under the diagonal and the marks ---- */
+const ringOf = b => b.kind ? (KIND_COLOUR[b.kind] || 'var(--dim)') : null;
+const areas = el('g');
+if (STRUCT) for (const b of BOXES) {
+  const x = X0 + b.from * CELL, w = (b.to - b.from + 1) * CELL;
+  areas.appendChild(el('rect', {x, y: Y0 + b.from * CELL, width: w, height: w,
+    class: 'area', rx: 3}));
+}
+root.appendChild(areas);
+
 const diag = el('g');
 D.rows.forEach((r, i) => {
   const x = X0 + i * CELL, y = Y0 + i * CELL;
-  diag.appendChild(el('rect', {x, y, width: CELL, height: CELL, fill: r.colour,
-    'fill-opacity': r.problem ? .45 : .95,
-    stroke: r.problem ? r.colour : 'none', 'stroke-width': 1.4}));
-  if (r.overlay)
+  const kind = kindOf(r);
+  diag.appendChild(el('rect', {x, y, width: CELL, height: CELL,
+    fill: kind || r.colour, 'fill-opacity': kind ? .9 : r.problem ? .45 : .95,
+    stroke: r.problem && !kind ? r.colour : 'none', 'stroke-width': 1.4}));
+  if (r.overlay && !kind)
     diag.appendChild(el('rect', {x, y, width: CELL, height: CELL, fill: `url(#${r.overlay})`}));
 });
 root.appendChild(diag);
@@ -804,20 +1156,44 @@ root.appendChild(marks);
    rows and says only "somewhere in here". The rings are what actually locate the block,
    and a block drawn as k rings inside one dashed box is exactly the fact worth seeing --
    these nodes are one solve, and this ordering has strewn them across the design. */
+/* On the structure page a solve's ring is its problem's kind, and its width falls with
+   its depth -- the outer optimiser's ring is the heaviest, the root find two levels in
+   the lightest -- so nesting reads at a glance even where the areas' shading is subtle.
+   A coupled block nothing drives keeps the accent ring it always had: it is a cycle a
+   cut has not reached, and that is the one thing on the page that is wrong rather than
+   nested. */
 const boxes = el('g');
-for (const b of D.boxes) {
-  const x = X0 + b.from * CELL, w = (b.to - b.from + 1) * CELL;
-  const r = el('rect', {x: x - 1.5, y: Y0 + b.from * CELL - 1.5, width: w + 3, height: w + 3,
-    class: 'box' + (b.crosses ? '' : ' ok'), rx: 3,
+for (const b of BOXES) {
+  const x = X0 + b.from * CELL, y = Y0 + b.from * CELL, w = (b.to - b.from + 1) * CELL;
+  const kind = STRUCT ? ringOf(b) : null;
+  const style = kind
+    ? {class: 'solve', stroke: kind, 'stroke-width': Math.max(1, 2.8 - 0.6 * b.level)}
+    : {class: 'box' + (b.crosses ? '' : ' ok')};
+  const r = el('rect', {x: x - 1.5, y: y - 1.5, width: w + 3, height: w + 3, rx: 3,
     'stroke-opacity': b.contiguous ? 1 : .5,
-    'stroke-dasharray': b.contiguous ? 'none' : '4 3'});
+    'stroke-dasharray': b.contiguous ? 'none' : '4 3', ...style});
   r.dataset.i = JSON.stringify({box: b});
   boxes.appendChild(r);
-  for (const i of b.at) {
+  /* The rings locate a scattered block; a contiguous solve on the structure page is
+     located by its box, and ringing each of 123 members would only thicken the diagonal. */
+  if (!STRUCT || !b.contiguous) for (const i of b.at) {
     const ring = el('rect', {x: X0 + i * CELL - 1.5, y: Y0 + i * CELL - 1.5,
-      width: CELL + 3, height: CELL + 3, rx: 3, class: 'box' + (b.crosses ? '' : ' ok')});
+      width: CELL + 3, height: CELL + 3, rx: 3, ...style});
     ring.dataset.i = JSON.stringify({box: b});
     boxes.appendChild(ring);
+  }
+  /* The box's name -- kind and driver -- in the gutter, on the row the box starts at
+     (its problem's row, when it has one), indented by how deep it is nested; a hairline
+     from the box's right edge leads the eye across. */
+  if (STRUCT) {
+    const gx = X0 + n * CELL + solveX + 8 * boxDepth(b), gy = y + CELL / 2 + 3;
+    boxes.appendChild(el('line', {x1: x + w + 1.5, y1: y + CELL / 2, x2: gx - 3,
+      y2: y + CELL / 2, stroke: kind || 'var(--accent)', 'stroke-width': .5,
+      'stroke-opacity': .5, 'stroke-dasharray': '2 3'}));
+    const t = el('text', {class: 'slabel', x: gx, y: gy, fill: kind || 'var(--accent)'});
+    t.textContent = boxLabel(b) + ' (' + b.size + ')';
+    t.dataset.i = JSON.stringify({box: b});
+    boxes.appendChild(t);
   }
 }
 root.appendChild(boxes);
@@ -842,6 +1218,34 @@ side.innerHTML =
     `<div class="ct" title="nodes / contiguous stretches in the run order">${g.size}` +
     (g.runs > 1 ? ` <span class="scatter">&times;${g.runs}</span>` : '') + '</div>'
   ).join('') + '</div>';
+/* The strategy, on the structure page: every solve as a tree, indented by its level --
+   what answers what, inside what, by which algorithm -- and the two keys the boxes are
+   drawn in, kind (ring) and depth (shade). The kinds are listed on both pages, since a
+   problem row is marked by its kind wherever it sits. */
+if (STRUCT && BOXES.length) {
+  side.innerHTML = '<h2>Solve strategy</h2><div class="tree">' + BOXES.map(b => {
+    const colour = ringOf(b) || 'var(--accent)';
+    return `<div class="sw" style="border-color:${colour}"></div>` +
+      `<div class="nm" style="padding-left:${boxDepth(b) * 11}px" title="${esc(
+        b.problem === null ? 'nothing drives this block' : D.rows[b.problem].name)}">` +
+      `${esc(boxLabel(b))}</div><div class="ct" title="nodes in the block">${b.size}</div>`;
+  }).join('') + '</div>' + side.innerHTML;
+}
+if (D.kinds.length) {
+  side.innerHTML += '<h2>Problem kinds</h2><div class="tree">' + D.kinds.map(k =>
+    `<div class="sw" style="border-color:${k.colour}"></div>` +
+    `<div class="nm" title="${esc(k.text)}">${esc(k.kind)}</div>` +
+    `<div class="ct" title="problem rows of this kind">${k.count}</div>`).join('') + '</div>';
+}
+if (STRUCT) {
+  const depths = [];
+  for (let d = 0; d <= D.depths; d++) depths.push(d);
+  side.innerHTML += '<h2>Nesting depth</h2><div class="lg">' + depths.map(d =>
+    `<div class="sw" style="background:var(--fg);opacity:${depthAlpha(d).toFixed(3)}"></div>` +
+    `<div class="nm">depth ${d}</div>` +
+    `<div class="ct" title="rows at this depth">${D.rows.filter(r => r.depth === d).length}</div>`
+  ).join('') + '</div>';
+}
 
 /* ---- hover ---- */
 function show(e, html) {
@@ -873,10 +1277,16 @@ function portList(label, vars, total) {
   if (!total) return `<span class="h">${label}:</span> <span class="dim">none</span>`;
   return `<span class="h">${label}:</span> ${total}\n` + varList(vars, total);
 }
+/* A problem row says what it is and who answers it, on one line under the header --
+   only a problem row, so a body's tip reads exactly as it did. */
+function solveLine(r) {
+  return r.kind ? `<span class="h">solve:</span> ${esc(r.kind)} &middot; ${esc(r.driver)}\n` : '';
+}
 function nodeTip(i) {
   const r = D.rows[i];
   return `<b>${esc(r.name)}</b>\n` +
     `<span class="dim">${esc(r.group)} &middot; row/col ${i}</span>\n` +
+    solveLine(r) +
     portList('reads', r.reads, r.nr) + '\n' + portList('writes', r.writes, r.nw);
 }
 /* Variables first. The question at a mark is *which* variable couples these two nodes;
@@ -904,7 +1314,10 @@ stage.addEventListener('mousemove', e => {
   if (t.dataset && t.dataset.i) {
     const d = JSON.parse(t.dataset.i);
     if (d.box) {
-      show(e, `<b>block of ${d.box.size} (${d.box.real} not minted)</b>\n` +
+      show(e, `<b>${esc(boxLabel(d.box))}</b>\n` +
+        `<span class="dim">level ${d.box.level} &middot; ` +
+        `block of ${d.box.size} (${d.box.real} not minted)</span>\n` +
+        (d.box.problem === null ? '' : `answers: ${esc(D.rows[d.box.problem].name)}\n`) +
         `groups: ${esc(d.box.groups.join(', '))}\n` +
         `contained in: ${esc(d.box.container)}${d.box.crosses ? ' (nothing)' : ''}\n` +
         esc(d.box.members.join('\n')));
@@ -970,12 +1383,21 @@ def render_grouped_dsm_html(
     outdir: str = ".",
     write: bool = False,
     formatter: Formatter = NoFormat(),
+    mode: str | None = None,
 ) -> HtmlDoc:
     """`blocking`'s graph as a DSM in `order`, every row coloured by the group its name
     declares.
+
+    `mode` (`MODES`) picks the page: the *provenance* page bands the axes by namespace
+    and boxes the top level's coupled blocks; the *structure* page bands them by nesting
+    depth and boxes every solve at every level, shaded by depth and ringed by kind.
+    `None` decides by the order: structure if `order` is `structure_order(blocking)`,
+    provenance otherwise.
     """
-    order = structure_order(blocking) if order is None else order
-    struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter)
+    order = structure_order(blocking) if order is None else tuple(order)
+    if mode is None:
+        mode = "structure" if order == structure_order(blocking) else "provenance"
+    struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter, mode=mode)
     # The placeholders are spent **before** the data goes in, not after: a node whose name
     # happened to spell `__TITLE__` would otherwise have the title substituted into the
     # middle of the graph. `</` is broken up for the same reason one level down -- a name
