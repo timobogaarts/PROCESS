@@ -25,8 +25,14 @@ estimator's noise floor).
 
     G=~/miniconda3/envs/process_port_gpu/bin/python; export XLA_PYTHON_CLIENT_PREALLOCATE=false
     JAX_PLATFORMS=cuda $G paper_tests/uq.py                 # ~2 min: 237k + 100k evaluations
+    JAX_PLATFORMS=cuda $G paper_tests/uq.py --n-base 65536 --n-mc 200000 --variant no-hfact
+                                                             # ~5 min: 1.9 M + 200k evaluations
     JAX_PLATFORMS=cpu  $G paper_tests/uq.py --smoke          # N=64, chunk 256: exercises everything
-    $G paper_tests/uq.py --render                            # tables + figures from the saved samples
+    $G paper_tests/uq.py --render [--variant V]              # tables + figures from the saved samples
+
+`--variant`: `nominal` (the table as stated), `hfact-5pct` (hfact lognormal(0.05)),
+`no-hfact` (hfact fixed at its nominal and removed from the inputs). Output names carry
+the variant as a suffix; the nominal keeps the bare names.
 
 Outputs: `out/uq_inputs.tex`, `out/uq_sobol.{csv,tex}`, `out/uq_mc.{csv,tex}`,
 `out/uq.json` (timings, convergence, the nominal check), `out/uq_tornado_*.png`,
@@ -160,6 +166,29 @@ INPUTS = (
     Input("dummy", "uniform", 0.0, 1.0, note="read by nothing: the estimators' noise floor"),
 )
 
+VARIANTS = {
+    "nominal": "hfact lognormal(0.15), the table as stated",
+    "hfact-5pct": "hfact lognormal(0.05), everything else unchanged",
+    "no-hfact": "hfact fixed at its nominal and removed from the inputs (k = 25 + dummy)",
+}
+
+
+def inputs_for(variant: str) -> tuple:
+    """`INPUTS` under `variant`."""
+    if variant == "nominal":
+        return INPUTS
+    if variant == "hfact-5pct":
+        return tuple(dataclasses.replace(i, a=0.05) if i.path == ".physics.hfact" else i for i in INPUTS)
+    if variant == "no-hfact":
+        return tuple(i for i in INPUTS if i.path != ".physics.hfact")
+    raise ValueError(f"variant {variant!r}; one of {sorted(VARIANTS)}")
+
+
+def named(stem: str, variant: str) -> str:
+    """`uq_sobol` -> `uq_sobol_no-hfact`; the nominal variant keeps the bare name."""
+    return stem if variant == "nominal" else f"{stem}_{variant}"
+
+
 OUTPUTS = (
     (".heat_transport.p_plant_electric_net_mw", "net electric power [MW]"),
     ("^cond.numerics.objf", "objective (coe / 100)"),
@@ -292,7 +321,7 @@ class Model:
         return self._programs[predict]
 
 
-def build(pairing=PAIRING) -> tuple[Model, dict]:
+def build(pairing=PAIRING, variant: str = "nominal") -> tuple[Model, dict]:
     """Open the session, close `c2` by the density, put the design at PROCESS's
     answer, prime, and check the nominal against PROCESS's converged run.
     """
@@ -317,7 +346,7 @@ def build(pairing=PAIRING) -> tuple[Model, dict]:
     build_s = time.perf_counter() - began
 
     inputs, dropped, nominal = [], [], {}
-    for i in INPUTS:
+    for i in inputs_for(variant):
         if i.path == "dummy":
             inputs.append(i)
             continue
@@ -353,6 +382,8 @@ def build(pairing=PAIRING) -> tuple[Model, dict]:
         "^cond.numerics.objf": float(d.costs.coe) / 100.0,
     }
     check = {
+        "variant": variant,
+        "variant_note": VARIANTS[variant],
         "build_s": build_s,
         "design": {k.spelling: float(v) for k, v in process_x.items()},
         "closing": closing.spelling,
@@ -628,7 +659,7 @@ def worst_margin(check: dict) -> str:
     return max(at, key=lambda c: at[c])
 
 
-def render_inputs(model: Model) -> None:
+def render_inputs(model: Model, variant: str) -> None:
     header = ["input", "distribution", "nominal", "note"]
     body = []
     for i in model.inputs:
@@ -639,13 +670,13 @@ def render_inputs(model: Model) -> None:
         body.append([r"\texttt{" + tex(i.path) + "}",
                      tex(i.describe()).replace("±", r"$\pm$").replace("σ", r"$\sigma$").replace("×", r"$\times$"),
                      shown, i.note])
-    write_tex("uq.py", header, body, name="uq_inputs", align="llrl",
+    write_tex("uq.py", header, body, name=named("uq_inputs", variant), align="llrl",
               caption_note="the uncertain inputs; nominal = the input file's or the vendored default's value; "
                            "lognormal(sigma): nominal x exp(sigma z)")
 
 
-def render_sobol(model: Model, rows: list, check: dict) -> None:
-    write_csv("uq.py", rows, name="uq_sobol")
+def render_sobol(model: Model, rows: list, check: dict, variant: str) -> None:
+    write_csv("uq.py", rows, name=named("uq_sobol", variant))
     net, cost, capital = ".heat_transport.p_plant_electric_net_mw", "coe_capped", ".costs.concost"
     worst = worst_margin(check)
     by = {(r["input"], r["output"]): r for r in rows}
@@ -661,15 +692,15 @@ def render_sobol(model: Model, rows: list, check: dict) -> None:
     for i in order:
         body.append([r"\texttt{" + tex(i.label) + "}",
                      *(cell(by[i.path, o], key) for o in (net, cost, capital, worst) for key in ("S1", "ST"))])
-    write_tex("uq.py", header, body, name="uq_sobol", align="lrrrrrrrr",
+    write_tex("uq.py", header, body, name=named("uq_sobol", variant), align="lrrrrrrrr",
               caption_note=f"Sobol' indices (Saltelli 2010 S1, Jansen ST) with bootstrap 95 % CIs, "
                            f"sorted by ST for net power; coe capped at {COE_CAP:g} $/MWh (its 1e21 sentinel at "
                            f"net power <= 0 is an indicator otherwise); last pair: {cname(worst)}, "
                            f"the worst-margin inequality at the nominal")
 
 
-def render_mc(rows: list, summary: dict) -> None:
-    write_csv("uq.py", rows, name="uq_mc")
+def render_mc(rows: list, summary: dict, variant: str) -> None:
+    write_csv("uq.py", rows, name=named("uq_mc", variant))
     header = ["output", "nominal", "mean", "sd", r"$q_{5}$", r"$q_{50}$", r"$q_{95}$", "P(g > 0)", r"P(g > g$_\mathrm{nom}$)"]
     body = []
     for r in rows:
@@ -681,7 +712,7 @@ def render_mc(rows: list, summary: dict) -> None:
                      f(r["mean"]), f(r["sd"]), f(r["q05"]), f(r["q50"]), f(r["q95"]),
                      f"{r['p_violated']:.3f}" if "p_violated" in r else "--",
                      f"{r['p_worse_than_nominal']:.3f}" if "p_worse_than_nominal" in r else "--"])
-    write_tex("uq.py", header, body, name="uq_mc", align="lrrrrrrrr",
+    write_tex("uq.py", header, body, name=named("uq_mc", variant), align="lrrrrrrrr",
               caption_note=(f"plain Monte Carlo, {summary['valid']} valid of {summary['samples']} samples; "
                             f"P(net < {summary['target_mw']:g} MW) = {summary['p_net_below_target']:.3f}; "
                             f"P(all inequalities satisfied) = {summary['p_all_inequalities_satisfied']:.3f}; "
@@ -765,14 +796,15 @@ def histogram(values: np.ndarray, marks: dict, xlabel: str, title: str, name: st
     return path
 
 
-def render_figures(model: Model, sobol_rows: list, Ymc: np.ndarray, check: dict, mc_summary: dict) -> list:
+def render_figures(model: Model, sobol_rows: list, Ymc: np.ndarray, check: dict, mc_summary: dict, variant: str) -> list:
     net, cost, capital = ".heat_transport.p_plant_electric_net_mw", "coe_capped", ".costs.concost"
     worst = worst_margin(check)
+    tag = "" if variant == "nominal" else f" [{variant}]"
     paths = [
-        tornado(sobol_rows, net, "Sobol' indices: net electric power", "uq_tornado_net_power"),
-        tornado(sobol_rows, cost, f"Sobol' indices: cost of electricity (capped at {COE_CAP:g} $/MWh)", "uq_tornado_cost"),
-        tornado(sobol_rows, capital, "Sobol' indices: constructed cost", "uq_tornado_concost"),
-        tornado(sobol_rows, worst, f"Sobol' indices: {cname(worst)} residual", f"uq_tornado_{worst.rsplit('.', 1)[1]}"),
+        tornado(sobol_rows, net, "Sobol' indices: net electric power" + tag, named("uq_tornado_net_power", variant)),
+        tornado(sobol_rows, cost, f"Sobol' indices: cost of electricity (capped at {COE_CAP:g} $/MWh)" + tag, named("uq_tornado_cost", variant)),
+        tornado(sobol_rows, capital, "Sobol' indices: constructed cost" + tag, named("uq_tornado_concost", variant)),
+        tornado(sobol_rows, worst, f"Sobol' indices: {cname(worst)} residual" + tag, named(f"uq_tornado_{worst.rsplit('.', 1)[1]}", variant)),
     ]
     valid = valid_rows(model, Ymc)
     n_at = check["port_at_nominal"]
@@ -781,8 +813,8 @@ def render_figures(model: Model, sobol_rows: list, Ymc: np.ndarray, check: dict,
         {f"target {check['c16_target_mw']:g} MW": (check["c16_target_mw"], ORANGE),
          f"nominal {n_at[net]:.0f} MW": (n_at[net], INK)},
         "net electric power [MW]",
-        f"Net electric power over the inputs' uncertainty: P(< target) = {mc_summary['p_net_below_target']:.2f}",
-        "uq_hist_net_power",
+        f"Net electric power over the inputs' uncertainty{tag}: P(< target) = {mc_summary['p_net_below_target']:.2f}",
+        named("uq_hist_net_power", variant),
     ))
     coe = Ymc[valid, model.columns.index(".costs.coe")]
     finite_cost = coe < 1e6  # below the 1e21 sentinel of a non-positive net power
@@ -790,8 +822,8 @@ def render_figures(model: Model, sobol_rows: list, Ymc: np.ndarray, check: dict,
         coe[finite_cost],
         {f"nominal {n_at['.costs.coe']:.1f} $/MWh": (n_at[".costs.coe"], INK)},
         "cost of electricity [$/MWh]",
-        "Cost of electricity over the inputs' uncertainty",
-        "uq_hist_cost",
+        "Cost of electricity over the inputs' uncertainty" + tag,
+        named("uq_hist_cost", variant),
         note=f"{100 * (1 - finite_cost.mean()):.1f} % of samples have net power <= 0\n(coe undefined) and are not shown",
     ))
     return paths
@@ -800,10 +832,12 @@ def render_figures(model: Model, sobol_rows: list, Ymc: np.ndarray, check: dict,
 # ---------------------------------------------------------------- main
 
 
-def run(n: int, mc: int, chunk: int, replicates: int, predict: str, seed: int, samples: Path) -> None:
+def run(n: int, mc: int, chunk: int, replicates: int, predict: str, seed: int, samples: Path, variant: str) -> None:
     samples.mkdir(parents=True, exist_ok=True)
-    timings: dict = {"backend": jax.default_backend(), "chunk": chunk, "n": n, "mc": mc, "bootstrap_replicates": replicates}
-    model, check = build()
+    setup_began = time.perf_counter()
+    timings: dict = {"backend": jax.default_backend(), "variant": variant, "chunk": chunk, "n": n, "mc": mc, "bootstrap_replicates": replicates}
+    model, check = build(variant=variant)
+    timings["build_s"] = check["build_s"]
     print(json.dumps({k: v for k, v in check.items() if k != "blocking"}, indent=1, default=str))
     print("\n".join(check["blocking"]))
     if model.dropped:
@@ -845,33 +879,41 @@ def run(n: int, mc: int, chunk: int, replicates: int, predict: str, seed: int, s
         use_predict = best
         print(f"calibration: {trial}; start kept: {use_predict}")
     timings["predicted_start"] = use_predict
+    # Setup: build, sensitivity, sampling and the calibration (three compiles) --
+    # everything before the first production evaluation.
+    timings["setup_s"] = time.perf_counter() - setup_began
 
+    eval_began = time.perf_counter()
     result = evaluate(model, X, chunk, use_predict, "saltelli")
     Y = result["Y"]
     timings["saltelli_first_call_s"] = result["first_call_s"]
     timings["saltelli_walls_s"] = result["walls"]
     timings["saltelli_calls"] = 1 + len(result["walls"])
     timings["saltelli_evaluations"] = int(Y.shape[0])
-    np.savez(samples / "uq_saltelli.npz", U=U, X=X, Y=Y, columns=np.array(model.columns),
-             inputs=np.array([i.path for i in model.inputs]), n=n)
+    timings["saltelli_evaluation_s"] = time.perf_counter() - eval_began
+    np.savez(samples / "uq_saltelli.npz", Y=Y, columns=np.array(model.columns),
+             inputs=np.array([i.path for i in model.inputs]), n=n, seed=seed)
 
     began = time.perf_counter()
     rng = np.random.default_rng(seed + 1)
     Umc = rng.random((mc, k))
     Xmc = model.coordinates(Umc)
     timings["sampling_mc_s"] = time.perf_counter() - began
+    eval_began = time.perf_counter()
     result = evaluate(model, Xmc, chunk, use_predict, "mc")
     Ymc = result["Y"]
     timings["mc_first_call_s"] = result["first_call_s"]
     timings["mc_walls_s"] = result["walls"]
     timings["mc_evaluations"] = int(Ymc.shape[0])
-    np.savez(samples / "uq_mc.npz", U=Umc, X=Xmc, Y=Ymc, columns=np.array(model.columns),
-             inputs=np.array([i.path for i in model.inputs]))
+    timings["mc_evaluation_s"] = time.perf_counter() - eval_began
+    timings["evaluation_only_s"] = timings["saltelli_evaluation_s"] + timings["mc_evaluation_s"]
+    np.savez(samples / "uq_mc.npz", Y=Ymc, columns=np.array(model.columns),
+             inputs=np.array([i.path for i in model.inputs]), seed=seed)
 
-    render(model, check, timings, Y, n, Ymc, replicates)
+    render(model, check, timings, Y, n, Ymc, replicates, variant)
 
 
-def render(model, check, timings, Y, n, Ymc, replicates):
+def render(model, check, timings, Y, n, Ymc, replicates, variant):
     """Estimators, tables, figures and `out/uq.json` from the evaluations."""
     sobol_rows, sobol_summary = sobol_table(model, Y, n, replicates)
     mc_rows, mc_summary = monte_carlo_table(model, Ymc, check)
@@ -889,12 +931,14 @@ def render(model, check, timings, Y, n, Ymc, replicates):
         total_wall = sum(walls) + timings["saltelli_first_call_s"] + timings["mc_first_call_s"]
         timings["evaluations_per_s_warm"] = chunk * len(walls) / sum(walls) if walls else None
         timings["evaluations_per_s_including_first_calls"] = total_eval / total_wall
+        if "evaluation_only_s" in timings:
+            timings["evaluations_per_s_evaluation_only"] = total_eval / timings["evaluation_only_s"]
         timings["warm_wall_per_call_s"] = float(np.median(walls)) if walls else None
         timings["us_per_evaluation_warm"] = 1e6 * float(np.median(walls)) / chunk if walls else None
-    render_inputs(model)
-    render_sobol(model, sobol_rows, check)
-    render_mc(mc_rows, mc_summary)
-    figures = render_figures(model, sobol_rows, Ymc, check, mc_summary)
+    render_inputs(model, variant)
+    render_sobol(model, sobol_rows, check, variant)
+    render_mc(mc_rows, mc_summary, variant)
+    figures = render_figures(model, sobol_rows, Ymc, check, mc_summary, variant)
     # The "top 10 for net power and cost" and the dummy's floor, in the JSON too.
     net, cost = ".heat_transport.p_plant_electric_net_mw", "coe_capped"
     tops = {}
@@ -907,7 +951,7 @@ def render(model, check, timings, Y, n, Ymc, replicates):
         "mc": mc_summary, "figures": [str(p) for p in figures],
         "inputs": [dataclasses.asdict(i) | {"nominal": (None if i.path not in model.nominal else np.asarray(model.nominal[i.path]).tolist())} for i in model.inputs],
     }
-    write_json("uq.py", payload, name="uq")
+    write_json("uq.py", payload, name=named("uq", variant))
     print(json.dumps({"timings": timings, "sobol": {k2: v for k2, v in sobol_summary.items() if k2 != "variance"},
                       "mc": mc_summary, "dummy": dummy}, indent=1, default=str))
     for o, rows in tops.items():
@@ -916,17 +960,18 @@ def render(model, check, timings, Y, n, Ymc, replicates):
             print(f"   {r['label']:40} S1 {r['S1']: .3f} [{r['S1_lo']: .3f}, {r['S1_hi']: .3f}]   ST {r['ST']: .3f} [{r['ST_lo']: .3f}, {r['ST_hi']: .3f}]")
 
 
-def rerender(samples: Path, replicates: int) -> None:
+def rerender(samples: Path, replicates: int, variant: str) -> None:
     """Tables and figures from the saved evaluations; no GPU, the model rebuilt on
     the CPU only for its names and the nominal check.
     """
-    model, check = build()
+    model, check = build(variant=variant)
     s = np.load(samples / "uq_saltelli.npz")
     m = np.load(samples / "uq_mc.npz")
     if tuple(s["columns"]) != model.columns or tuple(s["inputs"]) != tuple(i.path for i in model.inputs):
         raise ValueError("the saved samples were made with a different table; rerun")
-    timings = json.loads((OUT / "uq.json").read_text()).get("timings", {}) if (OUT / "uq.json").exists() else {}
-    render(model, check, timings, s["Y"], int(s["n"]), m["Y"], replicates)
+    previous = OUT / f"{named('uq', variant)}.json"
+    timings = json.loads(previous.read_text()).get("timings", {}) if previous.exists() else {}
+    render(model, check, timings, s["Y"], int(s["n"]), m["Y"], replicates, variant)
 
 
 def main(argv=None) -> int:
@@ -936,17 +981,23 @@ def main(argv=None) -> int:
         return cast(argv[argv.index(name) + 1]) if name in argv else default
 
     smoke = "--smoke" in argv
-    n = option("--n", 64 if smoke else 8192)
-    mc = option("--mc", 512 if smoke else 100_000)
+    variant = option("--variant", "nominal", str)
+    if variant not in VARIANTS:
+        raise SystemExit(f"--variant {variant!r}: one of {sorted(VARIANTS)}")
+    n = option("--n-base", 64 if smoke else 8192)  # Saltelli's N; (k + 2) N evaluations
+    if n & (n - 1):
+        raise SystemExit(f"--n-base {n} must be a power of two (Sobol' balance)")
+    mc = option("--n-mc", 512 if smoke else 100_000)
     chunk = option("--chunk", 256 if smoke else 16384)
     replicates = option("--boot", 20 if smoke else 200)
     predict = option("--predict", "auto", str)  # auto | none | linear | loglinear
     seed = option("--seed", 0)
-    samples = option("--samples", SAMPLES / ("smoke" if smoke else "full"), Path)
+    default_samples = SAMPLES / (("smoke" if smoke else "full") + ("" if variant == "nominal" else f"_{variant}"))
+    samples = option("--samples", default_samples, Path)
     if "--render" in argv:
-        rerender(samples, replicates)
+        rerender(samples, replicates, variant)
         return 0
-    run(n, mc, chunk, replicates, predict, seed, samples)
+    run(n, mc, chunk, replicates, predict, seed, samples, variant)
     return 0
 
 
