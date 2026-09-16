@@ -609,6 +609,19 @@ KIND_COLOUR = {
     "declared": "#9d9d9d",
     "stated": "#9d9d9d",
 }
+
+KIND_FILL = {
+    "optimise": "#dbcfec",
+    COMBINED: "#dbcfec",
+    "root-find": "#ead3a0",
+    "fixed-point": "#c4dcb2",
+    "feasibility": "#dcdcdc",
+    "declared": "#e6e6e6",
+    "stated": "#e6e6e6",
+}
+"""The paper's problem-box **fills** (`latex_xdsm.py`'s `.prob-*`), beside `KIND_COLOUR`'s
+strokes: a problem row's diagonal and marks take the fill, its label and its box's ring
+the stroke -- the same pairing an XDSM box has, so the two drawings read alike."""
 """One colour per problem kind -- a box's ring and a problem row's label. **The paper's
 own** (`graph_paper/figures/latex_xdsm.py`, the terracotta palette's `ring-*` rules:
 violet optimise, ocher root-find, olive fixed-point, grey feasibility / unanswered), so a
@@ -749,8 +762,8 @@ def _matrix_struct(
     for name in graph.nodes:
         kind = problem_kind(graph[name])
         if kind is not None:
-            colour = KIND_COLOUR.get(kind, UNGROUPED_COLOUR)
-            hue[name] = Shade(colour, None, colour)
+            hue[name] = Shade(KIND_FILL.get(kind, UNGROUPED_COLOUR), None,
+                              KIND_COLOUR.get(kind, UNGROUPED_COLOUR))
     index = {name: i for i, name in enumerate(order)}
 
     # A row carries the node's **declared ports**, not the union of the edges this matrix
@@ -1187,8 +1200,8 @@ const diag = el('g');
 D.rows.forEach((r, i) => {
   const x = X0 + i * CELL, y = Y0 + i * CELL;
   diag.appendChild(el('rect', {x, y, width: CELL, height: CELL,
-    fill: r.colour, 'fill-opacity': r.problem ? .45 : .95,
-    stroke: r.problem ? r.colour : 'none', 'stroke-width': 1.4}));
+    fill: r.colour, 'fill-opacity': r.problem ? .9 : .95,
+    stroke: r.problem ? r.base : 'none', 'stroke-width': 1.4}));
   if (r.overlay)
     diag.appendChild(el('rect', {x, y, width: CELL, height: CELL, fill: `url(#${r.overlay})`}));
 });
