@@ -79,8 +79,25 @@ recognise next time: a `pytest` run that dies with a bare "Extension modules: �
 no test summary is this, not a test failure.
 
 `functional_process/tests` was **3752 passed + 3347 skipped** when this file was written
-and is **7804 passed + 8218 skipped** as of 2026-09-09; the tree has roughly doubled since.
+and is **7804 passed + 8218 skipped** as of 2026-09-09, **7879 + 8210** on 2026-09-16; the tree has roughly doubled since.
 Prefer measuring it to trusting either number.
+
+**The port tracks a cottax that moves, and the reference tables say which one.** Every
+`functional_process/cottax/reference_*_matrix.txt` header carries a `COTTAX:` line (the
+`~/jaxgraph` commit that answered) and a `MACHINE:` line (the CPU) since `e84cad95`,
+because both changed under the 2026-09-06 references without either file saying so: the
+port was re-ported from cottax `e0f22e6` to `a3e4c56` on 2026-09-16 (three renamed
+imports, `Graph.unowned_inputs` → `boundary_inputs`, and drivers subclassing
+`evaluation.schedule.Driver` -- `AbstractDriver` is now only the recorded choice), and the
+refs moved from a laptop to an R7 3700X. Before reading a timing difference as a
+regression, check both lines. **When `~/jaxgraph` is being edited in another session**
+(it was, mid-run, on 2026-09-16), measure against a worktree of its committed HEAD:
+`git -C ~/jaxgraph worktree add <dir> HEAD` and `PYTHONPATH=~/PROCESS:<dir>/src` -- the
+editable install is bypassed by `PYTHONPATH`, and `cottax_tree()` in the header shows
+which one answered. To prove an API re-port numerically inert, run one configuration on
+the *old* pair (PROCESS and jaxgraph worktrees at the previous commits, same
+`PYTHONPATH` trick) and diff every digit against the new one; the 2026-09-16 re-port
+matched on every row, both drivers, cold and warm.
 
 ### `process_port_gpu` — the env for the Warp/GPU work
 
