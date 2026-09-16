@@ -579,20 +579,23 @@ def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
 
 # ================================================================== the drawing
 PALETTE = (
-    "#4c78a8",
-    "#f58518",
-    "#3fa7b8",  # was #54a24b: a green that read as the paper's olive fixed-point ring
-    "#e45756",
-    "#cc79a7",  # was #b279a2: a mauve that read as the paper's violet optimiser ring
-    "#72b7b2",
-    "#eeca3b",
-    "#9d7660",
-    "#ff9da6",
-    "#8dd3c7",
-    "#bab0ac",
-    "#5c9ecf",
+    "#4c78a8",  # steel blue
+    "#f58518",  # orange
+    "#3fa7b8",  # cyan
+    "#e45756",  # red
+    "#cc79a7",  # reddish pink
+    "#5c9ecf",  # sky
+    "#f2a35e",  # apricot
+    "#ff9da6",  # salmon
+    "#8ab6d6",  # powder blue
+    "#bab0ac",  # warm grey
+    "#d98c8c",  # dusty rose
+    "#6b8fb8",  # dusty blue
 )
 """One colour per group, mid-luminance so every one of them reads on white and on black.
+**No green, ocher or purple**: those three hues are the problem kinds' (`KIND_COLOUR`,
+the paper's rings) and nothing else on the page may wear them. The previous palette's
+green, yellow, brown, mint and teal all read as one of the three and are gone.
 """
 
 UNGROUPED_COLOUR = "#8c8c8c"
@@ -740,6 +743,14 @@ def _matrix_struct(
     subsystems = tuple(dict.fromkeys(top_of(g) for g in groups))
     palette = group_palette(groups)
     hue = {name: palette[at[name]] for name in graph.nodes}
+    # A problem row is its KIND's colour outright -- label, diagonal and the marks of what
+    # it owns -- so the three problem types jump out of a matrix of subsystem hues,
+    # which `PALETTE` keeps clear of violet, ocher and olive for exactly this reason.
+    for name in graph.nodes:
+        kind = problem_kind(graph[name])
+        if kind is not None:
+            colour = KIND_COLOUR.get(kind, UNGROUPED_COLOUR)
+            hue[name] = Shade(colour, None, colour)
     index = {name: i for i, name in enumerate(order)}
 
     # A row carries the node's **declared ports**, not the union of the edges this matrix
