@@ -12,8 +12,8 @@ ringed by the kind of problem it answers and labelled with its driver):
                         uncut: the optimiser's cycle is one SCC over most of the machine
     mdf_<cut>           MDF stated as structure -- the graph cut by <cut>, the optimiser
                         nested around everything it iterates (`mdf.nested_blocking`)
-    sand_<cut>          SAND -- every problem residualised and combined into one
-                        (`run_cold_matrix.build_sand`'s solve schedule)
+    sand_<cut>          SAND -- every problem residualised and combined into one,
+                        as structure (no MDA is run; nothing is dropped)
 
 for <cut> in hand, jacobi, gauss_seidel, gauss_seidel_minimal. A root-find file (the two
 `*_eval`) has an `uncut_optimiser` with its `RootFind` and an `mdf_<cut>` stated in the
@@ -42,7 +42,6 @@ from functional_process.cottax.render_xdsm import SPELLING
 from functional_process.cottax.run_cold_matrix import (
     _return_freed_memory_to_the_os,
     build_mdf,
-    build_sand,
 )
 from functional_process.cottax.visualization.grouping import (
     dependency_group_sequence,
@@ -121,8 +120,18 @@ def mdf_blocking(live, recipe: str):
 
 
 def sand_blocking(live, recipe: str):
-    build = build_sand(live.reference, live.machine_graph, live.switch_values, cut=cut_for(recipe))
-    return build.solve_schedule.blocking
+    """SAND as structure: the cut graph, the optimiser inserted, every declared problem
+    residualised and combined into one, drivers assigned -- no MDA run. `build_sand`
+    runs one to find fixed points to *drop* (degenerate, array-valued), and a SAND that
+    drops nothing is the one the recipes solve, so the picture is that graph."""
+    ref = live.reference
+    cut = cut_for(recipe) or cut_graph
+    with_problem, _name, _report = sand.optimise_graph(
+        cut(raw_graph(live)), ref.ixc, ref.icc, ref.n_equality, ref.i_figure_merit,
+        switch_values=live.switch_values,
+    )
+    combined, _residualised = sand.sand_graph(with_problem)
+    return Blocking.scc(assign_drivers(combined, default_drivers(combined)))
 
 
 def main(argv=None) -> int:
