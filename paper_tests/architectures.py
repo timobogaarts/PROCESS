@@ -98,30 +98,52 @@ def main(argv=None) -> int:
 
 
 def _render(rows):
-    """One `tabular` per driver: configuration x arm rows, one cell per cut."""
-    for driver in sorted({r["driver"] for r in rows}):
+    """Two `tabular`s -- MDF and SAND -- one row per configuration x cut, one cell per
+    optimiser: `it / entries / warm wall (XLA share)`."""
+    for arm in ("MDF", "SAND"):
         tex = []
-        keys = list(dict.fromkeys((r["configuration"], r["arm"]) for r in rows if r["driver"] == driver))
-        for cfg, arm in keys:
-            cells = [tex_name(cfg), arm]
-            for recipe in RECIPES:
-                match = [r for r in rows if r["driver"] == driver and r["configuration"] == cfg
-                         and r["arm"] == arm and r["recipe"] == recipe]
+        keys = list(dict.fromkeys((r["configuration"], r["recipe"]) for r in rows if r["arm"] == arm))
+        for cfg, recipe in keys:
+            cells = [tex_name(cfg), LABEL[recipe]]
+            for driver in ("VMCON", "SLSQP"):
+                match = [r for r in rows if r["arm"] == arm and r["configuration"] == cfg
+                         and r["recipe"] == recipe and r["driver"] == driver]
                 if not match:
                     cells.append("--")
                     continue
                 r = match[0]
-                if r.get("status") not in ("converged",):
-                    cells.append(f"{r.get('status')}")
+                if r.get("status") != "converged":
+                    cells.append(f"{r.get('status')} ({r.get('iterations') or '--'})")
                     continue
-                cells.append(f"{r['iterations']} / {r['design_entries']} / {fmt(r['warm_wall'], 2)}")
+                share = (r["warm_xla"] / r["warm_wall"] * 100) if r.get("warm_wall") else 0
+                cells.append(f"{r['iterations']} / {r['design_entries']} / {fmt(r['warm_wall'], 2)} ({share:.0f}\\%)")
             tex.append(cells)
         write_tex(
-            "architectures.py", ["configuration", "arm", *(LABEL[r] for r in RECIPES)], tex,
-            name=f"architectures_{driver.lower()}",
-            caption_note=f"{driver}: SQP iterations / design entries / warm wall [s], per cut",
+            "architectures.py", ["configuration", "cut", "VMCON", "SLSQP"], tex,
+            name=f"architectures_{arm.lower()}", align="llrr",
+            caption_note=(f"{arm}: SQP iterations / design entries / warm wall [s] "
+                          f"(share of it inside the compiled block programs); the rest is the "
+                          f"optimiser's own cost"),
         )
 
 
+def render_csv(path=None):
+    """Re-render the tables from an existing CSV, e.g. after a partial run."""
+    import csv  # noqa: PLC0415
+
+    from common import OUT  # noqa: PLC0415
+
+    with open(path or OUT / "architectures.csv") as handle:
+        rows = []
+        for r in csv.DictReader(handle):
+            for k in ("warm_wall", "warm_xla", "cold_wall", "ms_per_call"):
+                r[k] = float(r[k]) if r.get(k) else None
+            rows.append(r)
+    _render(rows)
+
+
 if __name__ == "__main__":
+    if "--render" in sys.argv:
+        render_csv()
+        raise SystemExit(0)
     raise SystemExit(main())
