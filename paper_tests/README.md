@@ -70,6 +70,68 @@ vmapped `while_loop` must mask its predicate by the outer activity, and on this 
 forward tangent through FP64 transcendentals costs a primal, so a Jacobian recomputed
 every step loses to a secant update.
 
+**`uq`** -- the deterministic PROCESS optimum under uncertainty. `stellarator_helias`'s
+design is fixed at PROCESS's own converged `ixc` (8 values, `close_conditions_solve.json`),
+`hfact` -- PROCESS's closure variable for the power balance -- becomes an *uncertain
+input*, and one closure stays inside the MDA: the power balance `c2` closed by the plasma
+density (`closed(live, pairings={c2: nd_plasma_electrons_vol_avg}, flatten=True)`, a
+23-node block: the root find combined with the fusion-rate Picard, 3 unknowns, Broyden).
+The net-electric equality `c16` is not closed -- net power is an output and its residual
+against the 1000 MW target is reported like an inequality. 26 boundary inputs (physics,
+blanket, coil, plant and cost; `INPUTS` in the script is the table, meant to be edited)
+plus a `dummy` nothing reads; every one was checked to be a boundary input of this
+graph, none dropped. Saltelli sampling (scrambled Sobol', (k + 2) N = 29 x 8192 = 237 568
+evaluations), Saltelli-2010 S1 and Jansen ST with 200-replicate bootstrap CIs, and a
+plain 100 000-sample Monte Carlo, all evaluated as `jax.vmap` over the uncertain leaves
+in chunks of 16 384 on the RTX 3080 with the run pruned to 22 outputs. Outputs:
+`out/uq_inputs.tex`, `out/uq_sobol.{csv,tex}`, `out/uq_mc.{csv,tex}`, `out/uq.json`,
+`out/uq_tornado_{net_power,cost,concost,c24}.png`, `out/uq_hist_{net_power,cost}.png`.
+
+What it found (2026-09-16):
+
+- **Cost and convergence.** 337 568 closed-MDA evaluations in 95 s wall end to end
+  (build 17 s, the sensitivity `jacfwd` 21 s, three compiles of ~12 s each for the
+  start-strategy calibration, then 0.496 s per 16 384-point call: **33 300 evaluations/s
+  warm, 30 us per converged evaluation**). Every evaluation converged (0 of 337 568
+  dropped; max |c2| <= 1e-10) over ranges that move the closed density by a factor
+  0.2-10. The Newton is started from a log-linear predictor of all three closing
+  unknowns (`u0 * prod (x_i/x_i0)^s_i`, `s_i` the scaled sensitivities from one `jacfwd`
+  at the nominal): 3.5 steps mean / 8 max against 5.6 / 11 from the nominal root, 654 ->
+  496 ms per call. A linear predictor is worse (4.6 / 8), and predicting only the density
+  while leaving the Picard copies at their nominal values makes the Newton stall on a
+  quarter to a third of the points -- the combined problem's unknowns have to move together.
+- **Sanity.** At the nominal the closed MDA returns PROCESS's density to 3e-9 (relative)
+  and its fusion power to 6e-9; net power is 982.4 against PROCESS's 1000.0 MW and coe
+  123.6 against 121.5 $/MWh -- exactly the documented +17.6 MW base-load offset of
+  PROCESS's own report pass (`mda_harness.EXPLAINED_DISAGREEMENTS`); concost agrees to
+  2.3e-4. The port's `c24` at PROCESS's point is +1.5e-3 (PROCESS: -4.8e-7) because it
+  carries `beta_fast_alpha` = 5.9e-5 where PROCESS's stored value is 0, and `c35` is
+  +1.6e-4 from a 1.6e-4 difference in `j_tf_wp`; so `P(g > g_nominal)` is reported next
+  to `P(g > 0)`. The dummy's S1 and ST are exactly 0 (its AB block is bit-identical to A),
+  and sum S1 <= 1 for every output (1.000 for the five constraints that read one input).
+- **One input owns the answer.** `hfact` has ST = 0.90 [0.83, 0.96] on net power, 0.91 on
+  coe (capped at 1000 $/MWh -- the raw coe is a 1e21 sentinel wherever net power <= 0,
+  5.4 % of samples), 0.89 on concost, 0.86 on the beta limit; the closed density scales
+  as hfact^-3 (scaled sensitivity -3.0) and fusion power as its square. Next, an order of
+  magnitude down: the tungsten fraction (0.06), `alphat` (0.06), T_i/T_e (0.06), `fhole`
+  (0.03), `f_p_alpha_plasma_deposited` and `eta_turbine` (0.02). Every plant and cost
+  input -- availability, plant life, discount rate, superconductor unit cost, coil
+  temperature, insulation -- is below 0.005 on net power and cost. `eta_ecrh_injector_
+  wall_plug` has ST = 0 on every output (nothing reported reads it: no injected power in
+  this stellarator's flat top); `bmn`, `f_asym`, `tdiv` reach only the divertor heat-load
+  constraint `c18` (ST 0.01, 0.005, 0.01). Four TF-coil constraints (c32, c34, c35, c82)
+  read only `f_j_tf_wp_critical_max` (plus the insulation for c82), and c65 only
+  `dr_fw_wall`.
+- **The optimum's feasibility is luck.** Net power: median 858 MW, mean 1553, 5-95 %
+  -8 to 5382 MW, P(< 1000 MW) = 0.55, P(<= 0) = 0.054; fusion power 5-95 % 767-16 690 MW
+  (nominal 2973); coe median 151 $/MWh (nominal 124). P(all twelve inequalities
+  satisfied) = 0.015, P(all satisfied and net >= 1000 MW) = 6e-5 (6 samples of 100 000),
+  P(no inequality worse than at the nominal) = 0.016, 2.4 violated inequalities per
+  sample on average. The three constraints active at the optimum (c24 beta, c35 TF quench
+  protection, c83 radial build) are each violated in 50-58 % of samples -- active means
+  half of any perturbation crosses it -- and c8 (wall load) in 29 %, c67 (radiation wall
+  load) 26 %, c62 (alpha confinement ratio) 16 %, c18 (divertor load) 11 %.
+
 ```bash
 G=~/miniconda3/envs/process_port_gpu/bin/python   # conda create -n process_port_gpu python=3.12;
                                                   # pip install -e ~/PROCESS[test] -e ~/jaxgraph[dev,viz];
@@ -81,6 +143,8 @@ $G paper_tests/batching.py --backend gpu --precision f32 --sizes 1024
 $G paper_tests/batching.py --backend gpu --hardware
 $G paper_tests/batching.py --render               # csv + tex from out/batching.json
 JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch   # the closed MDA, all four shapes
+JAX_PLATFORMS=cuda $G paper_tests/uq.py         # ~2 min  Sobol' + Monte Carlo on the closed MDA
+$G paper_tests/uq.py --render                     # tables and figures from the saved samples
 ```
 
 What it found (2026-09-16, RTX 3080 against the R7 3700X, jax 0.11.1, float64 unless
