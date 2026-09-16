@@ -35,7 +35,8 @@ root finds nested inside it -- but the solve runs VMCON from outside the graph, 
     $PY paper_tests/close_conditions.py --solve            # ~5 min
     $PY paper_tests/close_conditions.py --solve --pair16 .physics.nd_plasma_electrons_vol_avg
     $PY paper_tests/close_conditions.py --solve --driver newton   # optimistix's undamped Newton
-    $PY paper_tests/close_conditions.py --batch            # ~3 min, N=1024 vmap on CPU
+    $PY paper_tests/close_conditions.py --batch [--sizes 1,64,1024]   # vmap sweep, CPU
+    JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch      # the same on the GPU
 
 Outputs: `out/close_conditions.csv` (the pairing table), `out/close_conditions.tex`
 (design-variable rows plus the ten smallest non-design cycles per equality),
@@ -649,8 +650,10 @@ def run_solve(pairings=None, suffix="", driver=safeguarded) -> list[dict]:
 # ---------------------------------------------------------------- the batch angle
 
 
-def batch_rows(sizes=(1, 1024), repeats=3) -> list[dict]:
-    """One MDA evaluation, plain and with the root finds inside: single and `vmap`."""
+def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
+    """One MDA evaluation, plain and with the root finds inside: single and `vmap`,
+    on whichever backend jax is on (`JAX_PLATFORMS`); rows say which."""
+    backend = jax.default_backend()
     live = open_live()
     built = closed(live)
     plain = build_mdf(live.reference, live.machine_graph, live.switch_values, cut=live.cut).problem
@@ -683,20 +686,20 @@ def batch_rows(sizes=(1, 1024), repeats=3) -> list[dict]:
                 walls.append(time.perf_counter() - began)
             eq = {c.spelling: np.asarray(out[c]) for c in built.pairings} if label == "closed" else {}
             rows.append({
-                "shape": label, "N": n, "vmap": n > 1, "first_call_s": first,
+                "shape": label, "backend": backend, "N": n, "vmap": n > 1, "first_call_s": first,
                 "warm_s": min(walls), "us_per_point": 1e6 * min(walls) / n,
                 "max_abs_eq": max(float(np.max(np.abs(v))) for v in eq.values()) if eq else None,
                 "newton_steps_max": max(int(np.max(np.asarray(out[Steps.name_for(p)]))) for p in built.places.values()) if label == "closed" else None,
                 "all_converged": bool(all(np.all(np.asarray(out[Converged.name_for(p)])) for p in built.places.values())) if label == "closed" else None,
             })
             print(rows[-1])
-    write_csv("close_conditions.py", rows, name="close_conditions_batch")
+    write_csv("close_conditions.py", rows, name=f"close_conditions_batch_{backend}")
     header = ["MDA", "N", "compile s", "warm s", r"$\mu$s/point", r"$\max|h|$", "max Newton steps"]
     body = [[r["shape"], r["N"], fmt(r["first_call_s"], 1), fmt(r["warm_s"], 4), fmt(r["us_per_point"], 1),
              sci(r["max_abs_eq"]) if r["max_abs_eq"] is not None else "--",
              r["newton_steps_max"] if r["newton_steps_max"] is not None else "--"] for r in rows]
-    write_tex("close_conditions.py", header, body, name="close_conditions_batch", align="lrrrrrr",
-              caption_note="CPU; N > 1 is jax.vmap over N design points, each design entry perturbed by +-1 %")
+    write_tex("close_conditions.py", header, body, name=f"close_conditions_batch_{backend}", align="lrrrrrr",
+              caption_note=f"{backend}; N > 1 is jax.vmap over N design points, each design entry perturbed by +-1 %")
     return rows
 
 
@@ -720,7 +723,8 @@ def main(argv=None) -> int:
             suffix += "" if name == "safeguarded" else f"_{name}"
         run_solve(pairings, suffix, driver)
     if "--batch" in argv:
-        batch_rows()
+        sizes = tuple(int(x) for x in argv[argv.index("--sizes") + 1].split(",")) if "--sizes" in argv else (1, 4, 16, 64, 256, 1024, 4096)
+        batch_rows(sizes)
     if not any(a in argv for a in ("--table", "--solve", "--batch")):
         print(__doc__)
     return 0

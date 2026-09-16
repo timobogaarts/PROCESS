@@ -14,6 +14,8 @@ ringed by the kind of problem it answers and labelled with its driver):
                         nested around everything it iterates (`mdf.nested_blocking`)
     sand_<cut>          SAND -- every problem residualised and combined into one,
                         as structure (no MDA is run; nothing is dropped)
+    closed              (stellarator_helias only) MDF with the two equalities closed as
+                        nested root finds -- `close_conditions.py`'s architecture
 
 for <cut> in hand, jacobi, gauss_seidel, gauss_seidel_minimal. A root-find file (the two
 `*_eval`) has an `uncut_optimiser` with its `RootFind` and an `mdf_<cut>` stated in the
@@ -134,10 +136,18 @@ def sand_blocking(live, recipe: str):
     return Blocking.scc(assign_drivers(combined, default_drivers(combined)))
 
 
+def closed_blocking():
+    """`close_conditions`' architecture on `stellarator_helias`: the two equalities
+    closed as nested root finds, the optimiser over the remaining six."""
+    import close_conditions  # noqa: PLC0415 -- beside this file
+
+    return close_conditions.nested_blocking(close_conditions.closed(close_conditions.open_live()))
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
-    only = set((argv[argv.index("--only") + 1] if "--only" in argv else "uncut,optimiser,mdf,sand").split(","))
+    only = set((argv[argv.index("--only") + 1] if "--only" in argv else "uncut,optimiser,mdf,sand,closed").split(","))
     top = OUT / "dsm"
     top.mkdir(exist_ok=True)
     top_links = []
@@ -161,6 +171,9 @@ def main(argv=None) -> int:
             if "sand" in only and not live.root_find:
                 jobs.append((f"sand_{recipe}", f"SAND, cut: {LABEL[recipe]}",
                              lambda r=recipe: sand_blocking(live, r)))
+        if name == "stellarator_helias" and "closed" in only:
+            jobs.append(("closed", "MDF with the two equalities closed inside (GS-minimal cut; "
+                         "c2 by hfact, c16 by f_nd_alpha)", lambda: closed_blocking()))
         for key, label, build in jobs:
             try:
                 blocking = build()
