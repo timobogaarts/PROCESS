@@ -47,9 +47,10 @@ any record verbatim. Citations elsewhere in the tree that name a record by path 
   `CONFIGURATIONS` and `stem` moved to `native.py`, which is where they belonged;
   `run_cold_matrix.CONFIGURATIONS` is a re-export for its four existing callers.
 
-  **`reference_cold_matrix.txt` is now stale in two ways** and wants a re-run: it was
-  measured at `a8f98e35`, several declaration-changing commits ago, and it still has the
-  `seed` column that no longer exists. Its rows differ from a fresh `helias_5b` by one
+  **`reference_cold_matrix.txt` was stale in two ways** -- measured at `a8f98e35`,
+  several declaration-changing commits ago, and still carrying the `seed` column -- and
+  **was re-measured on 2026-09-16** with its two siblings (`_audit/performance.md`, the
+  dated note). Its rows differ from the `a8f98e35` ones on the two stellarators by one
   node / one condition / one equality, which is `ba84ce1d`'s recovered declarations and
-  not this cleanup -- the assembled graph is byte-identical, node for node, to the
-  session's starting commit.
+  `8cf4abc3`'s `icc = 11` removal, not this cleanup. Every reference header now says
+  which machine and which cottax commit it was measured on.

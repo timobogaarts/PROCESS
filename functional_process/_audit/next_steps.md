@@ -124,8 +124,13 @@ initial keyword-swept register, not proven complete.
    stellarator configurations at all -- not "`helias_5b` forgot `ixc = 3`", which §52
    shows could not have helped. `stellarator_helias.IN.DAT` already omits it;
    `helias_5b.IN.DAT` is the outlier.
-2. **[closed as architectural] `stellarator_helias` SAND under SLSQP cycles on a
-   conflicting pair, and it is not fixable by rescaling** (§47, §49). The cycle is a
+2. **[closed as architectural; overtaken 2026-09-16] `stellarator_helias` SAND under SLSQP
+   cycled on a conflicting pair, and it was not fixable by rescaling** (§47, §49). **On the
+   current tree it converges**: 88 iterations, 590 calls, feasible to 4e-11, at an
+   objective 1e-4 *below* the other three arms' (`performance.md`, "Formerly bad rows");
+   which of the 09-07..09-11 commits changed the trajectory is not isolated. The
+   mechanism below still stands -- the kinks did not go away, the path just stopped
+   crossing them -- so this stays a real exposure of SAND. The cycle is a
    decaying period-2 zigzag on `^cond.stellarator.wp_width_r_min` against `c62`; three
    candidates were measured and rejected (not a bound, not the Jacobian, and **not the
    scale spread** -- `large_tokamak_nof` converges in 13 with a *wider* design-scale ratio,
