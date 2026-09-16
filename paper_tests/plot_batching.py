@@ -82,8 +82,10 @@ for backend in ("cpu", "gpu"):
 def draw_closed(data, ylabel, title, name):
     fig, ax = plt.subplots(figsize=(6, 4))
     styles = {("plain", "cpu"): (CPU, "-", "plain MDA, CPU"), ("plain", "gpu"): (GPU, "-", "plain MDA, GPU"),
-              ("closed", "cpu"): (CPU, "--", "equalities closed inside, CPU"),
-              ("closed", "gpu"): (GPU, "--", "equalities closed inside, GPU")}
+              ("nested", "gpu"): (GPU, ":", "closed, nested (exact Newton), GPU"),
+              ("closed", "cpu"): (CPU, "--", "closed, flattened (Broyden), CPU"),
+              ("closed", "gpu"): (GPU, "--", "closed, flattened (Broyden), GPU"),
+              ("predicted", "gpu"): (GPU, "-.", "closed, flattened + predicted start, GPU")}
     for key, (colour, ls, label) in styles.items():
         pts = sorted(data[key].items())
         if not pts:
@@ -106,7 +108,7 @@ def draw_closed(data, ylabel, title, name):
 
 
 draw_closed(closed, "µs per point (warm, float64)",
-            "stellarator_helias MDA, plain vs. the two equalities solved inside", "batching_closed")
+            "stellarator_helias MDA: plain, and the two equalities solved inside (nested vs. flattened)", "batching_closed")
 draw_closed(closed_walls, "warm wall per batched call, s",
             "stellarator_helias MDA, plain vs. closed: wall per call", "batching_closed_wall")
 

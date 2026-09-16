@@ -20,8 +20,11 @@ with no leverage (`t_tf_superconductor_quench` -> `c16`: six nodes, scaled sensi
 The solve (`--solve`) takes the chosen pairings (`PAIRINGS`), builds
 
     raw -> recipe cut -> constraint and objective nodes (`mdf.mdf_graph`)
-        -> Insert RootFind per equality -> NestInside(each root find)
-        -> drivers: Picard on the cut fixed points, Newton on the root finds
+        -> Insert RootFind per equality
+        -> the cut fixed points on its cycle Residualise'd and Combine'd into it
+           (`flattened`; `--nested` keeps them inside it instead, Picard-driven)
+        -> NestInside(each root find)
+        -> driver: `SafeguardedNewtonDriver` (capped, backtracked, Broyden-updated)
 
 and drives VMCON (and SLSQP) over the six remaining design variables from the same cold
 start `mdf.solve` uses, through the same `mdf.Mdf` / `mdf.condition_map` machinery: the
@@ -35,8 +38,11 @@ root finds nested inside it -- but the solve runs VMCON from outside the graph, 
     $PY paper_tests/close_conditions.py --solve            # ~5 min
     $PY paper_tests/close_conditions.py --solve --pair16 .physics.nd_plasma_electrons_vol_avg
     $PY paper_tests/close_conditions.py --solve --driver newton   # optimistix's undamped Newton
+    $PY paper_tests/close_conditions.py --solve --driver exact    # safeguarded, exact Jacobian per step
+    $PY paper_tests/close_conditions.py --solve --nested          # fixed points nested, not combined
     $PY paper_tests/close_conditions.py --batch [--sizes 1,64,1024]   # vmap sweep, CPU
-    JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch      # the same on the GPU
+    JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch --sizes 1,4,16,64,256,1024,4096,16384
+                                                                       # the same on the GPU
 
 Outputs: `out/close_conditions.csv` (the pairing table), `out/close_conditions.tex`
 (design-variable rows plus the ten smallest non-design cycles per equality),
@@ -67,8 +73,8 @@ from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.names import PathMap
 from cottax.plan import Insert, Plan
-from cottax.problem import Converged, Optimise, RootFind, Start, Steps
-from cottax.rewrites import NestInside
+from cottax.problem import ConditionNode, Converged, Optimise, RootFind, Start, Steps
+from cottax.rewrites import Combine, NestInside, Residualise
 from cottax.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
@@ -290,6 +296,8 @@ class Closed:
     """The six the optimiser keeps."""
     blocking: Blocking
     """`Blocking.scc` of the driven graph, root finds nested, no `Optimise`."""
+    flat: bool = True
+    """Whether the cut fixed points on each cycle were folded into its root find."""
 
     def root_find_reports(self, out) -> dict:
         """`{condition: (steps, converged, residual, unknown)}` out of a run's env."""
@@ -311,6 +319,27 @@ def newton(**kwargs):
     return mdf.MdfNewtonDriver(**{"rtol": NEWTON_TOL, "atol": NEWTON_TOL, **kwargs})
 
 
+def condition_scale(conditions, start):
+    """Per-condition scale for the residual norm and the tolerance test.
+
+    A residualised fixed point's gap `^cond.X = g(^hat.X, ...) - ^hat.X` is in the unit of
+    the unknown `^hat.X` (a density here: 1e20), so it is scaled by that unknown's
+    start; a condition with no like-named unknown -- a normalised constraint, scale 1
+    -- by 1. Without this the combined problem's `max|r|` is the density gap and a
+    tolerance of 1e-10 on it is below float64's resolution of 1e20.
+    """
+    tails = {
+        u.spelling.split(".", 1)[1]: jnp.asarray(x).reshape(-1)
+        for u, x in zip(conditions.unknowns, start, strict=True)
+    }
+    scales = []
+    for c in conditions.conditions:
+        tail = c.spelling.split(".", 1)[1] if "." in c.spelling else c.spelling
+        x = tails.get(tail)
+        scales.append(jnp.where(x == 0.0, 1.0, jnp.abs(x)) if x is not None else jnp.ones(1))
+    return jnp.concatenate(scales)
+
+
 class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
     """`MdfNewtonDriver`'s contract (Newton, reports its verdict), with the two
     safeguards VMCON's line search forced: a relative step cap and backtracking on the
@@ -327,14 +356,43 @@ class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
     lineax's `error_if` turns that into an exception rather than a `nan` -- while
     `GaussNewton` is undamped and no better than Newton. So the loop is written out:
     `jax.lax.custom_root` for the implicit derivative, a `while_loop` of capped,
-    backtracked Newton steps inside. Where a root exists it converges like Newton;
-    where none exists it stops at a finite point with a non-zero residual (`Converged`
-    false), so the outer line search sees a finite, infeasible merit and backs off.
+    backtracked steps inside. Where a root exists it converges like Newton; where none
+    exists it stops at a finite point with a non-zero residual (`Converged` false), so
+    the outer line search sees a finite, infeasible merit and backs off.
+
+    **What one step costs, and the three things that halved it on the GPU** (measured
+    on the batched call, `--batch`, N = 4096 on an RTX 3080 at FP64):
+
+    - *One evaluation per step.* The residual and its directional derivative come from
+      one `jax.jvp` at the trial point, and the accepted trial's derivative is the next
+      step's Jacobian -- the same iterates as `jacfwd` at the iterate then a primal at
+      the trial, for one evaluation of the cycle instead of two (192 -> 167 ms).
+    - *`jacobian="broyden"`* (the default): the full Jacobian once, at the start, by
+      `n` forward tangents; every later step updates it by Broyden's rank-1 secant
+      formula from the primal residuals it evaluates anyway, so a step costs one primal
+      evaluation and no tangent. The point: on this card a forward tangent through the
+      fusion-rate body (`pow`/`exp` over `[N, 201]` profiles) costs as much as the
+      primal -- 2.3 ms per primal launch, 14 ms for the primal fused with four tangents
+      -- so the combined problem's four-column Jacobian is what made flattening the
+      nesting a loss under exact Newton (195 ms) and a win under Broyden (148 ms).
+      Superlinear, one step more than Newton at the tail (batch max 5 against 4).
+      `"newton"` keeps the exact Jacobian per step.
+    - *Sequential tangents.* The start Jacobian's columns by one `jvp` each rather than
+      `vmap` over the basis: XLA fuses the `vmap`ped tangents with the primal into one
+      kernel that is slower than four separate ones (150 -> 133 ms) and takes 40 s
+      instead of 15 s to compile, and the stacked `[n, N, 14, 201]` tangent
+      intermediate was the largest buffer of the call.
+
+    The residual is scaled per condition (`condition_scale`) and the step cap shortens
+    the whole Newton direction by one factor rather than clipping each component,
+    which turned a component-wise clip's failure from the cold start (the copies'
+    steps kept while `f_nd_alpha`'s was clipped, residual up) into 5 steps to 1e-10.
     """
 
     max_steps: int = 40
     cap: float = 0.5
-    """Largest step, relative to the current iterate."""
+    """Largest step, relative to the current iterate: the Newton direction scaled by
+    one factor so that no component moves by more than this fraction."""
     halvings: int = 12
     """Backtracking budget per Newton step. **Only an active point may spend it**
     (`worse` below is masked by `norm(r) > tol`): under `jax.vmap` a `while_loop` runs
@@ -347,6 +405,8 @@ class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
     step were [0, 0, 12, 12] once 25 % of the points had converged, and the driver
     was 852 ms against 186 ms with them masked (the same `u`, the same step counts).
     For a single point the mask changes nothing: the outer `go_on` implies it."""
+    jacobian: str = "broyden"
+    """`"broyden"` or `"newton"` -- see the class docstring."""
 
     def __call__(self, conditions, data) -> tuple:
         from jax import lax  # noqa: PLC0415
@@ -355,47 +415,74 @@ class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
         start = data.get(Start)
         flat_guess, unravel = ravel_pytree(start)
         scale = jnp.where(flat_guess == 0.0, 1.0, flat_guess)
+        rscale = condition_scale(conditions, start)
         tol, cap, halvings, max_steps = self.rtol, self.cap, self.halvings, self.max_steps
+        n = flat_guess.size
+        broyden = self.jacobian == "broyden"
 
         def residual(u):
             out, _ = ravel_pytree(conditions(*unravel(u * scale)))
             return out
 
         def norm(r):
-            return jnp.max(jnp.abs(r))
+            return jnp.max(jnp.abs(r / rscale))
+
+        def value_and_jacobian(f, u):
+            """`f(u)` and its Jacobian from one primal pass: one `jvp` per column."""
+            eye = jnp.eye(n, dtype=u.dtype)
+            r, first = jax.jvp(f, (u,), (eye[0],))
+            columns = [first] + [jax.jvp(f, (u,), (eye[i],))[1] for i in range(1, n)]
+            return r, jnp.stack(columns, axis=1)
 
         def solve(f, u0):
             def step(state):
-                u, r, k, _stalled = state
-                jacobian = jax.jacfwd(f)(u)
-                du = -jnp.linalg.solve(jacobian, r)
-                bound = cap * jnp.maximum(jnp.abs(u), 1e-3)
-                du = jnp.clip(du, -bound, bound)
-
+                u, r, jac, k, _stalled = state
+                du = -jnp.linalg.solve(jac, r)
+                du = du * jnp.minimum(
+                    1.0, cap / jnp.max(jnp.abs(du) / jnp.maximum(jnp.abs(u), 1e-3))
+                )
                 active = norm(r) > tol  # false where the outer loop is done (vmap)
 
-                def worse(bs):
-                    _t, r_new, j = bs
-                    bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
-                    return bad & (j < halvings) & active
+                if broyden:
+                    def worse(bs):
+                        _t, r_new, j = bs
+                        bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
+                        return bad & (j < halvings) & active
 
-                def halve(bs):
-                    t, _r_new, j = bs
-                    t = 0.5 * t
-                    return t, f(u + t * du), j + 1
+                    def halve(bs):
+                        t, _r_new, j = bs
+                        t = 0.5 * t
+                        return t, f(u + t * du), j + 1
 
-                t, r_new, _j = lax.while_loop(worse, halve, (1.0, f(u + du), 0))
+                    t, r_new, _j = lax.while_loop(worse, halve, (1.0, f(u + du), 0))
+                    s_, y_ = t * du, r_new - r
+                    jac_new = jac + jnp.outer(y_ - jac @ s_, s_) / jnp.maximum(s_ @ s_, 1e-300)
+                else:
+                    def worse(bs):
+                        _t, r_new, _jac_new, j = bs
+                        bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
+                        return bad & (j < halvings) & active
+
+                    def halve(bs):
+                        t, _r_new, _jac_new, j = bs
+                        t = 0.5 * t
+                        return t, *value_and_jacobian(f, u + t * du), j + 1
+
+                    t, r_new, jac_new, _j = lax.while_loop(
+                        worse, halve, (1.0, *value_and_jacobian(f, u + du), 0)
+                    )
                 accepted = jnp.all(jnp.isfinite(r_new)) & (norm(r_new) < norm(r))
                 u_new = jnp.where(accepted, u + t * du, u)
                 r_new = jnp.where(accepted, r_new, r)
-                return u_new, r_new, k + 1, ~accepted
+                jac_new = jnp.where(accepted, jac_new, jac)
+                return u_new, r_new, jac_new, k + 1, ~accepted
 
             def go_on(state):
-                _u, r, k, stalled = state
+                _u, r, _jac, k, stalled = state
                 return (norm(r) > tol) & (k < max_steps) & ~stalled
 
-            r0 = f(u0)
-            u, r, k, stalled = lax.while_loop(go_on, step, (u0, r0, 0, False))
+            r0, jac0 = value_and_jacobian(f, u0)
+            u, r, _jac, k, stalled = lax.while_loop(go_on, step, (u0, r0, jac0, 0, False))
             # As floats: `custom_root`'s aux must carry a float tangent.
             return u, jnp.stack([k, norm(r) <= tol, stalled]).astype(float)
 
@@ -415,8 +502,41 @@ def safeguarded(**kwargs):
     return SafeguardedNewtonDriver(**{"rtol": NEWTON_TOL, "atol": NEWTON_TOL, **kwargs})
 
 
-def closed(live, pairings=None, driver=safeguarded) -> Closed:
-    """Build the graph and the `Mdf` record for `pairings` (spellings, or `PAIRINGS`)."""
+def safeguarded_newton(**kwargs):
+    """The exact-Jacobian variant, for the nested rows."""
+    return safeguarded(jacobian="newton", **kwargs)
+
+
+def flattened(graph, place: NodePath) -> tuple:
+    """Every declared problem on `place`'s cycle folded into it: each `Residualise`d
+    (its `u = g(u)` becomes `g(u) - u = 0`) and all of them `Combine`d with the root
+    find into one square problem over `(var, the cut copies)`. Returns the graph and
+    the combined problem's path (`^problem.Close.c16`).
+
+    The alternative to `NestInside`: nested, every evaluation of the root find's
+    residual re-converges the fusion-rate Picard (2 steps) and the first-wall-area
+    Picard (3-4) inside it, and the Newton's derivative goes through their implicit
+    adjoints; combined, one Newton over four unknowns evaluates the 27-node body once
+    per step with no loop inside the loop. Which is cheaper depends on the driver --
+    see `SafeguardedNewtonDriver`.
+    """
+    component = next(c for c in graph.components if place in c)
+    inner = [n for n in component if n != place and isinstance(graph[n], ConditionNode)]
+    if not inner:
+        return graph, place
+    plan = Plan(graph)
+    for n in inner:
+        plan = plan + Residualise(n)
+    combine = Combine(place, (place, *inner))
+    return (plan + combine).graph, combine.problem
+
+
+def closed(live, pairings=None, driver=safeguarded, flatten=True) -> Closed:
+    """Build the graph and the `Mdf` record for `pairings` (spellings, or `PAIRINGS`).
+
+    `flatten`: the cut fixed points on a root find's cycle are combined into it
+    (`flattened`); otherwise nested inside it (`NestInside`) and driven by Picard.
+    """
     raw = raw_graph(live)
     graph, report = with_conditions(live, live.cut(raw))
     design = design_of(live)
@@ -444,7 +564,10 @@ def closed(live, pairings=None, driver=safeguarded) -> Closed:
             )
         seen |= set(component)
     # Whatever declared problem sits on a root find's cycle (a cut fixed point) is
-    # answered inside its iteration.
+    # either folded into it or answered inside its iteration.
+    if flatten:
+        for cond, place in list(places.items()):
+            graph, places[cond] = flattened(graph, place)
     for place in places.values():
         graph = (Plan(graph) + NestInside(place)).graph
     drivers = default_drivers(graph)
@@ -472,7 +595,7 @@ def closed(live, pairings=None, driver=safeguarded) -> Closed:
     )
     return Closed(
         live=live, problem=problem, pairings=chosen, places=places, design=kept,
-        blocking=blocking,
+        blocking=blocking, flat=flatten,
     )
 
 
@@ -595,9 +718,9 @@ def process_answer() -> dict:
     }
 
 
-def run_solve(pairings=None, suffix="", driver=safeguarded) -> list[dict]:
+def run_solve(pairings=None, suffix="", driver=safeguarded, flatten=True) -> list[dict]:
     live = open_live()
-    built = closed(live, pairings, driver=driver)
+    built = closed(live, pairings, driver=driver, flatten=flatten)
     print("\n".join(describe(built.blocking)))
     nested = nested_blocking(built)
     print("with the Optimise stated:")
@@ -663,32 +786,80 @@ def run_solve(pairings=None, suffix="", driver=safeguarded) -> list[dict]:
 # ---------------------------------------------------------------- the batch angle
 
 
+def predicted_starts(built: Closed, point: PathMap, values: dict) -> dict:
+    """`{guess port: [N] array}` -- the closing unknowns' roots to first order in the
+    batch's design offsets: `u*(x0) + du*/dx (x_i - x0)`, the sensitivities by one
+    `jax.jacfwd` of the unbatched closed MDA at the batch's centre (through the root
+    finds' `custom_root`). Computed once per batch, outside the timed call; a scan
+    around a design has this derivative at hand anyway. The +-1 % offsets leave a
+    second-order residual (~1e-4), which Newton or Broyden closes in two steps.
+    """
+    problem = built.problem
+    design = tuple(built.design)
+    guesses = mdf.guess_ports(problem)
+    owned: set = set()
+    for place in built.places.values():
+        owned |= set(problem.graph[place].unknowns)
+    unknowns = [u for g, u in guesses.items() if u in owned]
+    ports = {u: g for g, u in guesses.items()}
+    single = jax.jit(problem.traceable.run)
+
+    def roots(xs):
+        env = dict(point.items())
+        env.update(zip(design, xs, strict=True))
+        out = single(PathMap(env))
+        return jnp.stack([out[u] for u in unknowns])
+
+    x0 = tuple(jnp.asarray(point[v]) for v in design)
+    sensitivity = jnp.stack(list(jax.jacfwd(roots)(x0)), axis=1)  # [unknowns, design]
+    u0 = roots(x0)
+    dx = jnp.stack([values[v] - point[v] for v in design], axis=1)  # [N, design]
+    predicted = u0[None, :] + dx @ sensitivity.T
+    return {ports[u]: predicted[:, i] for i, u in enumerate(unknowns)}
+
+
 def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
     """One MDA evaluation, plain and with the root finds inside: single and `vmap`,
-    on whichever backend jax is on (`JAX_PLATFORMS`); rows say which."""
+    on whichever backend jax is on (`JAX_PLATFORMS`); rows say which. Four shapes:
+    `plain`; `nested` -- the fixed points nested in the root finds, exact Newton;
+    `closed` -- flattened, Broyden (the default `closed()`); `predicted` -- `closed`
+    started from `predicted_starts`."""
     backend = jax.default_backend()
     live = open_live()
-    built = closed(live)
     plain = build_mdf(live.reference, live.machine_graph, live.switch_values, cut=live.cut).problem
+    nested = closed(live, driver=safeguarded_newton, flatten=False)
+    flat = closed(live)
     rows = []
-    for label, problem, design in (("plain", plain, plain.design), ("closed", built.problem, built.design)):
+    shapes = (
+        ("plain", plain, plain.design, None, False),
+        ("nested", nested.problem, nested.design, nested, False),
+        ("closed", flat.problem, flat.design, flat, False),
+        ("predicted", flat.problem, flat.design, flat, True),
+    )
+    for label, problem, design, built, predict in shapes:
         env = mdf.seed(problem, live.cold)
         env, _ = mdf.prime(problem, env)
         inputs = mdf._inputs_only(problem, env)
         point = PathMap(inputs.items())
         varied = tuple(design)
-        axes = PathMap((v, 0 if v in set(varied) else None) for v in point)
         single = jax.jit(problem.traceable.run)
-        batched = jax.jit(jax.vmap(problem.traceable.run, in_axes=(axes,)))
         for n in sizes:
             rng = np.random.default_rng(0)
             values = dict(point.items())
             for v in varied:
                 base = np.asarray(point[v])
                 values[v] = jnp.asarray(base * (1 + 0.01 * rng.uniform(-1, 1, size=n)))
-            arg = PathMap(values)
-            fn = batched if n > 1 else single
-            arg = arg if n > 1 else point
+            batched = set(varied)
+            if predict and n > 1:
+                began = time.perf_counter()
+                starts = predicted_starts(built, point, values)
+                jax.block_until_ready(list(starts.values()))
+                predict_s = time.perf_counter() - began
+                values.update(starts)
+                batched |= set(starts)
+            axes = PathMap((v, 0 if v in batched else None) for v in point)
+            fn = jax.jit(jax.vmap(problem.traceable.run, in_axes=(axes,))) if n > 1 else single
+            arg = PathMap(values) if n > 1 else point
             out = None  # the previous size's output is not kept alive across this call
             try:
                 began = time.perf_counter()
@@ -704,23 +875,37 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
                              "status": f"{type(failure).__name__}: {str(failure)[:80]}"})
                 print(rows[-1])
                 break
-            eq = {c.spelling: np.asarray(out[c]) for c in built.pairings} if label == "closed" else {}
-            rows.append({
+            row = {
                 "shape": label, "backend": backend, "N": n, "vmap": n > 1, "first_call_s": first,
                 "warm_s": min(walls), "us_per_point": 1e6 * min(walls) / n,
-                "max_abs_eq": max(float(np.max(np.abs(v))) for v in eq.values()) if eq else None,
-                "newton_steps_max": max(int(np.max(np.asarray(out[Steps.name_for(p)]))) for p in built.places.values()) if label == "closed" else None,
-                "all_converged": bool(all(np.all(np.asarray(out[Converged.name_for(p)])) for p in built.places.values())) if label == "closed" else None,
-            })
+            }
+            if built is not None:
+                eq = {c.spelling: np.asarray(out[c]) for c in built.pairings}
+                steps = [np.asarray(out[Steps.name_for(p)]).reshape(-1) for p in built.places.values()]
+                row.update({
+                    "max_abs_eq": max(float(np.max(np.abs(v))) for v in eq.values()),
+                    "newton_steps_max": max(int(np.max(st)) for st in steps),
+                    "newton_steps_mean": float(np.mean(np.concatenate(steps))),
+                    "all_converged": bool(all(np.all(np.asarray(out[Converged.name_for(p)])) for p in built.places.values())),
+                })
+            if predict and n > 1:
+                row["predict_s"] = predict_s
+            rows.append(row)
             print(rows[-1])
     write_csv("close_conditions.py", rows, name=f"close_conditions_batch_{backend}")
-    header = ["MDA", "N", "compile s", "warm s", r"$\mu$s/point", r"$\max|h|$", "max Newton steps"]
+    header = ["MDA", "N", "compile s", "warm s", r"$\mu$s/point", r"$\max|h|$", "Newton steps (max / mean)"]
     body = [[r["shape"], r["N"], fmt(r["first_call_s"], 1), fmt(r["warm_s"], 4), fmt(r["us_per_point"], 1),
              sci(r["max_abs_eq"]) if r.get("max_abs_eq") is not None else "--",
-             r["newton_steps_max"] if r.get("newton_steps_max") is not None else "--"]
+             f"{r['newton_steps_max']} / {r['newton_steps_mean']:.2f}" if r.get("newton_steps_max") is not None else "--"]
             if "status" not in r else [r["shape"], r["N"], r["status"], "", "", "", ""] for r in rows]
     write_tex("close_conditions.py", header, body, name=f"close_conditions_batch_{backend}", align="lrrrrrr",
-              caption_note=f"{backend}; N > 1 is jax.vmap over N design points, each design entry perturbed by +-1 %")
+              caption_note=(
+                  f"{backend}; N > 1 is jax.vmap over N design points, each design entry perturbed "
+                  "by +-1 %. nested: the cut fixed points nested inside the root finds, exact Newton; "
+                  "closed: flattened into one square problem per root find, Broyden; predicted: "
+                  "closed, started from the first-order prediction of the roots (sensitivities by "
+                  "one jacfwd at the centre, outside the timed call)"
+              ))
     return rows
 
 
@@ -740,9 +925,12 @@ def main(argv=None) -> int:
             suffix = "_" + var.split(".")[-1]
         if "--driver" in argv:
             name = argv[argv.index("--driver") + 1]
-            driver = {"newton": newton, "safeguarded": safeguarded}[name]
+            driver = {"newton": newton, "safeguarded": safeguarded, "exact": safeguarded_newton}[name]
             suffix += "" if name == "safeguarded" else f"_{name}"
-        run_solve(pairings, suffix, driver)
+        flatten = "--nested" not in argv
+        if not flatten:
+            suffix += "_nested"
+        run_solve(pairings, suffix, driver, flatten)
     if "--batch" in argv:
         sizes = tuple(int(x) for x in argv[argv.index("--sizes") + 1].split(",")) if "--sizes" in argv else (1, 4, 16, 64, 256, 1024, 4096)
         batch_rows(sizes)

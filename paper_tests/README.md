@@ -46,23 +46,29 @@ iterations, verdict, objective, design entries (a Jacobi SAND carries whole prof
 cold wall and warm wall. One `tabular` per optimiser.
 
 **`batching`** -- whether `jax.vmap` pays on the GPU (RTX 3080, 10 GB, FP64 at 1/64 of
-FP32). Two shapes, each vmapped over N = 1, 4, ..., 4096 independent points and timed
+FP32). Two shapes, each vmapped over N = 1, 4, ..., 65536 independent points and timed
 per point on the CPU and on the GPU *in the same env* (`process_port_gpu`, jax 0.11.1
-+ CUDA 12; `JAX_PLATFORMS=cpu` for the CPU rows, so the comparison is of backends, not
-versions): `mda`, the hand-cut MDA of `scan.py`'s shape at N points that differ in
-`.physics.rmajor` and `.physics.b_plasma_toroidal_on_axis` (a sqrt(N) x sqrt(N) grid of
-+-5 %; `in_axes` a `PathMap` batching only those two leaves); and `sand`, the SAND
-block's fused value+Jacobian (`host_cache`'s program) at N +-1 % perturbations of the
-design at PROCESS's converged point. One row per (shape, configuration, backend,
-precision, N): first-call wall (compile), warm wall (min of 3 after the first, each
-`block_until_ready`), us/point, peak memory; N=64 outputs are diffed GPU against CPU
-and a `--tag process_port` sanity row repeats one point in the CPU env (jax 0.11.0).
-The f32 rows are the *hardware* story only: PROCESS does not evaluate in float32 (a
-fusion reaction rate is a density squared, ~1e40 m^-6, past float32's 3.4e38, and the
-fusion-rate Picard block goes non-finite), so their drivers are told not to throw and
-their values are inf/nan -- only `sand`, which has no loop, has a wall comparable to
-its f64 row. `--hardware` adds a 2048^2 matmul and a 64-deep elementwise chain in both
-dtypes for the raw f64:f32 ratio of each backend.
++ CUDA 12; `JAX_PLATFORMS=cpu` for the CPU rows): `mda`, the hand-cut MDA of `scan.py`'s
+shape at N points on a grid of `.physics.rmajor` x `.physics.b_plasma_toroidal_on_axis`;
+and `sand`, the SAND block's fused value+Jacobian at N perturbed designs. `plot_batching.py`
+draws `out/batching.png` (us/point) and `out/batching_wall.png` (wall per call).
+Findings: the stellarator MDA crosses over at N~2000 and is still halving per 4x at 16k
+(8.7 us/pt); the tokamak never crosses because `pf_coil`'s SVD is padded past cuSOLVER's
+batched limit; f32 is unusable (fusion rates overflow) and irrelevant (latency-bound).
+
+**`close_conditions`** -- `stellarator_helias`'s two equalities closed as root finds
+inside the MDA instead of handed to the optimiser (`--table` ranks every pairing by the
+cycle it closes and its sensitivity; `--solve` runs the 6-variable optimisation; `--batch`
+vmaps the MDA). Four batch shapes: `plain` (the hand-cut MDA), `nested` (root finds with
+the cycle's Picards nested inside, exact Newton), `closed` (the c16 root find `Residualise`d
+and `Combine`d with those Picards into one 4-unknown square Newton with a Broyden update --
+no loop inside the loop; the default), and `predicted` (`closed` started from a first-order
+predictor across the batch). `out/batching_closed*.png` plot them. On the GPU at N=4096:
+plain 83 ms, nested 196, closed 137, predicted 107 -- a converged, equality-feasible
+evaluation for 1.3-1.7x a plain one. Two lessons that transfer: a `while_loop` nested in a
+vmapped `while_loop` must mask its predicate by the outer activity, and on this card a
+forward tangent through FP64 transcendentals costs a primal, so a Jacobian recomputed
+every step loses to a secant update.
 
 ```bash
 G=~/miniconda3/envs/process_port_gpu/bin/python   # conda create -n process_port_gpu python=3.12;
@@ -74,6 +80,7 @@ $G paper_tests/batching.py --backend gpu          # ~20 min
 $G paper_tests/batching.py --backend gpu --precision f32 --sizes 1024
 $G paper_tests/batching.py --backend gpu --hardware
 $G paper_tests/batching.py --render               # csv + tex from out/batching.json
+JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch   # the closed MDA, all four shapes
 ```
 
 What it found (2026-09-16, RTX 3080 against the R7 3700X, jax 0.11.1, float64 unless
