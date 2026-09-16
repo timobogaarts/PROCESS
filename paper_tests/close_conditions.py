@@ -676,14 +676,20 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
             arg = PathMap(values)
             fn = batched if n > 1 else single
             arg = arg if n > 1 else point
-            began = time.perf_counter()
-            out = jax.block_until_ready(fn(arg))
-            first = time.perf_counter() - began
-            walls = []
-            for _ in range(repeats):
+            try:
                 began = time.perf_counter()
                 out = jax.block_until_ready(fn(arg))
-                walls.append(time.perf_counter() - began)
+                first = time.perf_counter() - began
+                walls = []
+                for _ in range(repeats):
+                    began = time.perf_counter()
+                    out = jax.block_until_ready(fn(arg))
+                    walls.append(time.perf_counter() - began)
+            except Exception as failure:  # noqa: BLE001 -- an OOM is a row, not an exit
+                rows.append({"shape": label, "backend": backend, "N": n, "vmap": n > 1,
+                             "status": f"{type(failure).__name__}: {str(failure)[:80]}"})
+                print(rows[-1])
+                break
             eq = {c.spelling: np.asarray(out[c]) for c in built.pairings} if label == "closed" else {}
             rows.append({
                 "shape": label, "backend": backend, "N": n, "vmap": n > 1, "first_call_s": first,
@@ -696,8 +702,9 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
     write_csv("close_conditions.py", rows, name=f"close_conditions_batch_{backend}")
     header = ["MDA", "N", "compile s", "warm s", r"$\mu$s/point", r"$\max|h|$", "max Newton steps"]
     body = [[r["shape"], r["N"], fmt(r["first_call_s"], 1), fmt(r["warm_s"], 4), fmt(r["us_per_point"], 1),
-             sci(r["max_abs_eq"]) if r["max_abs_eq"] is not None else "--",
-             r["newton_steps_max"] if r["newton_steps_max"] is not None else "--"] for r in rows]
+             sci(r["max_abs_eq"]) if r.get("max_abs_eq") is not None else "--",
+             r["newton_steps_max"] if r.get("newton_steps_max") is not None else "--"]
+            if "status" not in r else [r["shape"], r["N"], r["status"], "", "", "", ""] for r in rows]
     write_tex("close_conditions.py", header, body, name=f"close_conditions_batch_{backend}", align="lrrrrrr",
               caption_note=f"{backend}; N > 1 is jax.vmap over N design points, each design entry perturbed by +-1 %")
     return rows

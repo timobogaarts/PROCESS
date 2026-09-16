@@ -63,6 +63,53 @@ def draw(data, ylabel, title, name):
     print(OUT / f"{name}.png")
 
 
+# The closed architecture (`close_conditions.py --batch`): plain and closed MDA on
+# stellarator_helias, per backend, as a third panel pair.
+closed: dict = defaultdict(dict)
+closed_walls: dict = defaultdict(dict)
+for backend in ("cpu", "gpu"):
+    path = OUT / f"close_conditions_batch_{backend}.csv"
+    if not path.exists():
+        continue
+    for r in csv.DictReader(open(path)):
+        if r.get("status") or not r.get("us_per_point"):
+            continue
+        key = (r["shape"], backend)
+        closed[key][int(r["N"])] = float(r["us_per_point"])
+        closed_walls[key][int(r["N"])] = float(r["warm_s"])
+
+
+def draw_closed(data, ylabel, title, name):
+    fig, ax = plt.subplots(figsize=(6, 4))
+    styles = {("plain", "cpu"): (CPU, "-", "plain MDA, CPU"), ("plain", "gpu"): (GPU, "-", "plain MDA, GPU"),
+              ("closed", "cpu"): (CPU, "--", "equalities closed inside, CPU"),
+              ("closed", "gpu"): (GPU, "--", "equalities closed inside, GPU")}
+    for key, (colour, ls, label) in styles.items():
+        pts = sorted(data[key].items())
+        if not pts:
+            continue
+        xs, ys = zip(*pts)
+        ax.plot(xs, ys, color=colour, ls=ls, lw=2, marker="o", ms=5, label=label)
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.grid(True, which="major", color=RULE, lw=0.6); ax.grid(False, which="minor")
+    for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+    for sp in ("left", "bottom"): ax.spines[sp].set_color(RULE)
+    ax.tick_params(colors=MUTED, labelsize=8)
+    ax.set_xlabel("points per batched call, N", color=MUTED, fontsize=9)
+    ax.set_ylabel(ylabel, color=MUTED, fontsize=9)
+    ax.set_title(title, fontsize=9.5, color=INK, loc="left")
+    ax.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(OUT / f"{name}.png", dpi=150)
+    fig.savefig(OUT / f"{name}.pdf")
+    print(OUT / f"{name}.png")
+
+
+draw_closed(closed, "µs per point (warm, float64)",
+            "stellarator_helias MDA, plain vs. the two equalities solved inside", "batching_closed")
+draw_closed(closed_walls, "warm wall per batched call, s",
+            "stellarator_helias MDA, plain vs. closed: wall per call", "batching_closed_wall")
+
 draw(series, "µs per point (warm, float64)",
      "Batching the port with jax.vmap: cost per point against N (GPU OOM at 65 536 / 4096)", "batching")
 draw(walls, "warm wall per batched call, s",
