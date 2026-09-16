@@ -6,6 +6,7 @@ import argparse
 import statistics
 import sys
 import time
+from pathlib import Path
 
 import jax
 
@@ -91,6 +92,10 @@ def main(argv=None) -> int:
     lines = [
         "WARM MATRIX -- assembled once, compiled once, then measured. Seconds unless "
         "stated.",
+        f"MEASURED {time.strftime('%Y-%m-%d %H:%M')} on {run_cold_matrix.machine()}; "
+        f"repeats={args.repeats}.",
+        f"TREE: HEAD {run_cold_matrix._git('rev-parse', '--short', 'HEAD', cwd=Path(__file__).resolve().parent.parent.parent)}"
+        f"; COTTAX: {run_cold_matrix.cottax_tree()}.",
         "`XLA` is summed over every block-program call; `host` is the rest of the solve, "
         "which is",
         "the optimiser's own cost. See this module's docstring for why the cold matrix "

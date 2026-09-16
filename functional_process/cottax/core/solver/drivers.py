@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 from cottax.drivers import PicardDriver as CottaxPicardDriver
-from cottax.evaluation.schedule import AbstractDriver, ConditionMap
+from cottax.evaluation.schedule import ConditionMap, Driver
 from cottax.problem import (
     Converged,
     DriverReport,
@@ -22,10 +22,10 @@ from cottax.problem import (
     is_optimise, is_root_find,
 )
 from cottax.spec import VarPath
-from cottax.names import written
 from jax.flatten_util import ravel_pytree
 
 from functional_process.cottax.core.solver.host_cache import bind
+from functional_process.cottax.paths import written
 
 
 UNSCALABLE_BELOW = 1e-12
@@ -387,7 +387,7 @@ def start_from(data, driver_name: str, conditions: ConditionMap) -> tuple:
     return start
 
 
-class SlsqpDriver(AbstractDriver):
+class SlsqpDriver(Driver):
     """`scipy.optimize.minimize(method="SLSQP")` answering `Optimise`, on exactly the
     problem `VmconDriver` receives.
     """
@@ -588,7 +588,7 @@ class SlsqpDriver(AbstractDriver):
         return _sqp_callback(conditions, start, host)
 
 
-class SeededNewtonDriver(AbstractDriver):
+class SeededNewtonDriver(Driver):
     """`cottax.drivers.NewtonDriver`, plus a fallback starting guess derived from the
     block's own **context** when the one supplied in `env` is unusable.
     """
@@ -662,7 +662,7 @@ class PicardDriver(CottaxPicardDriver):
         return super().__call__(conditions, data)
 
 
-class VmconDriver(AbstractDriver):
+class VmconDriver(Driver):
     """PROCESS's own SQP (`pyvmcon`) answering `Optimise`, fed `jax.jacfwd` instead of
     finite differences.
     """

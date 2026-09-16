@@ -59,7 +59,7 @@ def boundary(graph: Graph) -> tuple[tuple[str, VarPath], ...]:
     """`graph`'s unowned inputs, categorised, in a stable order."""
     return tuple(
         sorted(
-            ((category(v), v) for v in graph.unowned_inputs),
+            ((category(v), v) for v in graph.boundary_inputs),
             key=lambda row: (row[0], row[1].spelling),
         )
     )
@@ -143,7 +143,7 @@ class Inert:
 
 def _frozen(graph: Graph, design: Iterable[VarPath]) -> set[VarPath]:
     """The graph's boundary inputs **minus the design variables**."""
-    return set(graph.unowned_inputs) - set(design)
+    return set(graph.boundary_inputs) - set(design)
 
 
 def frozen_reads(
@@ -240,7 +240,7 @@ def orphaned_by(base: Graph, swapped: Graph) -> tuple[VarPath, ...]:
     """Reads that `base` produced, `swapped` does not, and something still reads."""
     return tuple(
         sorted(
-            (var for var in swapped.unowned_inputs if var in base.owners),
+            (var for var in swapped.boundary_inputs if var in base.owners),
             key=lambda v: v.spelling,
         )
     )
@@ -405,7 +405,7 @@ def _main(argv: list[str]) -> int:
     driven = driven_graph(graph)
     rows = boundary(driven)
     have = counts(rows)
-    print(f"declared graph: {len(graph.unowned_inputs)} unowned input(s)")
+    print(f"declared graph: {len(graph.boundary_inputs)} unowned input(s)")
     print(
         f"driven graph:   {len(rows)} = {have[INPUT]} input + {have[GUESSED]} guess"
         f" + {have[STATED]} stated"

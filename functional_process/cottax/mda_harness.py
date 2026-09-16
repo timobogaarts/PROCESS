@@ -893,7 +893,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
         if problem_type is not None
         for _, guess in starts_for(driven, problem)
     }
-    for var in driven.unowned_inputs:
+    for var in driven.boundary_inputs:
         if var in starts:
             continue
         try:

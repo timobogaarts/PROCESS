@@ -1,6 +1,7 @@
 """Where the port's variables live: `data.<area>.<field>`, the way PROCESS spells it."""
 
 import difflib
+from collections.abc import Iterable
 
 from cottax.interfaces.pytree_namespace_module import Area
 from jax.tree_util import GetAttrKey
@@ -47,4 +48,15 @@ data = _Root(AREAS)
 
 globals().update({name: getattr(data, name) for name in AREAS})
 
-__all__ = ["AREAS", "data", *AREAS]
+
+def written(names: Iterable) -> list[str]:
+    """Names as they are written, sorted -- what a message lists.
+
+    Was `cottax.names.written` until cottax dropped its spelling helper (2026-09-12,
+    `af5b2f9`): a place has no order of its own, so the spelling orders them and every
+    message that lists names is deterministic.
+    """
+    return sorted(name.spelling for name in names)
+
+
+__all__ = ["AREAS", "data", "written", *AREAS]

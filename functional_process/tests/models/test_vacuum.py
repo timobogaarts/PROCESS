@@ -26,15 +26,15 @@ import numpy as np
 import optimistix as optx
 import pytest
 from cottax import (
-    AbstractDriver,
     Feasibility,
     Graph,
     ImplementedFunction,
     RootFind,
     Start,
 )
-from cottax.blocking import Blocking, runnable
-from cottax.evaluation.schedule import Schedule
+from cottax.abstract import runnable
+from cottax.blocking import Blocking
+from cottax.evaluation.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import is_feasibility, is_root_find
 from cottax.rewrites import Assign
@@ -193,7 +193,7 @@ class TestSolveDuctDiameter(Tier2Contract):
     samples = FROM_FILE
 
 
-class _NewtonRootFindDriver(AbstractDriver):
+class _NewtonRootFindDriver(Driver):
     """Test-only `AbstractDriver` for `RootFind`, wrapping the exact algorithm
     `solve_duct_diameter` already uses: `jax.grad`-based Newton inside a
     `jax.lax.while_loop`, same default `max_iter=100`/`tol=1e-10`, same single fixed
@@ -387,7 +387,7 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     assert joined.inequalities == DuctFeasibility.inequalities
 
 
-class _MeritFunctionFeasibilityDriver(AbstractDriver):
+class _MeritFunctionFeasibilityDriver(Driver):
     """Test-only `AbstractDriver` answering `Feasibility` by the reduction its own
     docstring names as the standard move: stack the equality residual with `relu` of
     the two inequality residuals, and drive the resulting 3-vector to zero as an

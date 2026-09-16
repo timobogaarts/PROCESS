@@ -163,9 +163,9 @@ def test_the_split_is_289_inputs_and_one_guess_per_unsupplied_driven_unknown():
     have = counts(boundary(driven))
     assert have[INPUT] == 289
     assert have[STATED] == 16
-    assert have[INPUT] + have[STATED] == len(GRAPH.unowned_inputs) == 305
+    assert have[INPUT] + have[STATED] == len(GRAPH.boundary_inputs) == 305
     assert (
-        have[INPUT] + have[GUESSED] + have[STATED] == len(driven.unowned_inputs) == 311
+        have[INPUT] + have[GUESSED] + have[STATED] == len(driven.boundary_inputs) == 311
     )
 
     # Every guess pairs with an unknown, and an unknown is owned *inside* the driven
@@ -388,7 +388,7 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
             # the inert list, it reads a path this graph *owns*. A row that vanished
             # because the condition stopped being assembled would look identical above.
             assert V("current_drive", "big_q_plasma") in graph.owners
-            assert V("current_drive", "big_q_plasma") not in set(graph.unowned_inputs)
+            assert V("current_drive", "big_q_plasma") not in set(graph.boundary_inputs)
     assert found == expected
 
 

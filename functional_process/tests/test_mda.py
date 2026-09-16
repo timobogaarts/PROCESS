@@ -313,7 +313,7 @@ def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
         # reads it, nothing produces it, and the pin records it as `input`).
         assert not any(
             name in v.spelling and v.spelling.startswith("^guess")
-            for v in graph.unowned_inputs
+            for v in graph.boundary_inputs
         ), name
         assert not any(name in p.spelling for p in declared(graph)), name
 
@@ -408,7 +408,7 @@ def test_the_intersect_start_is_supplied_by_the_winding_pack_occupant():
     assert starts[0] in graph.owners
     assert not any(
         v.spelling.startswith("^guess.stellarator.wp_width_r_min")
-        for v in graph.unowned_inputs
+        for v in graph.boundary_inputs
     )
 
 
@@ -432,7 +432,7 @@ def test_every_superconductor_schedules_and_only_bi2212_keeps_its_guess():
         Schedule(Blocking.scc(graph))  # raises if the block cannot be driven
         at_boundary = [
             v
-            for v in graph.unowned_inputs
+            for v in graph.boundary_inputs
             if v.spelling == "^guess.stellarator.wp_width_r_min"
         ]
         assert bool(at_boundary) == (material is SuperconductorModel.BI2212), material

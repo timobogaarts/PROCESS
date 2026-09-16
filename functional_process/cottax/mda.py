@@ -18,7 +18,7 @@ from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
 from cottax.problem import ConditionNode
-from cottax.names import PathMap, written
+from cottax.names import PathMap
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
 
@@ -28,7 +28,7 @@ from functional_process.cottax.core.solver.drivers import (
     VmconDriver,
 )
 from functional_process.cottax.indat import GRAPH
-from functional_process.cottax.paths import fwbs, pf_coil, physics, tfcoil, times
+from functional_process.cottax.paths import fwbs, pf_coil, physics, tfcoil, times, written
 
 CUTS = (
     resolve(physics.proton_rate_density, VarPath),

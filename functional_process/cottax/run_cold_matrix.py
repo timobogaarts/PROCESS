@@ -1144,25 +1144,61 @@ PORT_FILES = (
 """The modules a row's numbers depend on, for the provenance header."""
 
 
+def _git(*args, cwd) -> str:
+    """One git query, or `""` -- a header line, never a reason a run fails."""
+    import subprocess  # noqa: PLC0415, S404 -- header only, not a solve path
+
+    try:
+        return subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=str(cwd),
+            check=False,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover
+        return ""
+
+
+def machine() -> str:
+    """The CPU these rows were timed on. **A timing without this is not comparable
+    with anything**: the 2026-09-06 references were taken on a laptop and re-run on an
+    R7 3700X on 2026-09-16, and neither file said so.
+    """
+    import platform  # noqa: PLC0415
+
+    model = ""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                model = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    return f"{model or platform.processor() or 'unknown CPU'}, {platform.node()}"
+
+
+def cottax_tree() -> str:
+    """Which `cottax` commit answered: the port tracks an API that moves, and a row is
+    a measurement of the pair, not of this tree alone.
+    """
+    import cottax  # noqa: PLC0415
+
+    src = Path(cottax.__file__).resolve().parent.parent
+    head = _git("rev-parse", "--short", "HEAD", cwd=src) or "unknown"
+    dirty = " (+ uncommitted edits)" if _git("status", "--porcelain", cwd=src) else ""
+    return f"{head}{dirty} at {src}"
+
+
 def provenance(argv=(), compare=None) -> list[str]:
     """The header every table carries: **which tree state these rows were measured on.**
     Emitted by `checkpoint`, not hand-written on top afterwards -- which is the whole
     change.
     """
-    import subprocess  # noqa: PLC0415, S404 -- header only, not a solve path
 
     def git(*args):
-        try:
-            return subprocess.run(  # noqa: S603
-                ["git", *args],  # noqa: S607
-                capture_output=True,
-                text=True,
-                timeout=20,
-                cwd=str(Path(__file__).resolve().parent.parent.parent),
-                check=False,
-            ).stdout.strip()
-        except (OSError, subprocess.SubprocessError):  # pragma: no cover
-            return ""
+        return _git(*args, cwd=Path(__file__).resolve().parent.parent.parent)
 
     head = git("rev-parse", "--short", "HEAD") or "unknown"
     subject = git("log", "-1", "--format=%s") or ""
@@ -1172,7 +1208,7 @@ def provenance(argv=(), compare=None) -> list[str]:
         if line[3:].strip()
     }
     dirty = sorted(
-        name for name in PORT_FILES if f"functional_process/{name}" in changed
+        name for name in PORT_FILES if f"functional_process/cottax/{name}" in changed
     )
     when = time.strftime("%Y-%m-%d %H:%M")
     lines = [
@@ -1207,6 +1243,8 @@ def provenance(argv=(), compare=None) -> list[str]:
             "only."
         ),
         f"# TREE: HEAD {head} ({subject[:88]})",
+        f"# COTTAX: {cottax_tree()}",
+        f"# MACHINE: {machine()}",
     ]
     if dirty:
         lines += [

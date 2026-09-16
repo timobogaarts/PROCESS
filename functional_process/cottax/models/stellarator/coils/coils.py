@@ -4,7 +4,7 @@ import jax  # noqa: F401
 import jax.numpy as jnp
 import optimistix as optx  # noqa: F401
 from cottax.evaluation.schedule import (
-    AbstractDriver,
+    Driver,
     ConditionMap,
 )
 from cottax.interfaces.pytree_namespace_module import (
@@ -178,7 +178,7 @@ _LHS_PATH = resolve(stellarator.lhs, VarPath)
 _RHS_PATH = resolve(stellarator.rhs, VarPath)
 
 
-class IntersectBisectionNewtonPolish(AbstractDriver):
+class IntersectBisectionNewtonPolish(Driver):
     """Concrete `AbstractDriver` answering `Intersect`'s declared `RootFind` -- exactly
     the algorithm `intersect` (above) already uses: `optx.Bisection` over the curves'
     full x-overlap, then a few exact Newton corrections (`_intersect_newton_polish`).
