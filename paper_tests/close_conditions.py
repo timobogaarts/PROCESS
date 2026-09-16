@@ -336,6 +336,17 @@ class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
     cap: float = 0.5
     """Largest step, relative to the current iterate."""
     halvings: int = 12
+    """Backtracking budget per Newton step. **Only an active point may spend it**
+    (`worse` below is masked by `norm(r) > tol`): under `jax.vmap` a `while_loop` runs
+    its body for every point until the last one's predicate is false, with `select` on
+    the carry -- so a point the outer loop has already finished still evaluates a
+    Newton step, and at a root that step is noise, `norm(r_new) >= norm(r)` half the
+    time, and its halving loop runs to the 12-step cap, each halving one evaluation
+    of the whole cycle **for the whole batch**. Measured on the GPU at N = 4096 before
+    the mask: no active point ever needed a halving, the batch-max halvings per outer
+    step were [0, 0, 12, 12] once 25 % of the points had converged, and the driver
+    was 852 ms against 186 ms with them masked (the same `u`, the same step counts).
+    For a single point the mask changes nothing: the outer `go_on` implies it."""
 
     def __call__(self, conditions, data) -> tuple:
         from jax import lax  # noqa: PLC0415
@@ -361,10 +372,12 @@ class SafeguardedNewtonDriver(mdf.MdfNewtonDriver):
                 bound = cap * jnp.maximum(jnp.abs(u), 1e-3)
                 du = jnp.clip(du, -bound, bound)
 
+                active = norm(r) > tol  # false where the outer loop is done (vmap)
+
                 def worse(bs):
                     _t, r_new, j = bs
                     bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
-                    return bad & (j < halvings)
+                    return bad & (j < halvings) & active
 
                 def halve(bs):
                     t, _r_new, j = bs
@@ -676,6 +689,7 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
             arg = PathMap(values)
             fn = batched if n > 1 else single
             arg = arg if n > 1 else point
+            out = None  # the previous size's output is not kept alive across this call
             try:
                 began = time.perf_counter()
                 out = jax.block_until_ready(fn(arg))
