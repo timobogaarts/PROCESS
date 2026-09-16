@@ -545,9 +545,9 @@ def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
 PALETTE = (
     "#4c78a8",
     "#f58518",
-    "#54a24b",
+    "#3fa7b8",  # was #54a24b: a green that read as the paper's olive fixed-point ring
     "#e45756",
-    "#b279a2",
+    "#cc79a7",  # was #b279a2: a mauve that read as the paper's violet optimiser ring
     "#72b7b2",
     "#eeca3b",
     "#9d7660",
@@ -562,17 +562,20 @@ PALETTE = (
 UNGROUPED_COLOUR = "#8c8c8c"
 
 KIND_COLOUR = {
-    "optimise": "#7b3294",
-    COMBINED: "#c51b7d",
-    "root-find": "#1b9e77",
-    "fixed-point": "#2166ac",
-    "feasibility": "#a6611a",
-    "declared": "#6b6b6b",
-    "stated": "#6b6b6b",
+    "optimise": "#77609a",
+    COMBINED: "#77609a",
+    "root-find": "#96771f",
+    "fixed-point": "#4f7a37",
+    "feasibility": "#5e5e5e",
+    "declared": "#9d9d9d",
+    "stated": "#9d9d9d",
 }
-"""One colour per problem kind -- a box's ring and a problem row's diagonal. Chosen away
-from `PALETTE`'s hues where possible, since a ring sits on top of group-coloured marks; a
-coupled block nothing drives keeps the page's accent, as it always has."""
+"""One colour per problem kind -- a box's ring and a problem row's label. **The paper's
+own** (`graph_paper/figures/latex_xdsm.py`, the terracotta palette's `ring-*` rules:
+violet optimise, ocher root-find, olive fixed-point, grey feasibility / unanswered), so a
+DSM here and an XDSM there say one kind in one colour; a combined problem is an
+optimiser and takes its violet. `PALETTE` above was nudged away from these three hues
+for the same reason. A coupled block nothing drives keeps the page's accent."""
 
 TIER_OVERLAY = (None, "hatch-stripe", "hatch-dot")
 """What a group beyond the palette's length is drawn with, on top of its recycled
