@@ -677,7 +677,9 @@ def residual_condition_scales(drive, env, floor=1e-12):
         unknown = unknowns.get(place(condition))
         if unknown is None or unknown not in env:
             continue
-        magnitude = abs(float(np.asarray(env[unknown])))
+        # The largest element for an array-valued unknown (a recipe cut copies whole
+        # profiles); the scale is one factor per condition, so one number per unknown.
+        magnitude = float(np.max(np.abs(np.asarray(env[unknown], dtype=float))))
         usable = np.isfinite(magnitude) and magnitude > floor
         scales.append((condition, 1.0 / magnitude if usable else 1.0))
     return tuple(scales)

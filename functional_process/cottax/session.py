@@ -49,6 +49,10 @@ class Session:
     """The driver **class** every `Optimise` in this session is answered by, or `None`
     for `mda.default_drivers`' own choice.
     """
+    cut: object = None
+    """How the raw graph's cycles are cut: `None` for `mda.cut_graph`'s hand-measured
+    table, or a `recipes.Recipe` (`jacobi`, `gauss_seidel`, `gauss_seidel_minimal`).
+    """
 
     def mdf(self, cold=None) -> dict:
         """Solve this configuration's MDF arm, assembling it on the first call."""
@@ -58,6 +62,7 @@ class Session:
                 self.machine_graph,
                 self.switch_values,
                 root_find=self.root_find,
+                cut=self.cut,
             )
         return solve_mdf(
             self.mdf_build,
@@ -81,6 +86,7 @@ class Session:
                 self.machine_graph,
                 self.switch_values,
                 optimiser=self.optimiser,
+                cut=self.cut,
             )
         return solve_sand(
             self.sand_build,
@@ -90,7 +96,7 @@ class Session:
         )
 
 
-def open_session(path, optimiser=None) -> Session:
+def open_session(path, optimiser=None, cut=None) -> Session:
     """Everything `run_cold_matrix.run_one` does before it first touches a solver."""
     path = _resolve(str(path))
     name = path.name[: -len(".IN.DAT")] if path.name.endswith(".IN.DAT") else path.stem
@@ -105,6 +111,7 @@ def open_session(path, optimiser=None) -> Session:
     boundary: dict = {}
     return Session(
         optimiser=optimiser,
+        cut=cut,
         name=name,
         path=path,
         reference=reference,

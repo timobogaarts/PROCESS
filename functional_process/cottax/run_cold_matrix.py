@@ -172,9 +172,9 @@ class MdfBuild:
     shape: dict = field(default_factory=dict)
 
 
-def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBuild:
+def build_mdf(reference, machine_graph, switch_values, root_find=False, cut=None) -> MdfBuild:
     """Assemble MDF for this configuration -- the half of a row that a *second* solve of
-    the same configuration must not repeat.
+    the same configuration must not repeat. `cut=None` is `mda.cut_graph`.
     """
     build = MdfBuild(
         problem=mdf.assemble(
@@ -185,6 +185,7 @@ def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBu
             graph=machine_graph,
             switch_values=switch_values,
             root_find=root_find,
+            **({} if cut is None else {"cut": cut}),
         ),
         root_find=root_find,
     )
@@ -325,12 +326,19 @@ class SandBuild:
     design_paths: set
     shape: dict = field(default_factory=dict)
     omitted: object = None
+    cut: object = None
+    """How the graph was cut -- `None` for `mda.cut_graph`. `solve_sand` seeds the
+    coupling copies from an MDA under the *same* cut, since a recipe's copies are
+    names the hand-cut MDA never computes."""
 
 
-def build_sand(reference, machine_graph, switch_values, optimiser=None) -> SandBuild:
-    """Assemble SAND for this configuration, solve schedule included."""
-    driven, env = mda_env(reference, graph=machine_graph)
-    combined, report = sand_assemble(reference, driven, env, switch_values=switch_values)
+def build_sand(reference, machine_graph, switch_values, optimiser=None, cut=None) -> SandBuild:
+    """Assemble SAND for this configuration, solve schedule included. `cut=None` is
+    `mda.cut_graph`."""
+    driven, env = mda_env(reference, graph=machine_graph, **({} if cut is None else {"cut": cut}))
+    combined, report = sand_assemble(
+        reference, driven, env, switch_values=switch_values, drop_arrays=cut is None
+    )
     schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
     shape = sand.sand_shape(schedule)
     condition_scale = sand.residual_condition_scales(shape["drive"], env)
@@ -359,6 +367,7 @@ def build_sand(reference, machine_graph, switch_values, optimiser=None) -> SandB
             "driven": shape["unknowns"],
         },
         omitted=report["omitted"],
+        cut=cut,
     )
 
 
@@ -372,7 +381,10 @@ def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
     trace, design_paths = build.trace, build.design_paths
     trace.clear()
 
-    stage_env = mda_env(reference, graph=machine_graph, data=cold)[1]
+    stage_env = mda_env(
+        reference, graph=machine_graph, data=cold,
+        **({} if build.cut is None else {"cut": build.cut}),
+    )[1]
     seeded, _borrowed = _seed(
         solve_schedule, solve_drive, cold, stage_env, design=design_paths
     )

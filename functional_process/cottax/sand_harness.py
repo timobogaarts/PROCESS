@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 from functional_process.cottax.queries import declared
 from cottax.blocking import Blocking
+from cottax.problem import is_fixed_point
 from cottax.evaluation.schedule import Schedule
 from cottax.plan import Delete
 from cottax.names import unminted
@@ -182,14 +183,18 @@ _MDA_SCHEDULES: dict = {}
 """`graph -> (driven, runnable, schedule, jitted runner)`, built once per graph."""
 
 
-def mda_schedule(graph=None):
-    """`(driven, runnable, schedule, run)` for `graph` -- the MDA, assembled once."""
+def mda_schedule(graph=None, cut=cut_graph):
+    """`(driven, runnable, schedule, run)` for `graph` -- the MDA, assembled once.
+
+    `cut` turns the raw graph into one with a problem on every cycle: `mda.cut_graph`
+    (the hand-measured cuts) by default, or a `recipes.Recipe`.
+    """
     from functional_process.cottax.indat import graph_for  # noqa: PLC0415
 
-    key = graph if graph is not None else graph_for()
+    key = (graph if graph is not None else graph_for(), cut)
     cached = _MDA_SCHEDULES.get(key)
     if cached is None:
-        driven = cut_graph(_without_excluded(key))
+        driven = cut(_without_excluded(key[0]))
         blocking = Blocking.scc(driven)
         runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
         schedule = Schedule(Blocking.scc(runnable))
@@ -369,7 +374,7 @@ def _driven_runner(step, fuse_upstream=True):
     return run
 
 
-def mda_env(reference, graph=None, data=None):
+def mda_env(reference, graph=None, data=None, cut=cut_graph):
     """Run the plain MDA schedule seeded from `data` (default `reference.data`); return
     its output env.
     """
@@ -379,7 +384,7 @@ def mda_env(reference, graph=None, data=None):
     )
 
     data = reference.data if data is None else data
-    driven, runnable, schedule, run = mda_schedule(graph)
+    driven, runnable, schedule, run = mda_schedule(graph, cut)
     # Seeded over the **schedule's own inputs**, which is the driven graph's boundary:
     # `Assign` mints each driver's `^guess.*` `Start` ports into it and `Supply` takes
     # the supplied ones back out, so asking the schedule is what keeps this in step with
@@ -397,6 +402,22 @@ def mda_env(reference, graph=None, data=None):
     # starts and agree on every value, because `ground_truth` falls back to `unminted`
     # for a mint with no `KNOWN_MINT_VALUES` entry and none of the entries is spelled
     # `^hat.*`. Checked rather than assumed: `test_sand.py::test_boundary_seeds_agree`.
+    cold = None if cut is cut_graph else cold_state(data, graph)
+    env = seed_env(data, schedule, runnable, cold)
+    return driven, dict(run(PathMap(env)))
+
+
+def seed_env(data, schedule, runnable, cold=None) -> dict:
+    """Every input of `schedule` read off `data`, a `^guess.*` port off the unknown it
+    starts. A place `data` does not hold is read off `cold` -- `cold_state`'s
+    first-pass values, or `cold_shapes`' zeros -- and failing that starts at the scalar
+    `0.0`, PROCESS's own default for a quantity nothing has written.
+    """
+    from functional_process.cottax.mda import (  # noqa: PLC0415
+        given_start,
+        guess_sources,
+    )
+
     guesses = guess_sources(runnable)
     env = {}
     for var in schedule.inputs:
@@ -404,7 +425,7 @@ def mda_env(reference, graph=None, data=None):
         try:
             grounded = ground_truth(data, source)
         except (AttributeError, KeyError):
-            grounded = 0.0
+            grounded = cold_value(source, cold)
         # A `^guess.*` port may be *given* its value rather than read off `data` --
         # `mda.GIVEN_STARTS` for which, and why a cold dataclass default is not a
         # starting guess. Only guess ports: an ordinary input is the machine's own
@@ -412,7 +433,86 @@ def mda_env(reference, graph=None, data=None):
         if var in guesses:
             grounded = given_start(source, grounded)
         env[var] = _strongly_typed(grounded)
-    return driven, dict(run(PathMap(env)))
+    return env
+
+
+def _place(var):
+    """`var` with every mint stripped: the place in the caller's structure it copies."""
+    place = var
+    while (stripped := unminted(place)) != place:
+        place = stripped
+    return place
+
+
+def cold_value(var, cold=None):
+    """`cold`'s value at the place `var` is a copy of -- a `ShapeDtypeStruct` there is
+    read as zeros of that shape -- or the scalar `0.0` when nothing says.
+    """
+    if cold:
+        known = cold.get(_place(var))
+        if isinstance(known, jax.ShapeDtypeStruct):
+            return jnp.zeros(known.shape, known.dtype)
+        if known is not None:
+            return known
+    return 0.0
+
+
+_COLD_SHAPES: dict = {}
+
+
+def cold_shapes(data, graph=None) -> dict:
+    """`{variable: ShapeDtypeStruct}` for every value the hand-cut MDA computes, by
+    `jax.eval_shape` -- traced, never run. **What a recipe's cut copy is shaped like**:
+    `mda.cut_graph`'s nine variables are all PROCESS quantities `data` holds, but a
+    recipe cuts port-internal ones too (`.physics.nd_plasma_electron_profile` is a
+    201-point profile PROCESS never names), and a Picard refuses a scalar guess for an
+    array unknown. Cached per graph.
+    """
+    from functional_process.cottax.indat import graph_for  # noqa: PLC0415
+
+    key = graph if graph is not None else graph_for()
+    cached = _COLD_SHAPES.get(key)
+    if cached is None:
+        _driven, runnable, schedule, run = mda_schedule(key)
+        env = seed_env(data, schedule, runnable)
+        traced = jax.eval_shape(run, PathMap(env))
+        cached = _COLD_SHAPES[key] = dict(traced)
+    return cached
+
+
+_COLD_STATES: dict = {}
+
+
+def cold_state(data, graph=None) -> dict:
+    """`{variable: value}` after **one pass of the graph in binding order** -- what a
+    recipe's cut copies start from.
+
+    PROCESS starts a solve the same way: every model reads what the models before it
+    in call order just wrote and a data-structure default for anything after it. Said
+    on the graph, that is the Gauss-Seidel cut in binding order with each fixed point
+    applied once (`drivers.SweepDriver`) and each root find solved, from `data` and
+    `cold_shapes`' zeros. A Jacobi from zeros instead divides by a copy nothing has
+    written yet and never recovers, and starting one recipe from another's converged
+    answer would compare nothing. Cached per graph.
+    """
+    from functional_process.cottax.core.solver.drivers import SweepDriver  # noqa: PLC0415
+    from functional_process.cottax.indat import graph_for  # noqa: PLC0415
+    from functional_process.cottax.recipes import recipe  # noqa: PLC0415
+
+    key = graph if graph is not None else graph_for()
+    cached = _COLD_STATES.get(key)
+    if cached is None:
+        sweep = recipe("gauss_seidel")(_without_excluded(key))
+        drivers = default_drivers(sweep)
+        for problem, driver in drivers.items():
+            if is_fixed_point(sweep[problem]):
+                drivers[problem] = SweepDriver()
+        runnable = assign_drivers(sweep, drivers)
+        schedule = Schedule(Blocking.scc(runnable))
+        env = seed_env(data, schedule, runnable, cold_shapes(data, key))
+        out = _mda_runner(schedule)(PathMap(env))
+        cached = _COLD_STATES[key] = dict(out)
+    return cached
 
 
 def _strongly_typed(value):
@@ -421,8 +521,14 @@ def _strongly_typed(value):
     return jax.lax.convert_element_type(array, array.dtype)
 
 
-def assemble(reference, driven, env, omit=(), switch_values=None, keep=()):
-    """The SAND graph for `reference`'s own `ixc`/`icc`/`i_figure_merit`."""
+def assemble(reference, driven, env, omit=(), switch_values=None, keep=(), drop_arrays=True):
+    """The SAND graph for `reference`'s own `ixc`/`icc`/`i_figure_merit`.
+
+    `drop_arrays`: delete every fixed point over a non-scalar unknown, leaving its copy
+    frozen at the seed -- what every reference SAND row was measured with. `False`
+    folds them into the optimiser like any other (both SQP drivers ravel their
+    unknowns), which a recipe cut needs: a Jacobi cut copies whole profiles.
+    """
     keep = frozenset(keep)
     degenerate = tuple(p for p in degenerate_fixed_points(driven, env) if p not in keep)
     array_valued = tuple(
@@ -431,7 +537,7 @@ def assemble(reference, driven, env, omit=(), switch_values=None, keep=()):
             driven, env, tuple(p for p in declared(driven) if p not in set(degenerate))
         )
         if p not in keep
-    )
+    ) if drop_arrays else ()
     dropped = tuple(degenerate) + tuple(array_valued)
     graph = Delete(dropped).apply(driven) if dropped else driven
 

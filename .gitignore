@@ -85,3 +85,6 @@ functional_process/*.html
 
 # Generated Warp source -- regenerate with `functional_process/cottax/warp/`.
 functional_process/warp/
+
+# paper_tests: the interactive DSM pages are ~26 MB and regenerate in 15 min (dsms.py)
+paper_tests/out/dsm/

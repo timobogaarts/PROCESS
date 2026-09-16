@@ -76,6 +76,10 @@ class Mdf:
     """Which problem this file states -- `Optimise` or `RootFind`. See `assemble`."""
     reported: tuple[VarPath, ...] = ()
     """Conditions assembled but **not driven**: a `RootFind`'s inequalities."""
+    raw: Graph | None = None
+    """The graph before any cut, when the cut was a `recipes.Recipe` -- what `seed`
+    asks `sand_harness.cold_state` about for a copy `data` has no value for. `None`
+    for `mda.cut_graph`, whose nine variables `data` always holds."""
 
 
 def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
@@ -127,9 +131,10 @@ def assemble(
     switch_values=None,
     omit=(),
     root_find=False,
+    cut=cut_graph,
 ):
     """The whole MDF assembly: cut the raw cycles, add the conditions, build both
-    schedules.
+    schedules. `cut` is `mda.cut_graph` or a `recipes.Recipe`.
     """
     if root_find and n_equality != len(ixc):
         raise ValueError(
@@ -138,7 +143,8 @@ def assemble(
             f"variable(s) -- PROCESS's own `fsolve` over `evaluate_eq_cons` would be "
             f"the same non-square system, so there is nothing to root-find here"
         )
-    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
+    raw = _without_excluded(graph if graph is not None else graph_for())
+    driven = cut(raw)
     graph, conditions, n_inequality, report = mdf_graph(
         driven,
         icc,
@@ -184,6 +190,7 @@ def assemble(
         report=report,
         problem_type='root-find' if root_find else 'optimise',
         reported=reported,
+        raw=None if cut is cut_graph else raw,
     )
 
 
@@ -200,8 +207,11 @@ def guess_ports(mdf: Mdf) -> dict:
 
 def seed(mdf: Mdf, data, design_values=None):
     """Every schedule input and every inner unknown, read off `data`."""
+    from functional_process.cottax.sand_harness import cold_state, cold_value  # noqa: PLC0415
+
     env = {}
     starts = guess_ports(mdf)
+    shapes = None if mdf.raw is None else cold_state(data, mdf.raw)
     for var in list(mdf.eager.inputs) + list(mdf.eager.unknowns):
         # A `^guess.*` port is grounded from the unknown it starts, not from its own
         # name -- there is no `DataStructure` field spelled that way.
@@ -209,7 +219,7 @@ def seed(mdf: Mdf, data, design_values=None):
         try:
             grounded = ground_truth(data, source)
         except (AttributeError, KeyError):
-            grounded = 0.0
+            grounded = cold_value(source, shapes)
         # A `^guess.*` port may be *given* its value instead of read off `data` --
         # `mda.GIVEN_STARTS` for which, and why a cold dataclass default is not a
         # starting guess. Guess ports only; an ordinary input is the machine's own number.
@@ -528,10 +538,10 @@ def inner_residuals(schedule: Schedule, env):
     return rows
 
 
-def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, **kwargs):
+def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, cut=cut_graph, **kwargs):
     """MDF **stated as structure**: `Blocking.scc((graph + Optimise + NestInside(the Optimise)).graph)`.
     """
-    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
+    driven = cut(_without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )

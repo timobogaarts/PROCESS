@@ -82,6 +82,44 @@ what is worth carrying forward is only this:
 the largest node in the graph. Pre-existing and unexamined: it reproduces to every digit
 with the 2026-09-07 codegen changes disabled.
 
+**The paper's cut-and-determine recipe is mechanical now** (`cottax/recipes.py`,
+2026-09-16): `jacobi` (every coupling variable of every component), `gauss_seidel`
+(the backward reads in PROCESS's call order) and `gauss_seidel_minimal` (the order that
+cuts fewest variables, exact by subset DP) each turn the raw graph into a driven one
+that `mdf.assemble`, `sand_harness.mda_env` and `run_cold_matrix.build_*` take through
+a `cut=` parameter beside `mda.cut_graph`. Only the cycles that survive removing a
+component's declared problems are cut, and those problems are `Nest`ed inside the cut's
+fixed point, never `Combine`d into it -- folding `dr_tf_plasma_case`'s `max(u, m)`
+ratchet into a 3-unknown block made `I - J` exactly singular whenever the input arm
+wins and the implicit derivative NaN; the hand cut only survives it because lineax
+special-cases a 1x1 operator. Every recipe starts from `sand_harness.cold_state`, one
+Gauss-Seidel sweep in call order from PROCESS's defaults (a Jacobi from all-zero copies
+divides by zero on its first iterate). SAND under a recipe keeps array-valued fixed
+points (`assemble(drop_arrays=False)`), so the SQP layer now works in flat entries
+(`host_cache.flat_values`, `drivers.condition_sizes`): a 201-point density profile is
+201 unknowns and 201 equalities. Verified: every recipe reaches the hand cut's MDA fixed
+point on the stellarator to the Picard tolerance and the hand optimum on every MDF arm of
+all seven files; `tests/test_recipes.py`; `paper_tests/` measures the rest.
+
+Two things the recipes found that the hand cut had hidden:
+
+- **`st_regression`'s tracked optimum is a worse local optimum.** GS-minimal SAND leaves
+  PROCESS's basin (Q 16.5886) for one at Q 16.8333, verified feasible in PROCESS itself
+  (`Caller.call_models`: max|eq| 5.3e-8, min ie +2.1e-10; p_inj 55 MW against 120 MW).
+  The point sits exactly on the kink of the bootstrap clamp
+  `f_c_plasma_bootstrap = min(f_bs_sauter, f_c_plasma_bootstrap_max)`
+  (`physics.py:545-556`, `f_bs_sauter = 0.900000 = f_bs_max` there): KKT holds on both
+  smooth branches with positive switch multipliers, one-sided slopes differ 5x, so VMCON's
+  BFGS goes indefinite and CLARABEL refuses the QP ("stopped", 153 it) while SLSQP
+  converges there in 92 (max|eq| 1.2e-9). Started at that design every VMCON formulation
+  stalls the same way -- a property of the point, not of the cut. `initial_b=10` keeps
+  VMCON in PROCESS's basin. Modelling the clamp as an inequality would make it a regular
+  KKT point, and would make PROCESS's reference design (f_bs_sauter 0.949) infeasible.
+- **`low_aspect_ratio_DEMO`'s hand SAND lands at the wrong point (79 it, `d objf` 1.76e-2)
+  because of the cut**, not because of SAND: GS and GS-minimal SAND converge in 19-20 to
+  the MDF/PROCESS optimum; Jacobi SAND (58 unknowns, arrays included) to a feasible,
+  slightly worse local optimum (-0.40455 against -0.40631).
+
 ## Open
 
 **[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a

@@ -45,8 +45,10 @@ _host_cache.bind = _timing_bind
 _drivers.bind = _timing_bind
 
 
-def measure(path, arm: str, optimiser, repeats: int) -> dict:
+def measure(path, arm: str, optimiser, repeats: int, cut=None) -> dict:
     """Solve `arm` once to pay the compiler, then `repeats` times, and report the last.
+    `cut` is `None` for the hand-measured cuts or a `recipes.Recipe`; the cold solve's
+    wall and XLA are kept too (`_cold_wall`, `_cold_xla`), for a cold/warm split.
     """
     # **Drop the previous measurement's executables first.** jax caches every program
     # it compiles for the life of the process, and this loop compiles a whole
@@ -59,9 +61,12 @@ def measure(path, arm: str, optimiser, repeats: int) -> dict:
     # cache it would have hit is one it is about to refill anyway.
     jax.clear_caches()
     run_cold_matrix._return_freed_memory_to_the_os()
-    live = session.open_session(str(path), optimiser=optimiser)
+    live = session.open_session(str(path), optimiser=optimiser, cut=cut)
     solve = getattr(live, arm)
+    CALLS.clear()
+    began = time.perf_counter()
     solve()  # cold: pays trace, lower and compile, and is thrown away
+    cold_wall, cold_xla = time.perf_counter() - began, sum(CALLS)
     row: dict = {}
     for _ in range(repeats):
         CALLS.clear()
@@ -71,6 +76,7 @@ def measure(path, arm: str, optimiser, repeats: int) -> dict:
         row["_xla"] = sum(CALLS)
         row["_calls"] = len(CALLS)
         row["_median_call"] = statistics.median(CALLS) if CALLS else 0.0
+    row["_cold_wall"], row["_cold_xla"] = cold_wall, cold_xla
     return row
 
 

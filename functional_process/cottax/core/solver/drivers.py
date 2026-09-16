@@ -19,7 +19,7 @@ from cottax.problem import (
     RootFind,
     Start,
     Steps,
-    is_optimise, is_root_find,
+    is_fixed_point, is_optimise, is_root_find,
 )
 from cottax.spec import VarPath
 from jax.flatten_util import ravel_pytree
@@ -41,10 +41,39 @@ def design_scale(flat_start):
     return scale
 
 
-def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
+def condition_sizes(conditions: ConditionMap, start) -> tuple[int, ...]:
+    """How many flat entries each condition contributes, in `conditions` order --
+    `1` for a scalar, the size for an array. Traced (`jax.eval_shape`), never run.
+    """
+    shapes = jax.eval_shape(lambda s: conditions(*s), tuple(start))
+    return tuple(int(np.prod(sh.shape, dtype=int)) for sh in shapes)
+
+
+def entry_names(names, sizes) -> list[str]:
+    """One spelling per flat entry: `x` for a scalar, `x[i]` for an array's entries."""
+    out = []
+    for name, size in zip(names, sizes, strict=True):
+        out.extend([name] if size == 1 else [f"{name}[{i}]" for i in range(size)])
+    return out
+
+
+def entry_count(sizes, first: int, count: int) -> int:
+    """How many flat entries conditions `first .. first + count` occupy."""
+    return int(sum(sizes[first : first + count]))
+
+
+def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel, sizes=None):
     """The pieces every SQP driver here needs, built once from a block's `ConditionMap`.
+
+    Everything is at the level of **flat entries**: an array-valued unknown is as many
+    design coordinates as it has elements (`ravel_pytree`'s order), and an array-valued
+    condition as many rows. `condition_scale` names conditions and bounds name
+    unknowns, and both are spread over their entries here.
     """
     flat_start = np.asarray(flat_start, dtype=float)
+    start = unravel(jnp.asarray(flat_start))
+    if sizes is None:
+        sizes = condition_sizes(conditions, start)
 
     scale = (
         design_scale(flat_start)
@@ -59,8 +88,9 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
             f"condition_scale names {written(tuple(stray))}, which this block does not "
             f"read as a condition (it reads {written(conditions.conditions)})"
         )
-    condition_scale = np.array(
-        [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
+    condition_scale = np.repeat(
+        np.array([by_name.get(c, 1.0) for c in conditions.conditions], dtype=float),
+        sizes,
     )
 
     # **Bound once here, not per call.** `host_cache.bind` partitions and flattens the
@@ -95,12 +125,14 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
         return _scale_values(raw_values), _scale_jacobian(raw_jacobian)
 
     limits = {var: (lo, hi) for var, lo, hi in driver.bounds}
-    lower = np.array(
-        [limits.get(v, (-np.inf, np.inf))[0] for v in conditions.unknowns], dtype=float
-    )
-    upper = np.array(
-        [limits.get(v, (-np.inf, np.inf))[1] for v in conditions.unknowns], dtype=float
-    )
+    lower = np.concatenate([
+        np.full(int(np.size(value)), limits.get(v, (-np.inf, np.inf))[0], dtype=float)
+        for v, value in zip(conditions.unknowns, start, strict=True)
+    ])
+    upper = np.concatenate([
+        np.full(int(np.size(value)), limits.get(v, (-np.inf, np.inf))[1], dtype=float)
+        for v, value in zip(conditions.unknowns, start, strict=True)
+    ])
     # A negative scale (a variable starting below zero) swaps which bound is which.
     scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
     scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
@@ -143,16 +175,16 @@ class NonFiniteProblemError(ValueError):
     """How many conditions the block declares, so a caller can say "3 of 30"."""
 
 
-def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
+def _refuse_non_finite(values, jacobian, conditions: ConditionMap, sizes=None) -> None:
     """Raise if any condition value or derivative is not finite, naming which."""
-    names = [c.spelling for c in conditions.conditions]
+    names = _names_for(conditions, values, sizes)
     bad_values = [n for n, v in zip(names, values, strict=True) if not np.isfinite(v)]
     bad_rows = [
         n for n, row in zip(names, jacobian, strict=True) if not np.all(np.isfinite(row))
     ]
     if not bad_values and not bad_rows:
         return
-    unknowns = [u.spelling for u in conditions.unknowns]
+    unknowns = _unknown_names_for(conditions, jacobian.shape[1])
     zeroed = [
         u for u, col in zip(unknowns, jacobian.T, strict=True) if not np.any(col != 0.0)
     ]
@@ -183,29 +215,54 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     raise refusal
 
 
-def non_finite_summary(conditions: ConditionMap, unravel, flat_start) -> str | None:
+def _names_for(conditions: ConditionMap, values, sizes=None) -> list[str]:
+    """A spelling per flat entry of `values` -- the conditions' own names when every
+    condition is a scalar, else spread over each one's entries by `sizes`."""
+    names = [c.spelling for c in conditions.conditions]
+    if sizes is None:
+        if len(values) == len(names):
+            return names
+        raise ValueError(
+            f"{len(values)} condition entries for {len(names)} conditions and no sizes"
+        )
+    return entry_names(names, sizes)
+
+
+def _unknown_names_for(conditions: ConditionMap, n_entries: int) -> list[str]:
+    """A spelling per design coordinate -- the unknowns' names when every unknown is a
+    scalar, else positional (`x[i]`), since this diagnostic has no start to size by."""
+    names = [u.spelling for u in conditions.unknowns]
+    if n_entries == len(names):
+        return names
+    return [f"x[{i}]" for i in range(n_entries)]
+
+
+def non_finite_summary(conditions: ConditionMap, unravel, flat_start, sizes=None) -> str | None:
     """`_refuse_non_finite`'s one-line verdict at `flat_start`, or `None` if it is
     clean.
     """
     values, jacobian, _fused = bind(conditions, unravel)
     flat = jnp.asarray(np.asarray(flat_start, dtype=float))
     try:
+        if sizes is None:
+            sizes = condition_sizes(conditions, unravel(flat))
         _refuse_non_finite(
             np.asarray(values(flat), dtype=float),
             np.asarray(jacobian(flat), dtype=float),
             conditions,
+            sizes,
         )
     except NonFiniteProblemError as refusal:
         return refusal.summary
     return None
 
 
-def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
+def _refuse_inert_objective(jacobian, conditions: ConditionMap, sizes=None) -> None:
     """Raise if the objective's gradient row is identically zero at the **start**."""
     jacobian = np.asarray(jacobian, dtype=float)
     if jacobian.size == 0 or np.any(jacobian[0] != 0.0):
         return
-    names = [c.spelling for c in conditions.conditions]
+    names = _names_for(conditions, jacobian, sizes)
     others = [
         n
         for n, row in zip(names[1:], jacobian[1:], strict=True)
@@ -226,13 +283,14 @@ def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
     )
 
 
-def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> None:
-    """Warn naming the equality rows behind scipy's *"Singular matrix C"*, if any."""
+def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int, sizes=None) -> None:
+    """Warn naming the equality rows behind scipy's *"Singular matrix C"*, if any.
+    `meq` counts flat entries."""
     jacobian = np.asarray(jacobian, dtype=float)
     block = jacobian[1 : 1 + meq]
     if block.size == 0:
         return
-    names = [c.spelling for c in conditions.conditions][1 : 1 + meq]
+    names = _names_for(conditions, jacobian, sizes)[1 : 1 + meq]
     # **Inert relative to the block, not literally `!= 0.0`.** An exact test was tried
     # and is a false negative on the case this function exists for: `helias_5b` with
     # `ixc = 3` added leaves `c11`'s row at `[-1.6e-16, -0.0, -0.0, -0.0]`, sixteen
@@ -427,7 +485,9 @@ class SlsqpDriver(Driver):
             )
 
         _flat, unravel = ravel_pytree(start)
-        meq = self.n_equality
+        # In flat entries: an array-valued condition is as many rows as it has elements.
+        sizes = condition_sizes(conditions, start)
+        meq = entry_count(sizes, 1, self.n_equality)
         driver, user_callback = self, self.callback
         max_iter, tolerance = self.max_iter, self.tolerance
 
@@ -444,7 +504,7 @@ class SlsqpDriver(Driver):
             # argument about what a caller *asks* for is worth nothing until the code
             # only computes what is asked.
             evaluate, jacobian, _both, _unravel, scale, _, (lower, upper) = (
-                scaled_problem(driver, live, flat_start, unravel)
+                scaled_problem(driver, live, flat_start, unravel, sizes)
             )
             x0 = flat_start * scale
 
@@ -556,7 +616,7 @@ class SlsqpDriver(Driver):
             )
             if int(result.status) == 6:  # "Singular matrix C in LSQ subproblem"
                 _name_singular_equalities(
-                    jacobian_at(np.asarray(result.x, dtype=float)), live, meq
+                    jacobian_at(np.asarray(result.x, dtype=float)), live, meq, sizes
                 )
             # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
             # mutated itself would not survive being reused across blocks anyway. What
@@ -654,12 +714,45 @@ class PicardDriver(CottaxPicardDriver):
     rtol: float = 1e-6
     atol: float = 1e-8
     max_steps: int = 256
+    report_steps: bool = False
+    """Report `Steps` -- how many iterates the contraction took -- as a graph output.
+    Off by default so the graphs every reference was measured on carry no new names."""
+
+    @property
+    def reports(self) -> tuple:
+        return (Steps,) if self.report_steps else ()
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
         """`cottax.drivers.PicardDriver.__call__`, behind this port's refusal message.
         """
         start_from(data, "PicardDriver", conditions)
-        return super().__call__(conditions, data)
+        if not self.report_steps:
+            return super().__call__(conditions, data)
+        flat_guess, unravel = ravel_pytree(data[Start])
+
+        def iterate(flat, args):
+            nxt, _ = ravel_pytree(conditions(*unravel(flat)))
+            return nxt
+
+        solver = optx.FixedPointIteration(rtol=self.rtol, atol=self.atol)
+        solution = optx.fixed_point(iterate, solver, flat_guess, max_steps=self.max_steps)
+        return (*unravel(solution.value), solution.stats["num_steps"])
+
+
+class SweepDriver(Driver):
+    """One application of a `FixedPoint`'s map, `u <- g(u)`, and no test of convergence.
+
+    Not a solver: what one pass of PROCESS's own pipeline does to its coupling
+    variables, as a driver so a schedule can run it. `sand_harness.cold_state` uses it
+    to compute the state a recipe's cut copies start from -- every quantity as the
+    models before it in call order just left it, which is where PROCESS starts too.
+    """
+
+    accepts = staticmethod(is_fixed_point)
+    requires = (Start,)
+
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        return tuple(conditions(*data[Start]))
 
 
 class VmconDriver(Driver):
@@ -723,7 +816,9 @@ class VmconDriver(Driver):
         from pyvmcon.problem import AbstractProblem
 
         _flat, unravel = ravel_pytree(start)
-        meq = self.n_equality
+        # In flat entries: an array-valued condition is as many rows as it has elements.
+        sizes = condition_sizes(conditions, start)
+        meq = entry_count(sizes, 1, self.n_equality)
         # Asked **out here**, before the callback, even though `scaled_problem` asks it
         # again inside: a name that is not a condition of this block is a statement
         # about the driver's own fields, and this class's contract is that such a
@@ -747,7 +842,7 @@ class VmconDriver(Driver):
         # tuples and a plain callable is leaf-free either way.
         driver = self
         fused = self.fused
-        n_inequality = self.n_inequality
+        n_inequality = entry_count(sizes, 1 + self.n_equality, self.n_inequality)
         max_iter, tolerance = self.max_iter, self.tolerance
         qsp_solver, initial_b = self.qsp_solver, self.initial_b
 
@@ -769,7 +864,7 @@ class VmconDriver(Driver):
             # (§31.14). `bind` memoises across solves, so §24.1's "a second solve is a
             # cache hit" is kept, not given back.
             scaled_values, split_jac, both, _unravel, scale, _cond, scaled_box = (
-                scaled_problem(driver, live, flat_start, unravel)
+                scaled_problem(driver, live, flat_start, unravel, sizes)
             )
             scaled_lower, scaled_upper = scaled_box
 
@@ -819,10 +914,10 @@ class VmconDriver(Driver):
                         values, full = both(x_scaled)
                     else:
                         values, full = scaled_values(x_scaled), split_jac(x_scaled)
-                    _refuse_non_finite(values, full, conditions)
+                    _refuse_non_finite(values, full, conditions, sizes)
                     if started[0]:
                         started[0] = False
-                        _refuse_inert_objective(full, conditions)
+                        _refuse_inert_objective(full, conditions, sizes)
                     return Result(
                         f=values[0],
                         df=full[0],

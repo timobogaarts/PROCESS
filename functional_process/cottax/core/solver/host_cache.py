@@ -64,11 +64,20 @@ def _rebuild(structure, array_leaves):
     return jax.tree_util.tree_unflatten(treedef, leaves)
 
 
+def flat_values(values) -> jnp.ndarray:
+    """The block's conditions as one flat vector: each ravelled, then concatenated.
+    A scalar condition contributes one entry, an array-valued one (a recipe cut
+    copies whole profiles) its size -- so this is `jnp.stack` on every graph the
+    references were measured on, and defined on the rest.
+    """
+    return jnp.concatenate([jnp.ravel(jnp.asarray(v)) for v in values])
+
+
 @functools.partial(jax.jit, static_argnums=0)
 def _values(structure, array_leaves, flat_x):
     """The block's conditions, stacked, at one flat design vector."""
     block, unflatten = _rebuild(structure, array_leaves)
-    return jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat_x))])
+    return flat_values(block(*unflatten(flat_x)))
 
 
 @functools.partial(jax.jit, static_argnums=0)
@@ -76,7 +85,7 @@ def _jacobian(structure, array_leaves, flat_x):
     """`d(conditions)/d(flat_x)`, forward mode."""
     block, unflatten = _rebuild(structure, array_leaves)
     return jax.jacfwd(
-        lambda flat: jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
+        lambda flat: flat_values(block(*unflatten(flat)))
     )(flat_x)
 
 
@@ -90,7 +99,7 @@ def _values_and_jacobian(structure, array_leaves, flat_x):
         # `has_aux`'s, and `jvp_subtrace_aux` takes `.primal` off the tracer it is
         # handed. Calling the body a second time would trace the block twice and give
         # the whole change back.
-        out = jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
+        out = flat_values(block(*unflatten(flat)))
         return out, out
 
     derivative, primal = jax.jacfwd(stacked_twice, has_aux=True)(flat_x)
@@ -120,7 +129,7 @@ def flat_conditions(conditions: ConditionMap, flat_x, unravel):
 @eqx.filter_jit
 def _flat_conditions(conditions: ConditionMap, flat_x, unravel):
     """The block's conditions, stacked, at one flat design vector."""
-    return jnp.stack([jnp.asarray(v) for v in conditions(*unravel(flat_x))])
+    return flat_values(conditions(*unravel(flat_x)))
 
 
 def flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
@@ -135,5 +144,5 @@ def flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
 def _flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
     """`d(conditions)/d(flat_x)` by forward-mode AD -- `flat_conditions`' Jacobian."""
     return jax.jacfwd(
-        lambda flat: jnp.stack([jnp.asarray(v) for v in conditions(*unravel(flat))])
+        lambda flat: flat_values(conditions(*unravel(flat)))
     )(flat_x)
