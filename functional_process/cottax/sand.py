@@ -395,28 +395,27 @@ class ObjectiveSelection(eqx.Module):
     """
 
 
-def objective_nodes(graph, selection, switch_values=None):
+def objective_nodes(graph, selection, switch_values=None, label=""):
     """The node(s) computing this run's figure of merit, and the `VarPath` `Optimise`
-    minimises.
+    minimises. `label` suffixes the node names and the objective's own name
+    (`Objective<label>`, `^cond.numerics.objf<label>`), for a graph that states more
+    than one objective -- two sequential optimisers, say.
     """
     switch_values = REFERENCE_SWITCH_VALUES if switch_values is None else switch_values
     resolve = _Resolver(graph)
     static, read, inputs = _bind(selection.metric, resolve, switch_values)
-    objective = prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), COND)
-    metric = (
-        prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), METRIC)
-        if selection.maximise
-        else objective
-    )
+    objf = VarPath((GetAttrKey("numerics"), GetAttrKey(f"objf{label}")))
+    objective = prefix_path(objf, COND)
+    metric = prefix_path(objf, METRIC) if selection.maximise else objective
     nodes = {
-        NodePath((GetAttrKey("Objective"),)): ImplementedFunction(
+        NodePath((GetAttrKey(f"Objective{label}"),)): ImplementedFunction(
             reads=inputs,
             owns=(metric,),
             fn=_Metric(selection.metric, tuple(read), static),
         )
     }
     if selection.maximise:
-        nodes[NodePath((GetAttrKey("ObjectiveNegated"),))] = ImplementedFunction(
+        nodes[NodePath((GetAttrKey(f"ObjectiveNegated{label}"),))] = ImplementedFunction(
             reads=(metric,),
             owns=(objective,),
             fn=_Negate(),

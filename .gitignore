@@ -83,6 +83,10 @@ functional_process/*.html
 !functional_process/cottax/dsm_provenance_uncut_tokamak.html
 !functional_process/cottax/dsm_scc_uncut_tokamak.html
 
+# Architecture examples: the notebooks and READMEs are sources; what a run writes next
+# to them (`dsm_*.html`) is not (`functional_process/architecture_examples/README.md`).
+!functional_process/architecture_examples/**/*.ipynb
+
 # Generated Warp source -- regenerate with `functional_process/cottax/warp/`.
 functional_process/warp/
 
