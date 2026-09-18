@@ -6,7 +6,8 @@ The formulation the 2026-09-17 handoff settled on ("variant D", `~/jaxgraph`,
 - **First stage**, the design `x`: the file's `ixc` minus every place a belief draws
   (`hfact`) minus every closing variable (the density) -- the build and the shared
   operating set-points -- bounded by the file's own bounds. With `te_recourse`, minus
-  the electron temperature too.
+  the electron temperature too; with `lifts`, plus every sizing choice lifted out of
+  the models (`lift.lift_winding_pack`: the pack width, its rule a chance constraint).
 - **Second stage**, per belief sample: the power balance `c2` closed by the density
   inside the MDA (`closing.close`, `kinds.PAIRINGS["one"]`), and with `te_recourse = K`
   the temperature chosen per sample from a grid of `K` values -- the cheapest feasible
@@ -101,6 +102,7 @@ from functional_process.cottax.architectures import (  # noqa: E402
 )
 from functional_process.cottax.architectures import (  # noqa: E402
     closing,
+    lift,
     mdf,
     sand,
     stages,
@@ -235,8 +237,10 @@ class TwoStage:
     nominal: Mapping[str, np.ndarray]
     """Belief path -> its nominal value."""
     design: tuple[VarPath, ...]
-    """The first-stage places, in `ixc` order."""
+    """The first-stage places, in `ixc` order, every lifted unknown after them."""
     ixc: tuple[int, ...]
+    """PROCESS's iteration variable per design place; a lifted unknown's is the one
+    its lift names (`lift.IXC`, 140, for the pack width)."""
     x0: np.ndarray
     lower: np.ndarray
     upper: np.ndarray
@@ -364,6 +368,7 @@ def two_stage(
     design_values=None,
     closing_values=None,
     flatten: bool = True,
+    lifts: Iterable = (),
 ) -> TwoStage:
     """Assemble the two-stage problem on `session` (a `session.Session`, a
     configuration or its name).
@@ -376,6 +381,12 @@ def two_stage(
     minus every sampled place minus `TE` under `te_recourse`; the graph is split at
     the sampled leaves and the closing start ports (and `TE`) and the two stages'
     schedules built.
+
+    `lifts`: sizing choices lifted out of the models (`lift.lift_winding_pack`),
+    applied to the closed graph (`lift.applied`): each lifted unknown joins the design
+    as a first-stage build variable (bounds, `ixc` and kind as its lift reports them)
+    and its inequality joins the constraints under CVaR -- a chance constraint at
+    `alpha` -- beside the file's own.
 
     Raises
     ------
@@ -398,6 +409,9 @@ def two_stage(
     live = built.session
     problem = built.problem
     env = closing.seed(built, live.reference.cold, design_values, closing_values)
+    if lifts:
+        built, env = lift.applied(built, lifts, env)
+        problem = built.problem
     env, primed = mdf.prime(problem, env)
     point = PathMap(mdf._inputs_only(problem, env).items())
     var_of = {v.spelling: v for v in point}
@@ -420,6 +434,9 @@ def two_stage(
     design = tuple(v for v in built.design if v not in uncertain)
     bounds = {v: (lo, hi) for v, lo, hi in live.reference.bounds}
     ixc_of = {sand.iteration_variable_path(i): i for i in live.reference.ixc}
+    for unknown, lifted in lift.lifted_design(built).items():
+        bounds[unknown] = tuple(lifted["bounds"])
+        ixc_of[unknown] = lifted["ixc"]
     te_grid = None
     if te_recourse:
         te = var_of[TE]
@@ -462,7 +479,7 @@ def two_stage(
     # temperature under recourse. The closing ports have no kind in the table (the
     # table sorts the MDA's own leaves), so they are given one here.
     varying = tuple(g.spelling for g in guesses) + ((TE,) if te_recourse else ())
-    table = dict(kinds.KINDS)
+    table = lift.kind_table(built)
     for spelling in varying:
         table.setdefault(spelling, Kind.OPERATING)
     graph = built.graph

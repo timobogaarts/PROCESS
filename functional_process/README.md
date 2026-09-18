@@ -40,9 +40,10 @@ functional_process/
                           (the optimisation architectures, as graph ops), evaluate.py
                           (seeding and running a schedule), session.py (one input file,
                           every architecture), drivers.py host_cache.py (the algorithms),
-                          closing.py stages.py beliefs.py ouu.py (an equality closed
-                          inside the MDA, the two-stage split, the belief draw, and
-                          optimisation under uncertainty over them)
+                          closing.py stages.py beliefs.py ouu.py lift.py (an equality
+                          closed inside the MDA, the two-stage split, the belief draw,
+                          optimisation under uncertainty over them, and a sizing
+                          choice lifted out of a model into the optimiser)
     visualization/        grouping.py render_xdsm.py: the grouped DSM the notebooks draw
 
   tests/
@@ -107,10 +108,16 @@ driver per problem:
 | MDF | the cut graph plus the constraint and objective nodes and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
 | IDF | as MDF, then `Residualise` and `Combine` the cut copies into the optimiser; the models' own solves stay nested | `architectures.idf.idf_graph` |
 | SAND | `Residualise` every fixed point, `Combine` every problem into one | `architectures.sand.assemble` |
+| closed MDA | `Insert` a `RootFind` per (equality, closing variable) inside the MDA -- nested, or flattened with the problems on its cycle into one square problem -- so the analysis answers the equality itself | `architectures.closing.close` |
+| two-stage OUU | the closed MDA split by `reach` from the belief and operating leaves (`architectures.stages`: first stage hoisted, recourse batched over a Sobol' draw of `configurations.kinds.BELIEFS`), one node owning the CVaR statistics, an `Optimise` over the build variables under a boxed SLSQP | `architectures.ouu.two_stage`, `outer`, `solve` |
+| lifted sizing choice | `Undrive`, `Undetermine` and `Delete` a model's own root find, so its unknown is a design variable, and `Insert` one node stating its residual as an inequality on the safe side -- the winding pack: `wp_width_r_min` outer, `j_tf_wp <= f j_c` (PROCESS icc 33 / ixc 140) a chance constraint | `architectures.lift.lift`, `lift_winding_pack`; `ouu.two_stage(lifts=...)` |
 
-`architectures.session.open_session(name)` assembles each once and solves it from the configuration
-(`.mda()`, `.mdf()`, `.idf()`, `.sand()`); the notebooks under `architecture_examples/`
-spell the same recipes out step by step and check they build the same graph.
+`architectures.session.open_session(name)` assembles each of the first four once and
+solves it from the configuration (`.mda()`, `.mdf()`, `.idf()`, `.sand()`); the notebooks
+under `architecture_examples/` spell the same recipes out step by step and check they
+build the same graph. The decision kinds the two-stage split reads (belief / build /
+operating per boundary input, the model outputs that are really build decisions, and
+what was decided about each) are data in `configurations/kinds.py`.
 
 ## Conventions that hold
 
