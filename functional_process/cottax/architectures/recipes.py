@@ -64,12 +64,12 @@ def coupling_reads(graph: Graph, component: Sequence[NodePath]) -> dict:
     """
     inside = set(component)
     out: dict[VarPath, tuple[NodePath, ...]] = {}
-    for var, owner in graph.owners.items():
+    for var, owner in graph.graph.owners.items():
         if owner not in inside:
             continue
         readers = tuple(
             reader
-            for reader in graph.readers.get(var, ())
+            for reader in graph.graph.readers.get(var, ())
             if reader in inside
             and reader != owner
             and not isinstance(graph[reader], ConditionalNode)
@@ -110,7 +110,7 @@ def backward_reads(graph: Graph, component: Sequence[NodePath], order: Sequence[
         raise KeyError(f"order does not place {missing!r}")
     out = {}
     for var, readers in coupling_reads(graph, component).items():
-        owner = graph.owners[var]
+        owner = graph.graph.owners[var]
         back = tuple(r for r in readers if position[r] < position[owner])
         if back:
             out[var] = back
@@ -138,7 +138,7 @@ def minimal_feedback_order(graph: Graph, component: Sequence[NodePath]) -> Compo
         mask = 0
         for reader in readers:
             mask |= 1 << index[reader]
-        owned[index[graph.owners[var]]].append(mask)
+        owned[index[graph.graph.owners[var]]].append(mask)
     full = (1 << n) - 1
     best = [None] * (1 << n)  # (cost, last node) per subset placed as a prefix
     best[0] = (0, -1)
@@ -250,7 +250,7 @@ def residual_cycles(graph: Graph, component: Sequence[NodePath]) -> tuple[Compon
     input arm wins, and the implicit derivative through the block is NaN.
     """
     keep = [n for n in component if not isinstance(graph[n], ConditionalNode)]
-    deps = graph._nx_dependencies.subgraph(keep)
+    deps = graph.graph._nx_dependencies.subgraph(keep)
     rank = {n: i for i, n in enumerate(graph.nodes)}
     return tuple(
         tuple(sorted(scc, key=rank.__getitem__))
@@ -313,7 +313,7 @@ def cut_component(
 
 
 def _same_component(graph: Graph, a: NodePath, b: NodePath) -> bool:
-    return any(a in c and b in c for c in graph.components)
+    return any(a in c and b in c for c in graph.graph.components)
 
 
 # ---------------------------------------------------------------- the recipe
@@ -333,7 +333,7 @@ class Recipe:
         """Every cyclic component of `graph` cut, combined and nested."""
         cutter = CUTTERS[self.name]
         records = []
-        for component in graph.cycles:
+        for component in graph.graph.cycles:
             graph, record = cut_component(graph, component, cutter)
             records.append(record)
         return graph, tuple(records)

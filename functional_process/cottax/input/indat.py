@@ -4676,7 +4676,7 @@ if __name__ == "__main__":
             ),
         ),
     ):
-        cycles = graph_for(machine).cycles
+        cycles = graph_for(machine).graph.cycles
         print(f"  {label}: {[[n.spelling for n in c] for c in cycles] or 'acyclic'}")
 
 

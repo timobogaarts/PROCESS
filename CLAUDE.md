@@ -88,9 +88,12 @@ Prefer measuring the count to trusting it.
 **The port tracks a cottax that moves.** It was re-ported from cottax `e0f22e6` to
 `a3e4c56` on 2026-09-16 (three renamed imports, `Graph.unowned_inputs` →
 `boundary_inputs`, drivers subclassing `evaluation.schedule.Driver`), again on
-2026-09-17 to the `~/jaxgraph` working tree on top of `d1f4aef`, and on 2026-09-18 the
-pin was measured against `63bae67` plus uncommitted changes there. What moved on
-2026-09-17:
+2026-09-17 to the `~/jaxgraph` working tree on top of `d1f4aef`, on 2026-09-18 the
+pin was measured against `63bae67` plus uncommitted changes there, and **later on
+2026-09-18 it was re-ported to `6b1d540`** ("small nesting change", clean tree) -- the
+commit the port tracks now. That re-port was numerically inert: `test_architectures.py`
+reported 25 passed against the unchanged pin, the five notebooks passed, and the unit
+cases held their count. What moved on 2026-09-17:
 
 | was | is |
 |---|---|
@@ -103,6 +106,21 @@ pin was measured against `63bae67` plus uncommitted changes there. What moved on
 | `sequencing.NestingTree` / `nesting_tree_of` | gone; `interiors(partition)`, `sequenced(partition)`, `ordered_graph(...)` remain; `xdsm.problems_at(partition)` takes one argument |
 | `visualization.ragraph_dsm`, `render_dsm_html` | deleted |
 | ops coercing lists | none: `Cut(var, readers=(...,))`, `FixedPointCut((cut,))`, `Delete((...,))`, `Combine(place, (...,))`, `Determine(node, (...,))` -- a list still works but makes the op unhashable |
+
+What moved on 2026-09-18, `63bae67` → `6b1d540` (cottax `3a74bfb` "nesting rework" and
+`4d33cf3`; there is no partition value any more, and a graph has its nesting):
+
+| was | is |
+|---|---|
+| `Graph` an `AbstractGraph`: `graph.owners` / `.readers` / `.components` / `.cycles` / `.ancestors` / `.descendants` / `.closing_readers` / `.boundary_inputs` / `.is_acyclic` / `.variables` / `._nx_dependencies` | `Graph` is a `NestingGraph` over a `DependencyGraph` and forwards only `definitions` / `nodes` / `[]` / `in`: the theory is asked of `graph.graph.<...>`. `Graph.of(definitions, within)` builds one; `Graph(PathMap(...))` no longer does |
+| `cottax.blocking` / `cottax.Blocking`, `Blocking.scc(g)` (13 files) | `cottax.answerable.AnswerableGraph(g)`, re-exported from `cottax`: one field, `graph`, the proof (one problem per level, body a DAG, conditions on the cycle), no data. `Schedule(AnswerableGraph(g))`; `Schedule.blocking` → `Schedule.answerable` |
+| `cottax.partition` / `OrderedPartition.scc` / `.fused` / `.flat` (5 files) | gone. The blocks are the graph's own `graph.graph.components`; `visualization.sequencing.entries(graph)` reads each as `Run` / `Cycle` / `Solve(problem, interior)` / `Unresolved(problems)`. Drawings (`render_xdsm_html`, `grouping.Drawn`) take a `Graph`, or an `AnswerableGraph` read as its graph |
+| `blocking.blocks` / `.subgraphs` / `.index[node]` / `.problems` | `graph.graph.components` / `graph.subgraph(c)` / `queries.component_of(graph, node)` / `xdsm.problems_at(graph)` (warns on `Unresolved`; `grouping.answered_at` is the same without the warning) |
+| `blocking.entries[i].interior`, `queries.interior(blocking, i)` | `graph.interior(problem)` (`NestingGraph.interior`: the problem's cycle with it taken out, a `Graph`); the shim is deleted. `Graph.component_without` was the name in between and never reached the port |
+| `cottax.blocking.problem_types(blocking)` | `cottax.visualization.sequencing.problem_types(graph)` |
+| `sequencing.sequenced(partition)`, `interiors(partition)` | `sequenced` gone -- `sequence(graph)` / `ordered_graph(graph)` always re-derive a body's order, so the *stored-unless-it-draws-feedback* rule lives in `grouping._run_order` now (`_draws_feedback` and `abstract.body_of` are what it needs); `interiors(graph)` is per entry |
+| `Drive.body` a `Call` for a flat solve | always the interior's `Schedule` (`evaluate._driven_runner`'s `Call` arm is dead, kept) |
+| the refusal `block (...) declares N problems ... nest one inside the other` | `SeveralOutermost`: `cycle (...) declares several problems (...) ... Nest the others inside one of them` -- the notebooks' `re.sub` over it changed |
 
 **When `~/jaxgraph` is being edited in another session** (it was, mid-run, on
 2026-09-16), measure against a worktree of its committed HEAD:

@@ -26,12 +26,13 @@ import numpy as np
 import optimistix as optx
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking, problem_types
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, is_root_find, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
+from cottax.visualization.sequencing import problem_types
 from cottax.names import PathMap
 
 from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
@@ -932,9 +933,10 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     graph = to_graph(pre, Intersect())
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
-    assert not graph.is_acyclic
-    (block,) = [b for b in Blocking.scc(graph).subgraphs if declared(b)]
-    assert problem_types(Blocking.scc(block)) == ("root-find",)
+    assert not graph.graph.is_acyclic
+    blocks = [graph.subgraph(c) for c in graph.graph.components]
+    (block,) = [b for b in blocks if declared(b)]
+    assert problem_types(block) == ("root-find",)
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
@@ -961,8 +963,8 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
 
     graph = to_graph(Bi2212WindingPackIntersectInputs(), Intersect(), post)
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
-    assert not graph.is_acyclic
-    (cycle,) = graph.cycles
+    assert not graph.graph.is_acyclic
+    (cycle,) = graph.graph.cycles
     assert {n.spelling for n in cycle} == {
         "['Bi2212WindingPackIntersectInputs']",
         "['Intersect']",
@@ -975,7 +977,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
             continue
         graph = to_graph(occupant(), Intersect(), post)
         assert len(graph.definitions) == 4
-        (cycle,) = graph.cycles
+        (cycle,) = graph.graph.cycles
         assert {n.spelling for n in cycle} == {
             "['Intersect']",
             "^problem['Intersect']",
@@ -1093,7 +1095,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
     schedule = Schedule(
-        Blocking.scc(Assign(Intersect().problem_name, driver).apply(graph))
+        AnswerableGraph(Assign(Intersect().problem_name, driver).apply(graph))
     )
     out = schedule.run(PathMap(env))
 

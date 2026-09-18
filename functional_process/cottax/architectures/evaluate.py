@@ -23,7 +23,7 @@ import pathlib
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.blocking import Blocking
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Drive, Schedule
 from cottax.names import PathMap, unminted
 from cottax.plan import Delete
@@ -237,9 +237,8 @@ def mda_schedule(graph=None, cut=cut_graph):
     cached = _MDA_SCHEDULES.get(key)
     if cached is None:
         driven = cut(without_excluded(key[0]))
-        blocking = Blocking.scc(driven)
-        runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
-        schedule = Schedule(Blocking.scc(runnable))
+        runnable = assign_drivers(driven, default_drivers(driven))
+        schedule = Schedule(AnswerableGraph(runnable))
         cached = _MDA_SCHEDULES[key] = (
             driven,
             runnable,
@@ -509,7 +508,7 @@ def cold_state(data, graph=None) -> dict:
             if is_fixed_point(sweep[problem]):
                 drivers[problem] = SweepDriver()
         runnable = assign_drivers(sweep, drivers)
-        schedule = Schedule(Blocking.scc(runnable))
+        schedule = Schedule(AnswerableGraph(runnable))
         env = seed_env(data, schedule, runnable, cold_shapes(data, key))
         out = jit_schedule(schedule)(PathMap(env))
         cached = _COLD_STATES[key] = dict(out)
@@ -532,7 +531,7 @@ def seed_block(schedule, drive, base, fallback, design=()):
     # -- is it coupling, is it in `fallback`, what does `base` say -- is asked about the
     # unknown it starts, never about the port's own name. `fallback` is an MDA output
     # env, keyed by real paths, and no `DataStructure` field is spelled `^guess.*`.
-    guesses = guess_sources(schedule.blocking.graph)
+    guesses = guess_sources(schedule.answerable.graph)
     for var in list(schedule.inputs) + list(drive.unknowns):
         source = guesses.get(var, var)
         # A **cut** (`^hat.*`) is coupling by the same argument as an unknown, and it is

@@ -553,7 +553,7 @@ def test_croco_nodes_own_the_tape_stack(tmp_path):
     croco.write_text(text + "\ni_tf_turn_type = 2\n")
 
     graph = graph_for(machine_from_indat(str(croco)))
-    owned = {str(var) for var in graph.owners}
+    owned = {str(var) for var in graph.graph.owners}
     for field in (
         ".superconducting_tfcoil.a_tf_croco_strand",
         ".superconducting_tfcoil.a_tf_croco_strand_copper_total",
@@ -570,7 +570,7 @@ def test_croco_nodes_own_the_tape_stack(tmp_path):
         # boundary as a read of a coincidence.
         ".tfcoil.f_a_tf_turn_cable_space_extra_void",
     ):
-        assert any(str(v) == f"VarPath({field})" for v in graph.owners), field
+        assert any(str(v) == f"VarPath({field})" for v in graph.graph.owners), field
     assert owned  # the set is non-empty, so the assertion above is meaningful
 
 

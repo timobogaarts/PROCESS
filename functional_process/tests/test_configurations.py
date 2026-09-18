@@ -31,12 +31,12 @@ def test_configuration_is_its_input_file_converted(name):
 
 
 def test_every_checked_in_configuration_is_listed():
-    """`NAMES` names every module beside `configurations/__init__.py`."""
+    """`NAMES` names every configuration module (`defaults` and `kinds` are data)."""
     from pathlib import Path  # noqa: PLC0415
 
     modules = {
         p.stem
         for p in Path(configurations.__file__).parent.glob("*.py")
-        if p.stem not in {"__init__", "defaults"}
+        if p.stem not in {"__init__", "defaults", "kinds"}
     }
     assert modules == set(configurations.NAMES)

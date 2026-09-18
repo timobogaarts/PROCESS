@@ -6,12 +6,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking, problem_types
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars, shape_of
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
+from cottax.visualization.sequencing import problem_types
 from cottax.names import PathMap
 
 from functional_process.tests._harness import (
@@ -469,9 +470,9 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     node = Intersect()
     graph = to_graph(node)
     assert len(graph.definitions) == 2
-    assert not graph.is_acyclic
+    assert not graph.graph.is_acyclic
     assert declared(graph) == (node.problem_name,)
-    assert problem_types(Blocking.scc(graph)) == ("root-find",)
+    assert problem_types(graph) == ("root-find",)
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():
@@ -520,7 +521,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
         to_graph(node)
     )
     (guess_path,) = driver_vars(graph[node.problem_name], Start)
-    schedule = Schedule(Blocking.scc(graph))
+    schedule = Schedule(AnswerableGraph(graph))
     wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
     lhs_path = resolve(stellarator.lhs, VarPath)
     rhs_path = resolve(stellarator.rhs, VarPath)

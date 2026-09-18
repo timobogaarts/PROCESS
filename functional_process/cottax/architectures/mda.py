@@ -1,7 +1,7 @@
 """Turning `indat.GRAPH` into something that can actually be run."""
 
 import jax.numpy as jnp
-from cottax.blocking import Blocking
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Schedule
 from cottax.graph import Graph
 from cottax.interfaces.pytree_namespace_module import resolve
@@ -58,9 +58,10 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
     # Cuts are grouped by the cycle they break, and each group becomes **one**
     # `FixedPointCut` -- i.e. one `FixedPoint` problem over however many unknowns that
     # cycle needed. Applying them one at a time instead mints one problem per cut, and
-    # `Blocking` then refuses the block outright: *"declares 2 problems -- one driver
-    # answers one problem, so `Combine` them into a single problem over every unknown,
-    # or nest one inside the other. Which of those is a modelling decision"*. It is,
+    # `AnswerableGraph` then refuses the block outright: *"declares several problems --
+    # one driver answers one problem, so `Combine` them into a single problem over
+    # every unknown, or `Nest` the others inside one of them. Which is a modelling
+    # decision"*. It is,
     # and this is the decision: PROCESS iterates its whole pipeline to idempotence, so
     # the two cut variables of the density/fusion cycle are two unknowns of one Picard
     # iteration, not two nested loops.
@@ -69,10 +70,10 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
     # group is applied, so the readers a cut re-routes are the ones the original cycle
     # had rather than ones a sibling cut already moved.
     by_cycle: dict = {}
-    cycles = [frozenset(c) for c in graph.cycles]
+    cycles = [frozenset(c) for c in graph.graph.cycles]
     statements = frozenset(declared(graph))
     for var in CUTS:
-        if var not in graph.owners:
+        if var not in graph.graph.owners:
             # Not produced in this configuration at all -- `closing_readers` refuses
             # an unowned variable outright, and unowned is the strongest form of "no
             # cycle to cut here": `.times.t_plant_pulse_burn` is a *plain boundary
@@ -80,21 +81,22 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
             # burn_time`, is a tokamak node), where `dx_tf_wp_primary_toroidal` is
             # merely acyclic there.
             continue
-        readers = graph.closing_readers(var)
+        readers = graph.graph.closing_readers(var)
         if not readers:
             continue  # this cycle does not exist in this configuration
-        owner = graph.owners[var]
+        owner = graph.graph.owners[var]
         key = next((i for i, c in enumerate(cycles) if owner in c), var)
         if key is not var and any(n in statements for n in cycles[key]):
             # **The SCC already declares its own problem, so it needs no cut.**
-            # `Blocking` allows a block exactly one problem -- *"one driver answers one
-            # problem, so `Combine` them into a single problem over every unknown, or
-            # nest one inside the other"* -- and `cut_graph`'s whole job is to give a
+            # `AnswerableGraph` allows a block exactly one problem -- *"one driver
+            # answers one problem, so `Combine` them into a single problem over every
+            # unknown, or `Nest` the others inside one of them"* -- and `cut_graph`'s
+            # whole job is to give a
             # problem to an SCC that has none. Where a `FixedPointFunction`'s declared
             # self-loop already sits inside the SCC, that job is done: the self-loop's
             # driver re-runs every other node of the block on each iterate, which is
             # exactly what a cut here would buy. Adding one anyway mints a *second*
-            # problem in the same block and `Blocking` refuses it outright.
+            # problem in the same block and `AnswerableGraph` refuses it outright.
             #
             # This is the same shape as the `closing_readers` skip above -- a cut
             # applies where the cycle it names actually needs breaking -- and it is what
@@ -171,7 +173,7 @@ def starts_for(graph, problem):
     return tuple(
         (unknown, start)
         for unknown, start in zip(unknowns_of(node), starts, strict=True)
-        if start not in graph.owners
+        if start not in graph.graph.owners
     )
 
 
@@ -221,7 +223,7 @@ def seed_starts(schedule, env, exclude=()) -> dict:
     started from a cold zero does not converge.
     """
     exclude = set(exclude)
-    guesses = guess_sources(schedule.blocking.graph)
+    guesses = guess_sources(schedule.answerable.graph)
     return {
         port: given_start(unknown, env[unknown])
         for port in schedule.inputs
@@ -286,7 +288,7 @@ def supply_starts(graph: Graph) -> Graph:
             producer = next(
                 (
                     (var, owner)
-                    for var, owner in graph.owners.items()
+                    for var, owner in graph.graph.owners.items()
                     if var.spelling == target
                 ),
                 None,
@@ -294,7 +296,7 @@ def supply_starts(graph: Graph) -> Graph:
             if producer is None:
                 continue  # no occupant of that slot produces it in this machine
             var, owner = producer
-            if owner in graph.descendants([problem]):
+            if owner in graph.graph.descendants([problem]):
                 continue  # inside the block -- see this function's own docstring
             onto[start] = var
         if onto:
@@ -329,9 +331,9 @@ def default_drivers(
     optimiser=VmconDriver,
 ) -> dict:
     """One driver per **problem**, chosen mechanically by problem type Takes a `Graph`
-    rather than a `Blocking`: since `Assign` puts the driver *in* the graph, the choice
-    has to be made before there is a blocking to speak of -- and it never needed one,
-    because the problem's own type is what decides.
+    rather than an `AnswerableGraph`: since `Assign` puts the driver *in* the graph, the
+    choice has to be made before there is a blocking to speak of -- and it never needed
+    one, because the problem's own type is what decides.
     """
     drivers = {}
     for problem, definition in graph.definitions.items():
@@ -368,5 +370,4 @@ def schedule(graph=GRAPH) -> Schedule:
     its default driver.
     """
     driven = driven_graph(graph)
-    blocking = Blocking.scc(driven)
-    return Schedule(blocking)
+    return Schedule(AnswerableGraph(driven))

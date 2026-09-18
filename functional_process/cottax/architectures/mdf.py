@@ -7,7 +7,7 @@ import time
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.blocking import Blocking, problem_types
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.names import PathMap
@@ -24,6 +24,7 @@ from cottax.problem import (
     Steps,
 )
 from cottax.spec import NodePath, VarPath
+from cottax.visualization.sequencing import problem_types
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
 
@@ -52,7 +53,7 @@ from functional_process.cottax.architectures.mda import (
     guess_sources,
 )
 from functional_process.cottax.input.indat import graph_for
-from functional_process.cottax.queries import interior, nested_inside
+from functional_process.cottax.queries import component_of, nested_inside
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,9 +163,9 @@ def assemble(
     # separate objects. `reassign_drivers` is not needed -- neither graph carries a
     # driver yet, since `cut_graph` is structure only.
     eager_graph = assign_drivers(graph, drivers)
-    blocking = Blocking.scc(eager_graph)
+    answerable = AnswerableGraph(eager_graph)
     design = tuple(sand.iteration_variable_path(i) for i in ixc)
-    eager = Schedule(blocking)
+    eager = Schedule(answerable)
     missing = [d for d in design if d not in eager.inputs]
     if missing:
         raise ValueError(
@@ -172,8 +173,8 @@ def assemble(
             f"inputs of the MDA graph -- a node already produces them, so the optimiser "
             f"cannot own them (see `sand.optimise_graph` on the same conflict)"
         )
-    report["blocks"] = len(blocking.blocks)
-    report["driven_blocks"] = sum(1 for t in problem_types(blocking) if t is not None)
+    report["blocks"] = len(eager_graph.graph.components)
+    report["driven_blocks"] = sum(1 for t in problem_types(eager_graph) if t is not None)
     driven_conditions, reported = conditions, ()
     if root_find:
         # The equalities alone are driven; the inequalities stay in the graph so they
@@ -184,7 +185,7 @@ def assemble(
         graph=graph,
         eager=eager,
         traceable=Schedule(
-            Blocking.scc(assign_drivers(graph, traceable_drivers(drivers)))
+            AnswerableGraph(assign_drivers(graph, traceable_drivers(drivers)))
         ),
         design=design,
         conditions=driven_conditions,
@@ -205,7 +206,7 @@ def guess_ports(mdf: Mdf) -> dict:
     # deliberately undriven so that `Combine` can still join its problems. Asking that one
     # returns nothing, every port falls to `ground_truth`'s `0.0`, and the inner solves
     # start from exactly the cold point `prime` exists to get them off.
-    return guess_sources(mdf.eager.blocking.graph)
+    return guess_sources(mdf.eager.answerable.graph)
 
 
 def seed(mdf: Mdf, data, design_values=None):
@@ -435,13 +436,14 @@ def verdict(out, kind: type[DriverReport], place: NodePath = None):
 
 
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, cut=cut_graph, **kwargs):
-    """MDF **stated as structure**: `Blocking.scc(nested_inside(graph + Optimise, the Optimise))`.
+    """MDF **stated as structure**: `AnswerableGraph(nested_inside(graph + Optimise, the Optimise))`.
     """
     driven = cut(without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
-    return Blocking.scc(nested_inside(with_problem, problem_name)), problem_name, report
+    nested = nested_inside(with_problem, problem_name)
+    return AnswerableGraph(nested), problem_name, report
 
 
 IN_GRAPH_PLACE = NodePath((GetAttrKey("RootFind"),))
@@ -456,8 +458,10 @@ class InGraphRootFind:
     """The assembly this states -- a `RootFind` one (`assemble(root_find=True)`)."""
     graph: Graph
     """`mdf.graph` plus the `RootFind`, with every problem's driver `Assign`ed on."""
-    blocking: Blocking
-    """`Blocking.scc(queries.nested_inside(graph, problem))`: the SCC blocking, nested at the problem."""
+    blocking: AnswerableGraph
+    """`AnswerableGraph(queries.nested_inside(graph, problem))`: the graph proved
+    answerable, nested at the problem.
+    """
     schedule: Schedule
     problem: NodePath
 
@@ -475,8 +479,10 @@ class InGraphRootFind:
 
     @property
     def index(self) -> int:
-        """Which block of `blocking` the root find is answered at."""
-        return self.blocking.index[self.problem]
+        """Which component of `graph` -- which step of `schedule` -- answers the root
+        find.
+        """
+        return component_of(self.graph, self.problem)
 
     @property
     def drive(self) -> Drive:
@@ -485,13 +491,15 @@ class InGraphRootFind:
 
     @property
     def block(self) -> tuple:
-        """The nodes `Blocking.scc` put in the driven block, the problem included."""
-        return self.blocking.blocks[self.index]
+        """The nodes of the driven component, the problem included."""
+        return self.graph.graph.components[self.index]
 
     @property
-    def interior(self) -> Blocking:
-        """How that block is blocked one level down -- the block minus the root find."""
-        return interior(self.blocking, self.index)
+    def interior(self) -> Graph:
+        """That component one level down -- the block minus the root find
+        (`NestingGraph.interior`), a graph whose own `entries` are the next depth.
+        """
+        return self.graph.interior(self.problem)
 
     @property
     def design(self) -> tuple[VarPath, ...]:
@@ -532,7 +540,7 @@ def in_graph_root_find(
     traceable: bool = True,
     **kwargs,
 ) -> InGraphRootFind:
-    """State `mdf`'s root find inside the graph and let `Blocking.scc` decide what it
+    """State `mdf`'s root find inside the graph and let `AnswerableGraph` decide what it
     drives.
     """
     node = root_find_node(mdf)
@@ -550,8 +558,8 @@ def in_graph_root_find(
     # replaced rather than skipped: `MdfNewtonDriver` reports optimistix's verdict
     # instead of raising it, which is what makes a non-converged outer solve a row.
     drivers[place] = driver or MdfNewtonDriver(**kwargs)
-    assigned = assign_drivers(with_problem, drivers)
-    blocking = Blocking.scc(nested_inside(assigned, place))
+    assigned = nested_inside(assign_drivers(with_problem, drivers), place)
+    blocking = AnswerableGraph(assigned)
     return InGraphRootFind(
         mdf=mdf,
         graph=assigned,
@@ -616,13 +624,13 @@ def in_graph_shape(built: InGraphRootFind) -> dict:
     return {
         **mdf_shape(built.mdf),
         "graph_nodes": len(built.graph.nodes),
-        "outer_blocks": len(built.blocking.blocks),
+        "outer_blocks": len(built.graph.graph.components),
         "block": len(built.block),
         "body": len(built.drive.body.nodes),
-        "interior_blocks": len(interior.blocks),
+        "interior_blocks": len(interior.graph.components),
         "interior_driven": sum(1 for t in problem_types(interior) if t is not None),
         "upstream": built.index,
-        "downstream": len(built.blocking.blocks) - built.index - 1,
+        "downstream": len(built.graph.graph.components) - built.index - 1,
     }
 
 

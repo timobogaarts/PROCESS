@@ -16,7 +16,7 @@ def nested_inside(graph: Graph, outer: NodePath) -> Graph:
     iteration -- one `Nest` per problem, which is all cottax's old `NestInside` was.
     Every problem already nested somewhere is left where it is, so the innermost pairs
     are stated first and this is called for the level above."""
-    component = next(c for c in graph.components if outer in c)
+    component = next(c for c in graph.graph.components if outer in c)
     plan = Plan(graph)
     for name in graph.subgraph(component).outermost_problems:
         if name != outer:
@@ -24,13 +24,19 @@ def nested_inside(graph: Graph, outer: NodePath) -> Graph:
     return plan.graph
 
 
-def interior(blocking, index: int):
-    """How block `index` of `blocking` is blocked one level down.
+def component_of(graph: Graph, node: NodePath) -> int:
+    """Which component of `graph` (in `graph.graph.components` order -- the order
+    `sequencing.entries` and `Schedule.steps` share) `node` is in.
 
-    Spelled here once because cottax moved it: `Blocking.inner[i]` up to `63bae67`,
-    `blocking.entries[i].interior` in the working tree after it.
+    Spelled here once because cottax moved it: `blocking.index[node]` up to `63bae67`;
+    since `4d33cf3` there is no partition value, and a graph's components are its own.
+
+    Raises
+    ------
+    KeyError
+        If `node` is not a node of `graph`.
     """
-    entries = getattr(blocking, "entries", None)
-    if entries is not None:
-        return entries[index].interior
-    return blocking.inner[index]
+    for index, component in enumerate(graph.graph.components):
+        if node in component:
+            return index
+    raise KeyError(f"not a node of this graph: {node!r}")

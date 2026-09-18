@@ -14,13 +14,13 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import TypeAlias
 
 import networkx as nx
-from cottax.abstract import is_problem, undriven
+from cottax.abstract import body_of, is_problem, undriven
+from cottax.answerable import AnswerableGraph
 from cottax.graph import Graph
 from cottax.names import is_minted, unminted
-from cottax.partition import OrderedPartition
 from cottax.problem import ConditionalNode, Driven, Eq, shape_of
 from cottax.spec import NodePath, VarPath
-from cottax.visualization.sequencing import interiors, sequenced
+from cottax.visualization.sequencing import _draws_feedback, entries, interiors
 from cottax.visualization.xdsm import (
     PROBLEM_TYPE_TEXT,
     Formatter,
@@ -182,7 +182,7 @@ def dependency_group_sequence(
     """Every group present, in **dependency order**: contract each group, then sort
     that.
     """
-    owners = graph.owners
+    owners = graph.graph.owners
     among = frozenset(graph.nodes)
     at = {
         name: group_of(name, depth=depth, among=among, owners=owners)
@@ -246,40 +246,42 @@ def provenance_order(
     )
 
 
-Drawn: TypeAlias = Graph | OrderedPartition
-"""What a page is drawn of: a `Blocking`, or a bare `Graph` -- the latter for a graph no
-blocking exists for. Since cottax `bc1130a` a `Blocking` is answerable by construction,
-so an uncut cycle (`paper_tests/dsms.py`'s `uncut_optimiser` page: the optimiser's
-cycle undriven, one SCC over most of the machine) has none -- and that picture is the
-one worth having. Read as cottax's own drawings read it (`xdsm.render`,
-a `OrderedPartition`, which any graph has."""
+Drawn: TypeAlias = Graph | AnswerableGraph
+"""What a page is drawn of: a `Graph`, or the `AnswerableGraph` proving one answerable,
+read as its graph. Since cottax `bc1130a` an answerable graph is so by construction, so
+an uncut cycle (`paper_tests/dsms.py`'s `uncut_optimiser` page: the optimiser's cycle
+undriven, one SCC over most of the machine) has no proof -- and that picture is the one
+worth having. Read as cottax's own drawings read it (`xdsm.render`, since `4d33cf3`):
+the graph's own components, each an `Entry` of `sequencing.entries`, which any graph
+has."""
 
 
-def partition_of(drawn: Drawn) -> OrderedPartition:
-    """`drawn` as the value every walk here takes: a `OrderedPartition` -- a `Blocking` is one --
-    or the graph's own components, which any graph has.
+def graph_of(drawn: Drawn) -> Graph:
+    """`drawn` as the value every walk here takes: the graph itself -- an
+    `AnswerableGraph` is read as its graph.
     """
-    return drawn if isinstance(drawn, OrderedPartition) else OrderedPartition.scc(drawn)
+    return drawn.graph if isinstance(drawn, AnswerableGraph) else drawn
 
 
 def blocks_of(drawn: Drawn) -> tuple[tuple[NodePath, ...], ...]:
-    """The top level's blocks of `drawn`, in run order."""
-    return tuple(tuple(block) for block in partition_of(drawn).blocks)
+    """The top level's blocks of `drawn`, in run order: the graph's components."""
+    return tuple(tuple(block) for block in graph_of(drawn).graph.components)
 
 
 def structure_order(drawn: Drawn) -> tuple[NodePath, ...]:
-    """The order the graph actually runs in, **at every level**: `blocking`'s blocks in
-    their run order, each block's body in the run order of *its* level, and so on down
-    through each `Solve` entry's `interior`.
+    """The order the graph actually runs in, **at every level**: the graph's components
+    in their dependency order, each block's body in the run order of *its* level, and so
+    on down through each `Solve` entry's `interior` (`sequencing.entries`).
 
-    Two things are done to the blocking's own member order, and both are borrowed from
+    Two things are done to the graph's own member order, and both are borrowed from
     cottax's XDSM rather than invented here:
 
     - the body of every block -- the block with its problems taken out -- is put in the
       SCC order of that body wherever the stored order would draw a read from a later
-      member (`visualization.sequencing.sequenced`, which is recursive over `inner`, so a
-      nested level's interior is ordered by *its* blocking and not by the parent's
-      binding order);
+      member (the rule cottax's `sequencing.sequenced` had up to `63bae67`; `sequence`
+      now always re-derives the order, so the rule is kept here), recursively, so a
+      nested level's interior is ordered by *its* entries and not by the parent's
+      binding order;
     - the problem a level answers is drawn **first** in its block, ahead of what it
       drives (`xdsm._problem_first`'s rule): it is what the level is *for*, and pinning
       it to the head is what leaves the interior contiguous, so a nested box can be a
@@ -290,15 +292,16 @@ def structure_order(drawn: Drawn) -> tuple[NodePath, ...]:
     no promise beyond *one the body could be run in*: every edge among body members below
     the diagonal, and only the reads that pass through a problem above it.
     """
-    return tuple(_run_order(sequenced(partition_of(drawn))))
+    return tuple(_run_order(graph_of(drawn)))
 
 
-def answered_at(partition: OrderedPartition) -> tuple[NodePath | None, ...]:
+def answered_at(graph: Graph) -> tuple[NodePath | None, ...]:
     """`xdsm.problems_at`, without its warning: the problem each block answers at its
     own level, `None` where none is or where several are declared and none nested.
 
-    Asked of a graph and its nesting tree (a `OrderedPartition`, which a `Blocking` is), the shape every cottax drawing walks since `a6c5a50`: an
-    interior is a graph, and its own levels are `interiors(partition)`.
+    Asked of a graph and its nesting, the shape every cottax drawing walks since
+    `a6c5a50`: an entry's interior is a graph, and its own levels are
+    `interiors(interior)`.
 
     The warning is right for a drawing that then shows nothing at that block, and wrong
     here: a block declaring three un-nested problems is *drawn* -- every one of the
@@ -309,19 +312,18 @@ def answered_at(partition: OrderedPartition) -> tuple[NodePath | None, ...]:
     """
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=r".*declares \d+ problems.*")
-        return problems_at(partition)
+        return problems_at(graph)
 
 
-def _run_order(partition: OrderedPartition) -> Iterator[NodePath]:
+def _run_order(graph: Graph) -> Iterator[NodePath]:
     """`structure_order`'s recursion: one level, its nested levels in place."""
-    graph = partition.graph
-    for block, held, lead in zip(partition.blocks, interiors(partition), answered_at(partition)):
+    for entry, held, lead in zip(entries(graph), interiors(graph), answered_at(graph)):
+        block = entry.nodes
         if held is not None:
             # The level's problem is the one member its interior does not hold; the
-            # interior is a partition of its own and states the rest of the order
-            # (`sequenced` has already rebound the block in run order, and the interior
-            # takes the block's member order).
-            inside = frozenset(held.graph.nodes)
+            # interior is a graph of its own and states the rest of the order, one
+            # level down.
+            inside = frozenset(held.nodes)
             yield from (name for name in block if name not in inside)
             yield from _run_order(held)
             continue
@@ -335,13 +337,23 @@ def _run_order(partition: OrderedPartition) -> Iterator[NodePath]:
                 key=lambda name: 0 if problem_kind(graph[name]) in ("optimise", COMBINED) else 1,
             )
         yield from head
-        yield from (name for name in block if name not in head)
+        # The body -- the block minus its problems -- in run order wherever the order it
+        # arrived in would draw a read from a later member (cottax's old `sequenced`
+        # rule, kept here since `sequence` always re-derives the order): stored order
+        # where it draws no feedback, the body's SCC order where it does.
+        rest = [name for name in block if name not in head]
+        body = body_of(entry.subgraph)
+        order = [name for name in rest if name in body.definitions]
+        if order and _draws_feedback(order, body):
+            rest = [name for name in rest if name not in body.definitions]
+            rest.extend(body.graph.components_order)
+        yield from rest
 
 
 # ================================================================== the measurement
 @dataclasses.dataclass(frozen=True)
 class BlockGrouping:
-    """One block of a `Blocking`, and which groups it is made of."""
+    """One block -- one component of the graph -- and which groups it is made of."""
 
     members: tuple[NodePath, ...]
     groups: tuple[Group, ...]
@@ -436,10 +448,9 @@ class GroupingReport:
 def grouping_report(drawn: Drawn, *, depth: int | None = None) -> GroupingReport:
     """Measure provenance against structure on `drawn`: § 11's table, for any graph.
     """
-    partition = partition_of(drawn)
-    graph = partition.graph
+    graph = graph_of(drawn)
     order = structure_order(drawn)
-    owners = graph.owners
+    owners = graph.graph.owners
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     among = frozenset(graph.nodes)
     at = {
@@ -460,7 +471,7 @@ def grouping_report(drawn: Drawn, *, depth: int | None = None) -> GroupingReport
 
     blocks = tuple(
         BlockGrouping(tuple(block), tuple(dict.fromkeys(at[name] for name in block)))
-        for block in partition.blocks
+        for block in graph.graph.components
     )
 
     crossing = {
@@ -582,17 +593,18 @@ def solve_levels(drawn: Drawn) -> tuple[Solve, ...]:
     claim about the solve, and the point of drawing it is to see the claim) and every
     coupled block nothing drives (`GroupingReport.coupled`'s blocks, the cycles a cut has
     not reached). Read off the entries' interiors and `xdsm.problems_at`, so it never refuses:
-    a blocking no schedule could be built for still has levels, and a picture of one is
+    a graph no schedule could be built for still has levels, and a picture of one is
     the picture worth having.
     """
     out: list[Solve] = []
 
-    def walk(partition: OrderedPartition, depth: int, parent: int | None) -> None:
-        graph = partition.graph
-        for block, held, lead in zip(partition.blocks, interiors(partition), answered_at(partition)):
+    def walk(graph: Graph, depth: int, parent: int | None) -> None:
+        levels = zip(entries(graph), interiors(graph), answered_at(graph))
+        for entry, held, lead in levels:
             node = graph[lead] if lead is not None else None
             solve = Solve(
-                tuple(block), depth, parent, lead, problem_kind(node), driver_name(node)
+                tuple(entry.nodes), depth, parent, lead,
+                problem_kind(node), driver_name(node),
             )
             above = parent
             if solve.coupled or solve.driven:
@@ -601,7 +613,7 @@ def solve_levels(drawn: Drawn) -> tuple[Solve, ...]:
             if held is not None:
                 walk(held, depth + 1, above)
 
-    walk(partition_of(drawn), 0, None)
+    walk(graph_of(drawn), 0, None)
     return tuple(out)
 
 
@@ -724,7 +736,7 @@ left.
 
 def _edges(graph: Graph) -> dict[tuple[NodePath, NodePath], list[VarPath]]:
     """Node -> node, with the variables that flow along each. The boundary is dropped."""
-    owners = graph.owners
+    owners = graph.graph.owners
     out: dict[tuple[NodePath, NodePath], list[VarPath]] = {}
     for name in graph.nodes:
         for var in dict.fromkeys(graph[name].reads):
@@ -762,7 +774,7 @@ def _matrix_struct(
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
-    graph = partition_of(drawn).graph
+    graph = graph_of(drawn)
     order = tuple(order)
     if set(order) != set(graph.nodes):
         raise ValueError(
@@ -770,7 +782,7 @@ def _matrix_struct(
             f"node(s) -- a DSM is a permutation of the whole graph, not a selection"
         )
 
-    owners = graph.owners
+    owners = graph.graph.owners
     among = frozenset(graph.nodes)
     at = {
         name: group_of(name, depth=depth, among=among, owners=owners)
@@ -1487,7 +1499,7 @@ def render_grouped_dsm_html(
     mode: str | None = None,
 ) -> HtmlDoc:
     """`drawn`'s graph as a DSM in `order`, every row coloured by the group its name
-    declares -- a `Blocking`, or a bare `Graph` for one no blocking exists for (`Drawn`).
+    declares -- a `Graph`, or the `AnswerableGraph` proving one answerable (`Drawn`).
 
     `mode` (`MODES`) picks the page: the *provenance* page bands the axes by namespace
     and boxes the top level's coupled blocks; the *structure* page bands them by nesting

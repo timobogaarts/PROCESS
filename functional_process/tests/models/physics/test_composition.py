@@ -489,7 +489,7 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
 
     h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
     he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)
-    boundary_inputs = set(graph.boundary_inputs)
+    boundary_inputs = set(graph.graph.boundary_inputs)
     assert h_path not in boundary_inputs
     assert he_path not in boundary_inputs
 

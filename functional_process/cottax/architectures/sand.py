@@ -10,7 +10,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.blocking import Blocking
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Drive, Schedule
 from cottax.graph import Graph
 from cottax.names import MintKey, PathMap, prefix_path
@@ -266,7 +266,7 @@ class _Resolver:
 
     def __init__(self, graph: Graph):
         self.by_name = {}
-        for var in graph.variables:
+        for var in graph.graph.variables:
             keys = var.segments
             if len(keys) == 2 and all(isinstance(k, GetAttrKey) for k in keys):
                 self.by_name.setdefault(keys[-1].name, set()).add(var)
@@ -541,8 +541,8 @@ def fixed_point_residuals(graph, env, problems=None):
         # conversion) reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
         # singular equality block.
         owns, reads = definition.owns, conditions_of(definition)
-        producers = {r: graph.owners[r] for r in reads if r in graph.owners}
-        inside = graph.ancestors(set(producers.values()))
+        producers = {r: graph.graph.owners[r] for r in reads if r in graph.graph.owners}
+        inside = graph.graph.ancestors(set(producers.values()))
         body = graph.subgraph([n for n in inside if n not in declared(graph)])
 
         def residual(flat, _body=body, _owns=owns, _reads=reads, _unravel=None):
@@ -648,15 +648,14 @@ def constraints_outside_block(graph):
     """Active constraints whose node falls **outside** the combined problem's own SCC
     block -- `{constraint id: NodePath}` -- which today's evaluation seam cannot carry.
     """
-    blocking = Blocking.scc(graph)
-    # The `Optimise`'s own block, found by walking `blocks` for the node rather than by
-    # asking `blocking.problems`. That property raises on a block declaring two
-    # problems, which is exactly the shape `sand_graph(keep=...)` leaves behind, and
-    # this question -- *which constraints are outside the optimiser's block* -- has the
-    # same answer either way. Nothing else about the check changes.
+    # The `Optimise`'s own block: the graph's own component holding it, asked of the
+    # graph and not of an `AnswerableGraph`, which refuses a block declaring two
+    # problems -- exactly the shape `sand_graph(keep=...)` leaves behind -- and this
+    # question, *which constraints are outside the optimiser's block*, has the same
+    # answer either way.
     optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
     problem_block = next(
-        frozenset(nodes) for nodes in blocking.blocks if optimise in nodes
+        frozenset(nodes) for nodes in graph.graph.components if optimise in nodes
     )
     outside = {}
     for name in graph.nodes:
@@ -721,11 +720,12 @@ def sand_schedule(
     # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
     assigned = assign_drivers(graph, drivers)
     # Nesting is an op on the *graph* now, not a call on the blocking: which statement's
-    # iteration answers which is recorded in `Graph.within`, and `Blocking` reads it.
+    # iteration answers which is recorded in `Graph.within`, and `AnswerableGraph`
+    # reads it.
     if nest:
         from functional_process.cottax.queries import nested_inside  # noqa: PLC0415
         assigned = nested_inside(assigned, optimise)
-    return Schedule(Blocking.scc(assigned))
+    return Schedule(AnswerableGraph(assigned))
 
 
 def _definition(drive):

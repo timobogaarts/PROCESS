@@ -33,7 +33,7 @@ from cottax import (
     Start,
 )
 from cottax.abstract import runnable
-from cottax.blocking import Blocking
+from cottax.answerable import AnswerableGraph
 from cottax.evaluation.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import is_feasibility, is_root_find
@@ -292,7 +292,9 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
     """
     d = DuctDiameterRootFind()
     schedule = Schedule(
-        Blocking.scc(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
+        AnswerableGraph(
+            Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+        )
     )
 
     for sample in _duct_diameter_samples():
@@ -313,7 +315,9 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
     """
     d = DuctDiameterRootFind()
     schedule = Schedule(
-        Blocking.scc(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
+        AnswerableGraph(
+            Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+        )
     )
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
@@ -358,8 +362,8 @@ def test_duct_feasibility_forms_one_combined_cycle_with_the_root_find():
     """
     graph = _duct_feasibility_graph()
     assert len(graph.definitions) == 4
-    assert not graph.is_acyclic
-    (cycle,) = graph.cycles
+    assert not graph.graph.is_acyclic
+    (cycle,) = graph.graph.cycles
     assert {n.spelling for n in cycle} == {
         "['DuctFeasibility']",
         "['DuctFeasibilityConditions']",
@@ -460,10 +464,10 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     joined = DuctFeasibility + root_find_problem
 
     body = runnable(graph)  # every plain node, problem nodes dropped
-    merged = Graph(PathMap({**dict(body.definitions), name: joined}))
+    merged = Graph.of(PathMap({**dict(body.definitions), name: joined}))
 
     schedule = Schedule(
-        Blocking.scc(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
+        AnswerableGraph(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
     )
     env = {
         vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),

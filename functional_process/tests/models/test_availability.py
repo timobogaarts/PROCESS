@@ -1069,7 +1069,7 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
     assert isinstance(body, Implemented)
     assert set(node.outputs) == {CPLIFE_VAR}
     assert CPLIFE_VAR not in set(node.inputs)
-    assert graph.is_acyclic
+    assert graph.graph.is_acyclic
 
 
 def test_cplife_avail_st_to_graph_assembles():
@@ -1084,7 +1084,7 @@ def test_cplife_avail_st_to_graph_assembles():
     assert isinstance(body, Implemented)
     assert is_fixed_point(problem)
     assert problem.owns == (CPLIFE_VAR,)
-    assert graph.is_acyclic
+    assert graph.graph.is_acyclic
 
 
 @pytest.mark.parametrize(
@@ -1114,7 +1114,7 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     graph = to_graph(cplife_node, avail_node)
     assert isinstance(graph[avail_node.name], Implemented)
     assert CPLIFE_VAR not in set(avail_node.inputs)
-    assert graph.is_acyclic
+    assert graph.graph.is_acyclic
 
 
 def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
@@ -1127,4 +1127,4 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
     )
     graph = to_graph(cplife_node, avail_st_node)
     assert isinstance(graph[avail_st_node.name], Implemented)
-    assert graph.is_acyclic
+    assert graph.graph.is_acyclic
