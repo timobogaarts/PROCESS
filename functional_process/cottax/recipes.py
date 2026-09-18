@@ -228,6 +228,9 @@ class ComponentCut:
     nested: tuple[NodePath, ...]
     """Declared problems -- self-loop fixed points and root finds -- nested inside
     `problem`."""
+    ops: tuple = ()
+    """The graph operations this record stands for, in the order they were applied:
+    the `FixedPointCut` (or `Combine`), then one `Nest` per nested problem."""
 
     @property
     def n_variables(self) -> int:
@@ -278,29 +281,36 @@ def cut_component(
         cuts += tuple(cutter(graph, cycle))
     place = _place_for(graph, component)
     if cuts:
-        graph = FixedPointCut(cuts, place=place).apply(graph)
-        problem = FixedPointCut(cuts, place=place).problem
+        cut = FixedPointCut(cuts, place=place)
+        graph = cut.apply(graph)
+        problem = cut.problem
         nested = tuple(p for p in declared if _same_component(graph, p, problem))
-        for inner in nested:
-            graph = Nest(inner, problem).apply(graph)
-        return graph, ComponentCut(component, cuts, problem, (), nested)
+        nests = tuple(Nest(inner, problem) for inner in nested)
+        for op in nests:
+            graph = op.apply(graph)
+        return graph, ComponentCut(component, cuts, problem, (), nested, (cut, *nests))
     # Nothing to cut: the declared problems close every cycle. Several fixed points on
     # one cycle are folded into one iteration; a root find beside a fixed point is
     # nested in it.
     fixed_points = [p for p in declared if is_fixed_point(graph[p])]
     root_finds = [p for p in declared if is_root_find(graph[p])]
     combined: tuple[NodePath, ...] = ()
+    ops: list = []
     problem = fixed_points[0] if fixed_points else None
     if len(fixed_points) > 1:
-        graph = Combine(place, tuple(fixed_points)).apply(graph)
-        problem = Combine(place, tuple(fixed_points)).problem
+        join = Combine(place, tuple(fixed_points))
+        graph = join.apply(graph)
+        problem = join.problem
         combined = tuple(fixed_points)
+        ops.append(join)
     nested: tuple[NodePath, ...] = ()
     if problem is not None and root_finds:
         for rf in root_finds:
-            graph = Nest(rf, problem).apply(graph)
+            op = Nest(rf, problem)
+            graph = op.apply(graph)
+            ops.append(op)
         nested = tuple(root_finds)
-    return graph, ComponentCut(component, cuts, problem, combined, nested)
+    return graph, ComponentCut(component, cuts, problem, combined, nested, tuple(ops))
 
 
 def _same_component(graph: Graph, a: NodePath, b: NodePath) -> bool:
@@ -328,6 +338,18 @@ class Recipe:
             graph, record = cut_component(graph, component, cutter)
             records.append(record)
         return graph, tuple(records)
+
+    def plan(self, graph: Graph) -> tuple["Plan", tuple[ComponentCut, ...]]:
+        """`cut`, as a `Plan`: the same graph, with every op the recipe applied
+        recorded in `Plan.ops` -- the recipe made visible, one op per line."""
+        from cottax.plan import Plan  # noqa: PLC0415
+
+        _, records = self.cut(graph)
+        plan = Plan(graph)
+        for record in records:
+            for op in record.ops:
+                plan = plan + op
+        return plan, records
 
     def __call__(self, graph: Graph) -> Graph:
         return self.cut(graph)[0]

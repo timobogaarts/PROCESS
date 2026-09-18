@@ -44,10 +44,10 @@ CUTS = (
 """The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`."""
 
 
-def cut_graph(graph=GRAPH):
-    """`graph` (default: `indat.GRAPH`, the default-configuration graph), with every raw
-    cycle in `CUTS` that actually exists in `graph` cut into a declared `FixedPoint`
-    problem.
+def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
+    """The `FixedPointCut`s `cut_graph` applies to `graph`, in order: one per raw cycle
+    of `CUTS` that actually exists in `graph`. Exposed so that a caller can *see* the
+    recipe (`Plan(graph) + op + ...`) rather than only its result.
     """
     # Cuts are grouped by the cycle they break, and each group becomes **one**
     # `FixedPointCut` -- i.e. one `FixedPoint` problem over however many unknowns that
@@ -103,6 +103,7 @@ def cut_graph(graph=GRAPH):
             # problems"*.
             continue
         by_cycle.setdefault(key, []).append(Cut(var=var, readers=readers))
+    ops = []
     for cuts in by_cycle.values():
         # One cut keeps its historical name (`^problem.physics.proton_rate_density`);
         # several need an explicit `place`, since no single variable names what closes
@@ -114,7 +115,17 @@ def cut_graph(graph=GRAPH):
             if len(cuts) == 1
             else NodePath((*cuts[0].var.segments, GetAttrKey("cycle")))
         )
-        graph = FixedPointCut(tuple(cuts), place=place).apply(graph)
+        ops.append(FixedPointCut(tuple(cuts), place=place))
+    return tuple(ops)
+
+
+def cut_graph(graph=GRAPH):
+    """`graph` (default: `indat.GRAPH`, the default-configuration graph), with every raw
+    cycle in `CUTS` that actually exists in `graph` cut into a declared `FixedPoint`
+    problem -- `cut_ops(graph)`, applied.
+    """
+    for op in cut_ops(graph):
+        graph = op.apply(graph)
 
     # Every problem gets `Start` ports, one per unknown, read from `^guess.<place>`.
     #
@@ -194,6 +205,24 @@ def given_start(unknown, fallback):
     if given is None:
         return fallback
     return jnp.full_like(jnp.asarray(fallback, dtype=float), given)
+
+
+def seed_starts(schedule, env, exclude=()) -> dict:
+    """`{start_port: value}` for every `Start` input of `schedule` whose unknown `env`
+    holds, bar the unknowns in `exclude` (a solve's design variables), `given_start`
+    applied. What a *nested* solve's start needs: its unknowns are not the outer drive's,
+    so `run_sand_harness._seed` leaves them at the cold value, and a Picard or Newton
+    started from a cold zero does not converge.
+    """
+    exclude = set(exclude)
+    guesses = guess_sources(schedule.blocking.graph)
+    return {
+        port: given_start(unknown, env[unknown])
+        for port in schedule.inputs
+        if (unknown := guesses.get(port)) is not None
+        and unknown not in exclude
+        and unknown in env
+    }
 
 
 ROOT_FIND_SEEDS = {
