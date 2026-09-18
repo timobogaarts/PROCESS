@@ -17,7 +17,9 @@ and by `rmajor` 24. Which variable closes which equality is the caller's choice
            (`flattened`; `flatten=False` keeps them nested inside it, Picard-driven)
         -> `queries.nested_inside(each root find)`
         -> drivers: `mda.default_drivers`, and `SafeguardedNewtonDriver` on each root
-           find (capped, backtracked, Broyden-updated)
+           find (capped, backtracked, Broyden-updated) -- or, nested and one unknown,
+           `bracketed()`: `BracketedRootDriver`, a bracketed root that converges from
+           any start, the Picards re-converged inside every residual evaluation
 
 The result is an `mdf.Mdf` whose schedule carries the root finds, so `mdf.seed`,
 `mdf.prime`, `mdf.solve` and `evaluate.run_schedule` work on it unchanged: the record
@@ -50,6 +52,7 @@ from jax.tree_util import GetAttrKey
 from functional_process.configurations import kinds
 from functional_process.cottax.architectures import mdf, sand
 from functional_process.cottax.architectures.drivers import (
+    BracketedRootDriver,
     SafeguardedNewtonDriver,
     condition_scale,
 )
@@ -101,6 +104,34 @@ def safeguarded(**kwargs) -> SafeguardedNewtonDriver:
 def safeguarded_newton(**kwargs) -> SafeguardedNewtonDriver:
     """The exact-Jacobian variant of `safeguarded`."""
     return safeguarded(jacobian="newton", **kwargs)
+
+
+def bracketed(**kwargs) -> BracketedRootDriver:
+    """The globally convergent driver on a closing root find of **one** unknown:
+    bracket the root, then Newton inside the bracket with bisection as the fallback
+    (`BracketedRootDriver`), at `NEWTON_TOL`. For `close(flatten=False)`, where the
+    root find keeps its one unknown and the cycle's fixed points are nested inside it
+    and re-converged per residual evaluation (the Picards inside the root) -- a
+    flattened problem has the cut copies as unknowns too, and `accepts` refuses it.
+    `close` fills `bounds` for the closing variable from the session's reference when
+    none are given, as the first bracket tried.
+    """
+    return BracketedRootDriver(**{"rtol": NEWTON_TOL, "atol": NEWTON_TOL, **kwargs})
+
+
+def with_bounds(driver, var: VarPath, bounds) -> object:
+    """`driver` with `var`'s `(lower, upper)` out of `bounds` (`((VarPath, lo, hi),
+    ...)`, `Session.reference.bounds`) added, where it is a `BracketedRootDriver`
+    without one; any other driver, or one already bounding `var`, unchanged.
+    """
+    if not isinstance(driver, BracketedRootDriver) or driver.bracket_for(var):
+        return driver
+    for bound_var, lo, hi in bounds:
+        if bound_var == var:
+            return dataclasses.replace(
+                driver, bounds=(*driver.bounds, (var, float(lo), float(hi)))
+            )
+    return driver
 
 
 # ---------------------------------------------------------------- the ops
@@ -242,7 +273,9 @@ def close(
     are combined into it (`flattened`); otherwise nested inside it and driven by
     Picard. Two root finds on one cycle are flattened together into one square
     problem over both closing variables, and refused when `flatten` is off. `driver`:
-    the driver assigned to every closing problem, default `safeguarded()`.
+    the driver assigned to every closing problem, default `safeguarded()`; a
+    `bracketed()` driver is given the closing variable's bounds from the reference
+    (`with_bounds`) and, answering one unknown only, wants `flatten=False`.
 
     Raises
     ------
@@ -303,8 +336,12 @@ def close(
     for place in set(places.values()):
         graph = nested_inside(graph, place)
     drivers = default_drivers(graph)
-    for place in set(places.values()):
-        drivers[place] = safeguarded() if driver is None else driver
+    for cond, place in places.items():
+        drivers[place] = (
+            safeguarded()
+            if driver is None
+            else with_bounds(driver, chosen[cond], ref.bounds)
+        )
     assigned = assign_drivers(graph, drivers)
     schedule = Schedule(AnswerableGraph(assigned))
     kept = tuple(v for v in design if v not in set(chosen.values()))
@@ -426,8 +463,14 @@ def nested_blocking(built: Closed, driver=None) -> AnswerableGraph:
     with_problem = (Plan(graph) + Insert(PathMap(((OPTIMISE, node),)))).graph
     with_problem = nested_inside(with_problem, OPTIMISE)
     drivers = default_drivers(with_problem)
-    for place in set(built.places.values()):
-        drivers[place] = safeguarded() if driver is None else driver
+    for cond, place in built.places.items():
+        drivers[place] = (
+            safeguarded()
+            if driver is None
+            else with_bounds(
+                driver, built.pairings[cond], built.session.reference.bounds
+            )
+        )
     return AnswerableGraph(assign_drivers(with_problem, drivers))
 
 
@@ -452,8 +495,10 @@ __all__ = [
     "NEWTON_TOL",
     "OPTIMISE",
     "PLACE",
+    "BracketedRootDriver",
     "Closed",
     "SafeguardedNewtonDriver",
+    "bracketed",
     "close",
     "condition_scale",
     "copies_from_mda",
@@ -466,4 +511,5 @@ __all__ = [
     "safeguarded",
     "safeguarded_newton",
     "seed",
+    "with_bounds",
 ]

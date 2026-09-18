@@ -11,7 +11,8 @@ from PROCESS), with one *arm* per architecture:
 | `IDF`  | `idf.idf_graph` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
 | `SAND` | `sand.assemble` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
 
-Each arm is assembled on its first call and only solved on the next. Every solve
+Each arm is assembled on its first call (`Session.assemble`, which a caller may
+make itself to take the build without solving) and only solved on the next. Every solve
 starts **cold**, from the configuration's own values (`Session.reference.cold`),
 unless handed another state. A configuration stating a root find (`Problem.root_find`)
 has an `MDA` and an `MDF` arm only: PROCESS's own square system,
@@ -476,14 +477,7 @@ class Session:
         """The architectures this file can be solved under."""
         return ("MDA", "MDF") if self.root_find else ARMS
 
-    def solve(self, arm: str, cold=None) -> dict:
-        """Solve this configuration under `arm`, assembling it on the first call.
-
-        Raises
-        ------
-        ValueError
-            If `arm` is not one of `Session.arms`.
-        """
+    def _check_arm(self, arm: str) -> None:
         if arm not in self.arms:
             raise ValueError(
                 f"{self.name} has no {arm} arm: "
@@ -494,30 +488,57 @@ class Session:
                     else f"the arms are {ARMS}"
                 )
             )
-        cold = self.reference.cold if cold is None else cold
-        if arm in {"MDA", "MDF"}:
-            build = self.builds.get("MDF")
-            if build is None:
-                build = self.builds["MDF"] = build_mdf(
+
+    def assemble(self, arm: str):
+        """The assembled `arm`, nothing solved: the `MdfBuild` (`MDA` and `MDF` share
+        it, under the key `"MDF"` in `builds`) or the `BlockBuild` (`IDF`, `SAND`),
+        built on the first call and kept in `builds` -- what `solve` runs, and what
+        a caller that wants the block itself (its schedule, its drive) takes.
+
+        Raises
+        ------
+        ValueError
+            If `arm` is not one of `Session.arms`.
+        """
+        self._check_arm(arm)
+        key = "MDF" if arm in {"MDA", "MDF"} else arm
+        build = self.builds.get(key)
+        if build is None:
+            if key == "MDF":
+                build = build_mdf(
                     self.reference,
                     self.machine_graph,
                     self.switch_values,
                     root_find=self.root_find,
                     cut=self.cut,
                 )
-            if arm == "MDA":
-                return solve_mda(build, cold)
+            else:
+                builder = build_sand if key == "SAND" else build_idf
+                build = builder(
+                    self.reference,
+                    self.machine_graph,
+                    self.switch_values,
+                    optimiser=self.optimiser,
+                    cut=self.cut,
+                )
+            self.builds[key] = build
+        return build
+
+    def solve(self, arm: str, cold=None) -> dict:
+        """Solve this configuration under `arm`, assembling it (`assemble`) on the
+        first call.
+
+        Raises
+        ------
+        ValueError
+            If `arm` is not one of `Session.arms`.
+        """
+        build = self.assemble(arm)
+        cold = self.reference.cold if cold is None else cold
+        if arm == "MDA":
+            return solve_mda(build, cold)
+        if arm == "MDF":
             return solve_mdf(build, self.reference, cold, optimiser=self.optimiser)
-        build = self.builds.get(arm)
-        if build is None:
-            builder = build_sand if arm == "SAND" else build_idf
-            build = self.builds[arm] = builder(
-                self.reference,
-                self.machine_graph,
-                self.switch_values,
-                optimiser=self.optimiser,
-                cut=self.cut,
-            )
         return solve_block(build, self.reference, self.machine_graph, cold)
 
     def mda(self, cold=None) -> dict:

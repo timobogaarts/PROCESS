@@ -140,14 +140,8 @@ def sand_shape(live):
     """`(single, batched, x0)` for the `sand` shape: the block's fused value+Jacobian at
     one flat design vector, and its vmap.
     """
-    if "SAND" not in live.builds:
-        # `session.sand` assembles on first use; assembling without solving is the
-        # same call minus the solve, and the block is what this shape times.
-        live.builds["SAND"] = session.build_sand(
-            live.reference, live.machine_graph, live.switch_values, optimiser=live.optimiser,
-            cut=live.cut,
-        )
-    build = live.builds["SAND"]
+    # Assembled without solving: the block is what this shape times.
+    build = live.assemble("SAND")
     drive = build.drive
     base = live.reference.data
     stage_env = mda_env(live.reference, graph=live.machine_graph,

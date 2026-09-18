@@ -51,7 +51,18 @@ warm starts (every sample's next start is its converged closing unknowns at the
 returns and a condition map cannot carry. So the node memoises per design point, the
 `BoxedSlsqpDriver` takes the Jacobian rows from that memo (`jacobian=`) and adopts
 the incumbent's starts through it (`warm_start=`), and the outer schedule is run
-with `whole=False`, as SAND's is.
+with `whole=False`, as SAND's is. Both hooks are `outer`'s keywords: `DEFAULT` is the
+program's own, `None` the driver's own meaning (no warm start; `jacfwd` through the
+node), the control a study measures the warm starts against.
+
+**The rows.** `TwoStage.columns` is what one batched call returns per sample:
+coe, net, availability, constructed cost, every constraint under CVaR, the closing
+problem's `Steps` and `Converged`, its unknowns, then every *other* driven problem's
+`Converged` in the recourse schedule (`verdicts`: a row is valid only if every
+driver in it converged -- none report one on `stellarator_helias`, whose other
+drivers are Picards), then `extra_columns` (`two_stage(extra_columns=...)`), spellings
+the caller wants per sample and the measures ignore. `TwoStage.layout` is the
+offsets; `valid_rows`, `per_sample`, `summarise` and `extra_columns` read by them.
 
 **Differentiation.** `jacfwd` of the statistics vector: six inputs, fourteen outputs,
 and every loop in the closed MDA carries an implicit derivative (the closing Newton
@@ -66,6 +77,7 @@ What stays in `paper_tests/ouu.py`: the CLI, the scaling study, the JSON / CSV /
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import math
 import operator
 import time
@@ -78,7 +90,7 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.answerable import AnswerableGraph  # noqa: E402
-from cottax.evaluation.schedule import Schedule  # noqa: E402
+from cottax.evaluation.schedule import Drive, Schedule  # noqa: E402
 from cottax.graph import Graph  # noqa: E402
 from cottax.names import MintKey, PathMap, prefix_path  # noqa: E402
 from cottax.nodes import ImplementedFunction  # noqa: E402
@@ -249,7 +261,7 @@ class TwoStage:
     `RecourseBound`s past one pairing."""
     columns: tuple
     """Per-sample columns: coe, net, f_avail, concost, *constraints, steps,
-    converged, *unknowns."""
+    converged, *unknowns, *verdicts, *extra."""
     unknowns: tuple[VarPath, ...]
     """The closing problem's unknowns (the closing variable first, then the cut
     copies folded into it)."""
@@ -257,6 +269,15 @@ class TwoStage:
     """Their start ports, parallel."""
     place: NodePath
     """The closing problem, whose `Steps` / `Converged` are two columns."""
+    verdicts: tuple[VarPath, ...]
+    """Every *other* driven problem's `Converged` in the recourse schedule (the
+    `^driver_out.converged^problem.<place>` names of the drivers that report one), so
+    a row's validity sees every driver's verdict, not only the closing problem's.
+    Empty on a configuration whose other drivers report nothing (the Picards and the
+    coil root find on `stellarator_helias`)."""
+    extra: tuple[VarPath, ...]
+    """Columns the caller asked for (`two_stage(extra_columns=...)`): carried through
+    per sample, ignored by `measures`."""
     alpha: float
     n: int
     seed: int
@@ -314,9 +335,14 @@ class TwoStage:
     @property
     def layout(self) -> dict:
         """Column offsets: `c_coe`, `c_net`, `c_avail`, `c_concost`, `c_g` (a pair),
-        `c_steps`, `c_conv`, `c_u` (a pair), `tiny`.
+        `c_steps`, `c_conv`, `c_u` (a pair), `c_verdicts` (a pair, the other drivers'
+        `Converged` columns), `verdicts` (their problems' spellings), `c_extra` (a
+        pair), `extra` (the spellings asked for), `tiny`.
         """
         n_g = self.n_g
+        u0 = 6 + n_g
+        v0 = u0 + len(self.unknowns)
+        e0 = v0 + len(self.verdicts)
         return {
             "c_coe": 0,
             "c_net": 1,
@@ -325,7 +351,11 @@ class TwoStage:
             "c_g": (4, 4 + n_g),
             "c_steps": 4 + n_g,
             "c_conv": 5 + n_g,
-            "c_u": (6 + n_g, 6 + n_g + len(self.unknowns)),
+            "c_u": (u0, v0),
+            "c_verdicts": (v0, e0),
+            "verdicts": tuple(_problem_of(v) for v in self.verdicts),
+            "c_extra": (e0, e0 + len(self.extra)),
+            "extra": tuple(v.spelling for v in self.extra),
             "tiny": TINY,
         }
 
@@ -351,6 +381,62 @@ def _closing_ports(
     return unknowns, tuple(ports[u] for u in unknowns)
 
 
+def _problem_of(verdict: VarPath) -> str:
+    """`^driver_out.converged^problem.Close.c2` -> `^problem.Close.c2`."""
+    return "^problem" + verdict.spelling.split("^problem", 1)[1]
+
+
+def driven_problems(schedule: Schedule) -> tuple[Drive, ...]:
+    """Every `Drive` step of `schedule`, at every depth, in schedule order."""
+    found: list[Drive] = []
+    for step in schedule.steps:
+        if isinstance(step, Drive):
+            found.append(step)
+            if isinstance(step.body, Schedule):
+                found.extend(driven_problems(step.body))
+    return tuple(found)
+
+
+def other_verdicts(schedule: Schedule, place: NodePath) -> tuple[VarPath, ...]:
+    """The `Converged` report of every driven problem of `schedule` other than
+    `place`, for the drivers that report one (`Drive.reports`), in schedule order:
+    what a row's validity has to see beside the closing problem's own verdict.
+    """
+    verdicts = []
+    for step in driven_problems(schedule):
+        if step.problem == place:
+            continue
+        converged = Converged.name_for(step.problem)
+        if converged in step.reports:
+            verdicts.append(converged)
+    return tuple(verdicts)
+
+
+def resolve_columns(
+    spellings: Iterable[str], var_of: Mapping[str, VarPath]
+) -> tuple[VarPath, ...]:
+    """`spellings` as `VarPath`s through `var_of` (the closed graph's inputs and
+    outputs by spelling).
+
+    Raises
+    ------
+    KeyError
+        If a spelling is not a variable of the closed graph, naming the spellings
+        nearest to it.
+    """
+    resolved = []
+    for spelling in spellings:
+        var = var_of.get(spelling)
+        if var is None:
+            near = difflib.get_close_matches(spelling, list(var_of), n=5, cutoff=0.5)
+            raise KeyError(
+                f"{spelling!r} is not a variable of the closed graph"
+                + (f"; near it: {near}" if near else "")
+            )
+        resolved.append(var)
+    return tuple(resolved)
+
+
 def two_stage(
     session,
     *,
@@ -369,6 +455,7 @@ def two_stage(
     closing_values=None,
     flatten: bool = True,
     lifts: Iterable = (),
+    extra_columns: Iterable[str] = (),
 ) -> TwoStage:
     """Assemble the two-stage problem on `session` (a `session.Session`, a
     configuration or its name).
@@ -388,11 +475,20 @@ def two_stage(
     and its inequality joins the constraints under CVaR -- a chance constraint at
     `alpha` -- beside the file's own.
 
+    `extra_columns`: spellings of the closed graph's variables (an output such as
+    `.physics.p_fusion_total_mw` or `^cond.constraints.c2`, an input too) the caller
+    wants per sample beside the measures' own columns: appended last, after the
+    closing unknowns and the other drivers' verdicts, at `layout["c_extra"]`, named
+    in `layout["extra"]`; `measures` ignores them, `per_sample` and `summarise`
+    carry them through under `"extra"`.
+
     Raises
     ------
     ValueError
         If `objective` or `pairing` is unknown, or `with_c16` is asked of a pairing
         that closes `c16`.
+    KeyError
+        If an extra column is not a variable of the closed graph.
     """
     began = time.perf_counter()
     if objective not in OBJECTIVES:
@@ -460,16 +556,7 @@ def two_stage(
                 )
     place = next(iter(built.places.values()))
     unknowns, guesses = _closing_ports(built)
-    columns = (
-        var_of[COE],
-        var_of[NET],
-        var_of[AVAIL],
-        var_of[CONCOST],
-        *constraints,
-        Steps.name_for(place),
-        Converged.name_for(place),
-        *unknowns,
-    )
+    extra = resolve_columns(extra_columns, var_of)
 
     u0 = np.array([float(np.asarray(primed[u])) for u in unknowns])
     Theta, theta = sample(rows, var_of, nominal, n, seed)
@@ -494,6 +581,19 @@ def two_stage(
     )
     first = Schedule(AnswerableGraph(stages.first_stage_graph(graph, split)))
     recourse = Schedule(AnswerableGraph(stages.recourse_graph(graph, split)))
+    verdicts = other_verdicts(recourse, place)
+    columns = (
+        var_of[COE],
+        var_of[NET],
+        var_of[AVAIL],
+        var_of[CONCOST],
+        *constraints,
+        Steps.name_for(place),
+        Converged.name_for(place),
+        *unknowns,
+        *verdicts,
+        *extra,
+    )
 
     return TwoStage(
         closed=built,
@@ -513,6 +613,8 @@ def two_stage(
         unknowns=unknowns,
         guesses=guesses,
         place=place,
+        verdicts=verdicts,
+        extra=extra,
         alpha=alpha,
         n=n,
         seed=seed,
@@ -590,6 +692,7 @@ def make(
     c_g = slice(*layout["c_g"])
     c_steps, c_conv = layout["c_steps"], layout["c_conv"]
     c_u = slice(*layout["c_u"])
+    c_verdicts = slice(*layout["c_verdicts"])
     rated_kwh = model.rated_kwh
     te_var, te_grid = model.var_of[TE], model.te_grid
 
@@ -621,11 +724,19 @@ def make(
         joined = {**values, **dict(out.items())}
         return jnp.stack([_column(c, joined) for c in columns])
 
+    def converged(rows):
+        """Which rows count: the closing problem and every other driver converged,
+        and every measured column finite (`valid_rows`, traced).
+        """
+        finite = jnp.all(jnp.isfinite(rows[:, :c_steps]), axis=1)
+        verdicts = jnp.all(rows[:, c_verdicts] > 0.5, axis=1)
+        return (rows[:, c_conv] > 0.5) & verdicts & finite
+
     def choose(rows):
         """One sample's K rows -> the row at its recourse: the cheapest feasible T_e,
         else the least infeasible one.
         """
-        conv = (rows[:, c_conv] > 0.5) & jnp.all(jnp.isfinite(rows[:, :c_steps]), axis=1)
+        conv = converged(rows)
         g = rows[:, c_g]
         feasible = conv & (rows[:, c_net] > 0) & jnp.all(g <= G_TOL, axis=1)
         worst = jnp.where(conv, jnp.max(g, axis=1), FAILED_G)
@@ -689,8 +800,7 @@ def make(
     def measures(y_all):
         """Every objective measure and the constraints' CVaRs from the rows."""
         y, y_nominal = y_all[:-1], y_all[-1]
-        finite = jnp.all(jnp.isfinite(y[:, :c_steps]), axis=1)
-        w = jnp.where((y[:, c_conv] > 0.5) & finite, 1.0, 0.0)
+        w = jnp.where(converged(y), 1.0, 0.0)
         sum_w = jnp.sum(w)
         count = jnp.asarray(y.shape[0], float)
         failed = 1.0 - sum_w / count
@@ -703,9 +813,7 @@ def make(
         n_pos = jnp.sum(jnp.where(positive, 1.0, 0.0))
         mean = jnp.where(n_pos > 0, _masked_mean(coe, positive), FAILED_F)
         median = _median(coe, w > 0)
-        nominal_ok = (y_nominal[c_conv] > 0.5) & jnp.all(
-            jnp.isfinite(y_nominal[:c_steps])
-        )
+        nominal_ok = converged(y_nominal[None, :])[0]
         nominal = jnp.where(nominal_ok, y_nominal[c_coe], FAILED_F)
         g = jnp.where(w[:, None] > 0, y[:, c_g], FAILED_G)  # [N, n_g]
         g_cvar = jnp.mean(lax.top_k(g.T, m)[0], axis=1)
@@ -1026,15 +1134,46 @@ class Outer:
         return out.get(kind.name_for(OPTIMISE))
 
 
-def outer(model: TwoStage, fns: dict | None = None, **driver_kwargs) -> Outer:
+class _Default:
+    """The sentinel `outer` reads as "the program's own": distinct from `None`, which
+    is a choice (no warm start; `jacfwd` through the node).
+    """
+
+    def __repr__(self) -> str:
+        return "DEFAULT"
+
+
+DEFAULT = _Default()
+
+
+def outer(
+    model: TwoStage,
+    fns: dict | None = None,
+    *,
+    warm_start=DEFAULT,
+    jacobian=DEFAULT,
+    **driver_kwargs,
+) -> Outer:
     """The outer problem stated as a graph over `model`, the program built from `fns`
     (`make(model)` by default) on `model`'s sample set. `driver_kwargs` go to
     `BoxedSlsqpDriver` (`delta`, `max_iter`, `gtol`, `callback`, ...), bar `eps`, the
-    failed-fraction bound (`EPS_FAILED`), which is the node's; the driver's `bounds`,
-    `n_inequality`, `jacobian` and `warm_start` are this function's to set.
+    failed-fraction bound (`EPS_FAILED`), which is the node's; the driver's `bounds`
+    and `n_inequality` are this function's to set.
+
+    `warm_start` and `jacobian` are the driver's two hooks, `DEFAULT` being the
+    program's own: `program.adopt` (every sample started from its root at the
+    incumbent) and `program.jacobian` (the rows of the fused call's memo). `None`
+    is expressible and means what it means to the driver -- no warm start (every
+    call from the starts the program holds), `jax.jacfwd` through the statistics
+    node (the plain program under a trace, `Program.traceable`) -- and any other
+    callable is handed to the driver as it is.
     """
     fns = make(model) if fns is None else fns
     program = Program(fns, model.theta, model.starts0)
+    if warm_start is DEFAULT:
+        warm_start = program.adopt
+    if jacobian is DEFAULT:
+        jacobian = program.jacobian
     objective = condition_path("objective")
     cvars = tuple(cvar_path(c) for c in model.constraints)
     failed = condition_path("failed")
@@ -1053,8 +1192,8 @@ def outer(model: TwoStage, fns: dict | None = None, **driver_kwargs) -> Outer:
             (v, float(lo), float(hi))
             for v, lo, hi in zip(model.design, model.lower, model.upper, strict=True)
         ),
-        jacobian=program.jacobian,
-        warm_start=program.adopt,
+        jacobian=jacobian,
+        warm_start=warm_start,
         **driver_kwargs,
     )
     driven = assign_drivers(graph, {OPTIMISE: driver})
@@ -1139,12 +1278,24 @@ def best_feasible(
 
 
 def valid_rows(layout: dict, y: np.ndarray) -> np.ndarray:
-    """A row counts if the closing problem converged and every reported output is
-    finite (`uq.valid_rows`).
+    """A row counts if the closing problem converged, every other driver in the
+    recourse schedule did too (`layout["c_verdicts"]`), and every measured column
+    is finite (the extra columns are not measured, so not asked to be).
     """
     y = np.asarray(y, dtype=float)
     finite = np.all(np.isfinite(y[:, : layout["c_steps"]]), axis=1)
-    return (y[:, layout["c_conv"]] > 0.5) & finite
+    v0, v1 = layout["c_verdicts"]
+    verdicts = np.all(y[:, v0:v1] > 0.5, axis=1)
+    return (y[:, layout["c_conv"]] > 0.5) & verdicts & finite
+
+
+def extra_columns(layout: dict, y: np.ndarray) -> dict[str, np.ndarray]:
+    """The extra columns of `y` by name: `{spelling: [rows]}`, empty when none were
+    asked for.
+    """
+    y = np.asarray(y, dtype=float)
+    e0, _e1 = layout["c_extra"]
+    return {name: y[:, e0 + j] for j, name in enumerate(layout["extra"])}
 
 
 def evaluate(
@@ -1252,7 +1403,7 @@ def summarise(
     y, y_nominal = y_all[:-1], y_all[-1]
     c_coe, c_net, c_avail = layout["c_coe"], layout["c_net"], layout["c_avail"]
     g0, g1 = layout["c_g"]
-    c_steps, c_conv = layout["c_steps"], layout["c_conv"]
+    c_steps = layout["c_steps"]
     conv = valid_rows(layout, y)
     coe, net, g = y[:, c_coe], y[:, c_net], y[:, g0:g1]
     n = y.shape[0]
@@ -1269,9 +1420,9 @@ def summarise(
         worst = -np.sort(-g_masked, axis=0)[:m]
         return dict(zip(names, np.mean(worst, axis=0).tolist(), strict=True))
 
-    nominal_ok = bool(
-        y_nominal[c_conv] > 0.5 and np.all(np.isfinite(y_nominal[:c_steps]))
-    )
+    nominal_ok = bool(valid_rows(layout, y_nominal[None, :])[0])
+    extra = extra_columns(layout, y)
+    extra_nominal = extra_columns(layout, y_nominal[None, :])
     return {
         "n": int(n),
         "nominal": {
@@ -1326,11 +1477,21 @@ def summarise(
         "net_mw_where_converged": _percentiles(net, conv),
         "steps_mean": float(np.mean(y[:, c_steps])),
         "steps_max": float(np.max(y[:, c_steps])),
+        "extra": {
+            name: {
+                "nominal": float(extra_nominal[name][0]),
+                **_percentiles(values, conv & np.isfinite(values)),
+            }
+            for name, values in extra.items()
+        },
     }
 
 
 def per_sample(layout: dict, y_all: np.ndarray) -> dict:
-    """The columns a histogram draws, per sample: coe, net, g, converged, feasible."""
+    """The columns a histogram draws, per sample: coe, net, g, converged, feasible,
+    and `extra` (`{spelling: [N]}`, the columns `two_stage(extra_columns=...)` asked
+    for, as they came).
+    """
     y = np.asarray(y_all, dtype=float)[:-1]
     g0, g1 = layout["c_g"]
     conv = valid_rows(layout, y)
@@ -1342,6 +1503,7 @@ def per_sample(layout: dict, y_all: np.ndarray) -> dict:
         "g": g,
         "converged": conv,
         "feasible": feasible,
+        "extra": extra_columns(layout, y),
     }
 
 
@@ -1382,6 +1544,7 @@ def design_table(
 __all__ = [
     "ALPHA",
     "BUILD_TABLE",
+    "DEFAULT",
     "EPS_FAILED",
     "FAILED_F",
     "FAILED_G",
@@ -1401,14 +1564,18 @@ __all__ = [
     "condition_path",
     "cvar_path",
     "design_table",
+    "driven_problems",
     "evaluate",
+    "extra_columns",
     "fresh_sample",
     "jitted",
     "label_of",
     "make",
+    "other_verdicts",
     "outer",
     "per_sample",
     "report",
+    "resolve_columns",
     "sample",
     "sensitivity",
     "solve",

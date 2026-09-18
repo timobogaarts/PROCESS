@@ -139,8 +139,16 @@ LABELS = {
     ".costs.f_t_plant_available": "availability",
     ".costs.concost": "constructed cost [M$]",
     ".physics.nd_plasma_electrons_vol_avg": "closed density [m^-3]",
+    ".physics.p_fusion_total_mw": "fusion power [MW]",
     "^cond.constraints.c16": "c16: net power vs target (residual)",
+    "^cond.constraints.c2": "c2: power balance (closed, ~0)",
 }
+
+EXTRA_COLUMNS = (".physics.p_fusion_total_mw", "^cond.constraints.c2")
+"""Columns asked of the batched program beside the measures' own
+(`ouu.two_stage(extra_columns=...)`): the fusion power, analysed like the other
+outputs, and the closed residual, whose `max|c2|` over the valid rows is the check
+that every sample's closure held."""
 
 CONSTRAINT_NAMES = {
     2: "power balance", 8: "neutron wall load", 16: "net electric power", 17: "radiation fraction",
@@ -254,14 +262,18 @@ def build(variant: str = "nominal", with_c16: bool = True) -> tuple[Model, dict]
     two = ouu.two_stage(
         live, pairing=PAIRING, beliefs=beliefs_for(variant), held=(), n=2, seed=0,
         with_c16=with_c16, design_values=design_values, closing_values=closing_values,
+        extra_columns=EXTRA_COLUMNS,
     )
     fns = ouu.make(two)
     layout = fns["layout"]
     columns = tuple(c.spelling for c in two.columns)
     u0, u1 = layout["c_u"]
+    e0, e1 = layout["c_extra"]
     analysed = tuple(
         i for i, c in enumerate(columns)
-        if (i < layout["c_steps"] and c not in NOT_ANALYSED) or i == u0  # the closing variable
+        if (i < layout["c_steps"] and c not in NOT_ANALYSED)
+        or i == u0  # the closing variable
+        or e0 <= i < e1  # the extra columns (fusion power, the closed residual)
     )
     model = Model(two=two, fns=fns, beliefs=two.beliefs, columns=columns, analysed=analysed)
     primed, var_of = two.nominal_out, two.var_of
@@ -353,7 +365,8 @@ def valid_rows(model: Model, Y: np.ndarray) -> np.ndarray:
     return ouu.valid_rows(model.layout, Y)
 
 
-SKIP_SOBOL = ()
+SKIP_SOBOL = ("^cond.constraints.c2",)
+"""A closed residual is ~0 in every sample: its Sobol' indices are noise."""
 
 
 def analysis(model: Model, Y: np.ndarray) -> tuple[np.ndarray, list[str]]:
@@ -470,10 +483,11 @@ def monte_carlo_table(model: Model, Y: np.ndarray, check: dict) -> tuple[list, d
     nominal_of.update(check["inequalities_at_nominal"])
     nominal_of["coe_capped"] = min(nominal_of[".costs.coe"], COE_CAP)
     net_name = ".heat_transport.p_plant_electric_net_mw"
-    if "^cond.constraints.c16" in names:
-        nominal_of["^cond.constraints.c16"] = float(
-            np.asarray(model.two.nominal_out[model.two.var_of["^cond.constraints.c16"]])
-        )
+    for residual in ("^cond.constraints.c16", "^cond.constraints.c2"):
+        if residual in names:
+            nominal_of[residual] = float(
+                np.asarray(model.two.nominal_out[model.two.var_of[residual]])
+            )
     rows = []
     for col, name in enumerate(names):
         f = Yv[:, col]
@@ -509,6 +523,7 @@ def monte_carlo_table(model: Model, Y: np.ndarray, check: dict) -> tuple[list, d
         "p_worse_than_nominal": {c: float((Yv[:, i] > nominal_of[c]).mean()) for c, i in zip(inequalities, ineq, strict=True)},
         "mean_violations_per_sample": float((g > 0.0).sum(axis=1).mean()),
         "max_steps": int(Y[:, model.layout["c_steps"]].max()),
+        "max_abs_c2": float(np.max(np.abs(Yv[:, names.index("^cond.constraints.c2")]))),
     }
     return rows, summary
 
@@ -593,7 +608,7 @@ def render_mc(rows: list, summary: dict, variant: str) -> None:
               caption_note=(f"plain Monte Carlo, {summary['valid']} valid of {summary['samples']} samples; "
                             f"P(net < {summary['target_mw']:g} MW) = {summary['p_net_below_target']:.3f}; "
                             f"P(all inequalities satisfied) = {summary['p_all_inequalities_satisfied']:.3f}; "
-                            "residuals g <= 0 satisfied"))
+                            f"residuals g <= 0 satisfied; max |c2| = {sci(summary['max_abs_c2'])}"))
 
 
 BLUE, ORANGE = "#2a78d6", "#eb6834"

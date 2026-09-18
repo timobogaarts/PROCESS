@@ -10,7 +10,8 @@ sampled leaves and the first stage hoisted out of the batch, the design the file
 samples with the nominal appended; `make` compiles it (`--jac fwd|rev`, `--chunk`);
 `outer` states the outer problem as a graph -- the statistics node (`f`, the CVaRs,
 the failed fraction) and an `Optimise` driven by the `BoxedSlsqpDriver` with move
-limits and warm starts through the batched program's memo; `solve` runs it;
+limits and warm starts through the batched program's memo (`--no-warm` hands the
+driver `warm_start=None`, the control); `solve` runs it;
 `report`, `evaluate`, `summarise`, `per_sample`, `design_table`, `fresh_sample` and
 `sensitivity` are what the evidence reads.
 
@@ -30,7 +31,7 @@ economic rows (`kinds.ECONOMIC`) at their nominal too, `--inputs all` samples th
                            [--pairing one] [--table build] [--inputs physics] [--with-c16 [--alpha16 0.5]]
                            [--te-recourse K --te-range lo,hi] [--jac fwd] [--chunk C] [--tol 1e-4]
                            [--ftol 1e-6] [--gtol 1e-4] [--move-limit 0.25] [--start RUN.json]
-                           [--evidence [--fresh-seed 1]] [--name STEM] [--tag T]
+                           [--evidence [--fresh-seed 1]] [--name STEM] [--tag T] [--no-warm]
     $PY paper_tests/ouu.py --evidence --robust out/<run>.json [--alpha 0.9] [--fresh-seed 1] [--tag T]
     $PY paper_tests/ouu.py --sweep-te --robust out/<run>.json [--points 16]
     $PY paper_tests/ouu.py --decompose [--n 256] [--robust out/ouu_smoke.json] [--name STEM]
@@ -155,9 +156,11 @@ class Choice:
         return cls(**chosen)
 
 
-def build(choice: Choice) -> ouu.TwoStage:
-    """`ouu.two_stage` on the stellarator at PROCESS's deterministic design."""
-    live = session.open_session(NAME)
+def build(choice: Choice, extra_columns: tuple = (), live=None) -> ouu.TwoStage:
+    """`ouu.two_stage` on the stellarator at PROCESS's deterministic design;
+    `extra_columns` as `two_stage` takes them, `live` an open session to reuse.
+    """
+    live = session.open_session(NAME) if live is None else live
     design_values, closing_values = deterministic_values(live, choice.pairing)
     return ouu.two_stage(
         live,
@@ -174,6 +177,7 @@ def build(choice: Choice) -> ouu.TwoStage:
         alpha16=choice.alpha16,
         design_values=design_values,
         closing_values=closing_values,
+        extra_columns=extra_columns,
     )
 
 
@@ -211,7 +215,11 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
           chunks: int | None = None, tol: float = 1e-4, ftol: float = 1e-6, gtol: float = 1e-4,
           name: str = "ouu_smoke", with_evidence: bool = False, fresh_seed: int = 1, tag: str = "",
           max_outer: int = 60, delta_min: float = 1e-3, ftol_outer: float = 1e-5,
-          start: Path | None = None) -> dict:
+          start: Path | None = None, warm: bool = True) -> dict:
+    """`warm=False` (`--no-warm`): the outer driver's `warm_start` hook is `None`,
+    every model call from the starts the program holds -- the control for what the
+    incumbent's warm starts buy.
+    """
     model = build(choice)
     fns = ouu.make(model, jac=jac, chunks=chunks)
     n, alpha = model.n, model.alpha
@@ -228,6 +236,7 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
     built = ouu.outer(
         model, fns, eps=eps, max_iter=max_iter, max_outer=max_outer, delta=delta, delta_min=delta_min,
         tolerance=ftol, tol=tol, ftol_outer=ftol_outer, gtol=gtol, callback=outer_entries.append,
+        warm_start=ouu.DEFAULT if warm else None,
     )
     program = built.program
     n_g = model.n_g
@@ -288,7 +297,7 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
         "n": n, "alpha": alpha, "m_worst": model.m, "alpha16": model.alpha16, "m16": model.m16,
         "te_recourse": choice.te_recourse,
         "te_grid": None if model.te_grid is None else model.te_grid.tolist(), "eps_failed": eps,
-        "with_c16": choice.with_c16, "warm_starts": True,
+        "with_c16": choice.with_c16, "warm_starts": warm,
         "objective": model.objective, "inputs": choice.inputs, "n_inputs": len(model.beliefs),
         "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)), "jac": jac, "chunks": chunks,
@@ -828,15 +837,14 @@ def main(argv=None) -> int:
         scaling(sizes, modes, option(argv, "--chunk", 256), option(argv, "--timeout", 1800.0, float), sys.executable, "--fresh" in argv)
         return 0
     if "--smoke" in argv:
-        if "--no-warm" in argv:
-            raise SystemExit("--no-warm is gone: the port's outer problem warm-starts through the batched program's memo")
         choice = Choice.from_argv(argv)
         smoke(choice, option(argv, "--max-iter", 200), option(argv, "--eps", ouu.EPS_FAILED, float),
               option(argv, "--move-limit", 0.25, float),
               jac=option(argv, "--jac", "fwd", str), chunks=option(argv, "--chunk", None), tol=option(argv, "--tol", 1e-4, float),
               ftol=option(argv, "--ftol", 1e-6, float), gtol=option(argv, "--gtol", 1e-4, float), name=option(argv, "--name", "ouu_smoke", str),
               with_evidence="--evidence" in argv, fresh_seed=option(argv, "--fresh-seed", 1), tag=option(argv, "--tag", "", str),
-              start=Path(option(argv, "--start", "", str)) if "--start" in argv else None)
+              start=Path(option(argv, "--start", "", str)) if "--start" in argv else None,
+              warm="--no-warm" not in argv)
         return 0
     if "--decompose" in argv:
         choice = Choice.from_argv(argv, inputs=option(argv, "--inputs", "all", str), objective="levelised")

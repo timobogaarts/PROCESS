@@ -1298,6 +1298,308 @@ class SafeguardedNewtonDriver(SeededNewtonDriver):
         return (*unravel(u * scale), steps, converged, status)
 
 
+def is_single_unknown_root_find(node) -> bool:
+    """`is_root_find`, and exactly one unknown -- what `BracketedRootDriver` answers.
+    Whether that unknown is a scalar is a fact about its value, not the node, and is
+    checked at the call.
+    """
+    return is_root_find(node) and len(node.unknowns) == 1
+
+
+BRACKET_CONVERGED = 0
+BRACKET_OUT_OF_STEPS = 1
+BRACKET_COLLAPSED = 2
+BRACKET_NOT_FOUND = 3
+BRACKET_NON_FINITE = 4
+"""`Status` of a `BracketedRootDriver` solve: converged; `max_steps` spent with the
+bracket still open; the bracket collapsed to the working precision of the unknown
+without the residual reaching `rtol` (a residual that is not continuous there); no
+sign change found within `max_expansions` of the first bracket; a residual that came
+back non-finite inside the bracket (a nested solve that blew up), at which point the
+bracket can no longer be maintained."""
+
+
+def _count(value):
+    """An `int32` counter, so a `lax.cond`'s two branches agree on the dtype."""
+    return jnp.asarray(value, dtype=jnp.int32)
+
+
+class BracketedRootDriver(Driver):
+    """A **single-unknown** `RootFind` answered by a bracketed method, so that it
+    converges from any start: find two points where the residual changes sign, then
+    Newton inside the bracket with bisection as the fallback (`rtsafe`), then the
+    implicit derivative through `jax.lax.custom_root`.
+
+    Why not the safeguarded Newton: from a start far from the root a Newton, capped
+    and backtracked or not, stalls where the residual flattens, and the closing root
+    find of `architectures.closing` is exactly that from an outer optimiser's far trial
+    design or a belief sample's far root -- 35-42 % of samples at the handoff's far
+    design (`plans/handoff_2026-09-17.md`). A bracket is the one guarantee a 1-D root
+    has that an n-D one does not: once the residual is known to change sign between
+    two points, bisection cannot lose the root, and a Newton step is only ever taken
+    when it lands inside the bracket and shrinks it at least as fast as bisection
+    would (Numerical Recipes' `rtsafe` rule), so the tail is quadratic and the head is
+    safe.
+
+    **The bracket.** The first pair tried is the unknown's `bounds` when it has them
+    (the file's `boundl`/`boundu`, `closing.close` fills them from the session), else
+    `(x0 / growth, x0 * growth)`. Where the residual has one sign over that pair the
+    pair is widened geometrically -- the lower end divided by `growth`, the upper
+    multiplied -- up to `max_expansions` times, and the first widening that crosses
+    zero becomes the bracket, tightened to the two adjacent points. Bounds are a first
+    guess of where the root is and not a wall: an outer optimiser's trial design can
+    put the density's root outside the file's `[3e19, 3e20]`, and the flattened Newton
+    finds it there, so this driver must too. Geometric widening presumes the unknown
+    is one-signed and its root on the start's side of zero, as every PROCESS iteration
+    variable is; a start of exactly `0.0` cannot be widened about and is refused.
+
+    **Warm start.** When `|r(x0)|` is already within tolerance, nothing is bracketed
+    and no step is taken: `Steps` is 1 (the one evaluation). Otherwise a bracket is
+    always found first -- two or more evaluations of the block's body -- and the
+    Newton begins from `x0` when it lies inside the bracket, else from its midpoint.
+
+    **Traceable and batchable.** All `lax`: `cond` on the warm start, a `while_loop`
+    for the widening and one for the solve, no Python branching on a value, so it
+    runs under `jax.vmap` (rows finished early keep evaluating -- a `while_loop`'s
+    body runs until the last row's predicate is false, `select` on the carry) and
+    under `jax.jit`. The derivative of the root with respect to everything the block
+    reads comes from `lax.custom_root`'s implicit function theorem, one scalar
+    division, so `jax.jacfwd` through it never sees the loops. What the residual
+    itself nests -- a Picard on the cycle's cut copies (`closing.close(flatten=False)`)
+    -- carries its own implicit adjoint (`optimistix`), so the residual's derivative
+    per Newton step is one `jvp` through that.
+
+    `Steps` reports the **number of residual evaluations**, bracketing included --
+    the cost, in units of the block's body, which is what a comparison with a Newton's
+    step count should be made in. `Status` is one of the `BRACKET_*` codes. Tolerance
+    is `|r| <= atol + rtol * condition_scale`, the safeguarded Newton's test with an
+    absolute floor.
+    """
+
+    accepts = staticmethod(is_single_unknown_root_find)
+    requires = (Start,)
+
+    rtol: float = 1e-10
+    atol: float = 1e-10
+    bounds: tuple = ()
+    """`((VarPath, lower, upper), ...)` as the SQP drivers spell them; the entry for
+    this problem's unknown, if any, is the first bracket tried.
+    """
+    growth: float = 2.0
+    """Factor each widening of the bracket multiplies its upper end by and divides its
+    lower end by.
+    """
+    max_expansions: int = 20
+    """Widenings tried before `BRACKET_NOT_FOUND`: a factor `growth ** max_expansions`
+    each way of the first pair, 2^20 = a million by default.
+    """
+    max_steps: int = 60
+    """Newton-or-bisection steps after the bracket is found. A bisection halves the
+    bracket, so 60 steps from any bracket of finite relative width reach float64's
+    resolution even if every step were a bisection.
+    """
+    xtol: float = 1e-15
+    """The relative width of the bracket at which the loop stops as `BRACKET_COLLAPSED`
+    if the residual is still above tolerance.
+    """
+
+    @property
+    def reports(self) -> tuple:
+        """`(Steps, Converged, Status)`."""
+        return (Steps, Converged, Status)
+
+    def bracket_for(self, unknown: VarPath):
+        """`(lower, upper)` of `bounds` for `unknown`, or `None`."""
+        for var, lo, hi in self.bounds:
+            if var == unknown:
+                return float(lo), float(hi)
+        return None
+
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        """The root of `conditions` from `data[Start]`, then the verdict.
+
+        Raises
+        ------
+        ValueError
+            If there is no starting value, the unknown is not a scalar, or the
+            start is concretely `0.0`.
+        """
+        from jax import lax  # noqa: PLC0415
+
+        start = data.get(Start)
+        if start is None or len(conditions.unknowns) != 1:
+            raise ValueError(
+                f"BracketedRootDriver answers one scalar unknown from a starting value "
+                f"-- this block has {len(conditions.unknowns)} unknown(s) "
+                f"({', '.join(v.spelling for v in conditions.unknowns)})"
+                + (" and no start" if start is None else "")
+            )
+        flat_guess, unravel = ravel_pytree(start)
+        if flat_guess.size != 1:
+            raise ValueError(
+                f"BracketedRootDriver answers one scalar unknown, and "
+                f"{conditions.unknowns[0].spelling} has {flat_guess.size} entries"
+            )
+        x0 = flat_guess[0]
+        if not isinstance(x0, jax.core.Tracer) and float(x0) == 0.0:  # noqa: RUF069
+            raise ValueError(
+                f"BracketedRootDriver cannot widen a bracket about a start of exactly "
+                f"0.0 for {conditions.unknowns[0].spelling} -- supply a start of the "
+                f"root's sign and magnitude at its `^guess.*` port"
+            )
+        # Coordinates scaled by the start, as `SafeguardedNewtonDriver` has them: the
+        # start is `u = 1`, and the widening is geometric about it.
+        scale = jnp.where(x0 == 0.0, 1.0, x0)  # noqa: RUF069
+        rscale = condition_scale(conditions, start)[0]
+        tol = self.atol + self.rtol * rscale
+        growth = self.growth
+        max_expansions, max_steps, xtol = self.max_expansions, self.max_steps, self.xtol
+        pair = self.bracket_for(conditions.unknowns[0])
+
+        def residual(u):
+            out, _ = ravel_pytree(conditions(*unravel(jnp.reshape(u * scale, (1,)))))
+            return out[0]
+
+        def value_and_slope(f, u):
+            return jax.jvp(f, (u,), (jnp.ones_like(u),))
+
+        def first_pair(u0):
+            if pair is None:
+                return u0 / growth, u0 * growth
+            lo, hi = jnp.asarray(pair[0]) / scale, jnp.asarray(pair[1]) / scale
+            # A negative start flips the ends' order in `u`.
+            return jnp.minimum(lo, hi), jnp.maximum(lo, hi)
+
+        def crosses(ra, rb):
+            return jnp.isfinite(ra) & jnp.isfinite(rb) & (jnp.sign(ra) != jnp.sign(rb))
+
+        def find_bracket(f, u0):
+            """`(a, ra, b, rb, evaluations, found)` -- a sign change, or the last pair
+            tried.
+            """
+            a, b = first_pair(u0)
+            ra, rb = f(a), f(b)
+
+            def widen(state):
+                a, ra, b, rb, k, _found = state
+                a2, b2 = a / growth, b * growth
+                ra2, rb2 = f(a2), f(b2)
+                above = crosses(rb, rb2)
+                below = crosses(ra2, ra)
+                # Crossed above: the bracket is `(b, b2)`; below: `(a2, a)`; neither:
+                # the widened pair, and widen again.
+                new_a = jnp.where(above, b, a2)
+                new_ra = jnp.where(above, rb, ra2)
+                new_b = jnp.where(above, b2, jnp.where(below, a, b2))
+                new_rb = jnp.where(above, rb2, jnp.where(below, ra, rb2))
+                return new_a, new_ra, new_b, new_rb, k + 1, above | below
+
+            def go_on(state):
+                _a, _ra, _b, _rb, k, found = state
+                return ~found & (k < max_expansions)
+
+            a, ra, b, rb, k, found = lax.while_loop(
+                go_on, widen, (a, ra, b, rb, _count(0), crosses(ra, rb))
+            )
+            return a, ra, b, rb, _count(2) + 2 * k, found
+
+        def solve(f, u_init):
+            r0 = f(u_init)
+            warm = jnp.abs(r0) <= tol
+
+            def already(_):
+                # The start is a root: nothing to bracket, nothing to step.
+                return (
+                    u_init,
+                    r0,
+                    _count(1),
+                    jnp.asarray(True),
+                    _count(BRACKET_CONVERGED),
+                )
+
+            def from_cold(_):
+                a, ra, b, rb, n_eval, found = find_bracket(f, u_init)
+                inside = (a < u_init) & (u_init < b)
+                u = jnp.where(inside, u_init, 0.5 * (a + b))
+                r, dr = value_and_slope(f, u)
+                # The bracket is not oriented (`ra < 0 < rb` is not required): the
+                # update below compares a new residual's sign against `ra`'s.
+
+                def step(state):
+                    u, r, dr, a, ra, b, rb, dx_old, k, n_eval, ok = state
+                    newton = u - r / dr
+                    inside = (a < newton) & (newton < b)
+                    fast = jnp.abs(2.0 * r) < jnp.abs(dx_old * dr)
+                    take = inside & fast & jnp.isfinite(newton)
+                    u_new = jnp.where(take, newton, 0.5 * (a + b))
+                    dx = jnp.abs(u_new - u)
+                    r_new, dr_new = value_and_slope(f, u_new)
+                    finite = jnp.isfinite(r_new)
+                    same_as_a = jnp.sign(r_new) == jnp.sign(ra)
+                    a_new = jnp.where(finite & same_as_a, u_new, a)
+                    ra_new = jnp.where(finite & same_as_a, r_new, ra)
+                    b_new = jnp.where(finite & ~same_as_a, u_new, b)
+                    rb_new = jnp.where(finite & ~same_as_a, r_new, rb)
+                    return (
+                        jnp.where(finite, u_new, u),
+                        jnp.where(finite, r_new, r),
+                        jnp.where(finite, dr_new, dr),
+                        a_new,
+                        ra_new,
+                        b_new,
+                        rb_new,
+                        dx,
+                        k + 1,
+                        n_eval + 1,
+                        ok & finite,
+                    )
+
+                def go_on(state):
+                    u, r, _dr, a, _ra, b, _rb, _dx, k, _n, ok = state
+                    open_ = (b - a) > xtol * jnp.maximum(jnp.abs(u), 1e-300)
+                    return (jnp.abs(r) > tol) & (k < max_steps) & open_ & ok
+
+                init = (u, r, dr, a, ra, b, rb, b - a, _count(0), n_eval + 1, found)
+                u, r, _dr, a, _ra, b, _rb, _dx, k, n_eval, ok = lax.while_loop(
+                    go_on, step, init
+                )
+                converged = jnp.abs(r) <= tol
+                status = jnp.where(
+                    converged,
+                    BRACKET_CONVERGED,
+                    jnp.where(
+                        ~found,
+                        BRACKET_NOT_FOUND,
+                        jnp.where(
+                            ~ok,
+                            BRACKET_NON_FINITE,
+                            jnp.where(
+                                k >= max_steps, BRACKET_OUT_OF_STEPS, BRACKET_COLLAPSED
+                            ),
+                        ),
+                    ),
+                )
+                return u, r, n_eval, converged, _count(status)
+
+            u, r, n_eval, converged, status = lax.cond(warm, already, from_cold, None)
+            # As floats: `custom_root`'s aux must carry a float tangent.
+            return u, jnp.stack([n_eval, converged, status, r]).astype(float)
+
+        def tangent_solve(g, y):
+            return y / g(jnp.ones_like(y))
+
+        u, aux = lax.custom_root(
+            residual, jnp.ones_like(x0), solve, tangent_solve, has_aux=True
+        )
+        aux = jax.lax.stop_gradient(aux)
+        steps, converged, status = (
+            aux[0].astype(int),
+            aux[1] > 0.5,
+            aux[2].astype(int),
+        )
+        return (*unravel(jnp.reshape(u * scale, (1,))), steps, converged, status)
+
+
 class PicardDriver(CottaxPicardDriver):
     """`cottax.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
     and therefore an **implicit adjoint**.

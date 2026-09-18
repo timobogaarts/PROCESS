@@ -8,6 +8,9 @@ forward program; and one boxed SLSQP call through the outer graph moves the desi
 and reports. Nothing is pinned to a number a sample set could move -- the only
 numbers here are the nominal design's, and those are the closed MDA's own.
 
+Beside them, the columns a caller adds (`extra_columns`), the other drivers' verdicts
+in a row's validity, and `outer`'s hooks as keywords.
+
 Plus the `BoxedSlsqpDriver` on a toy `Optimise` it can be checked against by hand.
 """
 
@@ -120,6 +123,78 @@ def test_assembly_has_the_shape_the_handoff_states(model):
     assert counts["second"] == 104
     assert len(model.columns) == 4 + 12 + 2 + 3
     assert model.layout["c_u"] == (18, 21)
+    # No other driver in the recourse schedule reports `Converged` here (the three
+    # Picards report nothing), so the verdict block is empty, and so is the extra one.
+    assert model.verdicts == ()
+    assert model.extra == ()
+    assert model.layout["c_verdicts"] == (21, 21)
+    assert model.layout["c_extra"] == (21, 21)
+    assert model.layout["verdicts"] == model.layout["extra"] == ()
+    others = [
+        step.problem.spelling
+        for step in ouu.driven_problems(model.recourse)
+        if step.problem != model.place
+    ]
+    assert len(others) == 3
+    assert all(
+        not step.reports
+        for step in ouu.driven_problems(model.recourse)
+        if step.problem != model.place
+    )
+
+
+def test_extra_columns_are_carried_through_and_ignored_by_the_measures(live):
+    """`extra_columns`: a recourse output, a closed residual, a first-stage output
+    and an input, resolved by spelling, appended last; the nominal row reads the
+    un-batched closed MDA's value at each; `per_sample` / `summarise` carry them by
+    name; a non-finite extra does not invalidate a row; a misspelling is refused
+    with the spellings near it.
+    """
+    asked = (
+        ".physics.p_fusion_total_mw",
+        "^cond.constraints.c2",
+        ".stellarator.wp_width_r_min",  # first stage: read as a constant per sample
+        ".physics.hfact",  # an input, sampled: the belief's own value
+    )
+    model = ouu.two_stage(live, n=4, alpha=ALPHA, seed=0, extra_columns=asked)
+    layout = model.layout
+    assert [v.spelling for v in model.extra] == list(asked)
+    assert layout["extra"] == asked
+    assert layout["c_extra"] == (21, 25)
+    assert len(model.columns) == 25
+    assert model.columns[21:] == model.extra
+    fns = ouu.make(model)
+    rows = np.asarray(
+        jax.block_until_ready(
+            ouu.jitted(fns, "run_batch")(
+                jnp.asarray(model.x0), model.theta, jnp.asarray(model.starts0)
+            )
+        )
+    )
+    assert rows.shape == (5, 25)
+    e0, _e1 = layout["c_extra"]
+    for j, var in enumerate(model.extra):
+        reference = float(np.asarray(model.nominal_out[var]))
+        assert _rel(rows[-1, e0 + j], reference) < 1e-10, var.spelling
+    hfact = rows[:, e0 + 3]
+    assert np.allclose(hfact, np.asarray(model.theta[model.var_of[".physics.hfact"]]))
+    valid = ouu.valid_rows(layout, rows)
+    assert np.all(np.abs(rows[valid, e0 + 1]) < 1e-8)  # c2 closed where converged
+    by_name = ouu.extra_columns(layout, rows)
+    assert list(by_name) == list(asked)
+    assert np.array_equal(by_name[asked[0]], rows[:, e0])
+    columns = ouu.per_sample(layout, rows)
+    assert set(columns["extra"]) == set(asked)
+    assert columns["extra"][asked[0]].shape == (4,)
+    summary = ouu.summarise(model, layout, rows)
+    assert set(summary["extra"]) == set(asked)
+    assert summary["extra"][asked[0]]["nominal"] == pytest.approx(rows[-1, e0])
+    # Not measured: a NaN in an extra column leaves the row valid.
+    spoiled = rows.copy()
+    spoiled[:, e0] = np.nan
+    assert np.array_equal(ouu.valid_rows(layout, spoiled), ouu.valid_rows(layout, rows))
+    with pytest.raises(KeyError, match="p_fusion_total_mw"):
+        ouu.two_stage(live, n=4, extra_columns=(".physics.p_fusion_total_mv",))
 
 
 def test_te_recourse_takes_the_temperature_off_the_design(live):
@@ -263,6 +338,60 @@ def test_outer_graph_is_the_statistics_node_and_the_optimise(model, fns, program
     assert isinstance(built.driver, BoxedSlsqpDriver)
     assert built.driver.n_inequality == model.n_g + 1
     assert built.driver.jacobian == built.program.jacobian
+    assert built.driver.warm_start == built.program.adopt
+
+
+def test_outer_takes_its_hooks_as_keywords(model, fns):
+    """`warm_start` / `jacobian`: `DEFAULT` is the program's own, `None` is the
+    driver's own meaning (no warm start; `jacfwd` through the node), and any other
+    callable passes through.
+    """
+    built = ouu.outer(model, fns, warm_start=None, jacobian=None, max_iter=1)
+    assert built.driver.warm_start is None
+    assert built.driver.jacobian is None
+
+    def rows(flat_x):
+        return np.zeros((1 + model.n_g + 1, len(flat_x)))
+
+    def adopt(flat_x):
+        return None
+
+    built = ouu.outer(model, fns, warm_start=adopt, jacobian=rows, max_iter=1)
+    assert built.driver.warm_start is adopt
+    assert built.driver.jacobian is rows
+    assert repr(ouu.DEFAULT) == "DEFAULT"
+    built = ouu.outer(model, fns, warm_start=ouu.DEFAULT, max_iter=1)
+    assert built.driver.warm_start == built.program.adopt
+
+
+def test_valid_rows_needs_every_verdict():
+    """`valid_rows` on a hand-made layout: the closing verdict, every other driver's
+    verdict, and finiteness up to `c_steps` all have to hold.
+    """
+    layout = {
+        "c_coe": 0,
+        "c_net": 1,
+        "c_avail": 2,
+        "c_concost": 3,
+        "c_g": (4, 5),
+        "c_steps": 5,
+        "c_conv": 6,
+        "c_u": (7, 8),
+        "c_verdicts": (8, 10),
+        "verdicts": ("^problem.a", "^problem.b"),
+        "c_extra": (10, 11),
+        "extra": (".x",),
+        "tiny": ouu.TINY,
+    }
+    good = [1.0, 2.0, 0.5, 3.0, -0.1, 4.0, 1.0, 0.7, 1.0, 1.0, np.nan]
+    rows = np.array([
+        good,
+        [*good[:6], 0.0, *good[7:]],  # the closing problem failed
+        [*good[:8], 0.0, 1.0, np.nan],  # driver a failed
+        [*good[:8], 1.0, 0.0, np.nan],  # driver b failed
+        [np.nan, *good[1:]],  # a measured column non-finite
+    ])
+    assert ouu.valid_rows(layout, rows).tolist() == [True, False, False, False, False]
 
 
 def test_one_boxed_slsqp_call_moves_the_design_and_reports(model, fns):
@@ -351,6 +480,58 @@ def _toy_schedule(driver) -> tuple[Schedule, dict]:
     schedule = Schedule(AnswerableGraph(driven))
     starts = dict(guess_sources(driven).items())
     return schedule, starts
+
+
+def test_other_verdicts_lists_every_other_reporting_driver():
+    """Two independent toy problems in one schedule, both driven by a driver that
+    reports `Converged`: `other_verdicts` for one names the other's verdict, and only
+    that; `driven_problems` sees both.
+    """
+    driver = BoxedSlsqpDriver(
+        n_inequality=1,
+        bounds=((_var(toy.x), -10.0, 10.0), (_var(toy.y), -10.0, 10.0)),
+    )
+    node = ImplementedFunction(
+        reads=(_var(toy.x), _var(toy.y)),
+        owns=(_var(toy.f), _var(toy.g)),
+        fn=_Quadratic(),
+    )
+    problem = Optimise(
+        objective=_var(toy.f),
+        unknowns=(_var(toy.x), _var(toy.y)),
+        inequalities=(_var(toy.g),),
+    )
+    other = area("other")
+    node2 = ImplementedFunction(
+        reads=(_var(other.x), _var(other.y)),
+        owns=(_var(other.f), _var(other.g)),
+        fn=_Quadratic(),
+    )
+    problem2 = Optimise(
+        objective=_var(other.f),
+        unknowns=(_var(other.x), _var(other.y)),
+        inequalities=(_var(other.g),),
+    )
+    driver2 = BoxedSlsqpDriver(
+        n_inequality=1,
+        bounds=((_var(other.x), -10.0, 10.0), (_var(other.y), -10.0, 10.0)),
+    )
+    place, place2 = NodePath((GetAttrKey("Opt"),)), NodePath((GetAttrKey("Opt2"),))
+    graph = Graph.of({
+        NodePath((GetAttrKey("Toy"),)): node,
+        place: problem,
+        NodePath((GetAttrKey("Other"),)): node2,
+        place2: problem2,
+    })
+    driven = Assign(place2, driver2).apply(Assign(place, driver).apply(graph))
+    schedule = Schedule(AnswerableGraph(driven))
+    assert {s.problem for s in ouu.driven_problems(schedule)} == {place, place2}
+    assert ouu.other_verdicts(schedule, place) == (Converged.name_for(place2),)
+    assert ouu.other_verdicts(schedule, place2) == (Converged.name_for(place),)
+    assert set(ouu.other_verdicts(schedule, NodePath((GetAttrKey("None"),)))) == {
+        Converged.name_for(place),
+        Converged.name_for(place2),
+    }
 
 
 def test_boxed_slsqp_driver_on_a_toy_converges_through_re_centring():
