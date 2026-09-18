@@ -745,6 +745,207 @@ def _usable(start) -> bool:
     )
 
 
+def condition_scale(conditions: ConditionMap, start):
+    """Per-condition scale for a Newton's residual norm and its tolerance test.
+
+    A residualised fixed point's gap `^cond.X = g(^hat.X, ...) - ^hat.X` is in the unit
+    of the unknown `^hat.X` (a density here: 1e20), so it is scaled by that unknown's
+    start; a condition with no like-named unknown -- a normalised constraint, scale 1 --
+    by 1. Without this a combined problem's `max|r|` is the density gap, and a tolerance
+    of 1e-10 on it is below float64's resolution at 1e20.
+    """
+    tails = {
+        u.spelling.split(".", 1)[1]: jnp.asarray(x).reshape(-1)
+        for u, x in zip(conditions.unknowns, start, strict=True)
+    }
+    scales = []
+    for c in conditions.conditions:
+        tail = c.spelling.split(".", 1)[1] if "." in c.spelling else c.spelling
+        x = tails.get(tail)
+        scales.append(
+            jnp.where(x == 0.0, 1.0, jnp.abs(x))  # noqa: RUF069 -- exactly zero: no scale
+            if x is not None
+            else jnp.ones(1)
+        )
+    return jnp.concatenate(scales)
+
+
+class SafeguardedNewtonDriver(SeededNewtonDriver):
+    """Newton on a `RootFind`, reporting its verdict (`Steps`, `Converged`, `Status`)
+    instead of raising it, with the two safeguards an outer line search needs: a
+    relative step cap and backtracking on the residual norm, in coordinates scaled by
+    the starting guess.
+
+    An undamped Newton on a residual with **no root** runs away: an outer optimiser's
+    trial point can put the power balance where it tends to a non-zero constant as
+    `hfact -> inf`, `optimistix.Newton` then reaches `hfact = 5e211`, a derivative
+    downstream comes back non-finite and the outer driver refuses the whole solve.
+    optimistix's damped least-squares solvers raise from inside `lineax` on such a
+    block -- a trial step of theirs sends a nested Picard non-finite and `error_if`
+    turns that into an exception rather than a `nan` -- so the loop is written out:
+    `jax.lax.custom_root` for the implicit derivative, a `while_loop` of capped,
+    backtracked steps inside. Where a root exists it converges like Newton; where none
+    exists it stops at a finite point with a non-zero residual (`Converged` false), so
+    the outer line search sees a finite, infeasible merit and backs off.
+
+    What one step costs: the residual and its directional derivative come from one
+    `jax.jvp` at the trial point, and the accepted trial's derivative is the next step's
+    Jacobian, so a step is one evaluation of the cycle, not two. With
+    `jacobian="broyden"` (the default) the full Jacobian is built once, at the start,
+    by `n` forward tangents, and every later step updates it by Broyden's rank-1 secant
+    formula from the primal residuals it evaluates anyway -- one primal evaluation and
+    no tangent per step, superlinear, about one step more than Newton at the tail.
+    `"newton"` keeps the exact Jacobian per step. The start Jacobian's columns are
+    taken by one `jvp` each rather than `vmap` over the basis: XLA fuses the `vmap`ped
+    tangents with the primal into one kernel that is slower than separate ones, and
+    the stacked tangent intermediate is the largest buffer of the call.
+
+    The residual is scaled per condition (`condition_scale`), and the step cap
+    shortens the whole Newton direction by one factor rather than clipping each
+    component, which keeps the direction a Newton direction.
+    """
+
+    rtol: float = 1e-10
+    atol: float = 1e-10
+    max_steps: int = 40
+    cap: float = 0.5
+    """Largest step, relative to the current iterate: the Newton direction scaled by
+    one factor so that no component moves by more than this fraction."""
+    halvings: int = 12
+    """Backtracking budget per Newton step. **Only an active point may spend it**
+    (`worse` below is masked by `norm(r) > tol`): under `jax.vmap` a `while_loop` runs
+    its body for every point until the last one's predicate is false, with `select` on
+    the carry -- so a point the outer loop has already finished still evaluates a
+    Newton step, and at a root that step is noise, `norm(r_new) >= norm(r)` half the
+    time, and its halving loop would run to the cap, each halving one evaluation of
+    the whole cycle for the whole batch. For a single point the mask changes nothing:
+    the outer `go_on` implies it."""
+    jacobian: str = "broyden"
+    """`"broyden"` or `"newton"` -- see the class docstring."""
+
+    @property
+    def reports(self) -> tuple:
+        """`(Steps, Converged, Status)` -- what `__call__` returns after the unknowns.
+        `Status` is 0 converged, 1 out of steps, 2 stalled (no step lowered the
+        residual within the backtracking budget).
+        """
+        return (Steps, Converged, Status)
+
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        """The root of `conditions` from `data[Start]`, then the verdict.
+
+        Raises
+        ------
+        ValueError
+            If there is no starting value and no `seed`.
+        """
+        from jax import lax  # noqa: PLC0415
+
+        start = data.get(Start)
+        if self.seed is not None and not _usable(start):
+            start = self.seed(conditions)
+        if start is None:
+            raise ValueError(
+                f"SafeguardedNewtonDriver needs a starting value for every unknown "
+                f"({', '.join(v.spelling for v in conditions.unknowns)}) -- supply "
+                f"one in env at its `^guess.*` port, or give this driver a `seed`"
+            )
+        flat_guess, unravel = ravel_pytree(start)
+        scale = jnp.where(flat_guess == 0.0, 1.0, flat_guess)  # noqa: RUF069
+        rscale = condition_scale(conditions, start)
+        tol, cap, halvings, max_steps = (
+            self.rtol,
+            self.cap,
+            self.halvings,
+            self.max_steps,
+        )
+        n = flat_guess.size
+        broyden = self.jacobian == "broyden"
+
+        def residual(u):
+            out, _ = ravel_pytree(conditions(*unravel(u * scale)))
+            return out
+
+        def norm(r):
+            return jnp.max(jnp.abs(r / rscale))
+
+        def value_and_jacobian(f, u):
+            """`f(u)` and its Jacobian from one primal pass: one `jvp` per column."""
+            eye = jnp.eye(n, dtype=u.dtype)
+            r, first = jax.jvp(f, (u,), (eye[0],))
+            columns = [first] + [jax.jvp(f, (u,), (eye[i],))[1] for i in range(1, n)]
+            return r, jnp.stack(columns, axis=1)
+
+        def solve(f, u0):
+            def step(state):
+                u, r, jac, k, _stalled = state
+                du = -jnp.linalg.solve(jac, r)
+                du *= jnp.minimum(
+                    1.0, cap / jnp.max(jnp.abs(du) / jnp.maximum(jnp.abs(u), 1e-3))
+                )
+                active = norm(r) > tol  # false where the outer loop is done (vmap)
+
+                if broyden:
+
+                    def worse(bs):
+                        _t, r_new, j = bs
+                        bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
+                        return bad & (j < halvings) & active
+
+                    def halve(bs):
+                        t, _r_new, j = bs
+                        t *= 0.5
+                        return t, f(u + t * du), j + 1
+
+                    t, r_new, _j = lax.while_loop(worse, halve, (1.0, f(u + du), 0))
+                    s_, y_ = t * du, r_new - r
+                    jac_new = jac + jnp.outer(y_ - jac @ s_, s_) / jnp.maximum(
+                        s_ @ s_, 1e-300
+                    )
+                else:
+
+                    def worse(bs):
+                        _t, r_new, _jac_new, j = bs
+                        bad = ~jnp.all(jnp.isfinite(r_new)) | (norm(r_new) >= norm(r))
+                        return bad & (j < halvings) & active
+
+                    def halve(bs):
+                        t, _r_new, _jac_new, j = bs
+                        t *= 0.5
+                        return t, *value_and_jacobian(f, u + t * du), j + 1
+
+                    t, r_new, jac_new, _j = lax.while_loop(
+                        worse, halve, (1.0, *value_and_jacobian(f, u + du), 0)
+                    )
+                accepted = jnp.all(jnp.isfinite(r_new)) & (norm(r_new) < norm(r))
+                u_new = jnp.where(accepted, u + t * du, u)
+                r_new = jnp.where(accepted, r_new, r)
+                jac_new = jnp.where(accepted, jac_new, jac)
+                return u_new, r_new, jac_new, k + 1, ~accepted
+
+            def go_on(state):
+                _u, r, _jac, k, stalled = state
+                return (norm(r) > tol) & (k < max_steps) & ~stalled
+
+            r0, jac0 = value_and_jacobian(f, u0)
+            u, r, _jac, k, stalled = lax.while_loop(
+                go_on, step, (u0, r0, jac0, 0, False)
+            )
+            # As floats: `custom_root`'s aux must carry a float tangent.
+            return u, jnp.stack([k, norm(r) <= tol, stalled]).astype(float)
+
+        def tangent_solve(g, y):
+            return jnp.linalg.solve(jax.jacfwd(g)(jnp.zeros_like(y)), y)
+
+        u, aux = lax.custom_root(
+            residual, jnp.ones_like(flat_guess), solve, tangent_solve, has_aux=True
+        )
+        aux = jax.lax.stop_gradient(aux)
+        steps, converged, stalled = aux[0].astype(int), aux[1] > 0.5, aux[2] > 0.5
+        status = jnp.where(converged, 0, jnp.where(stalled, 2, 1))
+        return (*unravel(u * scale), steps, converged, status)
+
+
 class PicardDriver(CottaxPicardDriver):
     """`cottax.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
     and therefore an **implicit adjoint**.
