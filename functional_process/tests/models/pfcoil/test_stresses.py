@@ -17,8 +17,8 @@ import numpy as np
 from scipy.special import ellipe as scipy_ellipe
 from scipy.special import ellipk as scipy_ellipk
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil.stresses import (
     _ellipe,
     _ellipk,

@@ -35,7 +35,7 @@ item this unit hands back.
 import jax.numpy as jnp
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.cottax.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,
     calculate_quench_protection_current_density,

@@ -18,7 +18,7 @@ Like `divertor.md`'s `st_div`, no PROCESS unit test exercises this fragment dire
 `a_div_surface_total`), so there is no `legacy_sample` here -- coverage is fuzz-only.
 """
 
-from functional_process.cottax._harness import Tier1Contract
+from functional_process.tests._harness import Tier1Contract
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s3 import (
     calculate_divertor_plate_mass,
 )

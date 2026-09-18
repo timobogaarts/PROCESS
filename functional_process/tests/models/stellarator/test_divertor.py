@@ -7,8 +7,8 @@ to reuse here, only `fuzz_bounds`, so this unit's coverage is entirely against t
 in the audit record.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import data_reference
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import data_reference
 from functional_process.cottax.models.stellarator.divertor import calculate_divertor
 from process.models.stellarator.divertor import st_div
 

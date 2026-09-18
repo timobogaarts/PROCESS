@@ -5,8 +5,8 @@ All four functions are already pure in `process/`, so the PROCESS reference is c
 directly with no `DataStructure` adapter needed.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.models.engineering.ivc_functions import (
     dshellarea,
     dshellvol,

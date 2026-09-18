@@ -5,7 +5,7 @@ No matching PROCESS unit test exists for `calculate_coils_mass` or its 8 sub-fun
 `forces.py`.
 """
 
-from functional_process.cottax._harness import Tier1Contract
+from functional_process.tests._harness import Tier1Contract
 from functional_process.cottax.models.stellarator.coils.mass import calculate_coils_mass
 from process.core.model import DataStructure
 from process.models.stellarator.coils.mass import (

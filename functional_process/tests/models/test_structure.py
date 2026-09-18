@@ -11,7 +11,7 @@ at all when called with `output=False` (the only branch that touches `self` is t
 directly -- no `DataStructure` backdoor to close.
 """
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.cottax.models.structure import calculate_structure_masses
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.models.structure import Structure

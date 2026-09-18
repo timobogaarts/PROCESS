@@ -21,10 +21,7 @@ import functools
 import numpy as np
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
-from functional_process.cottax._harness.process_reference import unpacked
-from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.indat import (
+from functional_process.cottax.input.indat import (
     CICC_SUPERCONDUCTOR_PROPERTIES,
     TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
     UNPORTED,
@@ -59,7 +56,9 @@ from functional_process.cottax.models.tfcoil.superconducting import (
     vv_stress_on_quench,
     vv_stress_quench_from_build,
 )
-from functional_process.tests.test_machine import TOKAMAK_BASELINE_INDAT
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.process_reference import unpacked
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.tfcoil.superconducting import (
     CICCSuperconductingTFCoil,
@@ -1593,12 +1592,18 @@ def test_i_str_wp_zero_is_refused_end_to_end(tmp_path):
     that silently kept reading `str_wp` would produce a wrong critical current with no
     signal at all. This is that signal, executed.
     """
+    # `large_tokamak_eval.IN.DAT` with the one switch flipped: the least an IN.DAT
+    # must say for `machine_from_indat` to build a tokamak, and a real file says it.
+    import pathlib  # noqa: PLC0415
+
+    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE  # noqa: PLC0415
+
     indat = tmp_path / "TOK.DAT"
-    indat.write_text(
-        "".join(
-            f"{f} = {v if isinstance(v, str) else int(v)}\n"
-            for f, v in {**TOKAMAK_BASELINE_INDAT, "i_str_wp": 0}.items()
-        )
-    )
+    lines = [
+        line
+        for line in pathlib.Path(TOKAMAK_INPUT_FILE).read_text().splitlines()
+        if not line.startswith("i_str_wp")
+    ]
+    indat.write_text("\n".join([*lines, "i_str_wp = 0", ""]))
     with pytest.raises(NotImplementedError, match="i_str_wp_i_tf_sc_mat"):
         machine_from_indat(str(indat))

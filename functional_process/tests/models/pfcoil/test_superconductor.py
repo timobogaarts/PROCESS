@@ -17,8 +17,8 @@ produces the two critical current densities this unit is about.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil.superconductor import (
     calculate_cs_critical_current_density_iter_nb3sn,
     calculate_cs_critical_current_density_wst_nb3sn,

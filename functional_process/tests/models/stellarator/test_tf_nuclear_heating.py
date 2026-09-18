@@ -5,8 +5,8 @@ reference adapter pins `i_tf_sup` to that value rather than exposing it as a sam
 argument -- consistent with `switches.md`'s `i_tf_sup` split decision.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.stellarator.tf_nuclear_heating import (
     calculate_sc_tf_coil_nuclear_heating,
 )

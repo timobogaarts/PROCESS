@@ -17,9 +17,9 @@
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import process_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import process_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.scrape_off_layer import (
     Eich2013SOLPowerDecayLength,
     Mast2014SOLPowerDecayLength1,

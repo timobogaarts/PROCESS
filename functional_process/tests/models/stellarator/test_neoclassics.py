@@ -19,8 +19,8 @@ classification rather than asserting it.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.stellarator.neoclassics import (
     calculate_collision_frequency,
     calculate_drift_velocity,

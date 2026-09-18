@@ -18,8 +18,8 @@ test (`Buildings.run()`'s preamble is not itself under test anywhere in
 documents for `st_build`.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.buildings.buildings import (
     calculate_bldgs,
     calculate_bldgs_sizes,

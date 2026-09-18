@@ -47,6 +47,21 @@ class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
 
     j_tf_wp_quench_heat_max = OutputInto(tfcoil)
 
+    @classmethod
+    def at(cls, tftmp: float, temp_tf_conductor_quench_max: float):
+        """The occupant for these two temperatures, its helium table computed here --
+        the one CoolProp call of the tokamak scope, made while the machine is stated.
+        """
+        den_helium, cp_helium = helium_properties_at_quench_nodes(
+            temp_he_peak=tftmp, temp_quench_max=temp_tf_conductor_quench_max
+        )
+        return cls(
+            tftmp=tftmp,
+            temp_tf_conductor_quench_max=temp_tf_conductor_quench_max,
+            den_helium_at_nodes=den_helium,
+            cp_helium_at_nodes=cp_helium,
+        )
+
     def __call__(
         self,
         a_tf_turn_cable_space_no_void=From(tfcoil),

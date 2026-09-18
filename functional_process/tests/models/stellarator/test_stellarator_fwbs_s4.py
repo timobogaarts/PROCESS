@@ -16,8 +16,8 @@ So this module follows the S3 precedent instead (`test_stellarator_fwbs_s3.py`, 
 following `test_structure.py`'s `msupstr` adapter): the references below
 reproduce PROCESS's statements directly, transcribed from the source range and textually
 independent of `stellarator_fwbs_s4.py`. The end-to-end grounding for this unit comes
-from `run_mda_harness.py`, which compares these nodes' outputs against a real converged
-PROCESS solve of `stellarator_helias.IN.DAT` -- a stronger check than a synthesised
+from `tests/test_architectures.py`, which solves `stellarator_helias.IN.DAT` through
+these nodes under every architecture -- a stronger check than a synthesised
 `st_fwbs` call, and the one that motivated porting S4 at all
 (`_audit/boundary_inputs_audit.md` § 7 item 3).
 
@@ -30,7 +30,7 @@ There is therefore no `legacy_sample` to add -- coverage is fuzz-only, at
 volumes.
 """
 
-from functional_process.cottax._harness import Tier1Contract
+from functional_process.tests._harness import Tier1Contract
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s4 import (
     calculate_blanket_component_masses,
     calculate_shield_mass,

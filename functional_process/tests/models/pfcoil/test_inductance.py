@@ -34,8 +34,8 @@ of Bunet's formula rather than a whole coil's geometry.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_PF_COILS,

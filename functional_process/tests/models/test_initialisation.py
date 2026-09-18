@@ -18,23 +18,50 @@ Two halves, and they fail differently:
   for all seven configurations. That is the half that would catch a resolver wired to
   the wrong switch, or a slot occupied on a machine PROCESS does not write.
 
-`cold_start.cold_state` is cached on disk, so the seven runs cost a first-time price
-(~6 s per stellarator, under a second per tokamak) and nothing after.
+The seed is PROCESS's own `DataStructure` after `init_process`, before any model has
+run -- one `SingleRun` per configuration, ~6 s per stellarator and under a second per
+tokamak, built once per session.
 """
+
+import functools
+import shutil
+import tempfile
+from pathlib import Path
 
 import jax
 import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from functional_process.cottax import indat  # noqa: E402
-from functional_process.cottax.cold_start import cold_state  # noqa: E402
-from functional_process.cottax.indat import graph_for, machine_from_indat  # noqa: E402
-from functional_process.cottax.native import CONFIGURATIONS, stem  # noqa: E402
+from functional_process.cottax.architectures.evaluate import resolve  # noqa: E402
+from functional_process.cottax.input import indat  # noqa: E402
+from functional_process.cottax.input.indat import (  # noqa: E402
+    graph_for,
+    machine_from_indat,
+)
+from functional_process.cottax.input.native import CONFIGURATIONS, stem  # noqa: E402
 from functional_process.vocabulary import (  # noqa: E402
     SuperconductorModel,
     TFConductorModel,
 )
+
+
+@functools.cache
+def seed_of(input_file):
+    """PROCESS's `DataStructure` after `init_process` on `input_file`, nothing run."""
+    from process.main import SingleRun  # noqa: PLC0415
+
+    source = resolve(input_file)
+    # A scratch copy, with the `.stella_conf.json` a stellarator file reads beside it:
+    # `SingleRun` writes its outputs next to the input.
+    directory = Path(tempfile.mkdtemp())
+    shutil.copy(source, directory / source.name)
+    stem_ = source.name.removesuffix(".IN.DAT")
+    companion = source.with_name(f"{stem_}.stella_conf.json")
+    if companion.exists():
+        shutil.copy(companion, directory / companion.name)
+    return SingleRun(str(directory / source.name), "vmcon").data
+
 
 # --------------------------------------------------------------- the resolvers alone
 
@@ -210,7 +237,7 @@ def test_every_occupied_slot_agrees_with_init_process(input_file):
     both sides, so a difference in the last digits would mean the two are not the same
     number rather than that one of them rounded.
     """
-    seed = cold_state(input_file).seed
+    seed = seed_of(input_file)
     machine = machine_from_indat(input_file)
     for slot, places in SEED_FIELDS.items():
         occupant = getattr(machine.initialisation, slot)
@@ -235,7 +262,7 @@ def test_an_empty_slot_is_a_field_init_process_leaves_alone(input_file):
     pulsed, or as single-null, fails here rather than silently keeping a boundary input
     the solve then answers from a stale default.
     """
-    seed = cold_state(input_file).seed
+    seed = seed_of(input_file)
     machine = machine_from_indat(input_file)
     if machine.initialisation.energy_storage_building_volume is None:
         assert int(seed.pulse.i_pulsed_plant) == 1
@@ -259,7 +286,7 @@ def test_st_init_s_literals_are_the_seed_s_on_a_stellarator_and_absent_otherwise
     stellarator arm of one dispatch -- and on a tokamak the *same* fields must not be
     those literals, or the port would be reproducing a forcing PROCESS did not apply.
     """
-    seed = cold_state(input_file).seed
+    seed = seed_of(input_file)
     machine = machine_from_indat(input_file)
     stellarator = int(seed.stellarator.istell) != 0
     for slot, expected in ST_INIT_LITERALS.items():

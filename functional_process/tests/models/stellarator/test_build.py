@@ -15,7 +15,7 @@ first and overrides only the fields its own port signature covers, so a field th
 doesn't take is still non-degenerate for the parts of `st_build` that run regardless.
 """
 
-from functional_process.cottax._harness import Tier1Contract
+from functional_process.tests._harness import Tier1Contract
 from functional_process.cottax.models.stellarator.build import (
     calculate_a_fw_total_no_powerflow,
     calculate_a_fw_total_with_powerflow,

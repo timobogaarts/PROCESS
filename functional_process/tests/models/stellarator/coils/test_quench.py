@@ -8,8 +8,8 @@ port does internally (see `quench.md`'s "`coilcurrent` eliminated" note) before 
 the real PROCESS function, which still takes `coilcurrent` as an explicit argument.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.stellarator.coils.quench import (
     calculate_quench_protection,
     calculate_quench_protection_current_density,

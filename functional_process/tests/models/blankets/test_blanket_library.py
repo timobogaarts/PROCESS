@@ -31,9 +31,9 @@ import functools
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import process_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import process_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.blankets.blanket_library import (
     apply_coverage_factors_double_null,
     apply_coverage_factors_single_null,

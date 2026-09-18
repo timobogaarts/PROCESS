@@ -5,12 +5,12 @@ directly (four are already plain `@staticmethod`s / a bare module function -- no
 `DataStructure` back door to close, so no adapter has to build one).
 """
 
-from functional_process.cottax._harness import (
+from functional_process.tests._harness import (
     DeclaredDeviation,
     Tier1Contract,
     Tolerance,
 )
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.pure_formulas import (
     calaculate_stored_thermal_energy,
     calculate_total_plasma_heating_power,

@@ -27,8 +27,8 @@ in `stress.md` rather than hidden here.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.tfcoil.stress import (
     extended_plane_strain,
     eyoung_parallel,

@@ -7,8 +7,8 @@ module-level function called directly through the port's (unchanged) signature -
 lifted from `tests/unit/models/test_superconductors.py`'s own parametrised cases.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.models.physics.superconductors import (
     bi2212,
     bottura_scaling,

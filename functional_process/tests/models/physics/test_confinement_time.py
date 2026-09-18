@@ -18,8 +18,8 @@ backdoor" technique used throughout this harness.
 
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.confinement_time import (
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,

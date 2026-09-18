@@ -46,9 +46,9 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 
 import functools
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import process_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import process_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,

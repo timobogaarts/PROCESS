@@ -15,8 +15,8 @@ already-validated oracle from a single case. `p_perp` is computed here exactly a
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,

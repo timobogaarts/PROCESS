@@ -11,11 +11,11 @@ claim "these are the only two reads, and closing the back-door is safe" into som
 the test suite would catch if it were wrong.
 """
 
-from functional_process.cottax._harness import (
+from functional_process.tests._harness import (
     Tier1Contract,
     bounds_from_iteration_variables,
 )
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.stellarator.density_limits import (
     calculate_ecrh_density_limit,
     calculate_sudo_density_limit,

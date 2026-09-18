@@ -9,8 +9,8 @@ unit ports, is stubbed to raise a sentinel exception, caught immediately after. 
 `outfile`/`mfile` fixture and no stub for any of `outplas`'s other ~15 sub-model calls.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.dimensionless_parameters import (
     calculate_dimensionless_plasma_parameters,
 )

@@ -43,19 +43,19 @@ from cottax.nodes import Implemented
 from cottax.names import PathMap
 from jax.tree_util import DictKey
 
-from functional_process.cottax._harness import (
+from functional_process.tests._harness import (
     Sample,
     Tier1Contract,
     Tier2Contract,
     fuzz_samples,
     legacy_sample,
 )
-from functional_process.cottax._harness import path as vpath
-from functional_process.cottax._harness.process_reference import (
+from functional_process.tests._harness import path as vpath
+from functional_process.tests._harness.process_reference import (
     data_reference,
     process_reference,
 )
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.vacuum.vacuum import (
     XMULT,
     DuctDiameterRootFind,

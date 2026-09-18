@@ -13,19 +13,19 @@ introduce (graph, node, cut, fixed point, problem, driver, nest, combine).
 | [`mdf/`](mdf/mdf.ipynb) | MDF, PROCESS's own architecture | cut, insert the optimisation problem, nest everything inside it |
 | [`idf/`](idf/idf.ipynb) | IDF | cut, insert, residualise and combine the coupling copies, nest the models' own solves |
 | [`sand/`](sand/sand.ipynb) | SAND | cut, insert, residualise and combine every problem |
-| [`two_opt_driver/`](two_opt_driver/two_opt_driver.ipynb) | two optimisers in sequence | cut, insert two problems, residualise, combine per loop; the graph decides whether the split is legal. Full experiment in [`two_driver_report.md`](two_opt_driver/two_driver_report.md) |
-| [`paper/`](paper/README.md) | -- | where the cases the paper shows go |
+| [`two_opt_driver/`](two_opt_driver/two_opt_driver.ipynb) | two optimisers in sequence | cut, insert two problems, residualise, combine per loop; the graph decides whether the split is legal |
 
 The notebooks call the library (`mda.cut_ops`, `recipes`, `sand.optimise_graph`,
-`sand_harness.assemble`, `mdf.assemble`, `sand.sand_schedule`, `run_cold_matrix`'s
+`sand.assemble`, `mdf.assemble`, `idf.idf_graph`, `sand.sand_schedule`, `evaluate`'s
 seeding) and check that the spelled-out recipe builds the same graph the library does.
+`session.open_session(path)` is the one-line form of each.
 
 ## Running them
 
 The env has to import `process`, `cottax` and `functional_process` together
-(`../../CLAUDE.md`, "The environment"). The notebooks put the repo and, if it is laid out
-as `two_opt_driver/scripts/README.md` describes, the sibling `jaxgraph/src` on
-`sys.path` themselves and print which `cottax` answered. Open them in Jupyter or VS
+(`../../CLAUDE.md`, "The environment"). The notebooks put the repo and, if it is a
+sibling of the repo's parent, `jaxgraph/src` on `sys.path` themselves and print which
+`cottax` answered. Open them in Jupyter or VS
 Code, or run headlessly:
 
 ```bash
@@ -35,7 +35,7 @@ PYTHONPATH=~/projects/jaxgraph/src:. $PY -m functional_process.architecture_exam
 ```
 
 Each notebook ends in a `RESULT` dict; `functional_process/tests/examples/` runs every
-notebook and checks that dict (`tier4`, about two minutes in all):
+notebook and checks that dict (`tier4`, about three minutes in all):
 
 ```bash
 $PY -m pytest functional_process/tests/examples -m tier4

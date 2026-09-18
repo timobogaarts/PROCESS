@@ -28,9 +28,9 @@ finer split the nodes use -- exactly the trade `models/physics/confinement_time.
 
 import copy
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import process_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import process_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,

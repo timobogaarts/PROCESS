@@ -8,8 +8,8 @@ transcribed.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.models.physics.impurity_radiation import (
     calculate_average_charge_at_temp,
     element2index,

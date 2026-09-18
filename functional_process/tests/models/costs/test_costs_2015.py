@@ -7,8 +7,8 @@ branch-free, fixed-length -- see `costs_2015.md`. Legacy samples are lifted from
 `calclandcostsparam`), the same free-oracle reuse `test_harness.md` describes.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.models.costs.costs_2015 import (
     calculate_building_costs,
     calculate_land_costs,

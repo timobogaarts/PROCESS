@@ -21,8 +21,8 @@ a fresh `DataStructure` from the sample. Leaving them at their defaults instead 
 make seven of the port's twelve arguments untested.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.cs_fatigue import (
     calculate_n_cycle,
     surface_stress_intensity_factor,

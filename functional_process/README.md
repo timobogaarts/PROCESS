@@ -1,91 +1,128 @@
 # functional_process
 
-Audit trail and (eventually) source for a pure-functional, cottax-shaped rewrite of
-PROCESS's **stellarator pipeline**. Mirrors `process/`'s directory layout at the paths
-that are actually in scope.
+A pure-functional, cottax-shaped port of PROCESS's models. `process/` is never
+modified; everything here is new JAX code written from it, validated against it.
 
-- **`process/` is never modified.** Everything here is either analysis of `process/`
-  (Phase 0) or new pure-functional/JAX code written from scratch, informed by that
-  analysis (later phases).
-- Read `../CLAUDE.md` first — it explains why this exists, the `process_port` env, and
-  the cottax vocabulary (`VarPath`, `Compare`, `Cut`, `Drive`, tiers 1-4) used
-  throughout `_audit/`.
-- **How fast is it, and where does the time go: `_audit/performance.md`.**
-  Read the *warm* matrix for anything about speed -- a cold row is ~97 %
-  compilation, and its `model` column is not evaluation time.
-- **Current phase: Phase 0 (pre-coding audit), stellarator.py (unit #1) audited in full —
-  plus the validation harness and its first ports.** Standing practice: a chunk found to
-  be tier-1 and self-contained is ported (function + `## cottax node` wrap + harness
-  test) as soon as its audit lands, not batched for later. See
-  `_audit/unit_registry.md` for the per-unit list and rationale, and
-  `_audit/next_steps.md` for what is next — neither is summarised here, so that this
-  file cannot drift away from them.
-
-```bash
-~/miniconda3/envs/process_port/bin/python -m pytest tests/functional_process
-```
+Read `../CLAUDE.md` first for the `process_port` env (the one interpreter where
+`process` and `cottax` import together) and the cottax vocabulary. `x64` must be on
+before any array exists -- every entry point here does that itself.
 
 ## Layout
 
-- `_audit/` — the working documents, flat: naming convention, JAX-traceability policy,
-  the unit registry (master list of what's in/out of scope and its status),
-  `test_harness.md` (the four-tier validation design, and what of it is built), and
-  `tried_and_rejected.md`. See `_audit/README.md`; the 88 per-unit records that used to
-  live under `_audit/units/` were deleted on 2026-09-07 and resolve out of git history.
-- `_harness/` — the validation machinery: tier contracts, PROCESS's finite-difference
-  scheme and its error bar, sampling, tolerances. Design and rationale in
-  `_audit/test_harness.md` § As built.
-- `models/`, `core/solver/` — the ports themselves, mirroring `process/`'s tree.
-- `../tests/functional_process/` — the harness cases, mirroring this tree file for file,
-  with `conftest.py` (markers, `--fp-fuzz`, sample parametrization) at its root.
-- `models/<subsystem>/namespace.py` — the subsystem's naming scope: the `ModelNamespace`
-  classes whose slots name that subsystem's ported nodes. They sit beside the models they
-  name, and none of them reads a switch.
-- `total_process.py` — `StellaratorProcess`, the whole device: one slot per subsystem,
-  and nothing else. Not one `i_*` integer anywhere in it.
-- `indat.py` — PROCESS's input encoding, and the one place this port reads it:
-  `switches_from_indat`, the registries mapping each switch value to the occupant it
-  selects, `UNPORTED`'s recorded refusals, and `machine_from_indat`, which assembles the
-  `StellaratorProcess` an IN.DAT describes. `graph_for(machine)` and `GRAPH` (the
-  reference IN.DAT's graph) live here for the same reason; `render_xdsm.py` draws `GRAPH`
-  to `xdsm.html` for inspection (`python -m functional_process.render_xdsm`), and
-  `--machine` draws the tokamak `boundary.TOKAMAK_INPUT_FILE` describes to
-  `*_tokamak.html` instead. Both grow as units are ported; neither is a claim that the
-  graph is complete.
+```
+functional_process/
+  models/                 the ported models: pure functions, one file per PROCESS model,
+                          same tree as process/models/, plus constraints.py and
+                          objectives.py (PROCESS's constraint equations and figures of
+                          merit are models too). safe_math.py and switch_enums.py are
+                          what they share.
+  vocabulary/             PROCESS's enums, constants, input and iteration-variable
+  _vendor/                tables, and coolprop_interface -- vendored so that models/
+  data/                   imports without process. (Goes away when merged upstream.)
 
-## Adding a unit
+  configurations/         the regression input files, stated: one module per file with
+                          the machine (every slot's occupant, no integer switch), its
+                          own values, and its problem; defaults.py is what a
+                          configuration does not state. Generated from the IN.DAT by
+                          input/indat.py, and checked against it.
 
-One unit is one stem, two files at the same relative path in two trees: `<name>.py` (the
-port) here, and `test_<name>.py` (the case) under `../tests/functional_process/`. Add a
-row to `_audit/unit_registry.md` naming the unit and its status — that row is the unit's
-identity, and `test_registry_coverage.py` fails on a `final` unit with no case module.
+  cottax/                 the models as cottax nodes, and the architectures over them
+    paths.py wraps.py stated.py queries.py   the declaration vocabulary: how a node
+                          spells its variables, declares its reads, states a value
+    models/               one node per ported function, thin; mirrors models/. Plus
+                          <subsystem>/namespace.py (the subsystem's slots),
+                          total_process.py (StellaratorProcess / TokamakProcess: one
+                          slot per subsystem) and initialisation.py (the seed's writes)
+    input/                importer.py (read an IN.DAT), indat.py (the converter: its
+                          switches -> the machine, and configuration_from_indat),
+                          native.py (a configuration's solve state, no DataStructure)
+    architectures/        mda.py recipes.py (cutting the cycles), mdf.py idf.py sand.py
+                          (the optimisation architectures, as graph ops), evaluate.py
+                          (seeding and running a schedule), session.py (one input file,
+                          every architecture), drivers.py host_cache.py (the algorithms)
+    visualization/        grouping.py render_xdsm.py: the grouped DSM the notebooks draw
 
-**Do not write a per-unit audit record.** That convention was retired on 2026-09-07
-(`_audit/README.md`): the derivation of a port — which PROCESS lines were read, what the
-reads-set turned out to be, which branch was dead — belongs in the commit that makes the
-port, where git keeps it for free, not in a file a reader of the finished thing has to
-step around. What the port's own docstring should carry is what it does and why it is
-correct.
+  tests/
+    models/               one case per ported unit, mirroring models/; sample points
+                          beside each case under _samples/
+    architectures/        the drivers' own unit tests
+    test_architectures.py every architecture on every configuration, cold, against
+    reference_architectures.txt   this pin
+    test_configurations.py  every configuration is still its input file, converted
+    examples/             the notebooks run and their RESULT has not moved
+    _harness/             the unit-case contracts (tiers, sampling, tolerances, FD)
+    conftest.py           --fp-fuzz, --fp-gradients, --fp-write-pin
 
-The case declares the PROCESS reference, the port, and the sample points, then subclasses
-the contract for its tier — it does not write test functions. Its `audit_record` field is
-the unit's mirrored path, the same string in every tree, and is now an identity rather
-than a file that exists. Copy
-`../tests/functional_process/models/stellarator/test_density_limits.py`; it is the worked
-example.
+  architecture_examples/  one notebook per architecture: the recipe, its DSM, a solve
+  deliberate_divergences.md   every place the port knowingly differs from PROCESS
+```
 
-A node is registered by naming it in a slot of its subsystem's
-`models/<subsystem>/namespace.py`. If it only exists for some values of a switch, the
-slot is annotated with the union of its occupants and left without a default, and the
-registry mapping that switch's values to occupants goes in `indat.py` — two nodes that
-own the same output cannot both be in one graph, and `to_graph` will say so. The tree
-knows no switches and `indat.py` knows them all; `test_switch_coverage.py` and
-`test_machine.py` are what check that split holds.
+## The two kinds of test
 
-## Scope (current)
+```bash
+$PY -m pytest functional_process/tests -m "not tier4"      # unit cases, ~2 min
+$PY -m pytest functional_process/tests/test_architectures.py   # the pin, ~10 min
+$PY -m pytest functional_process/tests/examples            # the notebooks, ~3 min
+```
 
-Stellarator only (`data.stellarator.istell != 0` pipeline), not tokamak, not IFE.
-Concretely: all of `process/models/stellarator/**`, plus only the specific methods
-`Stellarator.run()` calls into on its injected sub-models (physics, power, hcpb,
-buildings, vacuum, availability, costs, plasma_profile, neoclassics) — not those files'
-entirety. See `_audit/unit_registry.md` for the exact list and the reasoning.
+**A unit case** is two files sharing a stem at the same relative path in two trees:
+`density_limits.py` under `functional_process/` and `test_density_limits.py` under
+`tests/`. The case declares the PROCESS reference, the port and its sample points, then
+subclasses `Tier1Contract` (value and gradient against PROCESS, at every point) or
+`Tier2Contract` (a solver: residual-based, no value agreement by construction) -- it
+writes no test functions. Gradients are checked against PROCESS's own finite difference
+with a per-point error bar from Richardson extrapolation; `--fp-gradients` turns that
+on, `--fp-fuzz N` draws N random points per fuzzable case from the shared domain.
+Copy `tests/models/stellarator/test_density_limits.py` to write one.
+
+**The architecture pin** solves every checked-in configuration under MDA, MDF, IDF and
+SAND from its own cold values and asserts each row's `status` and `objf` against
+`tests/reference_architectures.txt`. After a deliberate change, regenerate it with
+`--fp-write-pin` and read the diff. `test_configurations.py` guards the other end:
+each `configurations/<name>.py` still equals `configuration_from_indat` of the
+regression file it was made from (`input.indat.write_configuration` regenerates one).
+
+## A configuration is three stated trees
+
+`configurations.Configuration(machine, values, problem)`: the machine is a
+`StellaratorProcess`/`TokamakProcess` with every slot's occupant written out (the models,
+chosen directly -- PROCESS's integer switches exist only in the converter); `values` is
+`{area: {field: value}}`, the configuration's own numbers over `defaults.VALUES`;
+`problem` is the design variables, constraints, figure of merit, bounds and the static
+switch values the constraint nodes are bound with. `native.state_of` layers the values
+and applies `init.py`'s derivation rules; `native.reference_of` adds the problem.
+
+## An architecture is a recipe
+
+The models are nodes; `input.indat.graph_for(machine)` is their graph, with PROCESS's own
+cycles in it. An architecture is a short list of cottax ops on that graph, then a
+driver per problem:
+
+| | ops | in |
+|---|---|---|
+| MDA | `FixedPointCut` per loop-carried variable, `Nest` the models' own solves, Picard/Newton on each | `architectures.mda.cut_graph`, `architectures.recipes` |
+| MDF | the cut graph plus the constraint and objective nodes and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
+| IDF | as MDF, then `Residualise` and `Combine` the cut copies into the optimiser; the models' own solves stay nested | `architectures.idf.idf_graph` |
+| SAND | `Residualise` every fixed point, `Combine` every problem into one | `architectures.sand.assemble` |
+
+`architectures.session.open_session(name)` assembles each once and solves it from the configuration
+(`.mda()`, `.mdf()`, `.idf()`, `.sand()`); the notebooks under `architecture_examples/`
+spell the same recipes out step by step and check they build the same graph.
+
+## Conventions that hold
+
+- **Precision.** PROCESS is float64 throughout; so is the port. A diff that looks like a
+  porting bug is usually `x64` off.
+- **Switches.** A model never reads an integer switch, and neither does a solve: a
+  configuration names its occupants. Which node a switch value selects is the
+  converter's knowledge (`input/indat.py`), consulted once, when an IN.DAT is converted;
+  a slot that only exists for some values is annotated with the union of its occupants
+  and left without a default.
+- **External calls** that JAX cannot trace (CoolProp) stay outside any differentiated
+  block; `_vendor/fluid_properties.py` is the traced replacement where one exists.
+- **Divergences** from PROCESS are deliberate, few, and each is listed in
+  `deliberate_divergences.md` with what it changes and by how much.
+- **Derivations live in commits.** Why a port reads what it reads, which branch was
+  dead, what the reads-set turned out to be: in the commit that made it, not in a file
+  beside it. Docstrings that cite `_audit/<record>.md` resolve through git history
+  (`git log --diff-filter=D -- functional_process/_audit/`).

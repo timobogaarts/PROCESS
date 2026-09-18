@@ -11,8 +11,8 @@ lookup on `i_ind_plasma_internal_norm` (`process/models/physics/physics.py`, lin
 there is nothing left in it to compare once the four functions below agree.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,

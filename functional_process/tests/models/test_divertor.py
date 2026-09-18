@@ -14,8 +14,8 @@ Three units:
   can agree by construction. See the port function's docstring.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.divertor import (
     calculate_divertor_heat_flux_split,
     calculate_divertor_heat_load_wade,

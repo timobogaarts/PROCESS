@@ -24,8 +24,8 @@ so the oracle sees exactly the state PROCESS's own routine sees. See `fields.md`
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,

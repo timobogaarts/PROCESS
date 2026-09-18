@@ -78,20 +78,19 @@ which fixed it (3/3 computations) and dragged `numpy` 2.5.2 → 2.5.3 and `scipy
 recognise next time: a `pytest` run that dies with a bare "Extension modules: …" dump and
 no test summary is this, not a test failure.
 
-`functional_process/tests` was **3752 passed + 3347 skipped** when this file was written
-and is **7804 passed + 8218 skipped** as of 2026-09-09, **7879 + 8210** on 2026-09-16, **7908 + 8210** on 2026-09-17; the tree has roughly doubled since.
-Prefer measuring it to trusting either number.
+`functional_process/tests` is two things (`functional_process/README.md`): the unit
+cases (`-m "not tier4"`, ~2 min, **5511 passed + 8035 skipped** on 2026-09-18 after the cleanup below;
+7907 before it, when 28 top-level harness tests were still in the tree)
+and the architecture pin (`tests/test_architectures.py`, `tier4`, ~10 min: every
+regression `IN.DAT` under MDA/MDF/IDF/SAND against `tests/reference_architectures.txt`).
+Prefer measuring the count to trusting it.
 
-**The port tracks a cottax that moves, and the reference tables say which one.** Every
-`functional_process/cottax/reference_*_matrix.txt` header carries a `COTTAX:` line (the
-`~/jaxgraph` commit that answered) and a `MACHINE:` line (the CPU) since `e84cad95`,
-because both changed under the 2026-09-06 references without either file saying so: the
-port was re-ported from cottax `e0f22e6` to `a3e4c56` on 2026-09-16 (three renamed
-imports, `Graph.unowned_inputs` → `boundary_inputs`, and drivers subclassing
-`evaluation.schedule.Driver` -- `AbstractDriver` is now only the recorded choice), and the
-refs moved from a laptop to an R7 3700X. **On 2026-09-17 it was re-ported again, to the
-`~/jaxgraph` working tree on top of `d1f4aef`** (uncommitted changes there; `cottax_tree()`
-says which tree answered). What moved:
+**The port tracks a cottax that moves.** It was re-ported from cottax `e0f22e6` to
+`a3e4c56` on 2026-09-16 (three renamed imports, `Graph.unowned_inputs` →
+`boundary_inputs`, drivers subclassing `evaluation.schedule.Driver`), again on
+2026-09-17 to the `~/jaxgraph` working tree on top of `d1f4aef`, and on 2026-09-18 the
+pin was measured against `63bae67` plus uncommitted changes there. What moved on
+2026-09-17:
 
 | was | is |
 |---|---|
@@ -100,18 +99,18 @@ says which tree answered). What moved:
 | `rewrites.NestInside(outer)` | gone -- `functional_process.cottax.queries.nested_inside(graph, outer)`, one `Nest` per other outermost problem on `outer`'s cycle |
 | `Graph.nesting_tree` / `without_outermost_problem` | `Graph.interior` (graph minus its one outermost problem; raises `SeveralOutermost`) |
 | `Blocking` for a drawing | `cottax.partition.OrderedPartition` (any graph; `Blocking` adds the answerable checks, so `Blocking.scc` raises on an undriven cycle) |
-| `Blocking.inner[i]` may be `None` | never `None`: an empty blocking where nothing is nested |
+| `Blocking.inner[i]` | gone (2026-09-18, `63bae67` + working tree): `blocking.entries[i].interior`, an `OrderedPartition`; a `Solve` entry has one, a `Run` does not. The port spells it `queries.interior(blocking, i)`, which answers on either side |
 | `sequencing.NestingTree` / `nesting_tree_of` | gone; `interiors(partition)`, `sequenced(partition)`, `ordered_graph(...)` remain; `xdsm.problems_at(partition)` takes one argument |
 | `visualization.ragraph_dsm`, `render_dsm_html` | deleted |
-| ops coercing lists | none: `Cut(var, readers=(...,))`, `FixedPointCut((cut,))`, `Delete((...,))`, `Combine(place, (...,))`, `Determine(node, (...,))` -- a list still works but makes the op unhashable | Before reading a timing difference as a
-regression, check both lines. **When `~/jaxgraph` is being edited in another session**
-(it was, mid-run, on 2026-09-16), measure against a worktree of its committed HEAD:
+| ops coercing lists | none: `Cut(var, readers=(...,))`, `FixedPointCut((cut,))`, `Delete((...,))`, `Combine(place, (...,))`, `Determine(node, (...,))` -- a list still works but makes the op unhashable |
+
+**When `~/jaxgraph` is being edited in another session** (it was, mid-run, on
+2026-09-16), measure against a worktree of its committed HEAD:
 `git -C ~/jaxgraph worktree add <dir> HEAD` and `PYTHONPATH=~/PROCESS:<dir>/src` -- the
-editable install is bypassed by `PYTHONPATH`, and `cottax_tree()` in the header shows
-which one answered. To prove an API re-port numerically inert, run one configuration on
-the *old* pair (PROCESS and jaxgraph worktrees at the previous commits, same
-`PYTHONPATH` trick) and diff every digit against the new one; the 2026-09-16 re-port
-matched on every row, both drivers, cold and warm.
+editable install is bypassed by `PYTHONPATH`. To prove an API re-port numerically
+inert, regenerate the pin on the *old* pair (PROCESS and jaxgraph worktrees at the
+previous commits, same `PYTHONPATH` trick) and on the new one and diff them; the
+2026-09-16 re-port matched on every row.
 
 ### `process_port_gpu` — the env for the Warp/GPU work
 
@@ -147,12 +146,12 @@ only if rendering is actually wanted.
 `x64` is **not** on by default and PROCESS is float64 throughout — every entry point in
 this env must `jax.config.update("jax_enable_x64", True)` before any array is created, or
 diffs against PROCESS show precision loss that reads like a porting bug
-(`functional_process/_audit/traceability_policy.md` §Precision).
+(`functional_process/README.md` § Conventions).
 
 ### `process_port_gpu` -- the same env on CUDA
 
 Built 2026-09-06, on request, to measure whether the GPU helps. **It does not, for a
-single solve** -- see below and `_audit/optimise_design.md` §68.
+single solve** -- see below (the measurement record, `_audit/optimise_design.md` §68, is in git history).
 
 ```bash
 PYG=~/miniconda/envs/process_port_gpu/bin/python
@@ -182,7 +181,7 @@ intensity, and a cold row is ~97 % compilation. On top of that, **this GPU runs 
 1/16 the rate of float32** (measured: 76.6 against 1254.7 GFLOP/s on a 1024x1024 matmul),
 and PROCESS is float64 throughout -- so every kernel pays a 16x penalty a data-centre card
 (1/2 rate) would not. Treat the numbers below as specific to a 35 W laptop Quadro, not as a
-verdict on GPUs (`_audit/optimise_design.md` §70). Measured on `helias_5b` MDF, identical
+verdict on GPUs. Measured on `helias_5b` MDF, identical
 answer to every digit: cold 13.55 s (CPU) -> 15.57 s (GPU), warm 0.136 s -> 0.227 s. The
 plausible win is **batching** -- `vmap` over many independent solves, which is the shape of
 `process/core/scan.py` -- and that is untested.
@@ -190,10 +189,9 @@ plausible win is **batching** -- `vmap` over many independent solves, which is t
 ### Commands
 
 ```bash
-$PY -m pytest functional_process/tests         # the port's validation harness — 3752
-                                            # passed + 3347 skipped, ~60 s. The cases
-                                            # mirror `functional_process/`; the audit
-                                            # records stay next to the port. See below.
+$PY -m pytest functional_process/tests -m "not tier4"   # the port's unit cases, ~2 min
+$PY -m pytest functional_process/tests/test_architectures.py   # the architecture pin, ~10 min
+$PY -m pytest functional_process/tests/examples          # the notebooks, ~3 min
 $PY -m pytest tests/unit                    # unit tests (models, core) — 846, ~4 s
 $PY -m pytest tests/unit/models -k density_limit
 $PY -m pytest tests/unit/models/stellarator # the in-scope subset — 16, <1 s
@@ -208,40 +206,38 @@ $(dirname $PY)/ruff check && $(dirname $PY)/ruff format          # style; see
 `ruff` is pinned by the repo's `lint` extra (0.16.1) and installed in `process_port`
 only — it is not on `PATH`.
 
-## The validation harness (`functional_process/`)
+## The port's tests (`functional_process/tests/`)
 
-Built and green; the design and the reasoning behind every choice live in
-`functional_process/_audit/test_harness.md` (§ As built), which is the file to read
-before touching it. The short version:
+Two kinds, and `functional_process/README.md` is the file to read before touching
+either:
 
-- **A unit is two files sharing a stem at the same relative path in two trees**:
+- **A unit case is two files sharing a stem at the same relative path in two trees**:
   `density_limits.py` (the port) in `functional_process/`, and `test_density_limits.py`
-  (the case) under `functional_process/tests/`. What binds them is the unit's row in
-  `_audit/unit_registry.md`.
-- **There is no third file, and writing one is a regression.** A unit used to carry a
-  per-unit audit record under `_audit/units/`; all 88 were deleted on 2026-09-07
-  (`functional_process/_audit/README.md`), 32,075 lines. The derivation of a port — which
-  PROCESS lines were read, what the reads-set turned out to be, which branch was dead —
-  belongs in the **commit that makes the port**, where git keeps it at no cost to a
-  reader of the finished tree. A record is recoverable with
-  `git log --diff-filter=D -- functional_process/_audit/units/` and
-  `git show <commit>^:<path>`. The `audit_record` field on a case survives as the unit's
-  *identity string*, not as a path to a file.
-- **Tier is a base class.** A case declares `audit_record`/`reference`/`ported`/`samples`
-  and subclasses `Tier1Contract` or `Tier2Contract`; it writes no test functions. Tier 2
-  has no value-agreement test *by construction*, because PROCESS's answer is not ground
-  truth for a unit whose loop never converged.
-- **Gradient agreement is checked against PROCESS's own finite difference, with a
-  per-point error bar** derived by Richardson extrapolation rather than a fixed `rtol`.
-  This is the check the rewrite is being bought: a `stop_gradient` injected into the
-  pilot port failed 10 gradient tests while every value test still passed.
-- `--fp-fuzz N` / `--fp-fuzz-seed S` control random sampling; `-k legacy` / `-k fuzz`
-  select by sample provenance.
+  (the case) under `functional_process/tests/`. **Tier is a base class.** A case declares
+  `reference`/`ported`/`samples` and subclasses `Tier1Contract` or `Tier2Contract`
+  (`tests/_harness/contracts.py`); it writes no test functions. Tier 2 has no
+  value-agreement test *by construction*, because PROCESS's answer is not ground truth
+  for a unit whose loop never converged. **Gradient agreement is checked against
+  PROCESS's own finite difference, with a per-point error bar** from Richardson
+  extrapolation (`--fp-gradients`, opt-in); `--fp-fuzz N` / `--fp-fuzz-seed S` control
+  random sampling. This is the check the rewrite is being bought: a `stop_gradient`
+  injected into the pilot port failed 10 gradient tests while every value test passed.
+- **The architecture pin** (`tests/test_architectures.py`, `tier4`) solves every
+  checked-in configuration (`functional_process/configurations/<name>.py`: the machine,
+  its values and its problem as stated trees, converted once from the regression
+  `IN.DAT`s) under MDA, MDF, IDF and SAND through `cottax/architectures/session.py`
+  and asserts `status` and `objf` per row against `tests/reference_architectures.txt`;
+  `--fp-write-pin` regenerates it. `tests/test_configurations.py` pins the other end:
+  each tree still equals `input.indat.configuration_from_indat` of its file. This replaced, on 2026-09-18, the block-by-block
+  PROCESS-comparison harnesses (`mda_harness`, `sand_harness`, `cold_start`,
+  `boundary`, `run_cold_matrix` and their pins and tests, ~30k lines) -- all in git
+  history, none of it needed once the pin exists.
 
-`_audit/unit_registry.md` is the authoritative per-unit status and
-`_audit/next_steps.md` the priority-ordered punch list — read those, not this paragraph,
-for what is ported. Roughly: most of `models/stellarator/**` and three `models/physics/`
-units are ported and harness-tested; the rest is still pending.
+There is no per-unit audit record and no `_audit/` directory any more (the 88 records
+went on 2026-09-07, the design documents on 2026-09-18); the derivation of a port
+belongs in the commit that made it. `git log --diff-filter=D -- functional_process/_audit/`
+finds any of them. `functional_process/deliberate_divergences.md` is the one document
+kept: every place the port knowingly differs from PROCESS.
 
 `hatch` envs are declared in `pyproject.toml` (`tests`, `tests-unit`, `tests-regression`,
 `tests-integration`, `tests-examples`) but `hatch` is not on `PATH` — invoke `pytest`
@@ -347,7 +343,7 @@ IN.DAT --init.init_process--> DataStructure (one big mutable object, ~40 datacla
 | `data.<area>.<name>` field | `VarPath` (`.area.name`) | The dataclass-field dotted path is already exactly cottax's `Path`/`VarPath` shape — `data_structure/*_variables.py` module names are natural root namespaces. Array elements (`f_nd_impurity_electron_array[2]`) need a `SequenceKey`/`FlattenedIndexKey` component. |
 | `Model` subclass (or a `calculate_*` staticmethod within one) | `CallableNode` (or `DeclaredNode` if it's a problem) | The pure `calculate_*` core is the `fn`; the surrounding `run()` is the `In`-read/`Out`-write PROCESS currently writes by hand and untyped. |
 | Hard-coded order in `Caller._call_models_once` | binding order in a `Graph` + `scc_order_graph` | The call order is a *witness* of a topological sort someone worked out by hand; a real `Graph` would derive it (and expose where it *isn't* a DAG). |
-| "Call everything up to 10x until idempotent" (`Caller.call_models`) | `Blocking` (SCCs) + `Drive` steps solved by an explicit algorithm | The current code is Gauss–Seidel-by-accident on the *whole* graph. A cottax graph would isolate just the genuinely coupled nodes into one or more SCCs and drive each with a declared `Square`/`FixedPoint`/`RootFind`, leaving everything else as ordinary acyclic `Call` steps. **The rewrite's case does not rest on how much of PROCESS turns out to be genuinely cyclic** — that is an open empirical question the audit is tracking (`functional_process/_audit/next_steps.md`; one confirmed SCC among 44 ported nodes so far, with more expected once the orchestration layer, currently unported, is reached). The actual thesis is structural: making the dependency graph explicit is what makes decomposition, reordering, and per-block algorithm choice *possible* at all — whatever coupling genuinely exists gets isolated and driven by an explicit, autodiff-visible algorithm chosen for that block, instead of every evaluation blindly re-running the *entire* pipeline regardless of which parts depend on which. That is the robustness/efficiency case, independent of the eventual cyclic/acyclic split. |
+| "Call everything up to 10x until idempotent" (`Caller.call_models`) | `Blocking` (SCCs) + `Drive` steps solved by an explicit algorithm | The current code is Gauss–Seidel-by-accident on the *whole* graph. A cottax graph would isolate just the genuinely coupled nodes into one or more SCCs and drive each with a declared `Square`/`FixedPoint`/`RootFind`, leaving everything else as ordinary acyclic `Call` steps. **The rewrite's case does not rest on how much of PROCESS turns out to be genuinely cyclic** — that was measured as the port grew (`mda.CUTS` names the nine loop-carried variables the hand cut opens; `recipes.census` counts what each derived cut opens). The actual thesis is structural: making the dependency graph explicit is what makes decomposition, reordering, and per-block algorithm choice *possible* at all — whatever coupling genuinely exists gets isolated and driven by an explicit, autodiff-visible algorithm chosen for that block, instead of every evaluation blindly re-running the *entire* pipeline regardless of which parts depend on which. That is the robustness/efficiency case, independent of the eventual cyclic/acyclic split. |
 | `ITERATION_VARIABLES[id]` + `numerics.ixc` | `unknowns` (`owns`) of a `DeclaredNode` | The integer ID and its `(module, name, array_index)` triple is exactly a `VarPath`; the ID itself is throwaway indirection once names are structural. |
 | `ConstraintManager` registry, `numerics.icc` | `reads`/conditions of a `DeclaredNode`, or a `Compare` node | Constraint bodies of the shape "call a `calculate_*`, compare to a `data` field" are already `Compare`-shaped; ones that just threshold one `data` field against a bound are more like a bare residual read with no interesting node. |
 | `numerics.i_figure_merit` branch in `objective_function` | the objective condition of an `Optimise` problem, chosen by `Graph.prune`-style query | Not a node — a per-run selection of which existing output is "wanted", same as cottax's refusal to have an `OutputNode`. |

@@ -5,9 +5,9 @@ needed) -- the reference adapter only has to set `istell` nonzero (to pass the
 whole-function gate) and the six duration fields the port reads.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import data_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import data_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.stellarator.initialization import (
     calculate_pulse_durations,
 )

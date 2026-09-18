@@ -31,8 +31,8 @@ singular value has every right to use more of it.
 
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract, Tolerance
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract, Tolerance
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil import LROW1
 from functional_process.cottax.models.pfcoil.currents import calculate_efc_currents
 from process.data_structure.pfcoil_variables import (

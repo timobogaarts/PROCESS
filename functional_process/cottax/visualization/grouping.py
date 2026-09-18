@@ -6,24 +6,20 @@ the kind of problem it answers and named with its driver: the solve strategy).
 
 from __future__ import annotations
 
-import os
-from typing import TypeAlias
-from collections.abc import Iterable, Iterator, Mapping, Sequence
 import dataclasses
 import json
+import os
 import warnings
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from typing import TypeAlias
 
 import networkx as nx
-
-from jax.tree_util import DictKey, GetAttrKey
-
 from cottax.abstract import is_problem, undriven
-from cottax.blocking import Blocking
-from cottax.partition import OrderedPartition
 from cottax.graph import Graph
-from cottax.spec import NodePath, VarPath
-from cottax.problem import ConditionalNode, Driven, Eq, shape_of
 from cottax.names import is_minted, unminted
+from cottax.partition import OrderedPartition
+from cottax.problem import ConditionalNode, Driven, Eq, shape_of
+from cottax.spec import NodePath, VarPath
 from cottax.visualization.sequencing import interiors, sequenced
 from cottax.visualization.xdsm import (
     PROBLEM_TYPE_TEXT,
@@ -33,6 +29,7 @@ from cottax.visualization.xdsm import (
     problems_at,
 )
 from cottax.visualization.xdsm_html import HtmlDoc
+from jax.tree_util import DictKey, GetAttrKey
 
 type Group = tuple[str, ...]
 
@@ -273,7 +270,7 @@ def blocks_of(drawn: Drawn) -> tuple[tuple[NodePath, ...], ...]:
 def structure_order(drawn: Drawn) -> tuple[NodePath, ...]:
     """The order the graph actually runs in, **at every level**: `blocking`'s blocks in
     their run order, each block's body in the run order of *its* level, and so on down
-    through `Blocking.inner`.
+    through each `Solve` entry's `interior`.
 
     Two things are done to the blocking's own member order, and both are borrowed from
     cottax's XDSM rather than invented here:
@@ -584,7 +581,7 @@ def solve_levels(drawn: Drawn) -> tuple[Solve, ...]:
     level; what is kept is every solve (a driven block, whatever its size: a nesting is a
     claim about the solve, and the point of drawing it is to see the claim) and every
     coupled block nothing drives (`GroupingReport.coupled`'s blocks, the cycles a cut has
-    not reached). Read off `Blocking.inner` and `xdsm.problems_at`, so it never refuses:
+    not reached). Read off the entries' interiors and `xdsm.problems_at`, so it never refuses:
     a blocking no schedule could be built for still has levels, and a picture of one is
     the picture worth having.
     """

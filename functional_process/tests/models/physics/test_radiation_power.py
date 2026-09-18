@@ -23,8 +23,8 @@ import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import impurity_radiation
 from functional_process.cottax.models.physics.radiation_power import (
     ImpurityRadiationTotals,

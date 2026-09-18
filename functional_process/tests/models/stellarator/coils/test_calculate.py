@@ -34,9 +34,9 @@ from cottax.rewrites import Assign
 from cottax.spec import VarPath
 from cottax.names import PathMap
 
-from functional_process.cottax._harness import Sample, Tier1Contract, Tier2Contract
-from functional_process.cottax._harness.process_reference import data_reference
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
+from functional_process.tests._harness.process_reference import data_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.paths import (
     build,
     constraints,

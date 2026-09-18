@@ -14,9 +14,9 @@ import jax
 import pytest
 from cottax.interfaces.pytree_namespace_module import to_graph
 
-from functional_process.cottax._harness import Tier1Contract, fuzz_samples
-from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.indat import (
+from functional_process.tests._harness import Tier1Contract, fuzz_samples
+from functional_process.tests._harness.sample_store import FROM_FILE
+from functional_process.cottax.input.indat import (
     COMPONENT_THERMAL_POWERS,
     CRYO_LOADS,
     CRYO_Q_LOADS,

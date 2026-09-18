@@ -1,0 +1,308 @@
+"""Harness cases for the ported objective-function metrics
+(`FiguresOfMerit` ids 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 19).
+
+`_reference_*` adapters bind a bare `DataStructure` with only the fields each metric's
+audited data footprint says it reads, then call PROCESS's own `objective_function`
+with `i_figure_merit` set to the *positive* id --
+`objective_sign = np.sign(i_figure_merit)` is then `+1`, so PROCESS's return value is
+exactly the unsigned `objective_metric` this
+port's own `objective_metric_<id>` functions compute (see `objectives.py`'s module
+docstring: sign is applied by the caller, not folded into these functions).
+"""
+
+import pytest
+
+from functional_process.models.objectives import (
+    objective_metric_1,
+    objective_metric_3,
+    objective_metric_4,
+    objective_metric_5,
+    objective_metric_6,
+    objective_metric_7,
+    objective_metric_8,
+    objective_metric_9,
+    objective_metric_10,
+    objective_metric_11,
+    objective_metric_14,
+    objective_metric_15,
+    objective_metric_16,
+    objective_metric_17,
+    objective_metric_18,
+    objective_metric_19,
+)
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import data_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
+from process.core.model import DataStructure
+from process.core.solver.objectives import objective_function
+from process.models.availability import AvailabilityModel
+
+_reference_1 = data_reference(lambda d: objective_function(1, d))
+
+
+_reference_3 = data_reference(lambda d: objective_function(3, d))
+
+
+_reference_4 = data_reference(lambda d: objective_function(4, d))
+
+
+_reference_5 = data_reference(lambda d: objective_function(5, d))
+
+
+_reference_6 = data_reference(lambda d: objective_function(6, d))
+
+
+_reference_7 = data_reference(lambda d: objective_function(7, d))
+
+
+_reference_8 = data_reference(lambda d: objective_function(8, d))
+
+
+_reference_9 = data_reference(lambda d: objective_function(9, d))
+
+
+_reference_10 = data_reference(lambda d: objective_function(10, d))
+
+
+_reference_11 = data_reference(lambda d: objective_function(11, d))
+
+
+_reference_14 = data_reference(lambda d: objective_function(14, d))
+
+
+_reference_15 = data_reference(lambda d: objective_function(15, d))
+
+
+_reference_16 = data_reference(lambda d: objective_function(16, d))
+
+
+_reference_17 = data_reference(lambda d: objective_function(17, d))
+
+
+_reference_18 = data_reference(lambda d: objective_function(18, d))
+
+
+_reference_19 = data_reference(lambda d: objective_function(19, d))
+
+
+class TestObjectiveMetric1(Tier1Contract):
+    """`objective_function(1, ...)` -> `objective_metric_1`. `MAJOR_RADIUS`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_1
+    ported = objective_metric_1
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric3(Tier1Contract):
+    """`objective_function(3, ...)` -> `objective_metric_3`. `NEUTRON_WALL_LOAD`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_3
+    ported = objective_metric_3
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric4(Tier1Contract):
+    """`objective_function(4, ...)` -> `objective_metric_4`. `P_TF_PLUS_P_PF`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_4
+    ported = objective_metric_4
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric5(Tier1Contract):
+    """`objective_function(5, ...)` -> `objective_metric_5`. `FUSION_GAIN_Q`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_5
+    ported = objective_metric_5
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric6(Tier1Contract):
+    """`objective_function(6, ...)` -> `objective_metric_6`. `COST_OF_ELECTRICITY`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_6
+    ported = objective_metric_6
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric7(Tier1Contract):
+    """`objective_function(7, ...)` -> `objective_metric_7`. `CAPITAL_COST`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_7
+    ported = objective_metric_7
+
+    static_argnames = ("ireactor",)
+
+    samples = FROM_FILE
+    fuzz = True
+    fuzz_fixed = {"ireactor": 0}
+
+
+class TestObjectiveMetric8(Tier1Contract):
+    """`objective_function(8, ...)` -> `objective_metric_8`. `ASPECT_RATIO`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_8
+    ported = objective_metric_8
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric9(Tier1Contract):
+    """`objective_function(9, ...)` -> `objective_metric_9`. `DIVERTOR_HEAT_LOAD`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_9
+    ported = objective_metric_9
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric10(Tier1Contract):
+    """`objective_function(10, ...)` -> `objective_metric_10`. `TOROIDAL_FIELD`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_10
+    ported = objective_metric_10
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric11(Tier1Contract):
+    """`objective_function(11, ...)` -> `objective_metric_11`. `TOTAL_INJECTED_POWER`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_11
+    ported = objective_metric_11
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric14(Tier1Contract):
+    """`objective_function(14, ...)` -> `objective_metric_14`. `PULSE_LENGTH`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_14
+    ported = objective_metric_14
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric15(Tier1Contract):
+    """`objective_function(15, ...)` -> `objective_metric_15`.
+    `PLANT_AVAILABILITY_FACTOR`.
+
+    Only non-`USER_INPUT` `i_plant_availability` values are sampled -- the `USER_INPUT`
+    case is a precondition failure, not a value/gradient-agreement case, see
+    `test_objective_metric_15_raises_on_user_input_availability` below.
+    """
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_15
+    ported = objective_metric_15
+
+    static_argnames = ("i_plant_availability",)
+
+    samples = FROM_FILE
+    fuzz = True
+    fuzz_fixed = {"i_plant_availability": int(AvailabilityModel.WARD_TAYLOR)}
+
+
+def test_objective_metric_15_raises_on_user_input_availability():
+    """`i_plant_availability == AvailabilityModel.USER_INPUT` has no model output to
+    optimise against -- both PROCESS and this port raise rather than silently
+    returning the raw user input. Confirms the port's `ValueError` fires on exactly
+    the same condition as PROCESS's real `ProcessValueError`.
+    """
+    data = DataStructure()
+    data.costs.i_plant_availability = int(AvailabilityModel.USER_INPUT)
+    data.costs.f_t_plant_available = 0.75
+    with pytest.raises(Exception, match="user input"):
+        objective_function(15, data)
+
+    with pytest.raises(ValueError, match="USER_INPUT"):
+        objective_metric_15(int(AvailabilityModel.USER_INPUT), 0.75)
+
+
+class TestObjectiveMetric16(Tier1Contract):
+    """`objective_function(16, ...)` -> `objective_metric_16`. `MIN_R0_MAX_TAU_BURN`."""
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_16
+    ported = objective_metric_16
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric17(Tier1Contract):
+    """`objective_function(17, ...)` -> `objective_metric_17`.
+    `NET_ELECTRICAL_OUTPUT`.
+    """
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_17
+    ported = objective_metric_17
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+class TestObjectiveMetric18(Tier1Contract):
+    """`objective_function(18, ...)` -> `objective_metric_18`. `NULL_FIGURE_OF_MERIT`.
+
+    No arguments -- a single sample is the entire domain.
+    """
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_18
+    ported = objective_metric_18
+
+    samples = FROM_FILE
+
+
+class TestObjectiveMetric19(Tier1Contract):
+    """`objective_function(19, ...)` -> `objective_metric_19`.
+    `MAX_Q_MAX_T_PLANT_PULSE_BURN` -- **not** the same formula as id 16, despite
+    `objective_function`'s own inline docstring listing both as "major radius/burn
+    time" (see `objectives.py`'s module docstring for the discrepancy).
+    """
+
+    audit_record = "core/solver/objectives.md"
+    reference = _reference_19
+    ported = objective_metric_19
+
+    samples = FROM_FILE
+    fuzz = True
+
+
+def test_objective_metrics_16_and_19_are_not_the_same_formula():
+    """Direct counter-check against `objective_function`'s own misleading inline
+    docstring (both id 16 and id 19 listed as "Major radius/burn time"): confirms the
+    two ported functions read different fields and disagree numerically at a point
+    where both are defined.
+    """
+    value_16 = objective_metric_16(rmajor=9.0, t_plant_pulse_burn=7200.0)
+    value_19 = objective_metric_19(big_q_plasma=9.0, t_plant_pulse_burn=7200.0)
+    assert value_16 != value_19

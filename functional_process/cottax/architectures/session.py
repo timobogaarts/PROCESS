@@ -1,0 +1,561 @@
+"""**Assemble once, solve many times** -- one configuration under every architecture.
+
+A `Session` is one `configurations.Configuration` -- a machine, its values and its
+problem, stated -- in the port's own solve environment (`native.reference_of`, nothing
+from PROCESS), with one *arm* per architecture:
+
+| arm    | recipe                                    | solved by                |
+|--------|-------------------------------------------|--------------------------|
+| `MDA`  | `mda.cut_graph` + `mda.default_drivers`   | the MDF's inner schedule |
+| `MDF`  | `mdf.assemble`                            | `mdf.solve`              |
+| `IDF`  | `idf.idf_graph` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
+| `SAND` | `sand.assemble` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
+
+Each arm is assembled on its first call and only solved on the next. Every solve
+starts **cold**, from the configuration's own values (`Session.reference.cold`),
+unless handed another state. A configuration stating a root find (`Problem.root_find`)
+has an `MDA` and an `MDF` arm only: PROCESS's own square system,
+`mdf.assemble(root_find=True)`.
+
+Every arm answers the same `dict`: the assembly's shape, the driver's `status`, its
+`iterations`, `objf`, `max_eq`, `min_ie`, `seconds`, `x` (the design at the answer)
+and a `note` where the status needs one.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+from cottax.problem import Driven
+from jax.flatten_util import ravel_pytree
+
+from functional_process import configurations
+from functional_process.cottax.architectures import idf, mdf, sand
+from functional_process.cottax.architectures.drivers import (
+    VMCON_NON_FINITE,
+    Status,
+    non_finite_summary,
+)
+from functional_process.cottax.architectures.evaluate import (
+    ground_truth,
+    inputs_only,
+    mda_env,
+    resolve,
+    run_schedule,
+    seed_block,
+)
+from functional_process.cottax.architectures.mda import seed_starts
+from functional_process.cottax.input import native
+from functional_process.cottax.input.indat import configuration_from_indat, graph_for
+
+ARMS = ("MDA", "MDF", "IDF", "SAND")
+
+MDF_MAX_ITER = 800
+"""`VmconDriver.max_iter` for the MDF arm."""
+
+MDF_TOLERANCE = 1.0e-8
+"""`VmconDriver.tolerance` for the MDF arm."""
+
+SAND_MAX_ITER = 500
+"""SQP iterations the SAND and IDF arms allow themselves."""
+
+SAND_TOLERANCE = None
+"""`VmconDriver`'s own default."""
+
+
+# ------------------------------------------------------------------ the result
+
+
+def _blank(shape=None):
+    """One arm's result with every measurement absent."""
+    result = {
+        "nodes": None,
+        "design": None,
+        "conditions": None,
+        "equalities": None,
+        "blocks": None,
+        "driven": None,
+        "iterations": None,
+        "status": "",
+        "objf": None,
+        "max_eq": None,
+        "min_ie": None,
+        "seconds": None,
+        "note": "",
+        "x": (),
+    }
+    result.update(shape or {})
+    return result
+
+
+def recorder(trace):
+    """The `VmconDriver.callback` every arm records its iterates with."""
+
+    def record(i, result, _x, convergence):
+        trace.append((
+            i,
+            float(convergence),
+            float(np.asarray(result.f)),
+            float(np.max(np.abs(result.eq))) if len(result.eq) else 0.0,
+            float(np.min(result.ie)) if len(result.ie) else 0.0,
+        ))
+
+    return record
+
+
+def trace_tail(trace):
+    """`(iterations, objf, max|eq|, min ie)` off a callback trace."""
+    if not trace:
+        return 0, None, None, None
+    last = trace[-1]
+    return len(trace), last[2], last[3], last[4]
+
+
+def _status(trace, tolerance, cap):
+    """Which of the four ways a solve ended, in one word."""
+    if not trace:
+        return "no-step"
+    epsilon = 1.0e-6 if tolerance is None else tolerance
+    if trace[-1][1] <= epsilon:
+        return "converged"
+    if len(trace) >= cap:
+        return f"cap({cap})"
+    return "stopped"
+
+
+def _why_no_step(drive, context, seeded):
+    """The conditions that make a first QP infeasible: **violated and constant**."""
+    unknowns = [jnp.asarray(seeded[u]) for u in drive.unknowns]
+    condition_map = drive.condition_map(context)
+
+    def stacked(*x):
+        return jnp.stack([jnp.asarray(v) for v in condition_map(*x)])
+
+    values = np.asarray(stacked(*unknowns), dtype=float)
+    rows = np.asarray(jax.jacfwd(stacked)(*unknowns), dtype=float).reshape(
+        len(values), -1
+    )
+    node = drive.subgraph[drive.problem]
+    definition = node.problem if isinstance(node, Driven) else node
+    n_equality = len(definition.equalities)
+    stuck = []
+    for index, (condition, value, row) in enumerate(
+        zip(drive.conditions, values, rows, strict=True)
+    ):
+        if index == 0:
+            continue  # the objective: never a feasibility question
+        away = abs(value) > 1e-8 if index <= n_equality else value > 1e-8
+        if away and not np.any(row != 0.0):  # noqa: RUF069
+            stuck.append((condition.spelling, float(value)))
+    return stuck
+
+
+# ------------------------------------------------------------------ the arms
+
+
+@dataclass
+class MdfBuild:
+    """Everything about the MDF arm that does not change between solves."""
+
+    problem: object
+    in_graph: object = None
+    root_find: bool = False
+    shape: dict = field(default_factory=dict)
+
+
+@dataclass
+class BlockBuild:
+    """Everything about a SAND or IDF arm that does not change between solves: one
+    combined problem, its solve schedule, and the trace its driver records into.
+    """
+
+    solve_schedule: object
+    drive: object
+    trace: list
+    design_paths: set
+    shape: dict = field(default_factory=dict)
+    omitted: object = None
+    cut: object = None
+    nested: bool = False
+    """IDF: the disciplines' own problems are nested inside the block, and their
+    `Start` ports are seeded from the MDA too."""
+
+
+def build_mdf(reference, machine_graph, switch_values, root_find=False, cut=None):
+    """Assemble the MDF arm. `cut=None` is `mda.cut_graph`."""
+    problem = mdf.assemble(
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        graph=machine_graph,
+        switch_values=switch_values,
+        root_find=root_find,
+        **({} if cut is None else {"cut": cut}),
+    )
+    shape = mdf.mdf_shape(problem)
+    build = MdfBuild(
+        problem=problem,
+        root_find=root_find,
+        shape={
+            "nodes": shape["nodes"],
+            "design": shape["design"],
+            "conditions": shape["conditions"],
+            "equalities": shape["equalities"],
+            "blocks": shape["inner_blocks"],
+            "driven": shape["inner_driven"],
+        },
+    )
+    if root_find:
+        # Stated in the graph, not driven from outside it (`mdf.in_graph_root_find`):
+        # the root find is a problem node the blocking sees, so `Blocking.scc` decides
+        # what it drives, and the reported blocks are that interior's.
+        build.in_graph = mdf.in_graph_root_find(problem)
+        interior = mdf.in_graph_shape(build.in_graph)
+        build.shape["blocks"] = interior["interior_blocks"]
+        build.shape["driven"] = interior["interior_driven"]
+    return build
+
+
+def solve_mda(build: MdfBuild, cold) -> dict:
+    """The MDA at the file's own design: the MDF's inner schedule run once from `cold`,
+    which is also what primes the MDF arm. `objf`/`max_eq`/`min_ie` are the conditions
+    at that design, not an optimiser's.
+    """
+    problem = build.problem
+    result = _blank(build.shape)
+    began = time.perf_counter()
+    _primed, out = mdf.prime(problem, mdf.seed(problem, cold))
+    elapsed = time.perf_counter() - began
+    objective = problem.report["objective"]
+    equalities = [float(np.asarray(out[c])) for c in problem.report["equalities"]]
+    inequalities = [float(np.asarray(out[c])) for c in problem.report["inequalities"]]
+    result.update(
+        iterations=0,
+        status="evaluated",
+        objf=None if objective is None else float(np.asarray(out[objective])),
+        max_eq=max(abs(r) for r in equalities) if equalities else 0.0,
+        min_ie=min(inequalities) if inequalities else None,
+        seconds=elapsed,
+        x=tuple(float(np.asarray(out[v])) for v in problem.design),
+    )
+    return result
+
+
+def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
+    """Solve an assembled MDF arm from `cold`."""
+    problem, root_find = build.problem, build.root_find
+    result = _blank(build.shape)
+    env = mdf.seed(problem, cold)
+    env, _primed = mdf.prime(problem, env)
+    if root_find:
+        built = build.in_graph
+        x, out, seconds = mdf.in_graph_solve(built, env)
+        steps = int(np.asarray(built.steps(out)))
+        converged = bool(np.asarray(built.successful(out)))
+        residuals = [float(np.asarray(out[c])) for c in problem.conditions]
+        # PROCESS's own last act in this mode: every inequality evaluated once at the
+        # answer, none of them driven.
+        inequalities = [float(np.asarray(out[c])) for c in problem.reported]
+        result.update(
+            iterations=steps,
+            objf=None,
+            max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
+            min_ie=min(inequalities) if inequalities else None,
+            status="converged" if converged else "not-converged",
+            seconds=seconds,
+            note="" if converged else f"root find: {mdf.verdict(out, mdf.Status)}",
+            x=tuple(float(np.asarray(v)) for v in x),
+        )
+        return result
+    trace: list = []
+    x, _out, seconds = mdf.solve(
+        problem,
+        env,
+        bounds=reference.bounds,
+        callback=recorder(trace),
+        tolerance=MDF_TOLERANCE,
+        max_iter=MDF_MAX_ITER,
+        **({} if optimiser is None else {"optimiser": optimiser}),
+    )
+    iterations, objf, max_eq, min_ie = trace_tail(trace)
+    result.update(
+        iterations=iterations,
+        objf=objf,
+        max_eq=max_eq,
+        min_ie=min_ie,
+        status=_status(trace, MDF_TOLERANCE, MDF_MAX_ITER),
+        seconds=seconds,
+        note="" if trace else "first QP infeasible -- the start came back untouched",
+        x=tuple(float(np.asarray(v)) for v in x),
+    )
+    return result
+
+
+def _block_build(combined, reference, env, optimiser, omitted, cut, nested):
+    """The solve schedule for one combined problem, its driver recording into `trace`."""
+    schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
+    shape = sand.sand_shape(schedule)
+    condition_scale = sand.residual_condition_scales(shape["drive"], env)
+    trace: list = []
+    solve_schedule = sand.sand_schedule(
+        combined,
+        None,
+        bounds=reference.bounds,
+        condition_scale=condition_scale,
+        callback=recorder(trace),
+        max_iter=SAND_MAX_ITER,
+        optimiser=optimiser,
+    )
+    return BlockBuild(
+        solve_schedule=solve_schedule,
+        drive=sand.sand_shape(solve_schedule)["drive"],
+        trace=trace,
+        design_paths={sand.iteration_variable_path(i) for i in reference.ixc},
+        shape={
+            "nodes": shape["drive_nodes"],
+            "design": shape["design"],
+            "conditions": shape["conditions"],
+            "equalities": shape["equalities"],
+            "blocks": shape["schedule_steps"],
+            "driven": shape["unknowns"],
+        },
+        omitted=omitted,
+        cut=cut,
+        nested=nested,
+    )
+
+
+def build_sand(reference, machine_graph, switch_values, optimiser=None, cut=None):
+    """Assemble the SAND arm. `cut=None` is `mda.cut_graph`."""
+    driven, env = mda_env(
+        reference, graph=machine_graph, **({} if cut is None else {"cut": cut})
+    )
+    combined, report = sand.assemble(
+        reference, driven, env, switch_values=switch_values, drop_arrays=cut is None
+    )
+    return _block_build(
+        combined, reference, env, optimiser, report["omitted"], cut, nested=False
+    )
+
+
+def build_idf(reference, machine_graph, switch_values, optimiser=None, cut=None):
+    """Assemble the IDF arm. `cut=None` is `mda.cut_graph`."""
+    _driven, env = mda_env(
+        reference, graph=machine_graph, **({} if cut is None else {"cut": cut})
+    )
+    combined, _problem, report = idf.idf_graph(
+        machine_graph if machine_graph is not None else graph_for(),
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        switch_values=switch_values,
+        **({} if cut is None else {"cut": cut}),
+    )
+    return _block_build(
+        combined, reference, env, optimiser, report["omitted"], cut, nested=True
+    )
+
+
+def solve_block(build: BlockBuild, reference, machine_graph, cold) -> dict:
+    """Solve an assembled SAND or IDF arm from `cold`: design variables from the file,
+    coupling copies from an MDA at that design.
+    """
+    result = _blank(build.shape)
+    solve_schedule, solve_drive = build.solve_schedule, build.drive
+    trace, design_paths = build.trace, build.design_paths
+    trace.clear()
+
+    stage_env = mda_env(
+        reference,
+        graph=machine_graph,
+        data=cold,
+        **({} if build.cut is None else {"cut": build.cut}),
+    )[1]
+    seeded, _borrowed = seed_block(
+        solve_schedule, solve_drive, cold, stage_env, design=design_paths
+    )
+    if build.nested:
+        # The nested problems' own `Start` ports: not the outer drive's unknowns, so
+        # `seed_block` leaves them cold, and a Picard from a cold zero does not converge.
+        seeded.update(seed_starts(solve_schedule, stage_env, exclude=design_paths))
+
+    context = {}
+    for var in solve_drive.context:
+        if var in stage_env:
+            context[var] = stage_env[var]
+        else:
+            try:
+                context[var] = jnp.asarray(ground_truth(cold, var))
+            except (AttributeError, KeyError):
+                context[var] = jnp.asarray(0.0)
+
+    started = time.perf_counter()
+    out = run_schedule(solve_schedule, inputs_only(solve_schedule, seeded), whole=False)
+    elapsed = time.perf_counter() - started
+
+    # The driver refuses a non-finite problem and reports `VMCON_NON_FINITE` through
+    # its own `Status` port -- read as data out of the env, never caught.
+    reported = mdf.verdict(out, Status, solve_drive.problem)
+    if reported is not None and int(np.asarray(reported)) == VMCON_NON_FINITE:
+        flat_probe, probe_unravel = ravel_pytree(
+            tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
+        )
+        summary = non_finite_summary(
+            solve_drive.condition_map(context), probe_unravel, flat_probe
+        )
+        result.update(
+            status="non-finite",
+            seconds=elapsed,
+            note=f"refused at the first iterate -- {summary}"
+            if summary
+            else "refused at the first iterate",
+        )
+        return result
+
+    iterations, objf, max_eq, min_ie = trace_tail(trace)
+    note = ""
+    if not trace:
+        # Zero iterations is ambiguous between "converged where it stood" and "the
+        # first QP had no feasible point"; a violated condition with an identically
+        # zero gradient row tells the two apart.
+        stuck = _why_no_step(solve_drive, context, seeded)
+        note = (
+            f"first QP infeasible: {len(stuck)} condition(s) violated with an "
+            f"identically zero gradient row, first {stuck[0][0]} at {stuck[0][1]:+.2e}"
+            if stuck
+            else "no condition is both violated and constant -- converged where it stood"
+        )
+    result.update(
+        iterations=iterations,
+        objf=objf,
+        max_eq=max_eq,
+        min_ie=min_ie,
+        status=_status(trace, SAND_TOLERANCE, SAND_MAX_ITER),
+        seconds=elapsed,
+        note=note,
+        x=tuple(
+            float(np.asarray(out[sand.iteration_variable_path(i)]))
+            for i in reference.ixc
+        ),
+    )
+    return result
+
+
+# --------------------------------------------------------------- the session
+
+
+@dataclass
+class Session:
+    """One configuration, assembled once per arm, solvable any number of times."""
+
+    name: str
+    configuration: configurations.Configuration
+    reference: object
+    machine_graph: object = None
+    switch_values: object = None
+    root_find: bool = False
+    optimiser: object = None
+    """The driver **class** every `Optimise` in this session is answered by, or `None`
+    for `mda.default_drivers`' own choice.
+    """
+    cut: object = None
+    """How the raw graph's cycles are cut: `None` for `mda.cut_graph`'s hand-measured
+    table, or a `recipes.Recipe` (`jacobi`, `gauss_seidel`, `gauss_seidel_minimal`).
+    """
+    builds: dict = field(default_factory=dict)
+
+    @property
+    def arms(self) -> tuple[str, ...]:
+        """The architectures this file can be solved under."""
+        return ("MDA", "MDF") if self.root_find else ARMS
+
+    def solve(self, arm: str, cold=None) -> dict:
+        """Solve this configuration under `arm`, assembling it on the first call.
+
+        Raises
+        ------
+        ValueError
+            If `arm` is not one of `Session.arms`.
+        """
+        if arm not in self.arms:
+            raise ValueError(
+                f"{self.name} has no {arm} arm: "
+                + (
+                    "it states a root find (`i_process_run_mode = -2`), which poses no "
+                    "optimisation to distribute over design and coupling"
+                    if arm in ARMS
+                    else f"the arms are {ARMS}"
+                )
+            )
+        cold = self.reference.cold if cold is None else cold
+        if arm in {"MDA", "MDF"}:
+            build = self.builds.get("MDF")
+            if build is None:
+                build = self.builds["MDF"] = build_mdf(
+                    self.reference,
+                    self.machine_graph,
+                    self.switch_values,
+                    root_find=self.root_find,
+                    cut=self.cut,
+                )
+            if arm == "MDA":
+                return solve_mda(build, cold)
+            return solve_mdf(build, self.reference, cold, optimiser=self.optimiser)
+        build = self.builds.get(arm)
+        if build is None:
+            builder = build_sand if arm == "SAND" else build_idf
+            build = self.builds[arm] = builder(
+                self.reference,
+                self.machine_graph,
+                self.switch_values,
+                optimiser=self.optimiser,
+                cut=self.cut,
+            )
+        return solve_block(build, self.reference, self.machine_graph, cold)
+
+    def mda(self, cold=None) -> dict:
+        """The MDA at the file's own design -- see `solve_mda`."""
+        return self.solve("MDA", cold)
+
+    def mdf(self, cold=None) -> dict:
+        """Solve the MDF arm."""
+        return self.solve("MDF", cold)
+
+    def idf(self, cold=None) -> dict:
+        """Solve the IDF arm."""
+        return self.solve("IDF", cold)
+
+    def sand(self, cold=None) -> dict:
+        """Solve the SAND arm."""
+        return self.solve("SAND", cold)
+
+
+def open_session(configuration, optimiser=None, cut=None) -> Session:
+    """A `Session` for one configuration -- a `configurations.Configuration`, a name
+    from `configurations.NAMES`, or an `IN.DAT` path (converted on the way in) --
+    assembled from it alone, nothing solved.
+    """
+    if isinstance(configuration, (str, Path)):
+        name = str(configuration)
+        configuration = (
+            configurations.load(name)
+            if name in configurations.NAMES
+            else configuration_from_indat(str(resolve(name)))
+        )
+    return Session(
+        name=configuration.name,
+        configuration=configuration,
+        reference=native.reference_of(configuration),
+        machine_graph=graph_for(configuration.machine),
+        switch_values=dict(configuration.problem.switches),
+        root_find=configuration.problem.root_find,
+        optimiser=optimiser,
+        cut=cut,
+    )

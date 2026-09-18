@@ -23,10 +23,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import unpacked
-from functional_process.cottax._harness.sample_store import FROM_FILE
-from functional_process.cottax.indat import (
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import unpacked
+from functional_process.tests._harness.sample_store import FROM_FILE
+from functional_process.cottax.input.indat import (
     CROCO_SUPERCONDUCTOR_PROPERTIES,
     CROCO_TEMPERATURE_MARGIN,
     CROCO_TURN_GEOMETRY,
@@ -417,7 +417,7 @@ def test_croco_and_cicc_registries_partition_the_material_switch():
     than asserted in a docstring, because the CICC side's `_SC_TAPE_REASON` and the CroCo
     side's `_SC_CABLE_REASON` are two statements of one partition.
     """
-    from functional_process.cottax.indat import CICC_SUPERCONDUCTOR_PROPERTIES
+    from functional_process.cottax.input.indat import CICC_SUPERCONDUCTOR_PROPERTIES
 
     cicc = {mat for _, mat in CICC_SUPERCONDUCTOR_PROPERTIES}
     croco = {mat for _, mat in CROCO_SUPERCONDUCTOR_PROPERTIES}
@@ -472,7 +472,7 @@ def test_a_croco_machine_refuses_an_unwritten_tape_material(tmp_path):
     are the ones a CroCo machine consults rather than the cable-in-conduit slot's
     `_SC_TAPE_REASON` catching the file by accident.
     """
-    from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
+    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
 
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
@@ -511,7 +511,7 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
     ST files still do not assemble -- they refuse on the PF coil system and on
     `i_tf_stress_model`, neither of which is anything to do with the turn.
     """
-    from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
+    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
 
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
@@ -541,8 +541,8 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
 
 def test_croco_nodes_own_the_tape_stack(tmp_path):
     """The CroCo nodes produce the `*croco*`/`*hts_tape*` fields, not read them."""
-    from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
-    from functional_process.cottax.indat import graph_for
+    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
+    from functional_process.cottax.input.indat import graph_for
 
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
@@ -581,7 +581,7 @@ def test_the_two_tracked_spherical_tokamaks_assemble():
     a test written around a refusal fails for the best possible reason when the refusal
     expires, and asserting assembly is the claim that cannot rot in that direction.
     """
-    from functional_process.cottax.indat import graph_for
+    from functional_process.cottax.input.indat import graph_for
 
     for name in ("spherical_tokamak_eval", "st_regression"):
         machine = machine_from_indat(f"tests/regression/input_files/{name}.IN.DAT")

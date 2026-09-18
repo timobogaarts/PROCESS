@@ -22,12 +22,12 @@ from cottax.interfaces.pytree_namespace_module import Output, to_graph
 from cottax.problem import FixedPoint, is_fixed_point
 from cottax.nodes import Implemented, ImplementedFunction
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.process_reference import (
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import (
     data_reference,
     process_reference,
 )
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.availability.availability import (
     Avail2NeutronFluenceSphericalTokamak,
     AvailDisplacementsPerAtom,

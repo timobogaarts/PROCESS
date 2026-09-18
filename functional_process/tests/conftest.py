@@ -3,8 +3,8 @@
 Lives at the root of `functional_process/tests/`, not inside the `functional_process/`
 package: pytest only applies a `conftest.py` at or above the tests it collects, so once
 the cases moved under `tests/` this file had to follow them. Everything it registers --
-`--fp-fuzz`, `--fp-fuzz-seed`, `--fp-gradients`, the tier markers, the `sample`
-parametrisation, `audit_root` -- is scoped to this subtree, exactly as before.
+`--fp-fuzz`, `--fp-fuzz-seed`, `--fp-gradients`, `--fp-write-pin`, the tier markers,
+the `sample` parametrisation -- is scoped to this subtree.
 
 `tests/conftest.py` still applies above it (it is an ancestor now, which it was not when
 this file sat in the package). That one configures PROCESS's own suite -- matplotlib
@@ -20,24 +20,13 @@ import pytest
 # Imported first and for its side effect: enables JAX x64 before any array exists.
 # See functional_process/cottax/_harness/__init__.py.
 import functional_process
-import functional_process.cottax._harness  # noqa: F401
-from functional_process.cottax._harness.fuzz_domain import bounds_for
-from functional_process.cottax._harness.sampling import fuzz_samples
+import functional_process.tests._harness  # noqa: F401
+from functional_process.tests._harness.fuzz_domain import bounds_for
+from functional_process.tests._harness.sampling import fuzz_samples
 
 _FUZZ_DEFAULT = 1
 
 PACKAGE_ROOT = Path(functional_process.__file__).resolve().parent
-
-AUDIT_ROOT = PACKAGE_ROOT / "_audit" / "units"
-"""Audit-record paths in contracts are relative to this.
-
-Records live in their own mirrored tree under `_audit/units/`, cases in another under
-`functional_process/tests/`; both mirror the package layout, so a contract's
-`audit_record` stays the package-relative path it always was and only the root it is
-resolved against moved. Resolved off the *package*, not off this file -- anchoring on
-`__file__` would silently resolve every `audit_record` under `tests/`, where no record
-exists, and `test_audit_record_exists` would fail on every contract at once.
-"""
 
 
 def pytest_configure(config):
@@ -89,6 +78,12 @@ def pytest_addoption(parser):
             "(off by default: they cost ~4 reference calls per argument component, "
             "which for an array argument is the bulk of the run)"
         ),
+    )
+    group.addoption(
+        "--fp-write-pin",
+        action="store_true",
+        default=False,
+        help="regenerate `test_architectures.py`'s pin instead of checking it",
     )
 
 
@@ -152,9 +147,11 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture(scope="session")
-def audit_root():
-    """Directory audit-record paths are resolved against."""
-    return AUDIT_ROOT
+def package_root():
+    """`functional_process/`: what a declared deviation's cited record is resolved
+    against.
+    """
+    return PACKAGE_ROOT
 
 
 @pytest.fixture(scope="session")

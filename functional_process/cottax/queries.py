@@ -22,3 +22,15 @@ def nested_inside(graph: Graph, outer: NodePath) -> Graph:
         if name != outer:
             plan = plan + Nest(name, outer)
     return plan.graph
+
+
+def interior(blocking, index: int):
+    """How block `index` of `blocking` is blocked one level down.
+
+    Spelled here once because cottax moved it: `Blocking.inner[i]` up to `63bae67`,
+    `blocking.entries[i].interior` in the working tree after it.
+    """
+    entries = getattr(blocking, "entries", None)
+    if entries is not None:
+        return entries[index].interior
+    return blocking.inner[index]

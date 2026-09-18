@@ -40,7 +40,7 @@ from functional_process.cottax.models.shield import TokamakShield
 from functional_process.cottax.models.structure import Structure
 from functional_process.cottax.models.tfcoil.namespace import CiccSuperconductingTfCoil
 from functional_process.cottax.models.vacuum.vacuum import VacuumVesselElliptical
-from functional_process.cottax.namespace import Build, Divertor
+from functional_process.cottax.models.namespace import Build, Divertor
 
 
 class Tokamak(ModelNamespace):

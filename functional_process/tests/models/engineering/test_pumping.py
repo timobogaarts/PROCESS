@@ -9,8 +9,8 @@ regression input selects and which `indat.py` still refuses on CoolProp grounds.
 here changes that -- see the port module's docstring.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.models.engineering.pumping import (
     calculate_reynolds_number,
     darcy_friction_haaland,

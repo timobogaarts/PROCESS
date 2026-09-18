@@ -5,8 +5,6 @@ from cottax.interfaces.pytree_namespace_module import From, OutputInto
 from functional_process.cottax.paths import build, pf_coil, physics
 from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.inductance import (
-    NOH_PAD,  # noqa: F401 -- re-exported for tests/test_cold_start.py
-    _cs_segments,  # noqa: F401 -- re-exported for tests/test_cold_start.py
     calculate_pf_cs_plasma_inductances,  # noqa: F401 -- re-exported for tests
     calculate_pf_cs_plasma_inductances_at_reference_width,
     calculate_pf_plasma_inductances_no_central_solenoid,  # noqa: F401 -- re-exported for tests

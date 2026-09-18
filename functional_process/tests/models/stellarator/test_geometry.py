@@ -20,8 +20,8 @@ from unittest.mock import patch
 import numpy as np
 
 import process.models.stellarator.stellarator as stellarator_module
-from functional_process.cottax._harness import Tier1Contract, legacy_sample
-from functional_process.cottax._harness.process_reference import process_reference
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.process_reference import process_reference
 from functional_process.cottax.models.stellarator.geometry import (
     calculate_default_aspect_ratio,
     calculate_stellarator_plasma_geometry,

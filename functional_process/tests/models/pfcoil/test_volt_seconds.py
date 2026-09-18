@@ -21,8 +21,8 @@ circuits' turn currents, whose volt-second totals are the
 import jax.numpy as jnp
 import numpy as np
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.pfcoil import (
     N_CS_PF_COILS,
     NGC2,

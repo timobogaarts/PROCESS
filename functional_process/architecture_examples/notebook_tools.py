@@ -24,8 +24,7 @@ REPO = Path(__file__).resolve().parents[2]
 """The `PROCESS/` checkout: what the notebooks `chdir` to."""
 
 JAXGRAPH_SRC = REPO.parent.parent / "jaxgraph" / "src"
-"""The editable cottax checkout beside this repo, if the layout is the documented one
-(`two_opt_driver/scripts/README.md`: `PYTHONPATH=~/projects/jaxgraph/src:.`)."""
+"""The editable cottax checkout beside this repo, if there is one."""
 
 DEFAULT_TIMEOUT = 1800
 """Seconds one cell may take: a cold assembly compiles an MDA and solves twice."""

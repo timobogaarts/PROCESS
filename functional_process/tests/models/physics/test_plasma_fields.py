@@ -18,8 +18,8 @@ harness's sense (a real, already-validated PROCESS answer), just sourced from a
 regression MFILE rather than a `tests/unit` parametrisation.
 """
 
-from functional_process.cottax._harness import Tier1Contract
-from functional_process.cottax._harness.sample_store import FROM_FILE
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.physics.plasma_fields import (
     PlasmaInboardToroidalField,
     PlasmaOutboardToroidalField,
