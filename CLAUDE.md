@@ -240,6 +240,12 @@ either:
   extrapolation (`--fp-gradients`, opt-in); `--fp-fuzz N` / `--fp-fuzz-seed S` control
   random sampling. This is the check the rewrite is being bought: a `stop_gradient`
   injected into the pilot port failed 10 gradient tests while every value test passed.
+- **The architectures' own tests** (`tests/architectures/`): the drivers, and the
+  recipes that are not on the pin -- `closing` (an equality closed inside the MDA),
+  `stages` (the first-stage / recourse split by `reach`), `ouu` (the two-stage
+  formulation, N=32 on CPU), `lift` (a sizing rule lifted into the optimiser),
+  `bracketed` (the globally convergent 1-D root). ~5 min in all; `paper_tests/` are
+  thin CLIs over these units and `configurations/kinds.py` is their decision-kind data.
 - **The architecture pin** (`tests/test_architectures.py`, `tier4`) solves every
   checked-in configuration (`functional_process/configurations/<name>.py`: the machine,
   its values and its problem as stated trees, converted once from the regression
