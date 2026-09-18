@@ -1,7 +1,7 @@
 """The inner analysis under each cut: Picard steps per coupled block, from one cold
 state, and the steady-state cost of one converged MDA.
 
-Every recipe starts from the same point -- `sand_harness.cold_state`, the graph after
+Every recipe starts from the same point -- `evaluate.cold_state`, the graph after
 one pass in call order, which is where PROCESS starts too -- so the step counts
 compare the *iteration*, not the start. `steps` is `optimistix`'s count per block;
 `total` sums them; `depth` is the body's longest chain (`graph_census.py`), so
@@ -18,17 +18,21 @@ import time
 
 import networkx as nx
 from common import CONFIGURATIONS, LABEL, RECIPES, cut_for, fmt, stem, tex_name, write_csv, write_json, write_tex
-from cottax.abstract import runnable
-from cottax.blocking import Blocking
+from cottax.answerable import AnswerableGraph, runnable
 from cottax.evaluation.schedule import Schedule
 from cottax.names import PathMap
+from cottax.visualization.sequencing import Solve, entries
 
-from functional_process.cottax import session
-from functional_process.cottax.core.solver.drivers import PicardDriver
-from functional_process.cottax.indat import graph_for
-from functional_process.cottax.mda import assign_drivers, cut_graph, default_drivers
-from functional_process.cottax.mda_harness import _without_excluded
-from functional_process.cottax.sand_harness import _mda_runner, cold_state, seed_env
+from functional_process.cottax.architectures import session
+from functional_process.cottax.architectures.drivers import PicardDriver
+from functional_process.cottax.architectures.evaluate import (
+    cold_state,
+    jit_schedule,
+    seed_env,
+    without_excluded,
+)
+from functional_process.cottax.architectures.mda import assign_drivers, cut_graph, default_drivers
+from functional_process.cottax.input.indat import graph_for
 
 
 def measure(live, raw, recipe: str, repeats: int) -> dict:
@@ -39,11 +43,10 @@ def measure(live, raw, recipe: str, repeats: int) -> dict:
         if isinstance(driver, PicardDriver):
             drivers[problem] = PicardDriver(report_steps=True)
     runnable_graph = assign_drivers(graph, drivers)
-    blocking = Blocking.scc(runnable_graph)
-    schedule = Schedule(blocking)
+    schedule = Schedule(AnswerableGraph(runnable_graph))
     env = PathMap(seed_env(live.reference.data, schedule, runnable_graph,
                            cold_state(live.reference.data, live.machine_graph)))
-    run = _mda_runner(schedule)
+    run = jit_schedule(schedule)
     out = dict(run(env))  # cold: compiles
     wall = []
     for _ in range(repeats):
@@ -56,12 +59,12 @@ def measure(live, raw, recipe: str, repeats: int) -> dict:
             block = var.spelling.split("^problem", 1)[-1]
             steps[block] = int(out[var])
     depths = {}
-    for sub, problem in zip(blocking.subgraphs, blocking.problems, strict=True):
-        if problem is None or len(sub.nodes) <= 1:
+    for entry in entries(runnable_graph):
+        if not isinstance(entry, Solve) or len(entry.nodes) <= 1:
             continue
-        body = runnable(sub)
-        depths[problem.spelling.split("^problem", 1)[-1]] = (
-            nx.dag_longest_path_length(body._nx_dependencies) + 1 if body.nodes else 0
+        body = runnable(entry.subgraph)
+        depths[entry.problem.spelling.split("^problem", 1)[-1]] = (
+            nx.dag_longest_path_length(body.graph._nx_dependencies) + 1 if body.nodes else 0
         )
     return {
         "steps": steps,
@@ -75,12 +78,15 @@ def measure(live, raw, recipe: str, repeats: int) -> dict:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
     repeats = int(argv[argv.index("--repeats") + 1]) if "--repeats" in argv else 3
     rows, tex, detail = [], [], {}
     for path in chosen:
         live = session.open_session(path)
-        raw = _without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
+        raw = without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
         name = stem(path)
         detail[name] = {}
         cells = [tex_name(name)]

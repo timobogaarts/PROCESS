@@ -17,30 +17,31 @@ from __future__ import annotations
 import sys
 
 import networkx as nx
-from common import CONFIGURATIONS, LABEL, RECIPES, cut_for, fmt, stem, tex_name, write_csv, write_json, write_tex
-from cottax.abstract import runnable
-from cottax.blocking import Blocking
+from common import CONFIGURATIONS, LABEL, RECIPES, cut_for, stem, tex_name, write_csv, write_json, write_tex
+from cottax.answerable import runnable
 from cottax.problem import ConditionalNode, is_fixed_point, is_root_find
 
-from functional_process.cottax import session
-from functional_process.cottax.indat import graph_for
-from functional_process.cottax.mda_harness import _without_excluded
+from functional_process.cottax.architectures import session
+from functional_process.cottax.architectures.evaluate import without_excluded
+from functional_process.cottax.architectures.mda import cut_graph
+from functional_process.cottax.input.indat import graph_for
 
 
 def raw_graph(live):
-    return _without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
+    return without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
 
 
 def census_raw(graph) -> dict:
     problems = [n for n in graph.nodes if isinstance(graph[n], ConditionalNode)]
+    deps = graph.graph
     return {
         "nodes": len(graph.nodes),
         "functions": len(graph.nodes) - len(problems),
-        "boundary_inputs": len(graph.boundary_inputs),
-        "variables": len(graph.owned_variables),
-        "components": len(graph.cycles),
-        "component_sizes": [len(c) for c in graph.cycles],
-        "largest_component": max((len(c) for c in graph.cycles), default=0),
+        "boundary_inputs": len(deps.boundary_inputs),
+        "variables": len(deps.owned_variables),
+        "components": len(deps.cycles),
+        "component_sizes": [len(c) for c in deps.cycles],
+        "largest_component": max((len(c) for c in deps.cycles), default=0),
         "root_finds": sum(1 for p in problems if is_root_find(graph[p])),
         "fixed_points": sum(1 for p in problems if is_fixed_point(graph[p])),
     }
@@ -48,18 +49,20 @@ def census_raw(graph) -> dict:
 
 def census_cut(graph) -> dict:
     """What a cut graph carries: copies, rerouted reads, problems, and body depths."""
-    hats = [v for v in graph.owned_variables if v.spelling.startswith("^hat.")]
+    hats = [v for v in graph.graph.owned_variables if v.spelling.startswith("^hat.")]
     reads = sum(
         1 for n in graph.nodes if not isinstance(graph[n], ConditionalNode)
         for v in graph[n].reads if v.spelling.startswith("^hat.")
     )
-    blocking = Blocking.scc(graph)
     depths = []
-    for sub in blocking.subgraphs:
-        if len(sub.nodes) <= 1:
+    # Per component (`Blocking.scc`'s blocks, before drivers): the body is what one
+    # iterate runs -- the component's function nodes -- and its depth the longest
+    # chain through them.
+    for component in graph.graph.components:
+        if len(component) <= 1:
             continue
-        body = runnable(sub)
-        deps = body._nx_dependencies
+        body = runnable(graph.subgraph(component))
+        deps = body.graph._nx_dependencies
         depths.append(nx.dag_longest_path_length(deps) + 1 if body.nodes else 0)
     return {
         "copies": len(hats),
@@ -73,6 +76,9 @@ def census_cut(graph) -> dict:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
     rows, tex_rows, detail = [], [], {}
     for path in chosen:
@@ -84,8 +90,6 @@ def main(argv=None) -> int:
         per_cut = {}
         for recipe in RECIPES:
             cut = cut_for(recipe)
-            from functional_process.cottax.mda import cut_graph  # noqa: PLC0415
-
             graph = (cut_graph if cut is None else cut)(raw)
             per_cut[recipe] = census_cut(graph)
             detail[name]["cuts"][recipe] = per_cut[recipe]

@@ -1,57 +1,235 @@
 {
- "parsed_counts": {
-  "decision_kinds.md": {
-   "\u00a71 (ixc)": 8,
-   "\u00a73.1": 147,
-   "\u00a73.2": 76,
-   "\u00a73.3": 16,
-   "\u00a73.4": 62,
-   "\u00a73.5": 13,
-   "\u00a73.6": 12
-  },
-  "output_kinds.md": {
-   "\u00a71a": 10,
-   "\u00a71b": 7,
-   "\u00a71c": 1,
-   "\u00a71d": 2
-  }
- },
- "n_classified_inputs": 314,
- "n_claimed_build_outputs": 41,
- "unclassified_boundary_inputs": [],
- "classified_but_not_in_graph": [
-  ".physics.beta_thermal_vol_avg",
-  ".physics.beta_toroidal_vol_avg",
-  ".physics.pden_plasma_ohmic_mw"
+ "configuration": "stellarator_helias",
+ "graph": "as measured (156, duct root find kept)",
+ "n_nodes": 156,
+ "n_boundary_inputs": 311,
+ "claims": "sections 1a-1d (the handoff's)",
+ "n_claimed_build_outputs": 25,
+ "recourse": [
+  ".physics.nd_plasma_electrons_vol_avg",
+  ".physics.f_nd_alpha_thermal_electron"
  ],
- "sampled_misclassified": {
-  ".costs.life_plant": "build",
-  ".costs.f_t_plant_available": "operating",
-  ".tfcoil.temp_tf_cryo": "operating",
-  ".fwbs.fhole": "build",
-  ".tfcoil.dx_tf_wp_insulation": "build",
-  ".fwbs.dr_fw_wall": "build",
-  ".divertor.tdiv": "operating",
-  ".stellarator.f_rad": "operating"
+ "leaves": {
+  "all": [
+   ".constraints.f_fw_rad_max",
+   ".costs.UCAD",
+   ".costs.UCAF",
+   ".costs.UCAHTS",
+   ".costs.UCAP",
+   ".costs.UCBPMP",
+   ".costs.UCCO",
+   ".costs.UCCPMP",
+   ".costs.UCCR",
+   ".costs.UCDGEN",
+   ".costs.UCDTC",
+   ".costs.UCDUCT",
+   ".costs.UCEL",
+   ".costs.UCFPR",
+   ".costs.UCFWA",
+   ".costs.UCFWPS",
+   ".costs.UCFWS",
+   ".costs.UCGSS",
+   ".costs.UCINT",
+   ".costs.UCLV",
+   ".costs.UCMB",
+   ".costs.UCNBV",
+   ".costs.UCPHX",
+   ".costs.UCPP",
+   ".costs.UCSH",
+   ".costs.UCSWYD",
+   ".costs.UCTFDR",
+   ".costs.UCTFGR",
+   ".costs.UCTFIC",
+   ".costs.UCTPMP",
+   ".costs.UCTR",
+   ".costs.UCVALV",
+   ".costs.UCVDSH",
+   ".costs.UCVIAC",
+   ".costs.UCWS",
+   ".costs.abktflnc",
+   ".costs.adivflnc",
+   ".costs.cconfix",
+   ".costs.cconshtf",
+   ".costs.cfind",
+   ".costs.cland",
+   ".costs.cowner",
+   ".costs.csi",
+   ".costs.cturbb",
+   ".costs.decomf",
+   ".costs.dintrt",
+   ".costs.discount_rate",
+   ".costs.dtlife",
+   ".costs.fcap0",
+   ".costs.fcap0cp",
+   ".costs.fcdfuel",
+   ".costs.fcontng",
+   ".costs.fcr0",
+   ".costs.fkind",
+   ".costs.ucblbe",
+   ".costs.ucblli2o",
+   ".costs.ucblss",
+   ".costs.ucblvd",
+   ".costs.ucbus",
+   ".costs.uccase",
+   ".costs.uccry",
+   ".costs.uccryo",
+   ".costs.uccu",
+   ".costs.ucdiv",
+   ".costs.ucech",
+   ".costs.ucf1",
+   ".costs.ucfuel",
+   ".costs.uche3",
+   ".costs.uchrs",
+   ".costs.uchts",
+   ".costs.uciac",
+   ".costs.ucich",
+   ".costs.uclh",
+   ".costs.ucme",
+   ".costs.ucmisc",
+   ".costs.ucnbi",
+   ".costs.ucoam",
+   ".costs.ucpens",
+   ".costs.ucrb",
+   ".costs.ucsc",
+   ".costs.ucshld",
+   ".costs.uctfbr",
+   ".costs.uctfbus",
+   ".costs.uctfps",
+   ".costs.uctfsw",
+   ".costs.ucturb",
+   ".costs.ucwindtf",
+   ".costs.ucwst",
+   ".current_drive.eta_ecrh_injector_wall_plug",
+   ".divertor.den_div_structure",
+   ".divertor.xpertin",
+   ".fwbs.declblkt",
+   ".fwbs.declfw",
+   ".fwbs.declshld",
+   ".fwbs.den_steel",
+   ".fwbs.eta_coolant_pump_electric",
+   ".fwbs.f_p_blkt_multiplication",
+   ".fwbs.fvoldw",
+   ".fwbs.fvolsi",
+   ".fwbs.fvolso",
+   ".heat_transport.eta_turbine",
+   ".heat_transport.etatf",
+   ".heat_transport.f_p_blkt_coolant_pump_total_heat",
+   ".heat_transport.f_p_div_coolant_pump_total_heat",
+   ".heat_transport.f_p_fw_coolant_pump_total_heat",
+   ".heat_transport.f_p_shld_coolant_pump_total_heat",
+   ".heat_transport.p_plant_electric_base",
+   ".heat_transport.p_tritium_plant_electric_mw",
+   ".heat_transport.pflux_plant_floor_electric",
+   ".heat_transport.vachtmw",
+   ".impurity_radiation.f_nd_impurity_electron_array[10]",
+   ".impurity_radiation.f_nd_impurity_electron_array[11]",
+   ".impurity_radiation.f_nd_impurity_electron_array[12]",
+   ".impurity_radiation.f_nd_impurity_electron_array[13]",
+   ".impurity_radiation.f_nd_impurity_electron_array[2]",
+   ".impurity_radiation.f_nd_impurity_electron_array[3]",
+   ".impurity_radiation.f_nd_impurity_electron_array[4]",
+   ".impurity_radiation.f_nd_impurity_electron_array[5]",
+   ".impurity_radiation.f_nd_impurity_electron_array[6]",
+   ".impurity_radiation.f_nd_impurity_electron_array[7]",
+   ".impurity_radiation.f_nd_impurity_electron_array[8]",
+   ".impurity_radiation.f_nd_impurity_electron_array[9]",
+   ".impurity_radiation.impurity_arr_zav",
+   ".impurity_radiation.m_impurity_amu_array",
+   ".impurity_radiation.pden_impurity_lz_nd_temp_array",
+   ".impurity_radiation.temp_impurity_keV_array",
+   ".physics.alphan",
+   ".physics.alphat",
+   ".physics.f_nd_protium_electrons",
+   ".physics.f_p_alpha_plasma_deposited",
+   ".physics.f_sync_reflect",
+   ".physics.f_temp_plasma_ion_electron",
+   ".physics.ffwal",
+   ".physics.hfact",
+   ".physics.tauratio",
+   ".stellarator.bmn",
+   ".stellarator.f_asym",
+   ".stellarator.f_w",
+   ".stellarator.fdivwet",
+   ".stellarator.flpitch",
+   ".tfcoil.dcond[0]",
+   ".tfcoil.den_tf_coil_case",
+   ".tfcoil.den_tf_wp_turn_insulation",
+   ".tfcoil.rho_tf_bus",
+   ".vacuum.outgrat_fw",
+   "^stated.tfcoil.eff_tf_cryo"
+  ],
+  "sampled": [
+   ".constraints.f_j_tf_wp_critical_max",
+   ".costs.discount_rate",
+   ".costs.f_t_plant_available",
+   ".costs.life_plant",
+   ".costs.ucsc",
+   ".current_drive.eta_ecrh_injector_wall_plug",
+   ".divertor.tdiv",
+   ".fwbs.declblkt",
+   ".fwbs.declfw",
+   ".fwbs.dr_fw_wall",
+   ".fwbs.f_p_blkt_multiplication",
+   ".fwbs.fhole",
+   ".heat_transport.eta_turbine",
+   ".heat_transport.f_p_fw_coolant_pump_total_heat",
+   ".impurity_radiation.f_nd_impurity_electron_array[13]",
+   ".physics.alphan",
+   ".physics.alphat",
+   ".physics.f_p_alpha_plasma_deposited",
+   ".physics.f_sync_reflect",
+   ".physics.f_temp_plasma_ion_electron",
+   ".physics.hfact",
+   ".stellarator.bmn",
+   ".stellarator.f_asym",
+   ".stellarator.f_rad",
+   ".tfcoil.dx_tf_wp_insulation",
+   ".tfcoil.temp_tf_cryo"
+  ],
+  "build": [
+   ".costs.discount_rate",
+   ".costs.f_t_plant_available",
+   ".costs.life_plant",
+   ".costs.ucsc",
+   ".current_drive.eta_ecrh_injector_wall_plug",
+   ".divertor.tdiv",
+   ".fwbs.declblkt",
+   ".fwbs.declfw",
+   ".fwbs.f_p_blkt_multiplication",
+   ".heat_transport.eta_turbine",
+   ".heat_transport.f_p_fw_coolant_pump_total_heat",
+   ".impurity_radiation.f_nd_impurity_electron_array[13]",
+   ".physics.alphan",
+   ".physics.alphat",
+   ".physics.f_p_alpha_plasma_deposited",
+   ".physics.f_sync_reflect",
+   ".physics.f_temp_plasma_ion_electron",
+   ".physics.hfact",
+   ".stellarator.bmn",
+   ".stellarator.f_asym",
+   ".stellarator.f_rad",
+   ".tfcoil.temp_tf_cryo"
+  ]
  },
- "unmatched_sampled_paths": [],
  "summary": [
   {
    "belief_set": "all",
-   "n_leaves": 147,
+   "n_leaves": 146,
+   "n_operating": 16,
    "nodes_first": 27,
-   "nodes_second": 128,
-   "nodes_recourse": 1,
+   "nodes_second": 112,
+   "nodes_recourse": 17,
    "owned_first": 92,
-   "owned_second": 449,
-   "owned_recourse": 3,
+   "owned_second": 395,
+   "owned_recourse": 57,
    "first_stage_fraction_nodes": 0.17307692307692307,
    "n_violations": 13,
-   "n_confirmed_first_stage": 13
+   "n_confirmed_first_stage": 12
   },
   {
    "belief_set": "sampled",
    "n_leaves": 26,
+   "n_operating": 2,
    "nodes_first": 36,
    "nodes_second": 120,
    "nodes_recourse": 0,
@@ -60,11 +238,12 @@
    "owned_recourse": 0,
    "first_stage_fraction_nodes": 0.23076923076923078,
    "n_violations": 13,
-   "n_confirmed_first_stage": 13
+   "n_confirmed_first_stage": 12
   },
   {
    "belief_set": "build",
    "n_leaves": 22,
+   "n_operating": 2,
    "nodes_first": 60,
    "nodes_second": 96,
    "nodes_recourse": 0,
@@ -73,19 +252,18 @@
    "owned_recourse": 0,
    "first_stage_fraction_nodes": 0.38461538461538464,
    "n_violations": 4,
-   "n_confirmed_first_stage": 22
+   "n_confirmed_first_stage": 21
   }
  ],
  "violations": {
   "all": [
    {
     "place": ".heat_transport.n_primary_heat_exchangers",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71c",
+    "section": "1c",
     "producing_node": ".power.component_thermal_powers",
-    "n_responsible": 53,
+    "stage": "second",
+    "n_responsible": 52,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".costs.abktflnc",
      ".current_drive.eta_ecrh_injector_wall_plug",
      ".current_drive.p_hcd_primary_extra_heat_mw",
@@ -142,12 +320,11 @@
    },
    {
     "place": ".fwbs.life_fw_fpy",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
     "producing_node": ".stellarator.fwbs.fw_blanket_shield_geometry",
-    "n_responsible": 42,
+    "stage": "second",
+    "n_responsible": 41,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".costs.abktflnc",
      ".divertor.tdiv",
      ".divertor.xpertin",
@@ -193,12 +370,11 @@
    },
    {
     "place": ".vacuum.dia_vv_vacuum_ducts",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
-    "n_responsible": 36,
+    "stage": "second",
+    "n_responsible": 35,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".impurity_radiation.f_nd_impurity_electron_array[10]",
      ".impurity_radiation.f_nd_impurity_electron_array[11]",
      ".impurity_radiation.f_nd_impurity_electron_array[12]",
@@ -238,12 +414,11 @@
    },
    {
     "place": ".vacuum.n_vac_pumps_high",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
-    "n_responsible": 36,
+    "stage": "second",
+    "n_responsible": 35,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".impurity_radiation.f_nd_impurity_electron_array[10]",
      ".impurity_radiation.f_nd_impurity_electron_array[11]",
      ".impurity_radiation.f_nd_impurity_electron_array[12]",
@@ -283,100 +458,91 @@
    },
    {
     "place": ".build.dr_fw_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
     "producing_node": ".stellarator.build",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
+     ".tfcoil.tftmp"
+    ]
+   },
+   {
+    "place": ".build.dr_fw_outboard",
+    "section": "1b",
+    "producing_node": ".stellarator.build",
+    "stage": "recourse",
+    "n_responsible": 1,
+    "responsible": [
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".build.dr_shld_vv_gap_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
-     ".tfcoil.tftmp"
-    ]
-   },
-   {
-    "place": ".build.dr_tf_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.coil_radial_thickness",
-    "n_responsible": 2,
-    "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".build.dr_tf_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".stellarator.wp_width_r_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": "^problem.stellarator.coils.intersect",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".tfcoil.dr_tf_wp_with_insulation",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".tfcoil.dx_tf_wp_primary_toroidal",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
-    "place": ".tfcoil.e_tf_magnetic_stored_total_gj",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.stored_magnetic_energy",
-    "n_responsible": 2,
+    "place": ".tfcoil.dx_tf_wp_secondary_toroidal",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.winding_pack_total_size_post",
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    },
    {
     "place": ".tfcoil.j_tf_wp",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
-    "n_responsible": 2,
+    "stage": "recourse",
+    "n_responsible": 1,
     "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
      ".tfcoil.tftmp"
     ]
    }
@@ -384,9 +550,9 @@
   "sampled": [
    {
     "place": ".heat_transport.n_primary_heat_exchangers",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71c",
+    "section": "1c",
     "producing_node": ".power.component_thermal_powers",
+    "stage": "second",
     "n_responsible": 22,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -415,9 +581,9 @@
    },
    {
     "place": ".fwbs.life_fw_fpy",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
     "producing_node": ".stellarator.fwbs.fw_blanket_shield_geometry",
+    "stage": "second",
     "n_responsible": 17,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -441,9 +607,9 @@
    },
    {
     "place": ".vacuum.dia_vv_vacuum_ducts",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
+    "stage": "second",
     "n_responsible": 12,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -462,9 +628,9 @@
    },
    {
     "place": ".vacuum.n_vac_pumps_high",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
+    "stage": "second",
     "n_responsible": 12,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -483,9 +649,21 @@
    },
    {
     "place": ".build.dr_fw_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
     "producing_node": ".stellarator.build",
+    "stage": "second",
+    "n_responsible": 3,
+    "responsible": [
+     ".constraints.f_j_tf_wp_critical_max",
+     ".fwbs.dr_fw_wall",
+     ".tfcoil.dx_tf_wp_insulation"
+    ]
+   },
+   {
+    "place": ".build.dr_fw_outboard",
+    "section": "1b",
+    "producing_node": ".stellarator.build",
+    "stage": "second",
     "n_responsible": 3,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -495,9 +673,9 @@
    },
    {
     "place": ".build.dr_shld_vv_gap_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build",
+    "stage": "second",
     "n_responsible": 3,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -507,9 +685,9 @@
    },
    {
     "place": ".build.dr_tf_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build",
+    "stage": "second",
     "n_responsible": 3,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -518,21 +696,10 @@
     ]
    },
    {
-    "place": ".build.dr_tf_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.coil_radial_thickness",
-    "n_responsible": 2,
-    "responsible": [
-     ".constraints.f_j_tf_wp_critical_max",
-     ".tfcoil.dx_tf_wp_insulation"
-    ]
-   },
-   {
     "place": ".tfcoil.dr_tf_wp_with_insulation",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
+    "stage": "second",
     "n_responsible": 2,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -541,9 +708,9 @@
    },
    {
     "place": ".tfcoil.dx_tf_wp_primary_toroidal",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
+    "stage": "second",
     "n_responsible": 2,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -551,10 +718,10 @@
     ]
    },
    {
-    "place": ".tfcoil.e_tf_magnetic_stored_total_gj",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.stored_magnetic_energy",
+    "place": ".tfcoil.dx_tf_wp_secondary_toroidal",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.winding_pack_total_size_post",
+    "stage": "second",
     "n_responsible": 2,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -563,9 +730,9 @@
    },
    {
     "place": ".tfcoil.j_tf_wp",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post",
+    "stage": "second",
     "n_responsible": 2,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max",
@@ -574,9 +741,9 @@
    },
    {
     "place": ".stellarator.wp_width_r_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": "^problem.stellarator.coils.intersect",
+    "stage": "second",
     "n_responsible": 1,
     "responsible": [
      ".constraints.f_j_tf_wp_critical_max"
@@ -586,9 +753,9 @@
   "build": [
    {
     "place": ".heat_transport.n_primary_heat_exchangers",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71c",
+    "section": "1c",
     "producing_node": ".power.component_thermal_powers",
+    "stage": "second",
     "n_responsible": 18,
     "responsible": [
      ".costs.life_plant",
@@ -613,9 +780,9 @@
    },
    {
     "place": ".fwbs.life_fw_fpy",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
     "producing_node": ".stellarator.fwbs.fw_blanket_shield_geometry",
+    "stage": "second",
     "n_responsible": 13,
     "responsible": [
      ".costs.life_plant",
@@ -635,9 +802,9 @@
    },
    {
     "place": ".vacuum.dia_vv_vacuum_ducts",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
+    "stage": "second",
     "n_responsible": 9,
     "responsible": [
      ".impurity_radiation.f_nd_impurity_electron_array[13]",
@@ -653,9 +820,9 @@
    },
    {
     "place": ".vacuum.n_vac_pumps_high",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".vacuum.vacuum_old",
+    "stage": "second",
     "n_responsible": 9,
     "responsible": [
      ".impurity_radiation.f_nd_impurity_electron_array[13]",
@@ -675,294 +842,231 @@
   "all": [
    {
     "place": ".build.dr_cs",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1d",
     "producing_node": ".initialisation.stellarator_solenoid_absent"
    },
    {
-    "place": ".build.z_tf_inside_half",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.z_tf_inside_half"
+    "place": ".build.dr_cs_tf_gap",
+    "section": "1d",
+    "producing_node": ".initialisation.stellarator_solenoid_absent"
    },
    {
     "place": ".buildings.esbldgm3",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71d",
+    "section": "1d",
     "producing_node": ".initialisation.energy_storage_building_volume"
    },
    {
     "place": ".physics.aspect",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.default_aspect_ratio"
    },
    {
-    "place": ".physics.eps",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
-    "place": ".physics.rminor",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
     "place": ".stellarator.coilcurrent",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.coil_current"
+   },
+   {
+    "place": ".stellarator.f_st_i_total",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_current"
    },
    {
     "place": ".stellarator.r_coil_major",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.stellarator_scaling_factors"
+   },
+   {
+    "place": ".stellarator.r_coil_minor",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
     "place": ".tfcoil.dr_tf_plasma_case",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.dx_tf_side_case_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.n_tf_coils",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
-    "place": ".times.t_plant_pulse_burn",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".initialisation.stellarator_pulse_times"
-   },
-   {
     "place": ".vacuum.d_duct",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": "^problem.vacuum.duct_diameter_root_find"
    }
   ],
   "sampled": [
    {
     "place": ".build.dr_cs",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1d",
     "producing_node": ".initialisation.stellarator_solenoid_absent"
    },
    {
-    "place": ".build.z_tf_inside_half",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.z_tf_inside_half"
+    "place": ".build.dr_cs_tf_gap",
+    "section": "1d",
+    "producing_node": ".initialisation.stellarator_solenoid_absent"
    },
    {
     "place": ".buildings.esbldgm3",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71d",
+    "section": "1d",
     "producing_node": ".initialisation.energy_storage_building_volume"
    },
    {
     "place": ".physics.aspect",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.default_aspect_ratio"
    },
    {
-    "place": ".physics.eps",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
-    "place": ".physics.rminor",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
     "place": ".stellarator.coilcurrent",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.coil_current"
+   },
+   {
+    "place": ".stellarator.f_st_i_total",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_current"
    },
    {
     "place": ".stellarator.r_coil_major",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.stellarator_scaling_factors"
+   },
+   {
+    "place": ".stellarator.r_coil_minor",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
     "place": ".tfcoil.dr_tf_plasma_case",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.dx_tf_side_case_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.n_tf_coils",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
-    "place": ".times.t_plant_pulse_burn",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".initialisation.stellarator_pulse_times"
-   },
-   {
     "place": ".vacuum.d_duct",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": "^problem.vacuum.duct_diameter_root_find"
    }
   ],
   "build": [
    {
     "place": ".build.dr_cs",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1d",
+    "producing_node": ".initialisation.stellarator_solenoid_absent"
+   },
+   {
+    "place": ".build.dr_cs_tf_gap",
+    "section": "1d",
     "producing_node": ".initialisation.stellarator_solenoid_absent"
    },
    {
     "place": ".build.dr_fw_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1b",
+    "producing_node": ".stellarator.build"
+   },
+   {
+    "place": ".build.dr_fw_outboard",
+    "section": "1b",
     "producing_node": ".stellarator.build"
    },
    {
     "place": ".build.dr_shld_vv_gap_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build"
-   },
-   {
-    "place": ".build.dr_tf_inboard",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.coil_radial_thickness"
    },
    {
     "place": ".build.dr_tf_outboard",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": ".stellarator.build"
    },
    {
-    "place": ".build.z_tf_inside_half",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.z_tf_inside_half"
-   },
-   {
     "place": ".buildings.esbldgm3",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71d",
+    "section": "1d",
     "producing_node": ".initialisation.energy_storage_building_volume"
    },
    {
     "place": ".physics.aspect",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.default_aspect_ratio"
    },
    {
-    "place": ".physics.eps",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
-    "place": ".physics.rminor",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.stellarator_scaling_factors"
-   },
-   {
     "place": ".stellarator.coilcurrent",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.coil_current"
+   },
+   {
+    "place": ".stellarator.f_st_i_total",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_current"
    },
    {
     "place": ".stellarator.r_coil_major",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
+    "producing_node": ".stellarator.stellarator_scaling_factors"
+   },
+   {
+    "place": ".stellarator.r_coil_minor",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
     "place": ".stellarator.wp_width_r_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": "^problem.stellarator.coils.intersect"
    },
    {
     "place": ".tfcoil.dr_tf_plasma_case",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.dr_tf_wp_with_insulation",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post"
    },
    {
     "place": ".tfcoil.dx_tf_side_case_min",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.coil_casing"
    },
    {
     "place": ".tfcoil.dx_tf_wp_primary_toroidal",
-    "kind": "definition",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post"
    },
    {
-    "place": ".tfcoil.e_tf_magnetic_stored_total_gj",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".stellarator.coils.stored_magnetic_energy"
+    "place": ".tfcoil.dx_tf_wp_secondary_toroidal",
+    "section": "1a",
+    "producing_node": ".stellarator.coils.winding_pack_total_size_post"
    },
    {
     "place": ".tfcoil.j_tf_wp",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71a",
+    "section": "1a",
     "producing_node": ".stellarator.coils.winding_pack_total_size_post"
    },
    {
     "place": ".tfcoil.n_tf_coils",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
+    "section": "1a",
     "producing_node": ".stellarator.stellarator_scaling_factors"
    },
    {
-    "place": ".times.t_plant_pulse_burn",
-    "kind": "\u00a73.6",
-    "source": "decision_kinds.md \u00a73.6",
-    "producing_node": ".initialisation.stellarator_pulse_times"
-   },
-   {
     "place": ".vacuum.d_duct",
-    "kind": "sizing choice",
-    "source": "output_kinds.md \u00a71b",
+    "section": "1b",
     "producing_node": "^problem.vacuum.duct_diameter_root_find"
    }
   ]

@@ -3,7 +3,7 @@ shapes the port can batch, timed per point on the CPU and on the GPU in the same
 
 Two shapes:
 
-* **`mda`** -- `process/core/scan.py`'s shape: the hand-cut MDA (`sand_harness.
+* **`mda`** -- `process/core/scan.py`'s shape: the hand-cut MDA (`evaluate.
   mda_schedule`) run at N points that differ in two boundary inputs,
   `.physics.rmajor` and `.physics.b_plasma_toroidal_on_axis`, on a sqrt(N) x sqrt(N)
   grid of +-5 % about the reference. Only those two leaves carry a batch axis
@@ -11,9 +11,8 @@ Two shapes:
   `fixed_point`, which vmaps into one batched `while`.
 * **`sand`** -- the fused value+Jacobian of the SAND block (`host_cache`'s
   `_values_and_jacobian` program: one `jacfwd` with the primal as `aux`), vmapped over
-  N flat design vectors drawn as +-1 % perturbations of the design at PROCESS's own
-  converged point (`native_reference`'s `data`, seeded exactly as `run_cold_matrix.
-  solve_sand` seeds a start).
+  N flat design vectors drawn as +-1 % perturbations of the design at the
+  configuration's own cold values (`session.solve_block` seeds the same start).
 
 Per (shape, configuration, backend, precision, N): the first call's wall (compile
 included), the warm wall (min over `--repeats` calls after the first, each
@@ -66,20 +65,20 @@ from common import (  # noqa: E402
 from cottax.names import PathMap  # noqa: E402
 from jax.flatten_util import ravel_pytree  # noqa: E402
 
-from functional_process.cottax import session  # noqa: E402
-from functional_process.cottax.core.solver.host_cache import flat_values  # noqa: E402
-from functional_process.cottax.indat import graph_for  # noqa: E402
-from functional_process.cottax.mda import cut_graph  # noqa: E402
-from functional_process.cottax.mda_harness import CACHE_DIR  # noqa: E402
-from functional_process.cottax.run_cold_matrix import _resolve  # noqa: E402
-from functional_process.cottax.run_sand_harness import _seed  # noqa: E402
-from functional_process.cottax.sand_harness import (  # noqa: E402
+from common import CACHE_DIR  # noqa: E402
+
+from functional_process.cottax.architectures import session  # noqa: E402
+from functional_process.cottax.architectures.evaluate import (  # noqa: E402
     cold_state,
     ground_truth,
     mda_env,
     mda_schedule,
+    seed_block,
     seed_env,
 )
+from functional_process.cottax.architectures.host_cache import flat_values  # noqa: E402
+from functional_process.cottax.architectures.mda import cut_graph  # noqa: E402
+from functional_process.cottax.input.indat import graph_for  # noqa: E402
 
 SIZES = (1, 4, 16, 64, 256, 1024, 4096)
 CONFIGS = (
@@ -141,21 +140,19 @@ def sand_shape(live):
     """`(single, batched, x0)` for the `sand` shape: the block's fused value+Jacobian at
     one flat design vector, and its vmap.
     """
-    if live.sand_build is None:
+    if "SAND" not in live.builds:
         # `session.sand` assembles on first use; assembling without solving is the
         # same call minus the solve, and the block is what this shape times.
-        from functional_process.cottax.run_cold_matrix import build_sand  # noqa: PLC0415
-
-        live.sand_build = build_sand(
+        live.builds["SAND"] = session.build_sand(
             live.reference, live.machine_graph, live.switch_values, optimiser=live.optimiser,
             cut=live.cut,
         )
-    build = live.sand_build
+    build = live.builds["SAND"]
     drive = build.drive
     base = live.reference.data
     stage_env = mda_env(live.reference, graph=live.machine_graph,
                         **({} if live.cut is None else {"cut": live.cut}))[1]
-    seeded, _borrowed = _seed(build.solve_schedule, drive, base, stage_env, design=build.design_paths)
+    seeded, _borrowed = seed_block(build.solve_schedule, drive, base, stage_env, design=build.design_paths)
     context = {}
     for var in drive.context:
         if var in stage_env:
@@ -481,6 +478,9 @@ def render(rows: list[dict]):
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
     if "--render" in argv:
         import json  # noqa: PLC0415
 
@@ -523,7 +523,7 @@ def main(argv=None) -> int:
           flush=True)
     rows = []
     for path in chosen:
-        path = str(_resolve(path))
+        path = stem(path)
         for shape in shapes:
             try:
                 rows += measure(shape, path, backend, precision, sizes, repeats, arrays, tag, recipe)

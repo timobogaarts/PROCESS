@@ -1,116 +1,146 @@
-"""The timings table: the three reference matrices, one `tabular`.
+"""The timings table: one row per configuration and arm (MDF, SAND), under VMCON and
+SLSQP -- the cold wall (assembly, trace, compile, first solve), the SQP iterations,
+the verdict and the warm wall of a second solve of the same assembled arm.
 
-Reads `functional_process/cottax/reference_cold_matrix.txt` (VMCON, cold),
-`reference_slsqp_matrix.txt` (SLSQP, cold) and `reference_warm_matrix.txt` (both,
-warm) -- regenerate those first (`_audit/performance.md` says how) -- and writes one
-row per configuration and arm: the cold phases (trace + lower, compile, total) and
-the steady state (iterations, wall, per-call model time) under each optimiser. No
-solve is run here; this is a renderer, so the table and the references cannot
-disagree.
+`--measure` takes the measurement through `architectures.session` (one `Session`
+per configuration and optimiser, `solve(arm)` cold then `--repeats` more times) and
+writes `out/timings.json`; without it this script is a renderer over that JSON, so
+the table and the measurement cannot disagree. The three `reference_*_matrix.txt`
+tables this used to read were deleted with the harness (`f3015ede`), and with them
+the phase split (trace + lower / compile) and the model ms per call, which came from
+the harness's own timing hooks: those columns are gone from this table.
 
-    $PY paper_tests/timings.py
+    $PY paper_tests/timings.py --measure [--input <name>]... [--repeats 2]   # ~30 min
+    $PY paper_tests/timings.py                                              # render
 """
 
 from __future__ import annotations
 
+import json
+import sys
+import time
 from pathlib import Path
 
-from common import ROOT, fmt, tex_name, write_csv, write_tex
+import jax
+from common import (
+    CONFIGURATIONS,
+    OUT,
+    cottax_tree,
+    fmt,
+    machine,
+    stem,
+    tex_name,
+    write_csv,
+    write_json,
+    write_tex,
+)
 
-REF = ROOT / "functional_process" / "cottax"
-
-
-def cold_rows(path: Path) -> tuple[dict, dict]:
-    """`{(configuration, form): row}` for the solve table and the timing block."""
-    solve, timing, mode = {}, {}, None
-    for line in path.read_text().splitlines():
-        if line.startswith("COLD MATRIX"):
-            mode = "rows"
-            continue
-        if line.startswith("PHASE TIMINGS"):
-            mode = "timing"
-            continue
-        if line.startswith(("BOUNDARY VALUES", "NOTES")):
-            mode = None
-            continue
-        f = line.split()
-        if mode == "rows" and len(f) >= 16 and f[1] in ("MDF", "SAND") and f[-1].isdigit():
-            solve[(f[0], f[1])] = dict(
-                sqp=int(f[9]), status=f[10], objf=f[11], pro_objf=f[12], d_objf=f[13],
-                worst_dx=f[14], max_eq=f[15], min_ie=f[16],
-            )
-        if mode == "timing" and len(f) == 9 and f[1] in ("MDF", "SAND"):
-            timing[(f[0], f[1])] = dict(zip(
-                ("trace", "lower", "compile", "model", "sqp", "other", "total"),
-                map(float, f[2:]), strict=True,
-            ))
-    return solve, timing
+JSON = OUT / "timings.json"
+ARMS = ("MDF", "SAND")
+DRIVERS = ("VMCON", "SLSQP")
 
 
-def warm_rows(path: Path) -> dict:
-    out = {}
-    for line in path.read_text().splitlines():
-        f = line.split()
-        if len(f) == 11 and f[1] in ("MDF", "SAND") and f[2] in ("VMCON", "SLSQP"):
-            out[(f[0], f[1], f[2])] = dict(
-                it=int(f[3]), status=f[4], objf=f[5], wall=float(f[6]), xla=float(f[7]),
-                host=float(f[8]), calls=int(f[9]), ms=float(f[10]),
-            )
-    return out
+def measure(chosen, repeats: int) -> dict:
+    """`{configuration: {arm: {driver: row}}}`, checkpointed to `out/timings.json`
+    after every row.
+    """
+    from functional_process.cottax.architectures import session  # noqa: PLC0415
+    from functional_process.cottax.architectures.drivers import SlsqpDriver  # noqa: PLC0415
+
+    optimisers = {"VMCON": None, "SLSQP": SlsqpDriver}
+    rows: dict = {"machine": machine(), "cottax": cottax_tree(), "rows": {}}
+    if JSON.exists():
+        rows["rows"] = json.loads(JSON.read_text()).get("rows", {})
+    began = time.perf_counter()
+    for path in chosen:
+        name = stem(str(path))
+        for driver in DRIVERS:
+            live = session.open_session(name, optimiser=optimisers[driver])
+            for arm in ARMS:
+                if arm not in live.arms:
+                    continue
+                cold_began = time.perf_counter()
+                cold = live.solve(arm)
+                cold_wall = time.perf_counter() - cold_began
+                warm = [live.solve(arm)["seconds"] for _ in range(repeats)]
+                row = {
+                    "cold_total": cold_wall,
+                    "cold_solve": cold["seconds"],
+                    "it": cold["iterations"],
+                    "status": cold["status"],
+                    "objf": cold["objf"],
+                    "max_eq": cold["max_eq"],
+                    "min_ie": cold["min_ie"],
+                    "warm_wall": min(warm) if warm else None,
+                    "note": cold.get("note", ""),
+                }
+                rows["rows"].setdefault(name, {}).setdefault(arm, {})[driver] = row
+                print(f"{name:22} {arm:4} {driver:5} it {row['it']!s:>4} {row['status']:>10} "
+                      f"cold {cold_wall:6.1f} warm {fmt(row['warm_wall'], 3):>7}  "
+                      f"[{time.perf_counter() - began:.0f} s]", flush=True)
+                write_json("timings.py", rows)
+            jax.clear_caches()
+    return rows
 
 
-def main() -> int:
-    vm_solve, vm_time = cold_rows(REF / "reference_cold_matrix.txt")
-    sl_solve, sl_time = cold_rows(REF / "reference_slsqp_matrix.txt")
-    warm = warm_rows(REF / "reference_warm_matrix.txt")
-    rows, tex = [], []
-    for key in vm_solve:
-        cfg, form = key
-        row = {"configuration": cfg, "arm": form}
-        cells = [tex_name(cfg), form]
-        for driver, solve, timing in (("VMCON", vm_solve, vm_time), ("SLSQP", sl_solve, sl_time)):
-            t = timing.get(key, {})
-            w = warm.get((cfg, form, driver), {})
-            s = solve.get(key, {})
-            row.update({
-                f"{driver}_trace_lower": (t.get("trace", 0) + t.get("lower", 0)) if t else None,
-                f"{driver}_compile": t.get("compile"),
-                f"{driver}_cold_total": t.get("total"),
-                f"{driver}_it": w.get("it", s.get("sqp")),
-                f"{driver}_status": w.get("status", s.get("status")),
-                f"{driver}_warm_wall": w.get("wall"),
-                f"{driver}_ms_per_call": w.get("ms"),
-            })
-            cells += [
-                fmt(row[f"{driver}_trace_lower"], 1), fmt(row[f"{driver}_compile"], 1),
-                fmt(row[f"{driver}_cold_total"], 1), fmt(row[f"{driver}_it"]),
-                fmt(row[f"{driver}_warm_wall"], 3),
-                "--" if not w or w.get("calls", 0) == 0 else fmt(w["ms"], 1),
-            ]
-        rows.append(row)
-        tex.append(cells)
-    write_csv("timings.py", rows)
+def render(rows: dict) -> int:
+    table, tex = [], []
+    for cfg, arms in rows["rows"].items():
+        for arm, drivers in arms.items():
+            row = {"configuration": cfg, "arm": arm}
+            cells = [tex_name(cfg), arm]
+            for driver in DRIVERS:
+                r = drivers.get(driver, {})
+                row.update({
+                    f"{driver}_cold_total": r.get("cold_total"),
+                    f"{driver}_it": r.get("it"),
+                    f"{driver}_status": r.get("status"),
+                    f"{driver}_warm_wall": r.get("warm_wall"),
+                })
+                cells += [fmt(r.get("cold_total"), 1), fmt(r.get("it")), r.get("status", "--"),
+                          fmt(r.get("warm_wall"), 3)]
+            table.append(row)
+            tex.append(cells)
+    write_csv("timings.py", table)
     write_tex(
         "timings.py",
-        ["configuration", "arm",
-         r"\multicolumn{6}{c}{VMCON}", r"\multicolumn{6}{c}{SLSQP}"],
+        ["configuration", "arm", r"\multicolumn{4}{c}{VMCON}", r"\multicolumn{4}{c}{SLSQP}"],
         tex,
-        align="ll" + "rrrrrr" * 2,
-        caption_note=("per optimiser: trace+lower [s], compile [s], cold total [s], SQP iterations, "
-                      "warm wall [s], model ms/call. Read `_audit/performance.md` for the caveats."),
+        align="ll" + "rrlr" * 2,
+        caption_note=(f"per optimiser: cold total [s] (assembly + compile + first solve), SQP "
+                      f"iterations, verdict, warm wall [s]; measured on {rows.get('machine')}, "
+                      f"cottax {str(rows.get('cottax', '')).split(' at ')[0]}"),
     )
     # A second header line the fragment cannot carry in `write_tex`'s one-row header:
     path = Path(__file__).resolve().parent / "out" / "timings.tex"
     text = path.read_text().replace(
         r"\midrule",
-        r"\cmidrule(lr){3-8}\cmidrule(lr){9-14}" "\n"
-        " & & tr+lo & compile & cold & it & warm & ms/call & tr+lo & compile & cold & it & warm & ms/call \\\\\n"
+        r"\cmidrule(lr){3-6}\cmidrule(lr){7-10}" "\n"
+        " & & cold & it & verdict & warm & cold & it & verdict & warm \\\\\n"
         r"\midrule", 1,
     )
     path.write_text(text)
-    for row in tex:
-        print("  ".join(str(c) for c in row))
+    for cells in tex:
+        print("  ".join(str(c) for c in cells))
     return 0
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
+    if "--measure" in argv:
+        chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
+        repeats = int(argv[argv.index("--repeats") + 1]) if "--repeats" in argv else 2
+        rows = measure(chosen, repeats)
+        return render(rows)
+    if not JSON.exists():
+        raise SystemExit(
+            f"no {JSON}: the reference_*_matrix.txt tables this rendered were deleted with "
+            f"the harness (f3015ede); run `paper_tests/timings.py --measure` first"
+        )
+    return render(json.loads(JSON.read_text()))
 
 
 if __name__ == "__main__":

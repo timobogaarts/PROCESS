@@ -3,13 +3,19 @@
 One row per (configuration, arm, optimiser, cut): the optimiser's iterations and
 verdict, the objective, the problem's size in the optimiser (design entries and
 condition entries -- a Jacobi SAND carries whole profiles), the cold wall (assembly,
-trace, compile, first solve) and the warm wall with its XLA share, exactly as
-`run_warm_matrix` measures them. Rows are checkpointed to the CSV as they land, so a
-killed run keeps what it measured; `--input`, `--arm`, `--driver`, `--recipe` select.
+trace, compile, first solve -- `session.Session.solve`'s first call) and the warm wall
+(the least of `--repeats` further solves of the same assembled arm). Rows are
+checkpointed to the CSV as they land, so a killed run keeps what it measured;
+`--input`, `--arm`, `--driver`, `--recipe` select.
+
+What the deleted `run_warm_matrix` also gave -- the XLA share of the warm wall and
+the model ms per call, from its phase timing -- is not measured here: the port's
+drivers carry no timing hooks.
 
     $PY paper_tests/architectures.py                     # everything (~1 h)
-    $PY paper_tests/architectures.py --input tests/regression/input_files/helias_5b.IN.DAT
+    $PY paper_tests/architectures.py --input helias_5b
     $PY paper_tests/architectures.py --recipe jacobi --arm sand --driver SLSQP
+    $PY paper_tests/architectures.py --render            # the tables from out/architectures.csv
 """
 
 from __future__ import annotations
@@ -18,27 +24,21 @@ import sys
 import time
 
 import jax
+import numpy as np
 from common import CONFIGURATIONS, LABEL, RECIPES, cut_for, fmt, stem, tex_name, write_csv, write_tex
 
-from functional_process.cottax import session
-from functional_process.cottax.core.solver import drivers as _drivers
-from functional_process.cottax.importer import read_indat
-from functional_process.cottax.run_cold_matrix import _resolve
-from functional_process.cottax.run_warm_matrix import measure
+from functional_process.cottax.architectures import session
+from functional_process.cottax.architectures.drivers import SlsqpDriver
+from functional_process.cottax.architectures.evaluate import mda_env
 
-DRIVERS = {"VMCON": None, "SLSQP": _drivers.SlsqpDriver}
+DRIVERS = {"VMCON": None, "SLSQP": SlsqpDriver}
 
 
 def _sizes(live, arm: str) -> dict:
     """Design and condition entry counts of the optimiser's problem, after assembly."""
     if arm == "sand":
-        drive = live.sand_build.drive
-        env = None
+        drive = live.builds["SAND"].drive
         try:
-            import numpy as np  # noqa: PLC0415
-
-            from functional_process.cottax.sand_harness import mda_env  # noqa: PLC0415
-
             env = mda_env(live.reference, graph=live.machine_graph,
                           **({} if live.cut is None else {"cut": live.cut}))[1]
             design = sum(int(np.size(env[u])) if u in env else 1 for u in drive.unknowns)
@@ -46,13 +46,25 @@ def _sizes(live, arm: str) -> dict:
             design = len(drive.unknowns)
         return {"unknowns": len(drive.unknowns), "design_entries": design,
                 "conditions": len(drive.conditions)}
-    problem = live.mdf_build.problem
+    problem = live.builds["MDF"].problem
     return {"unknowns": len(problem.design), "design_entries": len(problem.design),
             "conditions": len(problem.conditions)}
 
 
+def measure(live, arm: str, repeats: int) -> dict:
+    """Cold (assembly + compile + first solve) and warm (the least of `repeats` more)."""
+    began = time.perf_counter()
+    cold = live.solve(arm.upper())
+    cold_wall = time.perf_counter() - began
+    warm = [live.solve(arm.upper())["seconds"] for _ in range(repeats)]
+    return dict(cold, _cold_wall=cold_wall, _wall=min(warm) if warm else None)
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
     arms = [argv[i + 1] for i, a in enumerate(argv) if a == "--arm"] or ["mdf", "sand"]
     which_drivers = [argv[i + 1] for i, a in enumerate(argv) if a == "--driver"] or list(DRIVERS)
@@ -61,27 +73,21 @@ def main(argv=None) -> int:
     rows = []
     began = time.perf_counter()
     for path in chosen:
-        path = _resolve(path)
         name = stem(str(path))
-        root_find = read_indat(str(path)).problem.is_evaluation
         for arm in arms:
-            if arm == "sand" and root_find:
-                continue
             for driver in which_drivers:
                 for recipe in which:
                     row = {"configuration": name, "arm": arm.upper(), "driver": driver, "recipe": recipe}
                     try:
-                        live = session.open_session(str(path), optimiser=DRIVERS[driver], cut=cut_for(recipe))
-                        r = measure(path, arm, DRIVERS[driver], repeats, cut=cut_for(recipe))
-                        # `measure` opened its own session; sizes want the assembled build,
-                        # so assemble once more here (cached programs make it cheap).
-                        getattr(live, arm)()
+                        live = session.open_session(name, optimiser=DRIVERS[driver], cut=cut_for(recipe))
+                        if arm == "sand" and live.root_find:
+                            continue
+                        r = measure(live, arm, repeats)
                         row.update(_sizes(live, arm))
                         row.update(
                             iterations=r.get("iterations"), status=r.get("status"),
                             objf=r.get("objf"), note=(r.get("note") or "")[:120],
-                            cold_wall=r["_cold_wall"], warm_wall=r["_wall"], warm_xla=r["_xla"],
-                            calls=r["_calls"], ms_per_call=r["_median_call"] * 1000,
+                            cold_wall=r["_cold_wall"], warm_wall=r["_wall"],
                         )
                     except Exception as failure:  # noqa: BLE001 -- a row, not an exit
                         row.update(status="FAILED", note=f"{type(failure).__name__}: {failure}"[:200])
@@ -99,7 +105,7 @@ def main(argv=None) -> int:
 
 def _render(rows):
     """Two `tabular`s -- MDF and SAND -- one row per configuration x cut, one cell per
-    optimiser: `it / entries / warm wall (XLA share)`."""
+    optimiser: `it / entries / warm wall`."""
     for arm in ("MDF", "SAND"):
         tex = []
         keys = list(dict.fromkeys((r["configuration"], r["recipe"]) for r in rows if r["arm"] == arm))
@@ -115,15 +121,12 @@ def _render(rows):
                 if r.get("status") != "converged":
                     cells.append(f"{r.get('status')} ({r.get('iterations') or '--'})")
                     continue
-                share = (r["warm_xla"] / r["warm_wall"] * 100) if r.get("warm_wall") else 0
-                cells.append(f"{r['iterations']} / {r['design_entries']} / {fmt(r['warm_wall'], 2)} ({share:.0f}\\%)")
+                cells.append(f"{r['iterations']} / {r['design_entries']} / {fmt(r['warm_wall'], 2)}")
             tex.append(cells)
         write_tex(
             "architectures.py", ["configuration", "cut", "VMCON", "SLSQP"], tex,
             name=f"architectures_{arm.lower()}", align="llrr",
-            caption_note=(f"{arm}: SQP iterations / design entries / warm wall [s] "
-                          f"(share of it inside the compiled block programs); the rest is the "
-                          f"optimiser's own cost"),
+            caption_note=f"{arm}: SQP iterations / design entries / warm wall [s]",
         )
 
 
@@ -136,7 +139,7 @@ def render_csv(path=None):
     with open(path or OUT / "architectures.csv") as handle:
         rows = []
         for r in csv.DictReader(handle):
-            for k in ("warm_wall", "warm_xla", "cold_wall", "ms_per_call"):
+            for k in ("warm_wall", "cold_wall"):
                 r[k] = float(r[k]) if r.get(k) else None
             rows.append(r)
     _render(rows)

@@ -7,13 +7,29 @@ one thing over the seven reference input files and writes it to `out/` as a `.cs
 worth keeping, a `.json`. Every fragment's first line says which script, tree, cottax
 commit and machine produced it.
 
+**The scripts are thin command-line drivers over the port.** The physics, the graph
+operations and the statistics live in `functional_process/cottax/architectures/`
+(`session`, `mda`, `recipes`, `mdf`, `sand`, `evaluate`, `closing`, `stages`,
+`beliefs`, `ouu`) and `functional_process/configurations/` (`kinds`: the decision kinds
+and the belief table); what lives here is the command line, the rendering (tables,
+figures, JSON), the measurement loops, and the one thing the port deliberately does
+not carry -- PROCESS itself in the loop (`common.process_reference`: one converged
+PROCESS run per input file, cached under `~/.cache/functional_process/`, for the
+comparison columns and for the deterministic design the UQ and OUU studies start
+from). `common.py` is the shared writer and provenance line.
+
 ```bash
 PY=~/miniconda3/envs/process_port/bin/python      # see ../CLAUDE.md for the env
 export JAX_PLATFORMS=cpu
 $PY paper_tests/graph_census.py        # ~1 min   structure: nodes, SCCs, cuts, body depth
-$PY paper_tests/timings.py             # instant  renders the three reference matrices
+$PY paper_tests/timings.py --measure   # ~30 min  cold / warm per arm and optimiser; then
+$PY paper_tests/timings.py             # instant  renders out/timings.json
 $PY paper_tests/mda_convergence.py     # ~5 min   Picard steps per block under each cut
 $PY paper_tests/architectures.py       # ~1 h     MDF/SAND x cut x optimiser, warm and cold
+$PY paper_tests/stage_check.py         # instant  the two-stage split's violations
+$PY paper_tests/close_conditions.py --table --solve   # ~7 min  equalities closed in the MDA
+$PY paper_tests/uq.py --n-base 64 --n-mc 64 --chunk 64   # the smallest Sobol' study
+$PY paper_tests/ouu.py --smoke --n 32 --alpha 0.75 --max-iter 3   # the smallest OUU run
 ```
 
 `batching.py` is the exception to the env line above: it needs a CUDA jaxlib, so it runs
@@ -31,19 +47,36 @@ recipe the copies minted and the deepest coupled-block body. The body depth is t
 structural parallelism number: a Jacobi body is one layer (every node of the component
 evaluates from the previous iterate), a Gauss-Seidel body is as deep as its sweep.
 
-**`timings`** -- one row per configuration and arm, under VMCON and SLSQP: trace+lower,
-compile, cold total, SQP iterations, warm wall, model ms/call. Read straight off
-`functional_process/cottax/reference_*_matrix.txt`; regenerate those first
-(`functional_process/_audit/performance.md`).
+**`timings`** -- one row per configuration and arm, under VMCON and SLSQP: cold total
+(assembly, compile, first solve), SQP iterations, verdict, warm wall -- measured
+through `architectures.session` (`--measure`, into `out/timings.json`) and rendered
+from that. The `reference_*_matrix.txt` tables this used to read were deleted with
+the harness (`f3015ede`), and with them the phase split (trace + lower / compile)
+and the model ms per call: those columns are gone.
 
 **`mda_convergence`** -- the inner analysis alone, from one cold state
-(`sand_harness.cold_state`: the graph after one pass in call order, which is where
+(`evaluate.cold_state`: the graph after one pass in call order, which is where
 PROCESS starts too): Picard steps per coupled block, their sum, the sum weighted by body
 depth (sequential node evaluations), and the warm wall of one converged MDA.
 
-**`architectures`** -- MDF and SAND assembled on each cut and answered by each optimiser:
+**`architectures`** -- MDF and SAND assembled on each cut and answered by each optimiser
+(`session.open_session(name, optimiser=..., cut=...)`, `solve(arm)` cold then warm):
 iterations, verdict, objective, design entries (a Jacobi SAND carries whole profiles),
-cold wall and warm wall. One `tabular` per optimiser.
+cold wall and warm wall. One `tabular` per optimiser. The XLA share of the warm wall
+and the ms per model call are no longer measured (the harness's timing hooks went
+with it).
+
+**`stage_check`** -- the two-stage split (`architectures.stages`: `leaves`, `split`,
+`violations`, `report`) on the three leaf sets of the 2026-09-17 handoff (`all`,
+`sampled`, `build`), on the 156-node graph it measured and against the claims it had
+(`kinds.CLAIMED_BUILD_OUTPUTS` sections 1a-1d): 27/156 & 13, 36/156 & 13, 60/156 & 4.
+`--runnable` for the 154-node graph the port runs, `--lifetimes` for the two
+section-4 claims added since; `tests/architectures/test_stages.py` pins all four.
+Writes `out/stage_check.{md,json}`.
+
+**`build_spread`** -- the four rule-closed build outputs that still vary per sample on
+the `build` table, their spread over the belief samples at a design: `ouu.two_stage`
+through `ouu.py`'s `Choice`, a local `vmap` of the closed MDA for the columns.
 
 **`batching`** -- whether `jax.vmap` pays on the GPU (RTX 3080, 10 GB, FP64 at 1/64 of
 FP32). Two shapes, each vmapped over N = 1, 4, ..., 65536 independent points and timed
@@ -57,9 +90,14 @@ Findings: the stellarator MDA crosses over at N~2000 and is still halving per 4x
 batched limit; f32 is unusable (fusion rates overflow) and irrelevant (latency-bound).
 
 **`close_conditions`** -- `stellarator_helias`'s two equalities closed as root finds
-inside the MDA instead of handed to the optimiser (`--table` ranks every pairing by the
-cycle it closes and its sensitivity; `--solve` runs the 6-variable optimisation; `--batch`
-vmaps the MDA). Four batch shapes: `plain` (the hand-cut MDA), `nested` (root finds with
+inside the MDA instead of handed to the optimiser -- `architectures.closing` (`close`,
+`seed`, `nested_blocking`, `describe`, `cycle_of`; the `SafeguardedNewtonDriver` is
+`architectures.drivers`'). `--table` ranks every pairing by the cycle it closes
+(`closing.cycle_of`) and its sensitivity (`jacfwd` of `mdf.condition_map`); `--solve`
+runs the 6-variable optimisation (`mdf.solve` on `Closed.problem`, VMCON and SLSQP,
+cold then warm, the plain MDF and PROCESS's own answer beside it); `--batch` vmaps
+the MDA. The default pairings are `kinds.HISTORIC_PAIRING` (`c2` by `hfact`, `c16` by
+the alpha fraction); `--pairing one|two|te` are `kinds.PAIRINGS`. Four batch shapes: `plain` (the hand-cut MDA), `nested` (root finds with
 the cycle's Picards nested inside, exact Newton), `closed` (the c16 root find `Residualise`d
 and `Combine`d with those Picards into one 4-unknown square Newton with a Broyden update --
 no loop inside the loop; the default), and `predicted` (`closed` started from a first-order
@@ -71,23 +109,30 @@ forward tangent through FP64 transcendentals costs a primal, so a Jacobian recom
 every step loses to a secant update.
 
 **`uq`** -- the deterministic PROCESS optimum under uncertainty. `stellarator_helias`'s
-design is fixed at PROCESS's own converged `ixc` (8 values, `close_conditions_solve.json`),
-`hfact` -- PROCESS's closure variable for the power balance -- becomes an *uncertain
-input*, and one closure stays inside the MDA: the power balance `c2` closed by the plasma
-density (`closed(live, pairings={c2: nd_plasma_electrons_vol_avg}, flatten=True)`, a
-23-node block: the root find combined with the fusion-rate Picard, 3 unknowns, Broyden).
-The net-electric equality `c16` is not closed -- net power is an output and its residual
-against the 1000 MW target is reported like an inequality. 26 boundary inputs (physics,
-blanket, coil, plant and cost; `INPUTS` in the script is the table, meant to be edited)
-plus a `dummy` nothing reads; every one was checked to be a boundary input of this
-graph, none dropped. Saltelli sampling (scrambled Sobol', (k + 2) N = 29 x 8192 = 237 568
-evaluations), Saltelli-2010 S1 and Jansen ST with 200-replicate bootstrap CIs, and a
-plain 100 000-sample Monte Carlo, all evaluated as `jax.vmap` over the uncertain leaves
-in chunks of 16 384 on the RTX 3080 with the run pruned to 22 outputs. Outputs:
+design is fixed at PROCESS's own converged `ixc` (`common.process_reference`, handed to
+`ouu.two_stage` as `design_values` / `closing_values`), `hfact` -- PROCESS's closure
+variable for the power balance -- becomes an *uncertain input*, and one closure stays
+inside the MDA: the power balance `c2` closed by the plasma density
+(`kinds.PAIRINGS["one"]`, `closing.close` flattened: the root find combined with the
+fusion-rate Picard, 3 unknowns, Broyden). The net-electric equality `c16` is not
+closed -- net power is an output and its residual against the 1000 MW target is
+reported like an inequality (`with_c16=True`, so it is a column of the batched
+program). The belief table is `kinds.BELIEFS` (26 boundary inputs plus a `dummy`
+nothing reads; `--variant old` is the 2026-09-16 table the numbers below were measured
+with: hfact lognormal(0.15), tungsten and ripple lognormal(ln 2 / 2)); the batched
+program is `ouu.make(model)["run_batch"]` (the first stage hoisted, the recourse
+vmapped), the predictor's Jacobian `ouu.sensitivity`, the row mask `ouu.valid_rows`.
+What is no longer a column: the fusion power and the closed residual `c2` (the
+batched program returns coe, net power, availability, concost, the constraints, the
+closing steps and verdict, and the closing unknowns). Saltelli sampling (scrambled
+Sobol', (k + 2) N = 29 x 8192 = 237 568 evaluations), Saltelli-2010 S1 and Jansen ST
+with 200-replicate bootstrap CIs, and a plain 100 000-sample Monte Carlo, all
+evaluated in chunks of 16 384 on the RTX 3080. Outputs:
 `out/uq_inputs.tex`, `out/uq_sobol.{csv,tex}`, `out/uq_mc.{csv,tex}`, `out/uq.json`,
 `out/uq_tornado_{net_power,cost,concost,c24}.png`, `out/uq_hist_{net_power,cost}.png`.
 
-What it found (2026-09-16):
+What it found (2026-09-16, with the `old` table and the harness's own batched
+program; the nominal sanity check below reproduces on the port's units):
 
 - **Cost and convergence.** 337 568 closed-MDA evaluations in 95 s wall end to end
   (build 17 s, the sensitivity `jacfwd` 21 s, three compiles of ~12 s each for the
@@ -103,7 +148,7 @@ What it found (2026-09-16):
 - **Sanity.** At the nominal the closed MDA returns PROCESS's density to 3e-9 (relative)
   and its fusion power to 6e-9; net power is 982.4 against PROCESS's 1000.0 MW and coe
   123.6 against 121.5 $/MWh -- exactly the documented +17.6 MW base-load offset of
-  PROCESS's own report pass (`mda_harness.EXPLAINED_DISAGREEMENTS`); concost agrees to
+  PROCESS's own report pass (`functional_process/deliberate_divergences.md`); concost agrees to
   2.3e-4. The port's `c24` at PROCESS's point is +1.5e-3 (PROCESS: -4.8e-7) because it
   carries `beta_fast_alpha` = 5.9e-5 where PROCESS's stored value is 0, and `c35` is
   +1.6e-4 from a 1.6e-4 difference in `j_tf_wp`; so `P(g > g_nominal)` is reported next
@@ -131,6 +176,23 @@ What it found (2026-09-16):
   protection, c83 radial build) are each violated in 50-58 % of samples -- active means
   half of any perturbation crosses it -- and c8 (wall load) in 29 %, c67 (radiation wall
   load) 26 %, c62 (alpha confinement ratio) 16 %, c18 (divertor load) 11 %.
+
+**`ouu`** -- optimisation under uncertainty on the closed MDA: `architectures.ouu`
+end to end (`two_stage` -> `make` -> `outer` -> `solve` -> `report`, the evidence
+through `evaluate` / `summarise` / `per_sample` / `design_table` / `fresh_sample`),
+every run started from PROCESS's converged design. The command line maps onto the
+unit: `--pairing` is `kinds.PAIRINGS`, `--table build` holds `kinds.BUILD_LEAVES`
+and `--inputs physics` `kinds.ECONOMIC` (together `two_stage`'s `held=`), `--table
+old` the 2026-09-16 distributions, `--hfact-sigma` replaces `hfact`'s row;
+`--objective`, `--alpha`, `--with-c16 --alpha16`, `--te-recourse --te-range`, `--jac`,
+`--chunk` go to `two_stage` / `make`; `--max-iter --move-limit --tol --ftol --gtol`
+to the `BoxedSlsqpDriver`. `--no-warm` is gone (the driver warm-starts through the
+batched program's memo). The run's JSON keeps the layout `ouu_summary.py` and the
+cluster's `out_cluster/ouu2_*.json` have (`robust`, `final`, `deterministic`,
+`scipy`, `outer`, `best_feasible`, `trace`, `timing`); `--evidence`, `--sweep-te`,
+`--decompose`, `--scaling` / `--measure` and `--plot` as before. One difference to
+the cluster runs: the `dummy` row is now drawn in every table (the port keeps it), so
+a sample set at the same seed is not the old one.
 
 ```bash
 G=~/miniconda3/envs/process_port_gpu/bin/python   # conda create -n process_port_gpu python=3.12;
@@ -192,11 +254,10 @@ said):
 
 | name | what is cut | where |
 |---|---|---|
-| `hand` | nine variables measured so that one Picard iterate is one PROCESS pass | `functional_process/cottax/mda.py` (`CUTS`) |
-| `jacobi` | every coupling variable of every component | `functional_process/cottax/recipes.py` |
+| `hand` | nine variables measured so that one Picard iterate is one PROCESS pass | `functional_process/cottax/architectures/mda.py` (`CUTS`) |
+| `jacobi` | every coupling variable of every component | `functional_process/cottax/architectures/recipes.py` |
 | `gauss_seidel` | the backward reads in the graph's binding order (PROCESS's call order) | same |
 | `gauss_seidel_minimal` | the backward reads in the order that cuts fewest variables (exact, subset DP) | same |
 
-`recipes.py`'s docstring is the definition; `functional_process/tests/test_recipes.py`
-pins the census on the stellarator and that every recipe reaches the hand cut's fixed
-point and optimum.
+`recipes.py`'s docstring is the definition; `functional_process/tests/test_architectures.py`
+pins every configuration under every arm from cold.

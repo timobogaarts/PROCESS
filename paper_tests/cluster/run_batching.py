@@ -22,7 +22,7 @@ sys.path.insert(0, str(PAPER_TESTS))
 
 def prepare():
     import batching  # noqa: PLC0415 -- settles JAX_PLATFORMS from sys.argv on import
-    from functional_process.cottax.run_cold_matrix import machine  # noqa: PLC0415
+    from common import machine  # noqa: PLC0415
 
     if "BATCHING_WALL_LIMIT" in os.environ:
         batching.WALL_LIMIT = float(os.environ["BATCHING_WALL_LIMIT"])

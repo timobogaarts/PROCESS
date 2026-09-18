@@ -15,7 +15,8 @@ ringed by the kind of problem it answers and labelled with its driver):
     sand_<cut>          SAND -- every problem residualised and combined into one,
                         as structure (no MDA is run; nothing is dropped)
     closed              (stellarator_helias only) MDF with the two equalities closed as
-                        nested root finds -- `close_conditions.py`'s architecture
+                        root finds inside the MDA -- `architectures.closing`'s
+                        architecture (`close_conditions.py`'s pairings)
 
 for <cut> in hand, jacobi, gauss_seidel, gauss_seidel_minimal. A root-find file (the two
 `*_eval`) has an `uncut_optimiser` with its `RootFind` and an `mdf_<cut>` stated in the
@@ -29,42 +30,49 @@ from __future__ import annotations
 import sys
 import traceback
 
-from common import CONFIGURATIONS, LABEL, OUT, RECIPES, cut_for, provenance, stem
 import jax
-from cottax.blocking import Blocking
+from common import (
+    CONFIGURATIONS,
+    LABEL,
+    OUT,
+    RECIPES,
+    cut_for,
+    provenance,
+    return_freed_memory_to_the_os,
+    stem,
+)
+from cottax.answerable import AnswerableGraph
 from cottax.names import PathMap
 from cottax.plan import Insert, Plan
 from cottax.problem import RootFind
 
-from functional_process.cottax import mdf, sand, session
-from functional_process.cottax.indat import graph_for
-from functional_process.cottax.mda import assign_drivers, cut_graph, default_drivers
-from functional_process.cottax.mda_harness import _without_excluded
-from functional_process.cottax.render_xdsm import SPELLING
-from functional_process.cottax.run_cold_matrix import (
-    _return_freed_memory_to_the_os,
-    build_mdf,
-)
+from functional_process.cottax.architectures import closing, mdf, sand, session
+from functional_process.cottax.architectures.evaluate import without_excluded
+from functional_process.cottax.architectures.mda import assign_drivers, cut_graph, default_drivers
+from functional_process.cottax.architectures.session import build_mdf
+from functional_process.cottax.input.indat import graph_for
 from functional_process.cottax.visualization.grouping import (
     Drawn,
     blocks_of,
     dependency_group_sequence,
+    graph_of,
     provenance_order,
     render_grouped_dsm_html,
     structure_order,
 )
+from functional_process.cottax.visualization.render_xdsm import SPELLING
 
 
 def draw(blocking: Drawn, outdir, name: str, title: str) -> list[str]:
-    """Both orderings of one blocking -- or of a bare graph, for a page of a graph no
-    blocking exists for (`grouping.Drawn`); returns the two file names.
+    """Both orderings of one answerable graph -- or of a bare graph, for a page of a
+    graph nothing answers (`grouping.Drawn`); returns the two file names.
     """
-    graph = blocking.graph if isinstance(blocking, Blocking) else blocking
+    graph = graph_of(blocking)
     axis = dependency_group_sequence(graph, depth=None)
     common = {"depth": None, "outdir": str(outdir), "write": True, "formatter": SPELLING}
     render_grouped_dsm_html(
         blocking,
-        order=provenance_order(graph.nodes, depth=None, owners=graph.owners, groups=axis),
+        order=provenance_order(graph.nodes, depth=None, owners=graph.graph.owners, groups=axis),
         title=f"{title} -- ordered by provenance",
         file_name=f"{name}_provenance",
         mode="provenance",
@@ -82,14 +90,13 @@ def draw(blocking: Drawn, outdir, name: str, title: str) -> list[str]:
 
 
 def raw_graph(live):
-    return _without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
+    return without_excluded(live.machine_graph if live.machine_graph is not None else graph_for())
 
 
 def uncut_optimiser(live, raw):
     """The raw graph with the file's own problem node inserted, uncut -- a picture, so
-    a bare `Graph` and not a `Blocking`: since cottax `bc1130a` a blocking is answerable
-    by construction, and an uncut cycle has no problem to drive it, which is exactly
-    what this page shows (`grouping.Drawn`)."""
+    a bare `Graph` and not an `AnswerableGraph`: an uncut cycle has no problem to
+    drive it, which is exactly what this page shows (`grouping.Drawn`)."""
     ref = live.reference
     if live.root_find:
         graph, _conditions, _n, report = mdf.mdf_graph(
@@ -122,7 +129,7 @@ def mdf_blocking(live, recipe: str):
     # makes for the inner problems, and the file's own `VmconDriver` for the `Optimise`.
     # `Assign` carries `within`, so the nesting survives and the blocking is re-read.
     graph = blocking.graph
-    return Blocking.scc(assign_drivers(graph, default_drivers(graph)))
+    return AnswerableGraph(assign_drivers(graph, default_drivers(graph)))
 
 
 def sand_blocking(live, recipe: str):
@@ -137,19 +144,23 @@ def sand_blocking(live, recipe: str):
         switch_values=live.switch_values,
     )
     combined, _residualised = sand.sand_graph(with_problem)
-    return Blocking.scc(assign_drivers(combined, default_drivers(combined)))
+    return AnswerableGraph(assign_drivers(combined, default_drivers(combined)))
 
 
 def closed_blocking():
     """`close_conditions`' architecture on `stellarator_helias`: the two equalities
-    closed as nested root finds, the optimiser over the remaining six."""
+    closed as root finds inside the MDA (`kinds.HISTORIC_PAIRING`, the GS-minimal
+    cut), the optimiser over the remaining six nested around them."""
     import close_conditions  # noqa: PLC0415 -- beside this file
 
-    return close_conditions.nested_blocking(close_conditions.closed(close_conditions.open_live()))
+    return closing.nested_blocking(closing.close(close_conditions.open_live(), close_conditions.PAIRINGS))
 
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--help" in argv or "-h" in argv:
+        print(__doc__)
+        return 0
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(CONFIGURATIONS)
     only = set((argv[argv.index("--only") + 1] if "--only" in argv else "uncut,optimiser,mdf,sand,closed").split(","))
     top = OUT / "dsm"
@@ -206,7 +217,7 @@ def main(argv=None) -> int:
         # Every SAND assembly compiles an MDA; jax keeps each for the life of the
         # process and LLVM's section memory runs out on the seventh configuration.
         jax.clear_caches()
-        _return_freed_memory_to_the_os()
+        return_freed_memory_to_the_os()
     # The top index lists every configuration that has pages, not only this run's.
     top_links = [
         f'<li><a href="{d.name}/index.html">{d.name}</a></li>'
