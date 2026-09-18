@@ -79,7 +79,7 @@ recognise next time: a `pytest` run that dies with a bare "Extension modules: â€
 no test summary is this, not a test failure.
 
 `functional_process/tests` was **3752 passed + 3347 skipped** when this file was written
-and is **7804 passed + 8218 skipped** as of 2026-09-09, **7879 + 8210** on 2026-09-16; the tree has roughly doubled since.
+and is **7804 passed + 8218 skipped** as of 2026-09-09, **7879 + 8210** on 2026-09-16, **7908 + 8210** on 2026-09-17; the tree has roughly doubled since.
 Prefer measuring it to trusting either number.
 
 **The port tracks a cottax that moves, and the reference tables say which one.** Every
@@ -89,7 +89,21 @@ because both changed under the 2026-09-06 references without either file saying 
 port was re-ported from cottax `e0f22e6` to `a3e4c56` on 2026-09-16 (three renamed
 imports, `Graph.unowned_inputs` â†’ `boundary_inputs`, and drivers subclassing
 `evaluation.schedule.Driver` -- `AbstractDriver` is now only the recorded choice), and the
-refs moved from a laptop to an R7 3700X. Before reading a timing difference as a
+refs moved from a laptop to an R7 3700X. **On 2026-09-17 it was re-ported again, to the
+`~/jaxgraph` working tree on top of `d1f4aef`** (uncommitted changes there; `cottax_tree()`
+says which tree answered). What moved:
+
+| was | is |
+|---|---|
+| `ConditionNode` / `FunctionNode` / `ImplementedFunctionNode` / `DrivenConditionNode` | `ConditionalNode` / `FunctionalNode` / `ImplementedFunctionalNode` / `DrivenConditionalNode` |
+| `cottax.abstract.Relation` / `Eq` / `Le` | `cottax.problem` (re-exported from `cottax`) |
+| `rewrites.NestInside(outer)` | gone -- `functional_process.cottax.queries.nested_inside(graph, outer)`, one `Nest` per other outermost problem on `outer`'s cycle |
+| `Graph.nesting_tree` / `without_outermost_problem` | `Graph.interior` (graph minus its one outermost problem; raises `SeveralOutermost`) |
+| `Blocking` for a drawing | `cottax.partition.OrderedPartition` (any graph; `Blocking` adds the answerable checks, so `Blocking.scc` raises on an undriven cycle) |
+| `Blocking.inner[i]` may be `None` | never `None`: an empty blocking where nothing is nested |
+| `sequencing.NestingTree` / `nesting_tree_of` | gone; `interiors(partition)`, `sequenced(partition)`, `ordered_graph(...)` remain; `xdsm.problems_at(partition)` takes one argument |
+| `visualization.ragraph_dsm`, `render_dsm_html` | deleted |
+| ops coercing lists | none: `Cut(var, readers=(...,))`, `FixedPointCut((cut,))`, `Delete((...,))`, `Combine(place, (...,))`, `Determine(node, (...,))` -- a list still works but makes the op unhashable | Before reading a timing difference as a
 regression, check both lines. **When `~/jaxgraph` is being edited in another session**
 (it was, mid-run, on 2026-09-16), measure against a worktree of its committed HEAD:
 `git -C ~/jaxgraph worktree add <dir> HEAD` and `PYTHONPATH=~/PROCESS:<dir>/src` -- the

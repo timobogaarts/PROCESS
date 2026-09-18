@@ -1,0 +1,344 @@
+{
+ "n": 256,
+ "alpha": 0.9,
+ "m_worst": 26,
+ "eps_failed": 0.02,
+ "with_c16": true,
+ "warm_starts": true,
+ "max_iter": 20,
+ "move_limit": 0.25,
+ "seed": 0,
+ "backend": "cpu",
+ "design": [
+  ".physics.b_plasma_toroidal_on_axis",
+  ".physics.rmajor",
+  ".physics.temp_plasma_electron_vol_avg_kev",
+  ".tfcoil.t_tf_superconductor_quench",
+  ".tfcoil.f_a_tf_turn_cable_copper",
+  ".physics.f_nd_alpha_thermal_electron"
+ ],
+ "bounds": {
+  ".physics.b_plasma_toroidal_on_axis": [
+   4.0,
+   10.0
+  ],
+  ".physics.rmajor": [
+   10.0,
+   30.0
+  ],
+  ".physics.temp_plasma_electron_vol_avg_kev": [
+   3.0,
+   15.0
+  ],
+  ".tfcoil.t_tf_superconductor_quench": [
+   1.0,
+   50.0
+  ],
+  ".tfcoil.f_a_tf_turn_cable_copper": [
+   0.3,
+   0.9
+  ],
+  ".physics.f_nd_alpha_thermal_electron": [
+   0.0001,
+   0.4
+  ]
+ },
+ "deterministic": {
+  "coe_dollar_per_mwh": 123.59794465431324,
+  "objf": 1.2359794465431324,
+  "x": [
+   4.703724863747863,
+   26.694370149249416,
+   5.673208206328849,
+   35.319929504548796,
+   0.7380005121197526,
+   0.03359040614117263
+  ],
+  "inequalities_at_nominal": {
+   "^cond.constraints.c24": 0.0014830274689185963,
+   "^cond.constraints.c8": -0.48676127028711247,
+   "^cond.constraints.c17": -0.5101638572844543,
+   "^cond.constraints.c18": -0.6818612727852973,
+   "^cond.constraints.c67": -0.526003859241994,
+   "^cond.constraints.c82": -0.5664004489377918,
+   "^cond.constraints.c83": -1.2590332536976945e-05,
+   "^cond.constraints.c62": -0.11913456361570351,
+   "^cond.constraints.c32": -0.688351590656978,
+   "^cond.constraints.c34": -0.8602540823439361,
+   "^cond.constraints.c35": 0.00016180866633175306,
+   "^cond.constraints.c65": -0.9758967828782357
+  }
+ },
+ "start": {
+  "f": 87.924066870467,
+  "g_cvar": {
+   "^cond.constraints.c24": 1.678192932135777,
+   "^cond.constraints.c8": 2.4840456569546943,
+   "^cond.constraints.c17": -0.16491499069996118,
+   "^cond.constraints.c18": 0.8748463992709589,
+   "^cond.constraints.c67": 2.261667442164117,
+   "^cond.constraints.c82": -0.5384428572682078,
+   "^cond.constraints.c83": 0.003646408652746898,
+   "^cond.constraints.c62": 0.0891611753833391,
+   "^cond.constraints.c32": -0.6769514229574216,
+   "^cond.constraints.c34": -0.8542953395165415,
+   "^cond.constraints.c35": 0.036970991234649433,
+   "^cond.constraints.c65": -0.9758960465472055,
+   "^cond.constraints.c16": 1.015663346274104
+  },
+  "failed_fraction": 0.0,
+  "diagnostics": {
+   "mean_coe_where_converged_and_positive_net": 588.7865246066852,
+   "mean_concost": 11018.518817400869,
+   "mean_g": [
+    0.25745086732486844,
+    -0.0557002457646217,
+    -0.4417577939520379,
+    -0.5220371849870405,
+    -0.12164408582330594,
+    -0.5657457112289532,
+    8.491973150820224e-05,
+    -0.07826612817112416,
+    -0.6886122631628258,
+    -0.8600490224854519,
+    -0.0006788679575018323,
+    -0.9758967829497556,
+    -0.562010077375816
+   ],
+   "mean_net_mw": 1562.0100773758163,
+   "p_net_nonpositive": 0.0546875,
+   "p_violated": [
+    0.5625,
+    0.29296875,
+    0.0,
+    0.109375,
+    0.26953125,
+    0.0,
+    0.515625,
+    0.140625,
+    0.0,
+    0.0,
+    0.5,
+    0.0,
+    0.53125
+   ],
+   "steps_max": 9.0,
+   "steps_mean": 5.609375
+  },
+  "jac_f": [
+   434.5651708564915,
+   414.25316632445373,
+   36.73707646197933,
+   -0.27846243443635077,
+   -8.798096300163701,
+   -23.271946597809205
+  ]
+ },
+ "final": {
+  "f": 86.91822075193477,
+  "g_cvar": {
+   "^cond.constraints.c24": 1.651850870686882,
+   "^cond.constraints.c8": 2.368604347415962,
+   "^cond.constraints.c17": -0.16588942291315711,
+   "^cond.constraints.c18": 0.8576028286784304,
+   "^cond.constraints.c67": 2.1538382852104716,
+   "^cond.constraints.c82": -0.322708272926366,
+   "^cond.constraints.c83": 0.012073861021765529,
+   "^cond.constraints.c62": -0.3840113931807048,
+   "^cond.constraints.c32": -0.7724216101074299,
+   "^cond.constraints.c34": -0.830853573306156,
+   "^cond.constraints.c35": -0.3044065185745037,
+   "^cond.constraints.c65": -0.981313431120447,
+   "^cond.constraints.c16": 0.9827860653372449
+  },
+  "failed_fraction": 0.0,
+  "x": {
+   ".physics.b_plasma_toroidal_on_axis": 4.715915288992087,
+   ".physics.rmajor": 27.483290146053584,
+   ".physics.temp_plasma_electron_vol_avg_kev": 5.861572117934481,
+   ".tfcoil.t_tf_superconductor_quench": 49.99999999968768,
+   ".tfcoil.f_a_tf_turn_cable_copper": 0.9,
+   ".physics.f_nd_alpha_thermal_electron": 0.05248500934732385
+  },
+  "x_over_x0": [
+   1.0025916535506099,
+   1.0295537970138753,
+   1.0332023618303836,
+   1.415631364531695,
+   1.2195113488674116,
+   1.562499992609247
+  ],
+  "diagnostics": {
+   "mean_coe_where_converged_and_positive_net": 502.21326850518096,
+   "mean_concost": 11400.091282842122,
+   "mean_g": [
+    0.25578585483852573,
+    -0.08297316552811913,
+    -0.4361423744058881,
+    -0.5259666345014795,
+    -0.1466081713799135,
+    -0.3522207906846994,
+    0.007153044298567965,
+    -0.6345362296694194,
+    -0.7826698689111666,
+    -0.8391644584956148,
+    -0.3359485773094204,
+    -0.9813139804828271,
+    -0.6366690626848601
+   ],
+   "mean_net_mw": 1636.6690626848604,
+   "p_net_nonpositive": 0.03515625,
+   "p_violated": [
+    0.56640625,
+    0.2890625,
+    0.0,
+    0.10546875,
+    0.25390625,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.52734375
+   ],
+   "steps_max": 4.0,
+   "steps_mean": 4.0
+  },
+  "active": [],
+  "violated": [
+   "^cond.constraints.c24",
+   "^cond.constraints.c8",
+   "^cond.constraints.c18",
+   "^cond.constraints.c67",
+   "^cond.constraints.c83",
+   "^cond.constraints.c16"
+  ],
+  "design_at_bound": [
+   ".tfcoil.t_tf_superconductor_quench",
+   ".tfcoil.f_a_tf_turn_cable_copper"
+  ]
+ },
+ "scipy": {
+  "success": false,
+  "status": 8,
+  "message": "Positive directional derivative for linesearch",
+  "major_iterations": 12,
+  "outer_calls": 2
+ },
+ "outer": [
+  {
+   "nit": 6,
+   "nfev": 2,
+   "njev": 2,
+   "status": 8,
+   "message": "Positive directional derivative for linesearch",
+   "on_move_limit": true,
+   "f": 87.53434377667412,
+   "max_g_cvar": 2.3712326851167576,
+   "failed_fraction": 0.0,
+   "x": [
+    4.6895924887105815,
+    27.214601965358348,
+    5.765752611527323,
+    44.14991188068599,
+    0.9,
+    0.041988007676465794
+   ]
+  },
+  {
+   "nit": 6,
+   "nfev": 2,
+   "njev": 2,
+   "status": 8,
+   "message": "Positive directional derivative for linesearch",
+   "on_move_limit": false,
+   "f": 86.91822075193477,
+   "max_g_cvar": 2.368604347415962,
+   "failed_fraction": 0.0,
+   "x": [
+    4.715915288992087,
+    27.483290146053584,
+    5.861572117934481,
+    49.99999999968768,
+    0.9,
+    0.05248500934732385
+   ]
+  }
+ ],
+ "model_calls": 3,
+ "compile_s": 32.44624505899992,
+ "wall_s": 34.06742347100226,
+ "build_s": 12.581446407995827,
+ "trace": [
+  {
+   "call": 1,
+   "f": 87.924066870467,
+   "max_g_cvar": 2.4840456569546943,
+   "failed_fraction": 0.0,
+   "x": [
+    4.703724863747863,
+    26.694370149249416,
+    5.673208206328849,
+    35.319929504548796,
+    0.7380005121197526,
+    0.03359040614117263
+   ],
+   "steps_mean": 5.609375,
+   "steps_max": 9.0,
+   "model_s": 32.44624505899992
+  },
+  {
+   "call": 2,
+   "f": 87.53434377667412,
+   "max_g_cvar": 2.3712326851167576,
+   "failed_fraction": 0.0,
+   "x": [
+    4.6895924887105815,
+    27.214601965358348,
+    5.765752611527323,
+    44.14991188068599,
+    0.9,
+    0.041988007676465794
+   ],
+   "steps_mean": 4.0,
+   "steps_max": 4.0,
+   "model_s": 0.8054593630004092
+  },
+  {
+   "call": 3,
+   "f": 87.53434377667412,
+   "max_g_cvar": 2.3712326851167576,
+   "failed_fraction": 0.0,
+   "x": [
+    4.6895924887105815,
+    27.214601965358348,
+    5.765752611527323,
+    44.14991188068599,
+    0.9,
+    0.041988007676465794
+   ],
+   "steps_mean": 4.0,
+   "steps_max": 4.0,
+   "model_s": 0.8054593630004092
+  },
+  {
+   "call": 4,
+   "f": 86.91822075193477,
+   "max_g_cvar": 2.368604347415962,
+   "failed_fraction": 0.0,
+   "x": [
+    4.715915288992087,
+    27.483290146053584,
+    5.861572117934481,
+    49.99999999968768,
+    0.9,
+    0.05248500934732385
+   ],
+   "steps_mean": 4.0,
+   "steps_max": 4.0,
+   "model_s": 0.80111464500078
+  }
+ ]
+}

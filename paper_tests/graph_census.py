@@ -20,7 +20,7 @@ import networkx as nx
 from common import CONFIGURATIONS, LABEL, RECIPES, cut_for, fmt, stem, tex_name, write_csv, write_json, write_tex
 from cottax.abstract import runnable
 from cottax.blocking import Blocking
-from cottax.problem import ConditionNode, is_fixed_point, is_root_find
+from cottax.problem import ConditionalNode, is_fixed_point, is_root_find
 
 from functional_process.cottax import session
 from functional_process.cottax.indat import graph_for
@@ -32,7 +32,7 @@ def raw_graph(live):
 
 
 def census_raw(graph) -> dict:
-    problems = [n for n in graph.nodes if isinstance(graph[n], ConditionNode)]
+    problems = [n for n in graph.nodes if isinstance(graph[n], ConditionalNode)]
     return {
         "nodes": len(graph.nodes),
         "functions": len(graph.nodes) - len(problems),
@@ -50,7 +50,7 @@ def census_cut(graph) -> dict:
     """What a cut graph carries: copies, rerouted reads, problems, and body depths."""
     hats = [v for v in graph.owned_variables if v.spelling.startswith("^hat.")]
     reads = sum(
-        1 for n in graph.nodes if not isinstance(graph[n], ConditionNode)
+        1 for n in graph.nodes if not isinstance(graph[n], ConditionalNode)
         for v in graph[n].reads if v.spelling.startswith("^hat.")
     )
     blocking = Blocking.scc(graph)
@@ -64,7 +64,7 @@ def census_cut(graph) -> dict:
     return {
         "copies": len(hats),
         "reads_rerouted": reads,
-        "problems": sum(1 for n in graph.nodes if isinstance(graph[n], ConditionNode)),
+        "problems": sum(1 for n in graph.nodes if isinstance(graph[n], ConditionalNode)),
         "coupled_blocks": len(depths),
         "body_depths": depths,
         "max_body_depth": max(depths, default=0),

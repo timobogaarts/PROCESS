@@ -11,7 +11,7 @@ runnable."
 
 import equinox as eqx
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking
+from cottax.blocking import Blocking, problem_types
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import Driven, FixedPoint, RootFind, Start, driver_vars
@@ -173,7 +173,8 @@ def test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale()
     # And the whole tokamak graph is runnable with it -- the property `Blocking` refused
     # ("coupled block declares no problem") before this cut existed.
     blocking = Blocking.scc(driven_graph(graph))
-    for block, problem_type in zip(blocking.blocks, blocking.problem_types, strict=True):
+    types = problem_types(blocking)
+    for block, problem_type in zip(blocking.blocks, types, strict=True):
         assert len(block) == 1 or problem_type is not None, block
 
 
@@ -282,7 +283,8 @@ def test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts():
     # And the whole tokamak graph is runnable with the cuts -- every cyclic block
     # declares a problem and carries a driver.
     blocking = Blocking.scc(driven_graph(graph))
-    for block, problem_type in zip(blocking.blocks, blocking.problem_types, strict=True):
+    types = problem_types(blocking)
+    for block, problem_type in zip(blocking.blocks, types, strict=True):
         assert len(block) == 1 or problem_type is not None, block
 
 
@@ -326,7 +328,8 @@ def test_driven_graph_has_no_raw_cycles_left():
     """
     graph = driven_graph()
     blocking = Blocking.scc(graph)
-    for block, problem_type in zip(blocking.blocks, blocking.problem_types, strict=True):
+    types = problem_types(blocking)
+    for block, problem_type in zip(blocking.blocks, types, strict=True):
         if len(block) > 1:
             assert problem_type is not None, (
                 f"cyclic block {block!r} declares no problem"
@@ -352,7 +355,7 @@ def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point()
     }
 
     for problem, problem_type in zip(
-        blocking.problems, blocking.problem_types, strict=True
+        blocking.problems, problem_types(blocking), strict=True
     ):
         if problem_type is None:
             continue
@@ -377,7 +380,7 @@ def test_every_root_find_unknown_has_a_starting_guess_that_does_not_need_data():
     graph = driven_graph()
     blocking = Blocking.scc(graph)
     for problem, problem_type in zip(
-        blocking.problems, blocking.problem_types, strict=True
+        blocking.problems, problem_types(blocking), strict=True
     ):
         if problem_type is None or not problem_type == 'root-find':
             continue

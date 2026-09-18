@@ -23,7 +23,7 @@ The solve (`--solve`) takes the chosen pairings (`PAIRINGS`), builds
         -> Insert RootFind per equality
         -> the cut fixed points on its cycle Residualise'd and Combine'd into it
            (`flattened`; `--nested` keeps them inside it instead, Picard-driven)
-        -> NestInside(each root find)
+        -> queries.nested_inside(each root find)
         -> driver: `SafeguardedNewtonDriver` (capped, backtracked, Broyden-updated)
 
 and drives VMCON (and SLSQP) over the six remaining design variables from the same cold
@@ -40,7 +40,7 @@ root finds nested inside it -- but the solve runs VMCON from outside the graph, 
     $PY paper_tests/close_conditions.py --solve --driver newton   # optimistix's undamped Newton
     $PY paper_tests/close_conditions.py --solve --driver exact    # safeguarded, exact Jacobian per step
     $PY paper_tests/close_conditions.py --solve --nested          # fixed points nested, not combined
-    $PY paper_tests/close_conditions.py --batch [--sizes 1,64,1024]   # vmap sweep, CPU
+    $PY paper_tests/close_conditions.py --batch [--sizes 1,64,1024] [--shapes closed,predicted]   # vmap sweep, CPU
     JAX_PLATFORMS=cuda $G paper_tests/close_conditions.py --batch --sizes 1,4,16,64,256,1024,4096,16384
                                                                        # the same on the GPU
 
@@ -69,12 +69,13 @@ from common import (  # noqa: E402
     write_json,
     write_tex,
 )
-from cottax.blocking import Blocking
+from cottax.blocking import Blocking, problem_types
 from cottax.evaluation.schedule import Schedule
 from cottax.names import PathMap
 from cottax.plan import Insert, Plan
-from cottax.problem import ConditionNode, Converged, Optimise, RootFind, Start, Steps
-from cottax.rewrites import Combine, NestInside, Residualise
+from cottax.problem import ConditionalNode, Converged, Optimise, RootFind, Start, Steps
+from cottax.rewrites import Combine, Residualise
+from functional_process.cottax.queries import nested_inside
 from cottax.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
@@ -513,7 +514,7 @@ def flattened(graph, place: NodePath) -> tuple:
     find into one square problem over `(var, the cut copies)`. Returns the graph and
     the combined problem's path (`^problem.Close.c16`).
 
-    The alternative to `NestInside`: nested, every evaluation of the root find's
+    The alternative to `nested_inside`: nested, every evaluation of the root find's
     residual re-converges the fusion-rate Picard (2 steps) and the first-wall-area
     Picard (3-4) inside it, and the Newton's derivative goes through their implicit
     adjoints; combined, one Newton over four unknowns evaluates the 27-node body once
@@ -521,12 +522,13 @@ def flattened(graph, place: NodePath) -> tuple:
     see `SafeguardedNewtonDriver`.
     """
     component = next(c for c in graph.components if place in c)
-    inner = [n for n in component if n != place and isinstance(graph[n], ConditionNode)]
+    inner = [n for n in component if n != place and isinstance(graph[n], ConditionalNode)]
     if not inner:
         return graph, place
     plan = Plan(graph)
     for n in inner:
-        plan = plan + Residualise(n)
+        if any(not r.against_zero for r in graph[n].relations):
+            plan = plan + Residualise(n)  # a root find is already against zero
     combine = Combine(place, (place, *inner))
     return (plan + combine).graph, combine.problem
 
@@ -535,7 +537,7 @@ def closed(live, pairings=None, driver=safeguarded, flatten=True) -> Closed:
     """Build the graph and the `Mdf` record for `pairings` (spellings, or `PAIRINGS`).
 
     `flatten`: the cut fixed points on a root find's cycle are combined into it
-    (`flattened`); otherwise nested inside it (`NestInside`) and driven by Picard.
+    (`flattened`); otherwise nested inside it (`nested_inside`) and driven by Picard.
     """
     raw = raw_graph(live)
     graph, report = with_conditions(live, live.cut(raw))
@@ -556,20 +558,32 @@ def closed(live, pairings=None, driver=safeguarded, flatten=True) -> Closed:
         cond: next(c for c in graph.components if p in c) for cond, p in places.items()
     }
     seen: set = set()
+    shared = False
     for cond, component in components.items():
         if seen & set(component):
-            raise ValueError(
-                f"the root find for {cond.spelling} shares a cycle with another -- "
-                f"pick pairings whose cycles are disjoint, or nest one in the other"
-            )
+            if not flatten:
+                raise ValueError(
+                    f"the root find for {cond.spelling} shares a cycle with another -- "
+                    f"pick pairings whose cycles are disjoint, nest one in the other, "
+                    f"or `flatten` them into one square problem"
+                )
+            shared = True
         seen |= set(component)
     # Whatever declared problem sits on a root find's cycle (a cut fixed point) is
-    # either folded into it or answered inside its iteration.
+    # either folded into it or answered inside its iteration. Two root finds on one
+    # cycle (`c2` by the density and `c16` by the alpha fraction, say) are flattened
+    # together: `flattened` folds every declared problem on the cycle, the other root
+    # find included, into one square problem over both closing variables.
     if flatten:
         for cond, place in list(places.items()):
+            if shared and place not in graph.nodes:
+                continue  # already folded into the first root find's problem
             graph, places[cond] = flattened(graph, place)
+        if shared:
+            combined = next(p for p in places.values() if p in graph.nodes)
+            places = {cond: combined for cond in places}
     for place in places.values():
-        graph = (Plan(graph) + NestInside(place)).graph
+        graph = nested_inside(graph, place)
     drivers = default_drivers(graph)
     for place in places.values():
         drivers[place] = driver()
@@ -580,7 +594,7 @@ def closed(live, pairings=None, driver=safeguarded, flatten=True) -> Closed:
     report = dict(
         report,
         blocks=len(blocking.blocks),
-        driven_blocks=sum(1 for t in blocking.problem_types if t is not None),
+        driven_blocks=sum(1 for t in problem_types(blocking) if t is not None),
     )
     problem = mdf.Mdf(
         graph=graph,
@@ -601,7 +615,7 @@ def closed(live, pairings=None, driver=safeguarded, flatten=True) -> Closed:
 
 def nested_blocking(built: Closed) -> Blocking:
     """The architecture as structure: the `Optimise` over the six inserted and
-    `NestInside` it, so the root finds and the MDA's fixed points are answered inside
+    `nested_inside` it, so the root finds and the MDA's fixed points are answered inside
     its iteration; `VmconDriver` assigned for the picture.
     """
     graph = built.problem.graph
@@ -614,7 +628,7 @@ def nested_blocking(built: Closed) -> Blocking:
         inequalities=tuple(report["inequalities"]),
     )
     with_problem = (Plan(graph) + Insert(PathMap(((place, node),)))).graph
-    with_problem = (Plan(with_problem) + NestInside(place)).graph
+    with_problem = nested_inside(with_problem, place)
     drivers = default_drivers(with_problem)
     for rf in built.places.values():
         drivers[rf] = safeguarded()
@@ -627,10 +641,9 @@ def describe(blocking: Blocking, depth: int = 0) -> list[str]:
         problem = blocking.problems[i]
         if len(block) == 1 and problem is None:
             continue
-        label = "run" if problem is None else f"{blocking.problem_types[i]} {problem.spelling}"
+        label = "run" if problem is None else f"{problem_types(blocking)[i]} {problem.spelling}"
         lines.append("  " * depth + f"block {i}: {len(block)} nodes, {label}")
-        if blocking.inner[i] is not None:
-            lines.extend(describe(blocking.inner[i], depth + 1))
+        lines.extend(describe(blocking.inner[i], depth + 1))  # empty where nothing is nested
     return lines
 
 
@@ -818,12 +831,15 @@ def predicted_starts(built: Closed, point: PathMap, values: dict) -> dict:
     return {ports[u]: predicted[:, i] for i, u in enumerate(unknowns)}
 
 
-def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
+def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3, only=None) -> list[dict]:
     """One MDA evaluation, plain and with the root finds inside: single and `vmap`,
     on whichever backend jax is on (`JAX_PLATFORMS`); rows say which. Four shapes:
     `plain`; `nested` -- the fixed points nested in the root finds, exact Newton;
     `closed` -- flattened, Broyden (the default `closed()`); `predicted` -- `closed`
-    started from `predicted_starts`."""
+    started from `predicted_starts`. `only`: a subset of those labels (`--shapes`),
+    written to `close_conditions_batch_<backend>_<labels>` so one process per shape
+    -- the device memory an earlier ladder held is never given back -- does not
+    overwrite the others' rows."""
     backend = jax.default_backend()
     live = open_live()
     plain = build_mdf(live.reference, live.machine_graph, live.switch_values, cut=live.cut).problem
@@ -836,6 +852,11 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
         ("closed", flat.problem, flat.design, flat, False),
         ("predicted", flat.problem, flat.design, flat, True),
     )
+    if only is not None:
+        if unknown := set(only) - {s[0] for s in shapes}:
+            raise ValueError(f"no such shape: {sorted(unknown)}")
+        shapes = tuple(s for s in shapes if s[0] in only)
+    name = f"close_conditions_batch_{backend}" + ("" if only is None else "_" + "_".join(s[0] for s in shapes))
     for label, problem, design, built, predict in shapes:
         env = mdf.seed(problem, live.cold)
         env, _ = mdf.prime(problem, env)
@@ -892,13 +913,13 @@ def batch_rows(sizes=(1, 4, 16, 64, 256, 1024, 4096), repeats=3) -> list[dict]:
                 row["predict_s"] = predict_s
             rows.append(row)
             print(rows[-1])
-    write_csv("close_conditions.py", rows, name=f"close_conditions_batch_{backend}")
+    write_csv("close_conditions.py", rows, name=name)
     header = ["MDA", "N", "compile s", "warm s", r"$\mu$s/point", r"$\max|h|$", "Newton steps (max / mean)"]
     body = [[r["shape"], r["N"], fmt(r["first_call_s"], 1), fmt(r["warm_s"], 4), fmt(r["us_per_point"], 1),
              sci(r["max_abs_eq"]) if r.get("max_abs_eq") is not None else "--",
              f"{r['newton_steps_max']} / {r['newton_steps_mean']:.2f}" if r.get("newton_steps_max") is not None else "--"]
             if "status" not in r else [r["shape"], r["N"], r["status"], "", "", "", ""] for r in rows]
-    write_tex("close_conditions.py", header, body, name=f"close_conditions_batch_{backend}", align="lrrrrrr",
+    write_tex("close_conditions.py", header, body, name=name, align="lrrrrrr",
               caption_note=(
                   f"{backend}; N > 1 is jax.vmap over N design points, each design entry perturbed "
                   "by +-1 %. nested: the cut fixed points nested inside the root finds, exact Newton; "
@@ -933,7 +954,8 @@ def main(argv=None) -> int:
         run_solve(pairings, suffix, driver, flatten)
     if "--batch" in argv:
         sizes = tuple(int(x) for x in argv[argv.index("--sizes") + 1].split(",")) if "--sizes" in argv else (1, 4, 16, 64, 256, 1024, 4096)
-        batch_rows(sizes)
+        only = tuple(argv[argv.index("--shapes") + 1].split(",")) if "--shapes" in argv else None
+        batch_rows(sizes, only=only)
     if not any(a in argv for a in ("--table", "--solve", "--batch")):
         print(__doc__)
     return 0

@@ -14,6 +14,7 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
+from cottax.blocking import problem_types
 from cottax.names import PathMap
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
@@ -888,7 +889,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
     starts = {
         guess
         for problem, problem_type in zip(
-            blocking.problems, blocking.problem_types, strict=True
+            blocking.problems, problem_types(blocking), strict=True
         )
         if problem_type is not None
         for _, guess in starts_for(driven, problem)
@@ -908,7 +909,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
     # determined by the block's boundary inputs, and seeding those two from different
     # points would be neither the warm measurement nor the cold one.
     for problem, problem_type in zip(
-        blocking.problems, blocking.problem_types, strict=True
+        blocking.problems, problem_types(blocking), strict=True
     ):
         if problem_type is None:
             continue
@@ -976,7 +977,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
         else:
             report.disagreements.append(d)
             block_index = blocking.index[owner]
-            if blocking.problem_types[block_index] is not None:
+            if problem_types(blocking)[block_index] is not None:
                 report.driven_block_disagreements.append(d)
             else:
                 report.acyclic_disagreements.append(d)

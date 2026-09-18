@@ -46,6 +46,8 @@ from functional_process.cottax.run_cold_matrix import (
     build_mdf,
 )
 from functional_process.cottax.visualization.grouping import (
+    Drawn,
+    blocks_of,
     dependency_group_sequence,
     provenance_order,
     render_grouped_dsm_html,
@@ -53,9 +55,11 @@ from functional_process.cottax.visualization.grouping import (
 )
 
 
-def draw(blocking: Blocking, outdir, name: str, title: str) -> list[str]:
-    """Both orderings of one blocking; returns the two file names."""
-    graph = blocking.graph
+def draw(blocking: Drawn, outdir, name: str, title: str) -> list[str]:
+    """Both orderings of one blocking -- or of a bare graph, for a page of a graph no
+    blocking exists for (`grouping.Drawn`); returns the two file names.
+    """
+    graph = blocking.graph if isinstance(blocking, Blocking) else blocking
     axis = dependency_group_sequence(graph, depth=None)
     common = {"depth": None, "outdir": str(outdir), "write": True, "formatter": SPELLING}
     render_grouped_dsm_html(
@@ -83,8 +87,9 @@ def raw_graph(live):
 
 def uncut_optimiser(live, raw):
     """The raw graph with the file's own problem node inserted, uncut -- a picture, so
-    built without the executability checks an assembly runs (an uncut cycle has no
-    problem to drive it, which is exactly what this page shows)."""
+    a bare `Graph` and not a `Blocking`: since cottax `bc1130a` a blocking is answerable
+    by construction, and an uncut cycle has no problem to drive it, which is exactly
+    what this page shows (`grouping.Drawn`)."""
     ref = live.reference
     if live.root_find:
         graph, _conditions, _n, report = mdf.mdf_graph(
@@ -94,13 +99,12 @@ def uncut_optimiser(live, raw):
             conditions=tuple(report["equalities"]),
             unknowns=tuple(sand.iteration_variable_path(i) for i in ref.ixc),
         )
-        graph = (Plan(graph) + Insert(PathMap(((mdf.IN_GRAPH_PLACE, node),)))).graph
-        return Blocking.scc(graph)
+        return (Plan(graph) + Insert(PathMap(((mdf.IN_GRAPH_PLACE, node),)))).graph
     with_problem, _name, _report = sand.optimise_graph(
         raw, ref.ixc, ref.icc, ref.n_equality, ref.i_figure_merit,
         switch_values=live.switch_values,
     )
-    return Blocking.scc(with_problem)
+    return with_problem
 
 
 def mdf_blocking(live, recipe: str):
@@ -160,7 +164,8 @@ def main(argv=None) -> int:
         pages: list[tuple[str, list[str]]] = []
         jobs = []
         if "uncut" in only:
-            jobs.append(("uncut", "the declared graph, uncut", lambda: Blocking.scc(raw)))
+            # The graph itself: its cycles are undriven, so no blocking exists for it.
+            jobs.append(("uncut", "the declared graph, uncut", lambda: raw))
         if "optimiser" in only:
             jobs.append(("uncut_optimiser", "uncut, with the file's problem inserted",
                          lambda: uncut_optimiser(live, raw)))
@@ -178,7 +183,8 @@ def main(argv=None) -> int:
             try:
                 blocking = build()
                 files = draw(blocking, outdir, key, f"PROCESS port, {name} -- {label}")
-                sizes = sorted((len(b) for b in blocking.blocks if len(b) > 1), reverse=True)
+                blocks = blocks_of(blocking)
+                sizes = sorted((len(b) for b in blocks if len(b) > 1), reverse=True)
                 pages.append((f"{label} (coupled blocks: {sizes or 'none'})", files))
                 print(f"{name:24} {key:28} blocks>1 {sizes}", flush=True)
             except Exception as failure:  # noqa: BLE001 -- a page, not an exit

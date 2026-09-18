@@ -1,0 +1,519 @@
+{
+ "n": 256,
+ "seed": 0,
+ "inputs": "all",
+ "alpha": 0.9,
+ "table": "new",
+ "hfact_sigma": 0.1,
+ "hfact_belief": {
+  "sigma": 0.1,
+  "interval_90": [
+   0.8483301741208367,
+   1.1787863151706772
+  ],
+  "lowest_decile_mean": 0.8397353695342166,
+  "highest_decile_mean": 1.1928678602293437
+ },
+ "n_inputs": 27,
+ "belief_table": [
+  {
+   "path": ".physics.hfact",
+   "kind": "lognormal",
+   "a": 0.1,
+   "b": 0.0,
+   "note": "confinement multiplier; PROCESS's closure variable, here a belief"
+  },
+  {
+   "path": ".physics.alphan",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "density profile exponent"
+  },
+  {
+   "path": ".physics.alphat",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "temperature profile exponent"
+  },
+  {
+   "path": ".physics.f_p_alpha_plasma_deposited",
+   "kind": "uniform",
+   "a": 0.9,
+   "b": 0.99,
+   "note": "alpha power deposited in the plasma"
+  },
+  {
+   "path": ".physics.f_temp_plasma_ion_electron",
+   "kind": "uniform",
+   "a": 0.85,
+   "b": 1.0,
+   "note": "$T_i / T_e$"
+  },
+  {
+   "path": ".physics.f_sync_reflect",
+   "kind": "uniform",
+   "a": 0.5,
+   "b": 0.7,
+   "note": "synchrotron wall reflectivity"
+  },
+  {
+   "path": ".impurity_radiation.f_nd_impurity_electron_array[13]",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "tungsten fraction (index 13, the only seeded non-alpha impurity) (relative +-20 %)"
+  },
+  {
+   "path": ".stellarator.bmn",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "residual field ripple (relative +-20 %)"
+  },
+  {
+   "path": ".stellarator.f_asym",
+   "kind": "uniform",
+   "a": 1.0,
+   "b": 1.2,
+   "note": "divertor heat-load asymmetry"
+  },
+  {
+   "path": ".stellarator.f_rad",
+   "kind": "uniform",
+   "a": 0.75,
+   "b": 0.95,
+   "note": "radiated fraction in the SOL / divertor"
+  },
+  {
+   "path": ".fwbs.f_p_blkt_multiplication",
+   "kind": "uniform",
+   "a": 1.25,
+   "b": 1.45,
+   "note": "blanket energy multiplication"
+  },
+  {
+   "path": ".fwbs.declfw",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "first-wall neutron decay length"
+  },
+  {
+   "path": ".fwbs.declblkt",
+   "kind": "relative",
+   "a": 0.2,
+   "b": 0.0,
+   "note": "blanket neutron decay length"
+  },
+  {
+   "path": ".fwbs.fhole",
+   "kind": "uniform",
+   "a": 0.0,
+   "b": 0.05,
+   "note": "first-wall hole fraction"
+  },
+  {
+   "path": ".fwbs.dr_fw_wall",
+   "kind": "uniform",
+   "a": 0.002,
+   "b": 0.004,
+   "note": "first-wall armour thickness [m]"
+  },
+  {
+   "path": ".tfcoil.temp_tf_cryo",
+   "kind": "uniform",
+   "a": 4.2,
+   "b": 4.8,
+   "note": "coil temperature [K]"
+  },
+  {
+   "path": ".tfcoil.dx_tf_wp_insulation",
+   "kind": "uniform",
+   "a": 0.008,
+   "b": 0.012,
+   "note": "winding-pack insulation [m]"
+  },
+  {
+   "path": ".constraints.f_j_tf_wp_critical_max",
+   "kind": "uniform",
+   "a": 0.7,
+   "b": 0.9,
+   "note": "allowed fraction of the critical current"
+  },
+  {
+   "path": ".heat_transport.eta_turbine",
+   "kind": "uniform",
+   "a": 0.33,
+   "b": 0.42,
+   "note": "thermal-to-electric efficiency"
+  },
+  {
+   "path": ".current_drive.eta_ecrh_injector_wall_plug",
+   "kind": "uniform",
+   "a": 0.4,
+   "b": 0.6,
+   "note": "ECRH wall-plug efficiency"
+  },
+  {
+   "path": ".heat_transport.f_p_fw_coolant_pump_total_heat",
+   "kind": "relative",
+   "a": 0.3,
+   "b": 0.0,
+   "note": "FW pumping power fraction"
+  },
+  {
+   "path": ".divertor.tdiv",
+   "kind": "uniform",
+   "a": 3.0,
+   "b": 8.0,
+   "note": "divertor plasma temperature [eV]"
+  },
+  {
+   "path": ".costs.f_t_plant_available",
+   "kind": "uniform",
+   "a": 0.65,
+   "b": 0.85,
+   "note": "availability"
+  },
+  {
+   "path": ".costs.life_plant",
+   "kind": "uniform",
+   "a": 30.0,
+   "b": 50.0,
+   "note": "plant life [y]"
+  },
+  {
+   "path": ".costs.discount_rate",
+   "kind": "uniform",
+   "a": 0.04,
+   "b": 0.08,
+   "note": "discount rate"
+  },
+  {
+   "path": ".costs.ucsc",
+   "kind": "factor",
+   "a": 0.7,
+   "b": 1.5,
+   "note": "superconductor unit costs, the (9,) array scaled together"
+  },
+  {
+   "path": "dummy",
+   "kind": "uniform",
+   "a": 0.0,
+   "b": 1.0,
+   "note": "read by nothing: the estimators' noise floor"
+  }
+ ],
+ "robust_from": "paper_tests/out/ouu_smoke.json",
+ "robust_source": "best_feasible",
+ "robust_f_recorded": 290.1973765521626,
+ "deterministic_coe_at_nominal": 123.59794465431324,
+ "design": [
+  {
+   "ixc": 2,
+   "place": ".physics.b_plasma_toroidal_on_axis",
+   "lower": 4.0,
+   "upper": 10.0,
+   "deterministic": 4.703724863747863,
+   "robust": 5.714474500749525,
+   "delta": 1.0107496370016618,
+   "delta_relative": 0.21488281442471746,
+   "active_bound": null,
+   "deterministic_active_bound": null
+  },
+  {
+   "ixc": 3,
+   "place": ".physics.rmajor",
+   "lower": 10.0,
+   "upper": 30.0,
+   "deterministic": 26.694370149249416,
+   "robust": 29.99667951605341,
+   "delta": 3.3023093668039927,
+   "delta_relative": 0.12370808332770666,
+   "active_bound": "upper",
+   "deterministic_active_bound": null
+  },
+  {
+   "ixc": 4,
+   "place": ".physics.temp_plasma_electron_vol_avg_kev",
+   "lower": 3.0,
+   "upper": 15.0,
+   "deterministic": 5.673208206328849,
+   "robust": 7.534972696108169,
+   "delta": 1.8617644897793202,
+   "delta_relative": 0.3281678412053335,
+   "active_bound": null,
+   "deterministic_active_bound": null
+  },
+  {
+   "ixc": 56,
+   "place": ".tfcoil.t_tf_superconductor_quench",
+   "lower": 1.0,
+   "upper": 50.0,
+   "deterministic": 35.319929504548796,
+   "robust": 49.9795043298343,
+   "delta": 14.659574825285503,
+   "delta_relative": 0.4150510782700605,
+   "active_bound": "upper",
+   "deterministic_active_bound": null
+  },
+  {
+   "ixc": 59,
+   "place": ".tfcoil.f_a_tf_turn_cable_copper",
+   "lower": 0.3,
+   "upper": 0.9,
+   "deterministic": 0.7380005121197526,
+   "robust": 0.8999999858002142,
+   "delta": 0.16199947368046164,
+   "delta_relative": 0.21951132962652276,
+   "active_bound": "upper",
+   "deterministic_active_bound": null
+  },
+  {
+   "ixc": 109,
+   "place": ".physics.f_nd_alpha_thermal_electron",
+   "lower": 0.0001,
+   "upper": 0.4,
+   "deterministic": 0.03359040614117263,
+   "robust": 0.052448268044185516,
+   "delta": 0.018857861903012883,
+   "delta_relative": 0.5614061891290536,
+   "active_bound": null,
+   "deterministic_active_bound": null
+  }
+ ],
+ "rows": {
+  "deterministic": {
+   "n": 256,
+   "nominal": {
+    "converged": true,
+    "coe": 123.59794465461547,
+    "net_mw": 982.3810652667851,
+    "g": {
+     "^cond.constraints.c24": 0.0014830274689186934,
+     "^cond.constraints.c8": -0.48676127028711264,
+     "^cond.constraints.c17": -0.5101638572844543,
+     "^cond.constraints.c18": -0.6818612727852972,
+     "^cond.constraints.c67": -0.5260038592419941,
+     "^cond.constraints.c82": -0.5664004489377918,
+     "^cond.constraints.c83": -1.2590332536976945e-05,
+     "^cond.constraints.c62": -0.11913456361570351,
+     "^cond.constraints.c32": -0.688351590656978,
+     "^cond.constraints.c34": -0.8602540823439361,
+     "^cond.constraints.c35": 0.00016180866633182792,
+     "^cond.constraints.c65": -0.9758967828782356
+    },
+    "feasible": false
+   },
+   "failed_fraction": 0.0,
+   "p_net_nonpositive": 0.015625,
+   "feasible_fraction": 0.01171875,
+   "any_violation_fraction": 0.98828125,
+   "any_violation_fraction_among_converged": 0.98828125,
+   "p_violated": {
+    "^cond.constraints.c24": 0.6015625,
+    "^cond.constraints.c8": 0.203125,
+    "^cond.constraints.c17": 0.0,
+    "^cond.constraints.c18": 0.05859375,
+    "^cond.constraints.c67": 0.171875,
+    "^cond.constraints.c82": 0.0,
+    "^cond.constraints.c83": 0.515625,
+    "^cond.constraints.c62": 0.05859375,
+    "^cond.constraints.c32": 0.0,
+    "^cond.constraints.c34": 0.0,
+    "^cond.constraints.c35": 0.5,
+    "^cond.constraints.c65": 0.0
+   },
+   "p_violated_among_converged": {
+    "^cond.constraints.c24": 0.6015625,
+    "^cond.constraints.c8": 0.203125,
+    "^cond.constraints.c17": 0.0,
+    "^cond.constraints.c18": 0.05859375,
+    "^cond.constraints.c67": 0.171875,
+    "^cond.constraints.c82": 0.0,
+    "^cond.constraints.c83": 0.515625,
+    "^cond.constraints.c62": 0.05859375,
+    "^cond.constraints.c32": 0.0,
+    "^cond.constraints.c34": 0.0,
+    "^cond.constraints.c35": 0.5,
+    "^cond.constraints.c65": 0.0
+   },
+   "mean_g_among_converged": {
+    "^cond.constraints.c24": 0.16570698437398163,
+    "^cond.constraints.c8": -0.2823312323212713,
+    "^cond.constraints.c17": -0.4609227490082895,
+    "^cond.constraints.c18": -0.6045651752173302,
+    "^cond.constraints.c67": -0.3354875965304845,
+    "^cond.constraints.c82": -0.5657457112289539,
+    "^cond.constraints.c83": 8.491973150820224e-05,
+    "^cond.constraints.c62": -0.09107584746370509,
+    "^cond.constraints.c32": -0.6886122631628259,
+    "^cond.constraints.c34": -0.860049022485452,
+    "^cond.constraints.c35": -0.0006788679575017661,
+    "^cond.constraints.c65": -0.975896782949755
+   },
+   "cvar": {
+    "0.9": {
+     "^cond.constraints.c24": 1.0278920318031763,
+     "^cond.constraints.c8": 0.8659911991029836,
+     "^cond.constraints.c17": -0.2955800778484296,
+     "^cond.constraints.c18": 0.1365894208201141,
+     "^cond.constraints.c67": 0.7389438986443218,
+     "^cond.constraints.c82": -0.5384428572682078,
+     "^cond.constraints.c83": 0.0036464086527468976,
+     "^cond.constraints.c62": 0.017101762053236564,
+     "^cond.constraints.c32": -0.6769514229574216,
+     "^cond.constraints.c34": -0.8542953395165415,
+     "^cond.constraints.c35": 0.0369709912346495,
+     "^cond.constraints.c65": -0.9758960465472055
+    }
+   },
+   "levelised": 117.47760859666336,
+   "mean_coe_where_converged_and_positive_net": 287.76892156390227,
+   "median_coe_where_converged": 153.83835003742087,
+   "coe_where_converged_and_positive_net": {
+    "p5": 55.24558576363284,
+    "p50": 151.8905590648759,
+    "p95": 722.0338308785797,
+    "mean": 287.76892156390227,
+    "median": 151.8905590648759,
+    "count": 252
+   },
+   "coe_where_feasible": {
+    "p5": 334.9331345191194,
+    "p50": 578.8485933134871,
+    "p95": 1003.5494985638175,
+    "mean": 645.8061660749548,
+    "median": 578.8485933134871,
+    "count": 3
+   },
+   "net_mw_where_converged": {
+    "p5": 109.78219937523897,
+    "p50": 865.9456928698309,
+    "p95": 2729.3267921768866,
+    "mean": 1120.6441774950117,
+    "median": 865.9456928698309,
+    "count": 256
+   },
+   "steps_mean": 0.0,
+   "steps_max": 0.0
+  },
+  "robust": {
+   "n": 256,
+   "nominal": {
+    "converged": false,
+    "coe": 439.3802726256572,
+    "net_mw": 318.4472700879603,
+    "g": {
+     "^cond.constraints.c24": -0.5934446653460907,
+     "^cond.constraints.c8": -0.8132557590717185,
+     "^cond.constraints.c17": -0.6518802248167128,
+     "^cond.constraints.c18": -0.8344056892270073,
+     "^cond.constraints.c67": -0.8315233543658365,
+     "^cond.constraints.c82": -0.22067827580463262,
+     "^cond.constraints.c83": -0.03589474322368891,
+     "^cond.constraints.c62": -0.3851664362954643,
+     "^cond.constraints.c32": -0.7557490498824696,
+     "^cond.constraints.c34": -0.6381184657990245,
+     "^cond.constraints.c35": -0.43699242929752213,
+     "^cond.constraints.c65": -0.9642666327801648
+    },
+    "feasible": false
+   },
+   "failed_fraction": 0.421875,
+   "p_net_nonpositive": 0.1015625,
+   "feasible_fraction": 0.515625,
+   "any_violation_fraction": 0.4296875,
+   "any_violation_fraction_among_converged": 0.013513513513513514,
+   "p_violated": {
+    "^cond.constraints.c24": 0.42578125,
+    "^cond.constraints.c8": 0.42578125,
+    "^cond.constraints.c17": 0.421875,
+    "^cond.constraints.c18": 0.42578125,
+    "^cond.constraints.c67": 0.421875,
+    "^cond.constraints.c82": 0.421875,
+    "^cond.constraints.c83": 0.421875,
+    "^cond.constraints.c62": 0.421875,
+    "^cond.constraints.c32": 0.421875,
+    "^cond.constraints.c34": 0.421875,
+    "^cond.constraints.c35": 0.421875,
+    "^cond.constraints.c65": 0.421875
+   },
+   "p_violated_among_converged": {
+    "^cond.constraints.c24": 0.006756756756756757,
+    "^cond.constraints.c8": 0.006756756756756757,
+    "^cond.constraints.c17": 0.0,
+    "^cond.constraints.c18": 0.006756756756756757,
+    "^cond.constraints.c67": 0.0,
+    "^cond.constraints.c82": 0.0,
+    "^cond.constraints.c83": 0.0,
+    "^cond.constraints.c62": 0.0,
+    "^cond.constraints.c32": 0.0,
+    "^cond.constraints.c34": 0.0,
+    "^cond.constraints.c35": 0.0,
+    "^cond.constraints.c65": 0.0
+   },
+   "mean_g_among_converged": {
+    "^cond.constraints.c24": -0.4971264438318666,
+    "^cond.constraints.c8": -0.7106184588370491,
+    "^cond.constraints.c17": -0.6269495055776926,
+    "^cond.constraints.c18": -0.7397250650572242,
+    "^cond.constraints.c67": -0.7410125721965785,
+    "^cond.constraints.c82": -0.22066872984034974,
+    "^cond.constraints.c83": -0.03584113956504485,
+    "^cond.constraints.c62": -0.372179642971132,
+    "^cond.constraints.c32": -0.7557056402635938,
+    "^cond.constraints.c34": -0.6378740292281446,
+    "^cond.constraints.c35": -0.43689054178139736,
+    "^cond.constraints.c65": -0.9642666548626235
+   },
+   "cvar": {
+    "0.9": {
+     "^cond.constraints.c24": 10.0,
+     "^cond.constraints.c8": 10.0,
+     "^cond.constraints.c17": 10.0,
+     "^cond.constraints.c18": 10.0,
+     "^cond.constraints.c67": 10.0,
+     "^cond.constraints.c82": 10.0,
+     "^cond.constraints.c83": 10.0,
+     "^cond.constraints.c62": 10.0,
+     "^cond.constraints.c32": 10.0,
+     "^cond.constraints.c34": 10.0,
+     "^cond.constraints.c35": 10.0,
+     "^cond.constraints.c65": 10.0
+    }
+   },
+   "levelised": 320.51016532760536,
+   "mean_coe_where_converged_and_positive_net": 1014.7329302320505,
+   "median_coe_where_converged": 398.4429235560257,
+   "coe_where_converged_and_positive_net": {
+    "p5": 129.86252079865804,
+    "p50": 334.7173230209422,
+    "p95": 4233.336551560768,
+    "mean": 1014.7329302320505,
+    "median": 334.7173230209422,
+    "count": 134
+   },
+   "coe_where_feasible": {
+    "p5": 131.0088464192203,
+    "p50": 343.48372994640465,
+    "p95": 4277.501903104456,
+    "mean": 1028.502606803948,
+    "median": 343.48372994640465,
+    "count": 132
+   },
+   "net_mw_where_converged": {
+    "p5": -22.98303078541753,
+    "p50": 363.4110300378517,
+    "p95": 1266.0088462996484,
+    "mean": 455.07062563741596,
+    "median": 363.4110300378517,
+    "count": 148
+   },
+   "steps_mean": 1.6953125,
+   "steps_max": 5.0
+  }
+ }
+}

@@ -27,7 +27,7 @@ import pytest
 from cottax.blocking import Blocking
 from cottax.evaluation.schedule import Schedule
 from cottax.names import PathMap
-from cottax.problem import ConditionNode
+from cottax.problem import ConditionalNode
 
 from functional_process.cottax import recipes, session
 from functional_process.cottax.core.solver.drivers import PicardDriver
@@ -70,7 +70,7 @@ def test_each_recipe_cuts_what_the_paper_says(raw, name):
     blocking = Blocking.scc(graph)
     for block in blocking.blocks:
         if len(block) > 1:
-            assert sum(isinstance(graph[n], ConditionNode) for n in block) == 1
+            assert sum(isinstance(graph[n], ConditionalNode) for n in block) == 1
     Schedule(Blocking.scc(assign_drivers(graph, default_drivers(graph))))
 
 
@@ -94,12 +94,12 @@ def test_jacobi_reads_nothing_current(raw):
     for record in records:
         if record.problem is None:
             continue
-        body = [n for n in record.component if not isinstance(graph[n], ConditionNode)]
+        body = [n for n in record.component if not isinstance(graph[n], ConditionalNode)]
         owned = {v for n in body for v in graph[n].owns}
         for node in body:
             stale = [v for v in graph[node].reads if v in owned and graph.owners[v] != node]
             # A node may still read a *solver's* unknown its own solve is driving.
-            stale = [v for v in stale if not isinstance(graph[graph.owners[v]], ConditionNode)]
+            stale = [v for v in stale if not isinstance(graph[graph.owners[v]], ConditionalNode)]
             assert not stale, (node.spelling, [v.spelling for v in stale])
 
 

@@ -1,0 +1,11 @@
+shape,backend,N,vmap,first_call_s,warm_s,us_per_point,status
+plain,gpu,1,False,4.408475612,0.01175474806,11754.74806,
+plain,gpu,4,True,7.054837391,0.01254962501,3137.406253,
+plain,gpu,16,True,6.681292828,0.01279355399,799.5971246,
+plain,gpu,64,True,8.146749311,0.01242098596,194.0779057,
+plain,gpu,256,True,7.126995877,0.01246965502,48.70958992,
+plain,gpu,1024,True,6.714982815,0.01326540194,12.95449408,
+plain,gpu,4096,True,7.404838391,0.01887251297,4.607547112,
+plain,gpu,16384,True,6.976034929,0.034894265,2.129776917,
+plain,gpu,65536,True,7.491022662,0.09402733296,1.43474324,
+plain,gpu,262144,True,,,,JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 8.64GiB with allocato

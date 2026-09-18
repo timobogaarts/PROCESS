@@ -26,7 +26,7 @@ import numpy as np
 import optimistix as optx
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking
+from cottax.blocking import Blocking, problem_types
 from cottax.evaluation.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, is_root_find, shape_of
@@ -934,7 +934,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.is_acyclic
     (block,) = [b for b in Blocking.scc(graph).subgraphs if declared(b)]
-    assert Blocking.scc(block).problem_types == ("root-find",)
+    assert problem_types(Blocking.scc(block)) == ("root-find",)
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():

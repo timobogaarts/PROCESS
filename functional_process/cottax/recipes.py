@@ -43,7 +43,7 @@ from collections.abc import Callable, Sequence
 import networkx as nx
 
 from cottax.graph import Graph
-from cottax.problem import ConditionNode, is_fixed_point, is_root_find
+from cottax.problem import ConditionalNode, is_fixed_point, is_root_find
 from cottax.rewrites import Combine, Cut, FixedPointCut, Nest
 from cottax.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
@@ -73,9 +73,9 @@ def coupling_reads(graph: Graph, component: Sequence[NodePath]) -> dict:
             for reader in graph.readers.get(var, ())
             if reader in inside
             and reader != owner
-            and not isinstance(graph[reader], ConditionNode)
+            and not isinstance(graph[reader], ConditionalNode)
         )
-        if isinstance(graph[owner], ConditionNode):
+        if isinstance(graph[owner], ConditionalNode):
             if is_fixed_point(graph[owner]):
                 # A fixed point's own unknown. The recipe combines every fixed point of
                 # the component into one Picard, and inside that iteration `u` already
@@ -209,7 +209,7 @@ def _place_for(graph: Graph, component: Sequence[NodePath]) -> NodePath:
     """Where the component's fixed point is bound, before minting: the first function
     node of the component in binding order, with an `.mda` segment.
     """
-    first = next(n for n in graph.nodes if n in set(component) and not isinstance(graph[n], ConditionNode))
+    first = next(n for n in graph.nodes if n in set(component) and not isinstance(graph[n], ConditionalNode))
     return NodePath((*first.segments, GetAttrKey("mda")))
 
 
@@ -247,7 +247,7 @@ def residual_cycles(graph: Graph, component: Sequence[NodePath]) -> tuple[Compon
     (`dr_tf_plasma_case`) into a block whose `I - J` is exactly singular whenever the
     input arm wins, and the implicit derivative through the block is NaN.
     """
-    keep = [n for n in component if not isinstance(graph[n], ConditionNode)]
+    keep = [n for n in component if not isinstance(graph[n], ConditionalNode)]
     deps = graph._nx_dependencies.subgraph(keep)
     rank = {n: i for i, n in enumerate(graph.nodes)}
     return tuple(
@@ -272,7 +272,7 @@ def cut_component(
     PROCESS pass, and its Jacobian never enters the outer block's linear solve.
     """
     component = tuple(component)
-    declared = [p for p in component if isinstance(graph[p], ConditionNode)]
+    declared = [p for p in component if isinstance(graph[p], ConditionalNode)]
     cuts: tuple[Cut, ...] = ()
     for cycle in residual_cycles(graph, component):
         cuts += tuple(cutter(graph, cycle))

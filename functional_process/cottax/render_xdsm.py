@@ -1,4 +1,4 @@
-"""Render the port's graphs as self-contained, interactive XDSM/DSM HTML pages."""
+"""Render the port's graphs as self-contained, interactive XDSM HTML pages."""
 
 import os
 import re
@@ -8,14 +8,6 @@ from pathlib import Path
 
 from cottax.interfaces.pytree_namespace_module import xDSMFormatterFlat
 from cottax.visualization import render_xdsm_html
-
-# `render_dsm_html` used to be re-exported by `cottax.visualization` itself; jaxgraph's
-# "theory 2 notebook" commit (b1a2bbc) dropped `ragraph_dsm`'s imports from that
-# `__init__.py` as unrelated notebook cleanup, and the module still defines the function
-# -- only the package-level re-export went missing. Importing the submodule directly
-# survives that either way and needs no jaxgraph edit (out of scope here: this file's
-# territory is `functional_process/`, not `~/jaxgraph`).
-from cottax.visualization.ragraph_dsm import render_dsm_html
 
 from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
 from functional_process.cottax.indat import GRAPH, graph_for, machine_from_indat
@@ -43,25 +35,19 @@ def machine_label(suffix: str) -> str:
 
 
 def main(input_file: str | None = None):
-    """Write `xdsm.html`/`dsm.html` for the model graph; return the XDSM path."""
-    from cottax import Blocking
+    """Write `xdsm.html` for the model graph; return the XDSM path. Drawn as a
+    `OrderedPartition`, which exists for the uncut graph -- a `Blocking` refuses its undriven cycles."""
+    from cottax import OrderedPartition
 
     graph, suffix = machine_graph(input_file)
     render_xdsm_html(
-        Blocking.fused(graph),
+        OrderedPartition.fused(graph),
         file_name=f"xdsm{suffix}",
         outdir=str(OUTDIR),
         write=True,
         collapse_names=True,
         blocks=True,
         collapse_models=True,
-        formatter=SPELLING,
-    )
-    render_dsm_html(
-        Blocking.fused(graph),
-        file_name=f"dsm{suffix}",
-        outdir=str(OUTDIR),
-        write=True,
         formatter=SPELLING,
     )
     return OUTDIR / f"xdsm{suffix}.html"
@@ -154,7 +140,6 @@ def grouped_uncut(depth: int | None = None, input_file: str | None = None):
     `cut_graph`, no `assign_drivers`, no problem that `indat.py` did not already
     declare**.
     """
-    from cottax import Blocking
     from functional_process.cottax.visualization.grouping import (
         dependency_group_sequence,
         group_label,
@@ -165,7 +150,10 @@ def grouped_uncut(depth: int | None = None, input_file: str | None = None):
     )
 
     declared, suffix = machine_graph(input_file)
-    blocking = Blocking.scc(declared)
+    # The graph itself, not `Blocking.scc(declared)`: since cottax `bc1130a` a blocking
+    # is answerable by construction, and the declared graph's cycles are undriven, so
+    # none exists for it -- the drawings read a bare graph (`grouping.Drawn`).
+    blocking = declared
     report = grouping_report(blocking, depth=depth)
     print(f"grouped_uncut ({machine_label(suffix)}): {report.summary()}")
 
@@ -243,7 +231,7 @@ def cold_reference(input_file=None):
 
 
 def sand():
-    """Write `xdsm_sand.html`/`dsm_sand.html` for the assembled SAND graph."""
+    """Write `xdsm_sand.html` for the assembled SAND graph."""
     from cottax import Blocking
 
     from functional_process.cottax.sand_harness import assemble, mda_env
@@ -298,21 +286,7 @@ def sand():
             collapse_models=True,
             formatter=SPELLING,
         )
-        render_dsm_html(
-            blocking,
-            file_name=f"dsm_{name[5:]}",
-            outdir=str(OUTDIR),
-            write=True,
-            formatter=SPELLING,
-        )
         print(f"  {name}: {len(blocking.blocks)} blocks")
-    render_dsm_html(
-        Blocking.scc(combined),
-        file_name="dsm_sand",
-        outdir=str(OUTDIR),
-        write=True,
-        formatter=SPELLING,
-    )
     return OUTDIR / "xdsm_sand.html"
 
 

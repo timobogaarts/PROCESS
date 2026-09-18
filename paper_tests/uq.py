@@ -337,8 +337,10 @@ def build(pairing=PAIRING, variant: str = "nominal") -> tuple[Model, dict]:
         if var in schedule_inputs:
             env[var] = jnp.asarray(float(value))
     closing = next(iter(built.pairings.values()))
-    guess = next(g for g, u in mdf.guess_ports(problem).items() if u == closing)
-    env[guess] = jnp.asarray(float(process_x[closing]))
+    ports = mdf.guess_ports(problem)
+    for var in built.pairings.values():  # every closing variable starts at PROCESS's answer
+        env[next(g for g, u in ports.items() if u == var)] = jnp.asarray(float(process_x[var]))
+    guess = next(g for g, u in ports.items() if u == closing)
     env, primed = mdf.prime(problem, env)
     point = PathMap(mdf._inputs_only(problem, env).items())
     var_of = {v.spelling: v for v in point}
@@ -355,7 +357,7 @@ def build(pairing=PAIRING, variant: str = "nominal") -> tuple[Model, dict]:
             continue
         inputs.append(i)
         nominal[i.path] = np.asarray(point[var_of[i.path]])
-    place = next(iter(built.places.values()))
+    place = next(iter(built.places.values()))  # one place, also when two conditions are closed together
     inequalities = tuple(problem.report["inequalities"])
     wanted = [var_of[s] for s, _ in OUTPUTS] + list(inequalities)
     wanted += [Steps.name_for(place), Converged.name_for(place)]
@@ -387,6 +389,7 @@ def build(pairing=PAIRING, variant: str = "nominal") -> tuple[Model, dict]:
         "build_s": build_s,
         "design": {k.spelling: float(v) for k, v in process_x.items()},
         "closing": closing.spelling,
+        "pairing": {c.spelling: v.spelling for c, v in built.pairings.items()},
         "root_find_at_nominal": {c.spelling: r for c, r in built.root_find_reports(primed).items()},
         "port_at_nominal": at,
         "process_converged": reference,

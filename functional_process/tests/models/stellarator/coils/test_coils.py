@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking
+from cottax.blocking import Blocking, problem_types
 from cottax.evaluation.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars, shape_of
@@ -471,7 +471,7 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     assert len(graph.definitions) == 2
     assert not graph.is_acyclic
     assert declared(graph) == (node.problem_name,)
-    assert Blocking.scc(graph).problem_types == ("root-find",)
+    assert problem_types(Blocking.scc(graph)) == ("root-find",)
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():

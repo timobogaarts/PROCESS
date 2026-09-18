@@ -9,8 +9,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.blocking import Blocking
-from cottax.rewrites import NestInside
+from cottax.blocking import Blocking, problem_types
+from functional_process.cottax.queries import nested_inside
 from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
@@ -170,7 +170,7 @@ def assemble(
             f"cannot own them (see `sand.optimise_graph` on the same conflict)"
         )
     report["blocks"] = len(blocking.blocks)
-    report["driven_blocks"] = sum(1 for t in blocking.problem_types if t is not None)
+    report["driven_blocks"] = sum(1 for t in problem_types(blocking) if t is not None)
     driven_conditions, reported = conditions, ()
     if root_find:
         # The equalities alone are driven; the inequalities stay in the graph so they
@@ -539,13 +539,13 @@ def inner_residuals(schedule: Schedule, env):
 
 
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, cut=cut_graph, **kwargs):
-    """MDF **stated as structure**: `Blocking.scc((graph + Optimise + NestInside(the Optimise)).graph)`.
+    """MDF **stated as structure**: `Blocking.scc(nested_inside(graph + Optimise, the Optimise))`.
     """
     driven = cut(_without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
-    return Blocking.scc((with_problem + NestInside(problem_name)).graph), problem_name, report
+    return Blocking.scc(nested_inside(with_problem, problem_name)), problem_name, report
 
 
 IN_GRAPH_PLACE = NodePath((GetAttrKey("RootFind"),))
@@ -561,7 +561,7 @@ class InGraphRootFind:
     graph: Graph
     """`mdf.graph` plus the `RootFind`, with every problem's driver `Assign`ed on."""
     blocking: Blocking
-    """`Blocking.scc((graph + NestInside(problem)).graph)`: the SCC blocking, nested at the problem."""
+    """`Blocking.scc(queries.nested_inside(graph, problem))`: the SCC blocking, nested at the problem."""
     schedule: Schedule
     problem: NodePath
 
@@ -655,7 +655,7 @@ def in_graph_root_find(
     # instead of raising it, which is what makes a non-converged outer solve a row.
     drivers[place] = driver or MdfNewtonDriver(**kwargs)
     assigned = assign_drivers(with_problem, drivers)
-    blocking = Blocking.scc((assigned + NestInside(place)).graph)
+    blocking = Blocking.scc(nested_inside(assigned, place))
     return InGraphRootFind(
         mdf=mdf,
         graph=assigned,
@@ -724,7 +724,7 @@ def in_graph_shape(built: InGraphRootFind) -> dict:
         "block": len(built.block),
         "body": len(built.drive.body.nodes),
         "interior_blocks": len(interior.blocks),
-        "interior_driven": sum(1 for t in interior.problem_types if t is not None),
+        "interior_driven": sum(1 for t in problem_types(interior) if t is not None),
         "upstream": built.index,
         "downstream": len(built.blocking.blocks) - built.index - 1,
     }

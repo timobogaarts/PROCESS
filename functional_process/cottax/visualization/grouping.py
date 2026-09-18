@@ -7,6 +7,7 @@ the kind of problem it answers and named with its driver: the solve strategy).
 from __future__ import annotations
 
 import os
+from typing import TypeAlias
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 import dataclasses
 import json
@@ -16,13 +17,14 @@ import networkx as nx
 
 from jax.tree_util import DictKey, GetAttrKey
 
-from cottax.abstract import Eq, is_problem, undriven
+from cottax.abstract import is_problem, undriven
 from cottax.blocking import Blocking
+from cottax.partition import OrderedPartition
 from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
-from cottax.problem import ConditionNode, Driven, shape_of
+from cottax.problem import ConditionalNode, Driven, Eq, shape_of
 from cottax.names import is_minted, unminted
-from cottax.visualization.sequencing import sequenced
+from cottax.visualization.sequencing import interiors, sequenced
 from cottax.visualization.xdsm import (
     PROBLEM_TYPE_TEXT,
     Formatter,
@@ -247,7 +249,28 @@ def provenance_order(
     )
 
 
-def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
+Drawn: TypeAlias = Graph | OrderedPartition
+"""What a page is drawn of: a `Blocking`, or a bare `Graph` -- the latter for a graph no
+blocking exists for. Since cottax `bc1130a` a `Blocking` is answerable by construction,
+so an uncut cycle (`paper_tests/dsms.py`'s `uncut_optimiser` page: the optimiser's
+cycle undriven, one SCC over most of the machine) has none -- and that picture is the
+one worth having. Read as cottax's own drawings read it (`xdsm.render`,
+a `OrderedPartition`, which any graph has."""
+
+
+def partition_of(drawn: Drawn) -> OrderedPartition:
+    """`drawn` as the value every walk here takes: a `OrderedPartition` -- a `Blocking` is one --
+    or the graph's own components, which any graph has.
+    """
+    return drawn if isinstance(drawn, OrderedPartition) else OrderedPartition.scc(drawn)
+
+
+def blocks_of(drawn: Drawn) -> tuple[tuple[NodePath, ...], ...]:
+    """The top level's blocks of `drawn`, in run order."""
+    return tuple(tuple(block) for block in partition_of(drawn).blocks)
+
+
+def structure_order(drawn: Drawn) -> tuple[NodePath, ...]:
     """The order the graph actually runs in, **at every level**: `blocking`'s blocks in
     their run order, each block's body in the run order of *its* level, and so on down
     through `Blocking.inner`.
@@ -270,12 +293,15 @@ def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
     no promise beyond *one the body could be run in*: every edge among body members below
     the diagonal, and only the reads that pass through a problem above it.
     """
-    return tuple(_run_order(sequenced(blocking)))
+    return tuple(_run_order(sequenced(partition_of(drawn))))
 
 
-def answered_at(blocking: Blocking) -> tuple[NodePath | None, ...]:
+def answered_at(partition: OrderedPartition) -> tuple[NodePath | None, ...]:
     """`xdsm.problems_at`, without its warning: the problem each block answers at its
     own level, `None` where none is or where several are declared and none nested.
+
+    Asked of a graph and its nesting tree (a `OrderedPartition`, which a `Blocking` is), the shape every cottax drawing walks since `a6c5a50`: an
+    interior is a graph, and its own levels are `interiors(partition)`.
 
     The warning is right for a drawing that then shows nothing at that block, and wrong
     here: a block declaring three un-nested problems is *drawn* -- every one of the
@@ -286,15 +312,18 @@ def answered_at(blocking: Blocking) -> tuple[NodePath | None, ...]:
     """
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=r".*declares \d+ problems.*")
-        return problems_at(blocking)
+        return problems_at(partition)
 
 
-def _run_order(blocking: Blocking) -> Iterator[NodePath]:
+def _run_order(partition: OrderedPartition) -> Iterator[NodePath]:
     """`structure_order`'s recursion: one level, its nested levels in place."""
-    for block, held, lead in zip(blocking.blocks, blocking.inner, answered_at(blocking)):
+    graph = partition.graph
+    for block, held, lead in zip(partition.blocks, interiors(partition), answered_at(partition)):
         if held is not None:
             # The level's problem is the one member its interior does not hold; the
-            # interior is a blocking of its own and states the rest of the order.
+            # interior is a partition of its own and states the rest of the order
+            # (`sequenced` has already rebound the block in run order, and the interior
+            # takes the block's member order).
             inside = frozenset(held.graph.nodes)
             yield from (name for name in block if name not in inside)
             yield from _run_order(held)
@@ -305,8 +334,8 @@ def _run_order(blocking: Blocking) -> Iterator[NodePath]:
             # Every problem ahead of every body, the outer kind first: an optimiser is
             # what a reader looks for at the top left of a block.
             head = sorted(
-                (name for name in block if is_problem(blocking.graph[name])),
-                key=lambda name: 0 if problem_kind(blocking.graph[name]) in ("optimise", COMBINED) else 1,
+                (name for name in block if is_problem(graph[name])),
+                key=lambda name: 0 if problem_kind(graph[name]) in ("optimise", COMBINED) else 1,
             )
         yield from head
         yield from (name for name in block if name not in head)
@@ -407,11 +436,12 @@ class GroupingReport:
         )
 
 
-def grouping_report(blocking: Blocking, *, depth: int | None = None) -> GroupingReport:
-    """Measure provenance against structure on `blocking`: § 11's table, for any graph.
+def grouping_report(drawn: Drawn, *, depth: int | None = None) -> GroupingReport:
+    """Measure provenance against structure on `drawn`: § 11's table, for any graph.
     """
-    graph = blocking.graph
-    order = structure_order(blocking)
+    partition = partition_of(drawn)
+    graph = partition.graph
+    order = structure_order(drawn)
     owners = graph.owners
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     among = frozenset(graph.nodes)
@@ -433,7 +463,7 @@ def grouping_report(blocking: Blocking, *, depth: int | None = None) -> Grouping
 
     blocks = tuple(
         BlockGrouping(tuple(block), tuple(dict.fromkeys(at[name] for name in block)))
-        for block in blocking.blocks
+        for block in partition.blocks
     )
 
     crossing = {
@@ -492,7 +522,7 @@ def problem_kind(node) -> str | None:
     the file's optimiser. A fixed point over several relations is *not* called combined:
     a join of pairings is still a fixed point, which is what `is_fixed_point` says of it.
     """
-    if not isinstance(node, ConditionNode):
+    if not isinstance(node, ConditionalNode):
         return None
     kind = shape_of(node)
     problem = undriven(node)
@@ -507,7 +537,7 @@ def problem_kind(node) -> str | None:
 def driver_name(node) -> str | None:
     """Which algorithm answers a problem: the driver's class name, `UNDRIVEN` for a
     problem none has been `Assign`ed to yet, `None` for a node that is not a problem."""
-    if not isinstance(node, ConditionNode):
+    if not isinstance(node, ConditionalNode):
         return None
     return type(node.driver).__name__ if isinstance(node, Driven) else UNDRIVEN
 
@@ -546,8 +576,8 @@ class Solve:
         return self.real > 1
 
 
-def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
-    """Every block of `blocking` that is driven or coupled, **at every nesting level**,
+def solve_levels(drawn: Drawn) -> tuple[Solve, ...]:
+    """Every block of `drawn` that is driven or coupled, **at every nesting level**,
     outermost first and in run order within a level.
 
     A block that is neither -- one node, or nothing to solve -- is left out, at every
@@ -560,9 +590,10 @@ def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
     """
     out: list[Solve] = []
 
-    def walk(level: Blocking, depth: int, parent: int | None) -> None:
-        for block, held, lead in zip(level.blocks, level.inner, answered_at(level)):
-            node = level.graph[lead] if lead is not None else None
+    def walk(partition: OrderedPartition, depth: int, parent: int | None) -> None:
+        graph = partition.graph
+        for block, held, lead in zip(partition.blocks, interiors(partition), answered_at(partition)):
+            node = graph[lead] if lead is not None else None
             solve = Solve(
                 tuple(block), depth, parent, lead, problem_kind(node), driver_name(node)
             )
@@ -573,7 +604,7 @@ def solve_levels(blocking: Blocking) -> tuple[Solve, ...]:
             if held is not None:
                 walk(held, depth + 1, above)
 
-    walk(blocking, 0, None)
+    walk(partition_of(drawn), 0, None)
     return tuple(out)
 
 
@@ -715,7 +746,7 @@ at every level -- a 2-row fixed point included -- and shades depth."""
 
 
 def _matrix_struct(
-    blocking: Blocking,
+    drawn: Drawn,
     order: Sequence[NodePath],
     *,
     depth: int | None,
@@ -734,7 +765,7 @@ def _matrix_struct(
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
-    graph = blocking.graph
+    graph = partition_of(drawn).graph
     order = tuple(order)
     if set(order) != set(graph.nodes):
         raise ValueError(
@@ -782,7 +813,7 @@ def _matrix_struct(
     # The solve strategy: every driven or coupled block at every nesting level. A row's
     # depth is how many of those hold it -- 0 outside every solve, 1 in a top-level one,
     # 2 in a level nested inside that -- and is the same whichever mode draws it.
-    solves = solve_levels(blocking)
+    solves = solve_levels(drawn)
     row_depth = {name: 0 for name in order}
     for solve in solves:
         for member in solve.members:
@@ -798,7 +829,7 @@ def _matrix_struct(
             "colour": hue[name].colour,
             "base": hue[name].base,
             "overlay": hue[name].overlay,
-            "problem": isinstance(graph[name], ConditionNode),
+            "problem": isinstance(graph[name], ConditionalNode),
             "minted": is_minted(name),
             "reads": reads,
             "nr": n_reads,
@@ -850,7 +881,7 @@ def _matrix_struct(
                     })
                 run, start = key, i
 
-    report = grouping_report(blocking, depth=depth)
+    report = grouping_report(drawn, depth=depth)
     # One box per solve. The top level keeps its old rule -- a box is a *coupled* block
     # -- unless the page is the structure one, which boxes every solve; a nested level is
     # boxed whenever it is a solve, since nesting is what the structure page exists to
@@ -1447,7 +1478,7 @@ fit();
 
 
 def render_grouped_dsm_html(
-    blocking: Blocking,
+    drawn: Drawn,
     *,
     order: Sequence[NodePath] | None = None,
     depth: int | None = None,
@@ -1458,19 +1489,19 @@ def render_grouped_dsm_html(
     formatter: Formatter = NoFormat(),
     mode: str | None = None,
 ) -> HtmlDoc:
-    """`blocking`'s graph as a DSM in `order`, every row coloured by the group its name
-    declares.
+    """`drawn`'s graph as a DSM in `order`, every row coloured by the group its name
+    declares -- a `Blocking`, or a bare `Graph` for one no blocking exists for (`Drawn`).
 
     `mode` (`MODES`) picks the page: the *provenance* page bands the axes by namespace
     and boxes the top level's coupled blocks; the *structure* page bands them by nesting
     depth and boxes every solve at every level, shaded by depth and ringed by kind.
-    `None` decides by the order: structure if `order` is `structure_order(blocking)`,
+    `None` decides by the order: structure if `order` is `structure_order(drawn)`,
     provenance otherwise.
     """
-    order = structure_order(blocking) if order is None else tuple(order)
+    order = structure_order(drawn) if order is None else tuple(order)
     if mode is None:
-        mode = "structure" if order == structure_order(blocking) else "provenance"
-    struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter, mode=mode)
+        mode = "structure" if order == structure_order(drawn) else "provenance"
+    struct = _matrix_struct(drawn, order, depth=depth, formatter=formatter, mode=mode)
     # The placeholders are spent **before** the data goes in, not after: a node whose name
     # happened to spell `__TITLE__` would otherwise have the title substituted into the
     # middle of the graph. `</` is broken up for the same reason one level down -- a name

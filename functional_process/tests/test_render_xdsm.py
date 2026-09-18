@@ -21,7 +21,10 @@ from functional_process.cottax.render_xdsm import (
     machine_graph,
     mode,
 )
-from functional_process.cottax.visualization.grouping import grouping_report
+from functional_process.cottax.visualization.grouping import (
+    blocks_of,
+    grouping_report,
+)
 
 
 def test_grouped_uncut_is_registered_as_a_mode():
@@ -92,10 +95,11 @@ def test_the_reference_stellarator_has_exactly_two_genuinely_coupled_uncut_sccs(
     """Pinned so a future edit to `physics`/`stellarator` membership is forced to
     re-check rather than silently leave `_audit/uncut_graph.md`'s census stale.
     """
+    # The graph, not a `Blocking`: its cycles are undriven, so since cottax `bc1130a`
+    # none exists for it, and the drawings read the graph (`grouping.Drawn`).
     declared, _ = machine_graph()
-    blocking = Blocking.scc(declared)
-    report = grouping_report(blocking)
-    assert len(blocking.blocks) == 144
+    report = grouping_report(declared)
+    assert len(blocks_of(declared)) == 144
     assert len(report.coupled) == 2
     sizes = sorted(len(b.members) for b in report.coupled)
     assert sizes == [2, 6]
@@ -109,9 +113,8 @@ def test_the_reference_tokamak_has_exactly_three_genuinely_coupled_uncut_sccs():
     accounting of which cuts land on `large_tokamak_eval.IN.DAT`.
     """
     declared = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
-    blocking = Blocking.scc(declared)
-    report = grouping_report(blocking)
-    assert len(blocking.blocks) == 227
+    report = grouping_report(declared)
+    assert len(blocks_of(declared)) == 227
     assert len(report.coupled) == 3
     sizes = sorted(len(b.members) for b in report.coupled)
     assert sizes == [4, 8, 9]
@@ -126,11 +129,10 @@ def test_cutting_changes_no_block_count_only_the_coupled_blocks_own_size():
 
     declared, _ = machine_graph()
     driven = driven_graph(declared)
-    uncut_blocking = Blocking.scc(declared)
     driven_blocking = Blocking.scc(driven)
-    assert len(uncut_blocking.blocks) == len(driven_blocking.blocks) == 144
+    assert len(blocks_of(declared)) == len(driven_blocking.blocks) == 144
 
-    uncut_report = grouping_report(uncut_blocking)
+    uncut_report = grouping_report(declared)
     driven_report = grouping_report(driven_blocking)
     assert len(uncut_report.coupled) == len(driven_report.coupled) == 2
     uncut_sizes = sorted(len(b.members) for b in uncut_report.coupled)

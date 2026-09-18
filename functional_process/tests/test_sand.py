@@ -20,8 +20,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.blocking import Blocking
-from cottax.evaluation.schedule import Drive, Schedule
+from cottax.blocking import Blocking, problem_types
+from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
     Converged,
@@ -34,6 +34,7 @@ from cottax.problem import (
 )
 from cottax.rewrites import Assign
 from cottax.spec import NodePath, VarPath
+from cottax.problem.condition import Equality, Inequality, Objective
 from cottax.nodes import ImplementedFunction
 from cottax.names import PathMap
 from jax.flatten_util import ravel_pytree
@@ -43,6 +44,7 @@ import functional_process
 from functional_process.cottax.core.solver import constraints as ported_constraints
 from functional_process.cottax.core.solver import objectives as ported_objectives
 from functional_process.cottax.core.solver.drivers import (
+    by_role,
     VMCON_CONVERGED,
     VMCON_NON_FINITE,
     VMCON_STATUS,
@@ -402,14 +404,45 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     assert float(body.fn(coe)) == pytest.approx(-float(negate.fn(metric.fn(coe))))
 
 
-def test_sand_assembles_and_orders_its_conditions():
-    """The whole assembly, and the ordering `VmconDriver`'s count-based split rests on.
+def _by_role(drive, n_equality: int, n_inequality: int) -> list[str]:
+    """The spellings of `drive`'s conditions in the order `VmconDriver` partitions
+    them: `drivers.by_role` on a condition map carrying the drive's conditions and
+    roles, which is all `by_role` reads.
+    """
+    stub = ConditionMap(
+        body=None, unknowns=(), conditions=drive.conditions, roles=drive.roles,
+        context=PathMap({}),
+    )
+    ordered = by_role(stub, "test", n_equality, n_inequality)
+    return [c.spelling for c in ordered.conditions]
 
-    `Drive.conditions` is the problem node's `reads` and `Optimise.inputs` is
-    `(objective, *equalities, *inequalities)`, so the objective is first and the
-    equalities precede the inequalities. That is *checked* here rather than assumed,
-    because it is the one thing standing between a correct solve and one that quietly
-    treats an inequality as the objective.
+
+def test_by_role_refuses_counts_the_roles_contradict():
+    """The count check the drivers used to make on length is made on roles now."""
+    a, b, c = (VarPath(("cond", n)) for n in ("f", "g", "h"))
+    stub = ConditionMap(
+        body=None, unknowns=(), conditions=(b, a, c),
+        roles=(Inequality, Objective, Equality), context=PathMap({}),
+    )
+    ordered = by_role(stub, "test", 1, 1)
+    assert ordered.conditions == (a, c, b)
+    assert ordered.roles == (Objective, Equality, Inequality)
+    with pytest.raises(ValueError, match="told 2 equalities"):
+        by_role(stub, "test", 2, 0)
+
+
+def test_sand_assembles_and_orders_its_conditions():
+    """The whole assembly, and the split `VmconDriver` rests on.
+
+    Since cottax `bc1130a` `Drive.conditions` arrives **as the statement wrote it** --
+    a `Combine`d SAND problem interleaves its residualised fixed points with the
+    optimiser's constraints -- and `Drive.roles`, parallel, says what each condition
+    is; a driver splits by role, never by position. So what is *checked* here is that
+    the roles name the objective, every equality and every inequality the assembly
+    declared, and that `drivers.by_role` puts them in the `(objective, *equalities,
+    *inequalities)` order the driver's positional partition then reads -- the one
+    thing standing between a correct solve and one that quietly treats an inequality
+    as an equality.
     """
     from functional_process.cottax.mda import cut_graph
     from functional_process.cottax.mda_harness import _without_excluded
@@ -428,16 +461,28 @@ def test_sand_assembles_and_orders_its_conditions():
     drive = shape["drive"]
 
     names = [c.spelling for c in drive.conditions]
-    assert names[0] == "^cond.numerics.objf"
+    roles = drive.roles
+    assert len(roles) == len(names)
     # `.problem` because the node is `Driven` now: it *has* a problem rather than
     # being one, and cottax forwards only the graph-facing surface.
     definition = drive.subgraph[drive.problem].problem
-    assert names[1 : 1 + len(definition.equalities)] == [
+    by = {
+        kind: {n for n, r in zip(names, roles, strict=True) if r is kind}
+        for kind in (Objective, Inequality)
+    }
+    assert by[Objective] == {"^cond.numerics.objf"}
+    assert by[Inequality] == {c.spelling for c in definition.inequalities}
+    assert set(names) - by[Objective] - by[Inequality] == {
         c.spelling for c in definition.equalities
-    ]
-    assert names[1 + len(definition.equalities) :] == [
+    }
+    ordered = _by_role(drive, len(definition.equalities), len(definition.inequalities))
+    assert ordered[0] == "^cond.numerics.objf"
+    assert set(ordered[1 : 1 + len(definition.equalities)]) == {
+        c.spelling for c in definition.equalities
+    }
+    assert set(ordered[1 + len(definition.equalities) :]) == {
         c.spelling for c in definition.inequalities
-    ]
+    }
     # The eight design variables come first among the unknowns, so the Schur reduction
     # in `sand_harness` can index them positionally.
     assert [v.spelling for v in drive.unknowns[: len(REFERENCE_IXC)]] == [
@@ -471,7 +516,7 @@ def test_default_drivers_reads_the_split_off_the_problem_node():
     driver = optimise[0]
     problem = next(
         p
-        for p, t in zip(blocking.problems, blocking.problem_types, strict=True)
+        for p, t in zip(blocking.problems, problem_types(blocking), strict=True)
         if t is not None and t == 'optimise'
     )
     definition = blocking.graph[problem]
@@ -1409,12 +1454,12 @@ def test_tokamak_sand_assembles_and_orders_its_conditions():
     schedule = sand_schedule(combined, None)
     shape = sand_shape(schedule)
     drive = shape["drive"]
-    names = [c.spelling for c in drive.conditions]
-    assert names[0] == "^cond.numerics.objf"
     definition = drive.subgraph[drive.problem].problem
-    assert names[1 : 1 + len(definition.equalities)] == [
+    ordered = _by_role(drive, len(definition.equalities), len(definition.inequalities))
+    assert ordered[0] == "^cond.numerics.objf"
+    assert set(ordered[1 : 1 + len(definition.equalities)]) == {
         c.spelling for c in definition.equalities
-    ]
+    }
     assert [v.spelling for v in drive.unknowns[: len(TOKAMAK_IXC)]] == [
         iteration_variable_path(i).spelling for i in TOKAMAK_IXC
     ]

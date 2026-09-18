@@ -25,7 +25,6 @@ import json
 import re
 
 import pytest
-from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
 from cottax.spec import NodePath, VarPath
@@ -94,9 +93,9 @@ def order():
 
 @pytest.fixture
 def struct(fixture_graph, order):
-    return _matrix_struct(
-        Blocking.scc(fixture_graph), order, depth=None, formatter=SPELLING
-    )
+    # The graph, not a `Blocking` of it: its cycle is undriven, so since cottax
+    # `bc1130a` none exists, and the drawings take the graph (`grouping.Drawn`).
+    return _matrix_struct(fixture_graph, order, depth=None, formatter=SPELLING)
 
 
 # ================================================================= the payload
@@ -175,7 +174,7 @@ def _tooltips(html: str):
 def page(fixture_graph, order):
     return str(
         render_grouped_dsm_html(
-            Blocking.scc(fixture_graph),
+            fixture_graph,
             order=order,
             title="tooltips",
             formatter=SPELLING,
@@ -216,7 +215,7 @@ def test_a_node_with_no_reads_says_none_rather_than_drawing_an_empty_block():
     graph = Graph(PathMap({N("g", "src"): call([], [V("g", "out")])}))
     page = str(
         render_grouped_dsm_html(
-            Blocking.scc(graph), order=(N("g", "src"),), formatter=SPELLING
+            graph, order=(N("g", "src"),), formatter=SPELLING
         )
     )
     node_tip, _, _ = _tooltips(page)

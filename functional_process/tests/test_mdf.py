@@ -27,8 +27,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.blocking import Blocking
-from cottax.rewrites import NestInside
+from cottax.blocking import Blocking, problem_types
+from functional_process.cottax.queries import nested_inside
 from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
@@ -137,14 +137,14 @@ def test_cottax_states_mdf_structurally(problem):
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
     )
     index = nested.index[name]
-    assert nested.problem_types[index] == 'optimise'
+    assert problem_types(nested)[index] == 'optimise'
     interior = nested.inner[index]
-    assert interior is not None
+    assert interior.blocks
     # The interior is the block minus the node solved at this level, and it holds the
     # MDA's own driven blocks -- the ones `mdf` runs as the inner solve.
     assert name not in interior.index
     assert len(interior.blocks) > 1
-    assert sum(1 for t in interior.problem_types if t is not None) > 1
+    assert sum(1 for t in problem_types(interior) if t is not None) > 1
 
 
 def test_the_undriven_nesting_is_refused_for_want_of_an_assign():
@@ -182,7 +182,7 @@ def test_cottax_runs_that_nesting_once_the_drivers_are_assigned():
     )
     graph = nested.graph
     assigned = assign_drivers(graph, default_drivers(graph))
-    blocking = Blocking.scc((assigned + NestInside(name)).graph)
+    blocking = Blocking.scc(nested_inside(assigned, name))
     schedule = Schedule(blocking)
     outer = schedule.steps[blocking.index[name]]
     assert isinstance(outer, Drive)
@@ -408,7 +408,7 @@ def _array_fixed_point(max_iter):
     configuration. The three elements converge at three different rates, so which element
     is the worst is a fact and not a coincidence.
     """
-    from cottax.rewrites import Assign, NestInside
+    from cottax.rewrites import Assign
     from cottax.spec import NodePath, VarPath
     from cottax.nodes import ImplementedFunction
     from cottax.names import PathMap
@@ -696,7 +696,7 @@ def test_the_interior_is_the_block_one_problem_in_and_holds_its_coupled_blocks(i
     assert set(interior.graph.nodes) == set(in_graph.block) - {in_graph.problem}
     # The coupled blocks that fall inside the loop are driven at the inner level, so one
     # outer Newton step is one run of the interior's schedule.
-    assert sum(1 for t in interior.problem_types if t is not None) >= 1
+    assert sum(1 for t in problem_types(interior) if t is not None) >= 1
     assert len(interior.blocks) > 1
 
 

@@ -2,6 +2,7 @@
 `cottax.problem.Optimise`, local to this port.
 """
 
+import dataclasses
 import warnings
 
 import equinox as eqx
@@ -11,6 +12,7 @@ import numpy as np
 import optimistix as optx
 from cottax.drivers import PicardDriver as CottaxPicardDriver
 from cottax.evaluation.schedule import ConditionMap, Driver
+from cottax.problem.condition import Inequality, Objective
 from cottax.problem import (
     Converged,
     DriverReport,
@@ -55,6 +57,50 @@ def entry_names(names, sizes) -> list[str]:
     for name, size in zip(names, sizes, strict=True):
         out.extend([name] if size == 1 else [f"{name}[{i}]" for i in range(size)])
     return out
+
+
+def by_role(
+    conditions: ConditionMap, name: str, n_equality: int, n_inequality: int
+) -> ConditionMap:
+    """`conditions` with its conditions in the order the SQP drivers here partition
+    them by position: `(objective, *equalities, *inequalities)`, `roles` permuted
+    alongside.
+
+    Since cottax `bc1130a` a condition map's conditions arrive **as the statement wrote
+    them** and `ConditionMap.roles` says what each is, parallel -- "a driver splits by
+    role, never by position". Before that the seam itself promised this order. A SAND
+    problem, `Combine`d from residualised fixed points and the optimiser, writes its
+    conditions interleaved, so a count-based split there would quietly read an
+    inequality as an equality. The counts the driver was told are checked against the
+    roles, which is the check the old length test stood in for.
+    """
+    roles = conditions.roles
+    if len(roles) != len(conditions.conditions):
+        raise ValueError(
+            f"{name}: `ConditionMap.roles` ({len(roles)}) is not parallel to its "
+            f"conditions ({len(conditions.conditions)})"
+        )
+    rank = {Objective: 0, Inequality: 2}       # every other role is an equality
+    order = sorted(range(len(roles)), key=lambda i: rank.get(roles[i], 1))
+    counted = (
+        sum(1 for r in roles if r is Objective),
+        sum(1 for r in roles if rank.get(r, 1) == 1),
+        sum(1 for r in roles if r is Inequality),
+    )
+    if counted != (1, n_equality, n_inequality):
+        raise ValueError(
+            f"{name} was told {n_equality} equalities and {n_inequality} inequalities "
+            f"with one objective, but the block's roles count "
+            f"{counted[0]} objective(s), {counted[1]} equalities and {counted[2]} "
+            f"inequalities over {', '.join(written(conditions.conditions))}"
+        )
+    if order == list(range(len(roles))):
+        return conditions
+    return dataclasses.replace(
+        conditions,
+        conditions=tuple(conditions.conditions[i] for i in order),
+        roles=tuple(roles[i] for i in order),
+    )
 
 
 def entry_count(sizes, first: int, count: int) -> int:
@@ -474,15 +520,10 @@ class SlsqpDriver(Driver):
         """Values for the block's unknowns, then `steps`, `converged` and `status`."""
         from scipy.optimize import minimize
 
+        conditions = by_role(
+            conditions, "SlsqpDriver", self.n_equality, self.n_inequality
+        )
         start = start_from(data, "SlsqpDriver", conditions)
-        expected = 1 + self.n_equality + self.n_inequality
-        if expected != len(conditions.conditions):
-            raise ValueError(
-                f"SlsqpDriver was told {self.n_equality} equalities and "
-                f"{self.n_inequality} inequalities, i.e. {expected} conditions with the "
-                f"objective, but the block declares {len(conditions.conditions)} "
-                f"({', '.join(written(conditions.conditions))})"
-            )
 
         _flat, unravel = ravel_pytree(start)
         # In flat entries: an array-valued condition is as many rows as it has elements.
@@ -800,17 +841,12 @@ class VmconDriver(Driver):
         """Values for the block's unknowns, then `steps`, `converged` and `status` --
         `AbstractDriver`'s own contract, see its abstract `__call__` docstring.
         """
+        # In `(objective, *equalities, *inequalities)` order, by role: everything
+        # below partitions by position, and the counts are checked against the roles.
+        conditions = by_role(
+            conditions, "VmconDriver", self.n_equality, self.n_inequality
+        )
         start = start_from(data, "VmconDriver", conditions)
-        expected = 1 + self.n_equality + self.n_inequality
-        if expected != len(conditions.conditions):
-            raise ValueError(
-                f"VmconDriver was told {self.n_equality} equalities and "
-                f"{self.n_inequality} inequalities, i.e. {expected} conditions with the "
-                f"objective, but the block declares {len(conditions.conditions)} "
-                f"({', '.join(written(conditions.conditions))}) -- `ConditionMap` "
-                f"carries no type information, so this split is the caller's to get "
-                f"right (see this class's docstring)"
-            )
 
         from pyvmcon import Result, VMCONConvergenceException, solve
         from pyvmcon.problem import AbstractProblem

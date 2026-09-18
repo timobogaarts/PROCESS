@@ -16,7 +16,7 @@ from cottax.evaluation.schedule import Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of, is_fixed_point, is_optimise
-from cottax.rewrites import Assign, Combine, NestInside, Residualise
+from cottax.rewrites import Assign, Combine, Residualise
 
 from cottax.spec import NodePath, VarPath
 from cottax.nodes import ImplementedFunction
@@ -715,7 +715,8 @@ def sand_schedule(
     # Nesting is an op on the *graph* now, not a call on the blocking: which statement's
     # iteration answers which is recorded in `Graph.within`, and `Blocking` reads it.
     if nest:
-        assigned = (assigned + NestInside(optimise)).graph
+        from functional_process.cottax.queries import nested_inside  # noqa: PLC0415
+        assigned = nested_inside(assigned, optimise)
     return Schedule(Blocking.scc(assigned))
 
 

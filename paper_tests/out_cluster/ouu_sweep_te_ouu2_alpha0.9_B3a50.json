@@ -1,0 +1,153 @@
+{
+ "name": "ouu_sweep_te_ouu2_alpha0.9_B3a50",
+ "source": "final (infeasible)",
+ "grid_kev": [
+  3.0,
+  3.8,
+  4.6,
+  5.4,
+  6.2,
+  7.0,
+  7.800000000000001,
+  8.600000000000001,
+  9.4,
+  10.2,
+  11.0,
+  11.8,
+  12.600000000000001,
+  13.4,
+  14.200000000000001,
+  15.0
+ ],
+ "t_e_shared_kev": 5.673208204310432,
+ "n": 16384,
+ "alpha": 0.9,
+ "constraints": [
+  "^cond.constraints.c24",
+  "^cond.constraints.c8",
+  "^cond.constraints.c17",
+  "^cond.constraints.c18",
+  "^cond.constraints.c67",
+  "^cond.constraints.c82",
+  "^cond.constraints.c83",
+  "^cond.constraints.c62",
+  "^cond.constraints.c32",
+  "^cond.constraints.c34",
+  "^cond.constraints.c35",
+  "^cond.constraints.c65",
+  "^cond.constraints.c16"
+ ],
+ "reference_continuation": {
+  "cold_s": 24.135175906005315,
+  "warm_s": 0.019387510954402387,
+  "calls": 3,
+  "path_failed": [],
+  "failed_cold": 0.0
+ },
+ "all_constraints": {
+  "feasible_fraction_shared": 0.0,
+  "feasible_fraction_swept": 0.0,
+  "coe_mean_where_feasible_shared": null,
+  "coe_mean_where_feasible_swept": null,
+  "coe_mean_over_samples_feasible_both": {
+   "shared": null,
+   "swept": null,
+   "count": 0
+  },
+  "chosen_t_e_kev": {
+   "p5": null,
+   "p50": null,
+   "p95": null,
+   "at_shared_fraction": null
+  },
+  "feasible_fraction_per_grid_point": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "failed_fraction_per_grid_point": [
+   1.0,
+   0.25994873046875,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "graph_inequalities": {
+  "feasible_fraction_shared": 0.0,
+  "feasible_fraction_swept": 0.0,
+  "coe_mean_where_feasible_shared": null,
+  "coe_mean_where_feasible_swept": null,
+  "coe_mean_over_samples_feasible_both": {
+   "shared": null,
+   "swept": null,
+   "count": 0
+  },
+  "chosen_t_e_kev": {
+   "p5": null,
+   "p50": null,
+   "p95": null,
+   "at_shared_fraction": null
+  },
+  "feasible_fraction_per_grid_point": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "failed_fraction_per_grid_point": [
+   1.0,
+   0.25994873046875,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ }
+}

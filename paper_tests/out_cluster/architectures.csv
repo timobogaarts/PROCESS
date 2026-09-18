@@ -1,0 +1,97 @@
+configuration,arm,driver,recipe,unknowns,design_entries,conditions,iterations,status,objf,note,cold_wall,warm_wall,warm_xla,calls,ms_per_call
+stellarator_helias,MDF,VMCON,hand,8,8,15,40,converged,1.218441432,,15.01173864,1.182131718,0.168174819,79,2.228589998
+stellarator_helias,MDF,VMCON,jacobi,8,8,15,38,converged,1.218441433,,18.95864774,1.330057994,0.253187651,75,3.39994
+stellarator_helias,MDF,VMCON,gauss_seidel,8,8,15,39,converged,1.218441431,,14.31398544,1.153596555,0.160695876,77,2.044082001
+stellarator_helias,MDF,VMCON,gauss_seidel_minimal,8,8,15,40,converged,1.218441432,,14.54366386,1.496562842,0.173606152,79,2.244079998
+stellarator_helias,MDF,SLSQP,hand,8,8,15,27,converged,1.21844143,,16.47709622,0.790371462,0.080719216,65,1.012520999
+stellarator_helias,MDF,SLSQP,jacobi,8,8,15,27,converged,1.21844143,,17.50984163,0.853889164,0.126779401,65,1.287257001
+stellarator_helias,MDF,SLSQP,gauss_seidel,8,8,15,27,converged,1.21844143,,17.01385949,0.815013683,0.100208957,65,1.319757997
+stellarator_helias,MDF,SLSQP,gauss_seidel_minimal,8,8,15,27,converged,1.21844143,,17.23614154,0.793453775,0.08297972201,65,0.9498020008
+stellarator_helias,SAND,VMCON,hand,14,14,21,43,converged,1.218441433,,16.58815169,1.086561564,0.16165762,85,1.938392001
+stellarator_helias,SAND,VMCON,jacobi,25,225,32,23,converged,1.218441432,,24.80000798,4.888324811,0.298484123,45,4.6258
+stellarator_helias,SAND,VMCON,gauss_seidel,19,19,26,20,converged,1.218441433,,17.20397374,1.051505197,0.090490755,39,2.363374002
+stellarator_helias,SAND,VMCON,gauss_seidel_minimal,14,14,21,50,converged,1.21844143,,16.83920822,1.356273674,0.193104701,99,1.958442997
+stellarator_helias,SAND,SLSQP,hand,14,14,21,88,converged,1.218325295,,17.98044827,1.189566903,0.544145765,590,0.7871425023
+stellarator_helias,SAND,SLSQP,jacobi,25,225,32,2,stopped,1.335198803,,19.22533746,0.793040873,0.005186065002,2,2.593032501
+stellarator_helias,SAND,SLSQP,gauss_seidel,19,19,26,26,converged,1.218441433,,18.9226202,0.807100512,0.074468663,59,0.9412020008
+stellarator_helias,SAND,SLSQP,gauss_seidel_minimal,14,14,21,22,converged,1.218441433,,18.0667074,0.806136245,0.068425083,49,1.214634001
+helias_5b,MDF,VMCON,hand,3,3,5,4,converged,0.7642421621,,11.71529354,0.720409428,0.01016344101,7,1.594786001
+helias_5b,MDF,VMCON,jacobi,3,3,5,4,converged,0.7642421618,,15.54703609,0.757908464,0.020756109,7,3.028814001
+helias_5b,MDF,VMCON,gauss_seidel,3,3,5,4,converged,0.7642421619,,11.83250394,0.759116456,0.01248452801,7,1.700536002
+helias_5b,MDF,VMCON,gauss_seidel_minimal,3,3,5,4,converged,0.7642421621,,11.96563344,0.733029674,0.009765160998,7,1.514186999
+helias_5b,MDF,SLSQP,hand,3,3,5,5,converged,0.7642421621,,15.6660414,0.730794705,0.008066068993,8,1.049435501
+helias_5b,MDF,SLSQP,jacobi,3,3,5,5,converged,0.7642421618,,16.40477276,0.723247972,0.014178471,8,1.812228998
+helias_5b,MDF,SLSQP,gauss_seidel,3,3,5,5,converged,0.7642421619,,15.28714009,1.447927325,0.008547676003,8,1.121025
+helias_5b,MDF,SLSQP,gauss_seidel_minimal,3,3,5,5,converged,0.7642421621,,15.08241797,0.68984541,0.009347965006,8,1.205969002
+helias_5b,SAND,VMCON,hand,9,9,11,7,converged,0.7642421628,,12.48632532,0.380889289,0.01927830299,13,1.560826997
+helias_5b,SAND,VMCON,jacobi,20,220,22,7,converged,0.7642421666,,17.5798708,1.213510174,0.08487899099,13,5.430852998
+helias_5b,SAND,VMCON,gauss_seidel,14,14,16,7,converged,0.764242162,,12.82238669,0.40770268,0.02146969401,13,1.643921001
+helias_5b,SAND,VMCON,gauss_seidel_minimal,9,9,11,7,converged,0.764242162,,12.03680154,0.384873545,0.01906619799,13,1.589126001
+helias_5b,SAND,SLSQP,hand,9,9,11,7,converged,0.7642421628,,13.93149775,0.358356483,0.01298514901,13,1.073241001
+helias_5b,SAND,SLSQP,jacobi,20,220,22,2,stopped,1.049685276,,14.47878095,0.346810043,0.004240958999,2,2.120479499
+helias_5b,SAND,SLSQP,gauss_seidel,14,14,16,7,converged,0.764242162,,14.31285168,0.338318748,0.01362974901,13,1.150386001
+helias_5b,SAND,SLSQP,gauss_seidel_minimal,9,9,11,7,converged,0.764242162,,14.64681542,0.355678745,0.014734822,13,1.081230999
+large_tokamak_nof,MDF,VMCON,hand,20,20,27,7,converged,1.6,,48.13325485,2.134765061,0.540001702,13,20.169664
+large_tokamak_nof,MDF,VMCON,jacobi,20,20,27,7,converged,1.6,,55.03040036,3.368945332,0.665645314,13,43.736296
+large_tokamak_nof,MDF,VMCON,gauss_seidel,20,20,27,7,converged,1.6,,46.54159064,1.78173897,0.204297983,13,14.102831
+large_tokamak_nof,MDF,VMCON,gauss_seidel_minimal,20,20,27,7,converged,1.6,,50.30900163,1.567794322,0.070179204,13,5.503151999
+large_tokamak_nof,MDF,SLSQP,hand,20,20,27,8,converged,1.6,,53.13307261,3.088788294,0.303653182,15,10.26424
+large_tokamak_nof,MDF,SLSQP,jacobi,20,20,27,8,converged,1.6,,56.01370863,1.943192732,0.366755798,15,10.87858
+large_tokamak_nof,MDF,SLSQP,gauss_seidel,20,20,27,8,converged,1.6,,56.51507511,1.734148121,0.115186074,15,5.64535
+large_tokamak_nof,MDF,SLSQP,gauss_seidel_minimal,20,20,27,8,converged,1.6,,56.64109906,1.634900802,0.077059126,15,4.741964
+large_tokamak_nof,SAND,VMCON,hand,27,27,34,10,converged,1.6,,54.67130959,1.033031649,0.105329745,19,5.508845999
+large_tokamak_nof,SAND,VMCON,jacobi,59,1193,66,18,converged,1.6,,159.2814779,95.24943738,4.360088348,35,122.599603
+large_tokamak_nof,SAND,VMCON,gauss_seidel,35,235,42,13,converged,1.6,,66.88797889,9.36787269,1.066586934,25,40.228227
+large_tokamak_nof,SAND,VMCON,gauss_seidel_minimal,28,28,35,8,converged,1.6,,53.41281513,1.021151699,0.08323597,15,5.560730999
+large_tokamak_nof,SAND,SLSQP,hand,27,27,34,13,converged,1.6,,59.01186492,1.047306972,0.151862822,26,4.446341502
+large_tokamak_nof,SAND,SLSQP,jacobi,59,1193,66,19,converged,1.6,,65.58700431,11.36486407,2.448248165,37,9.557826001
+large_tokamak_nof,SAND,SLSQP,gauss_seidel,35,235,42,14,converged,1.6,,58.63434698,1.789101963,0.551961754,27,11.106077
+large_tokamak_nof,SAND,SLSQP,gauss_seidel_minimal,28,28,35,10,converged,1.6,,57.19486728,2.418258323,0.11175965,19,5.039016
+large_tokamak_eval,MDF,VMCON,hand,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",29.74426377,0.078978548,0,0,0
+large_tokamak_eval,MDF,VMCON,jacobi,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",42.35308981,0.086257605,0,0,0
+large_tokamak_eval,MDF,VMCON,gauss_seidel,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",30.63025729,0.080264688,0,0,0
+large_tokamak_eval,MDF,VMCON,gauss_seidel_minimal,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",29.99765395,0.075689457,0,0,0
+large_tokamak_eval,MDF,SLSQP,hand,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",30.99057569,0.078684963,0,0,0
+large_tokamak_eval,MDF,SLSQP,jacobi,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",29.97015062,0.089267879,0,0,0
+large_tokamak_eval,MDF,SLSQP,gauss_seidel,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",28.5666873,0.103968514,0,0,0
+large_tokamak_eval,MDF,SLSQP,gauss_seidel_minimal,2,2,2,3,converged,,"RootFind over 2 equality/-ies, 23 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",28.68022901,0.08329873,0,0,0
+low_aspect_ratio_DEMO,MDF,VMCON,hand,19,19,26,11,converged,-0.406312732,,50.70003696,3.98886217,0.735431938,21,22.044337
+low_aspect_ratio_DEMO,MDF,VMCON,jacobi,19,19,26,11,converged,-0.4063127177,,76.79564967,15.49636591,13.71693721,21,863.496001
+low_aspect_ratio_DEMO,MDF,VMCON,gauss_seidel,19,19,26,11,converged,-0.4063127224,,51.41935473,2.197236405,0.514734108,21,19.933556
+low_aspect_ratio_DEMO,MDF,VMCON,gauss_seidel_minimal,19,19,26,11,converged,-0.4063127231,,50.35242059,1.700248925,0.157086407,21,7.412980001
+low_aspect_ratio_DEMO,MDF,SLSQP,hand,19,19,26,12,converged,-0.4063127321,,57.17824856,3.941121733,0.475989368,22,9.766609999
+low_aspect_ratio_DEMO,MDF,SLSQP,jacobi,19,19,26,12,converged,-0.4063127178,,55.10099722,2.306585064,0.746010604,22,19.4724225
+low_aspect_ratio_DEMO,MDF,SLSQP,gauss_seidel,19,19,26,12,converged,-0.4063127226,,55.77351535,1.887159493,0.311192941,22,8.366816
+low_aspect_ratio_DEMO,MDF,SLSQP,gauss_seidel_minimal,19,19,26,12,converged,-0.4063127233,,55.37374784,1.646936271,0.102291115,22,4.699609499
+low_aspect_ratio_DEMO,SAND,VMCON,hand,26,26,33,79,converged,-0.3991554469,,56.82915711,2.935783041,1.201805168,157,7.642443001
+low_aspect_ratio_DEMO,SAND,VMCON,jacobi,58,1192,65,22,converged,-0.4045502737,,223.7924332,169.1774017,10.82933171,43,247.544434
+low_aspect_ratio_DEMO,SAND,VMCON,gauss_seidel,34,234,41,19,converged,-0.4063127213,,66.31352925,13.00265524,3.16885812,37,84.894228
+low_aspect_ratio_DEMO,SAND,VMCON,gauss_seidel_minimal,27,27,34,20,converged,-0.4063127231,,61.55914172,1.408363878,0.297743634,39,7.619152999
+low_aspect_ratio_DEMO,SAND,SLSQP,hand,26,26,33,17,converged,-0.3991553673,,59.1138217,1.083395465,0.196169888,52,2.427903002
+low_aspect_ratio_DEMO,SAND,SLSQP,jacobi,58,1192,65,49,converged,-0.4063127233,,90.33638314,30.7575296,11.43072248,109,4.934544002
+low_aspect_ratio_DEMO,SAND,SLSQP,gauss_seidel,34,234,41,22,converged,-0.4063127233,,61.8889884,3.192483873,1.873504815,45,8.006105003
+low_aspect_ratio_DEMO,SAND,SLSQP,gauss_seidel_minimal,27,27,34,23,converged,-0.4063127233,,60.89313225,1.094795666,0.214419555,48,2.566237499
+spherical_tokamak_eval,MDF,VMCON,hand,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",25.40048515,0.066528287,0,0,0
+spherical_tokamak_eval,MDF,VMCON,jacobi,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",33.55600541,0.072133958,0,0,0
+spherical_tokamak_eval,MDF,VMCON,gauss_seidel,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",25.89027644,0.072496206,0,0,0
+spherical_tokamak_eval,MDF,VMCON,gauss_seidel_minimal,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",23.45522245,0.070183895,0,0,0
+spherical_tokamak_eval,MDF,SLSQP,hand,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",25.63488595,0.068737748,0,0,0
+spherical_tokamak_eval,MDF,SLSQP,jacobi,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",24.19153685,0.076846418,0,0,0
+spherical_tokamak_eval,MDF,SLSQP,gauss_seidel,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",25.93611651,0.072901842,0,0,0
+spherical_tokamak_eval,MDF,SLSQP,gauss_seidel_minimal,3,3,3,2,converged,,"RootFind over 3 equality/-ies, 15 inequality/-ies evaluated at the answer and not driven -- PROCESS's own `fsolve` shape",23.45685561,0.073452607,0,0,0
+st_regression,MDF,VMCON,hand,14,14,19,10,converged,-16.58857668,,32.11794893,1.242118123,0.07467405701,19,3.983845003
+st_regression,MDF,VMCON,jacobi,14,14,19,10,converged,-16.58857639,,40.32719055,1.386850762,0.163704766,19,8.439605001
+st_regression,MDF,VMCON,gauss_seidel,14,14,19,10,converged,-16.58857654,,30.5878546,3.669329633,0.175488541,19,8.074819001
+st_regression,MDF,VMCON,gauss_seidel_minimal,14,14,19,10,converged,-16.58857668,,30.12344951,3.564081795,0.074137105,19,3.881016
+st_regression,MDF,SLSQP,hand,14,14,19,10,converged,-16.58857668,,34.49594096,3.53213308,0.04651852101,19,1.972257
+st_regression,MDF,SLSQP,jacobi,14,14,19,10,converged,-16.58857639,,35.93321186,1.28736866,0.096278156,19,3.641277999
+st_regression,MDF,SLSQP,gauss_seidel,14,14,19,10,converged,-16.58857654,,35.59189206,1.236398034,0.094002725,19,3.108061999
+st_regression,MDF,SLSQP,gauss_seidel_minimal,14,14,19,11,converged,-16.58857668,,35.02991358,1.192858374,0.05672416401,22,1.972757502
+st_regression,SAND,VMCON,hand,20,20,25,10,converged,-16.58857668,,37.5650843,0.821074719,0.080142926,19,4.250713002
+st_regression,SAND,VMCON,jacobi,33,233,38,21,converged,-16.58857668,,54.75344943,9.128130686,0.708867285,41,12.483445
+st_regression,SAND,VMCON,gauss_seidel,26,226,31,20,converged,-16.58857668,,43.45340827,6.488918838,0.668727167,39,11.858986
+st_regression,SAND,VMCON,gauss_seidel_minimal,19,19,24,153,stopped,-16.83329732,,42.17798663,3.378052191,1.168166077,307,3.829497
+st_regression,SAND,SLSQP,hand,20,20,25,10,converged,-16.58857668,,41.90605944,0.66821242,0.048279538,19,1.700081
+st_regression,SAND,SLSQP,jacobi,33,233,38,26,converged,-16.58857668,,44.00642435,1.278754514,0.391025057,58,2.207039999
+st_regression,SAND,SLSQP,gauss_seidel,26,226,31,25,converged,-16.58857668,,43.97950441,1.277797467,0.412855041,56,2.445548
+st_regression,SAND,SLSQP,gauss_seidel_minimal,19,19,24,92,converged,-16.8333218,,42.33702972,1.331973801,0.611981619,340,1.313263499

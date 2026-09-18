@@ -333,7 +333,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
 
 def _duct_feasibility_graph():
-    """`DuctFeasibility` (a bare `problem.py` `ConditionNode`, not a `NodalDeclaration`,
+    """`DuctFeasibility` (a bare `problem.py` `ConditionalNode`, not a `NodalDeclaration`,
     so it carries no class-derived name the way `DuctFeasibilityConditions`/
     `DuctDiameterRootFind` do) assembled together with `DuctFeasibilityConditions` and
     `DuctDiameterRootFind` via `to_graph`'s `{name: NodeDefinition}` mapping form --

@@ -25,9 +25,11 @@ from jax.tree_util import DictKey, GetAttrKey
 from cottax.drivers import PicardDriver, SLSQPDriver
 from cottax.plan import Plan
 from cottax.problem import FixedPoint, Optimise, RootFind
-from cottax.rewrites import Assign, Combine, Cut, FixedPointCut, NestInside
+from cottax.rewrites import Assign, Combine, Cut, FixedPointCut
+from functional_process.cottax.queries import nested_inside
 
 from functional_process.cottax.visualization.grouping import (
+    blocks_of,
     COMBINED,
     KIND_COLOUR,
     PALETTE,
@@ -273,9 +275,10 @@ def test_provenance_order_refuses_a_group_order_that_misses_a_group(coupled):
 
 
 def test_structure_order_is_the_blocking_s_own(coupled):
-    blocking = Blocking.scc(coupled)
-    assert structure_order(blocking) == tuple(
-        name for block in blocking.blocks for name in block
+    """Of the graph's own components, since cottax `bc1130a`: an undriven cycle has
+    no `Blocking` (answerable by construction), and the drawings take the graph."""
+    assert structure_order(coupled) == tuple(
+        name for block in blocks_of(coupled) for name in block
     )
 
 
@@ -386,7 +389,7 @@ def test_provenance_order_takes_the_dependency_axis(layered):
 
 # ============================================================== the measurement
 def test_the_report_finds_the_crossing_block_and_the_scattered_group(coupled):
-    report = grouping_report(Blocking.scc(coupled))
+    report = grouping_report(coupled)
     (block,) = report.coupled
     assert set(block.members) == {N("a", "p"), N("b", "q"), N("a", "r")}
     assert block.real == 3
@@ -411,10 +414,10 @@ def test_a_minted_problem_beside_its_node_is_not_coupling():
             M("problem", "g", "x"): call([V("c")], [V("u")]),
         })
     )
-    (block,) = grouping_report(Blocking.scc(graph)).blocks
+    (block,) = grouping_report(graph).blocks
     assert len(block.members) == 2
     assert block.real == 1
-    assert grouping_report(Blocking.scc(graph)).coupled == ()
+    assert grouping_report(graph).coupled == ()
 
 
 def test_an_ungrouped_member_does_not_make_a_block_cross():
@@ -425,7 +428,7 @@ def test_an_ungrouped_member_does_not_make_a_block_cross():
             N("loose"): call([V("d")], [V("u")]),
         })
     )
-    (block,) = grouping_report(Blocking.scc(graph)).coupled
+    (block,) = grouping_report(graph).coupled
     assert block.real == 3
     assert not block.crosses
     assert UNGROUPED in block.groups
@@ -445,7 +448,7 @@ def test_the_struct_puts_a_read_in_its_producer_s_row(coupled):
     (row a.p, col c.s) -- and feedback therefore falls *below* the diagonal, the same way
     round as the plotly `dsm.html` and as everyone else's DSM.
     """
-    blocking = Blocking.scc(coupled)
+    blocking = coupled
     order = structure_order(blocking)
     struct = _matrix_struct(blocking, order, depth=1, formatter=xDSMFormatterFlat())
     at = {name: i for i, name in enumerate(order)}
@@ -461,7 +464,7 @@ def test_backward_is_the_lower_triangle(coupled):
     """The flip is only real if the count agrees with it: what runs backwards in this
     ordering is what sits below the diagonal, not above.
     """
-    blocking = Blocking.scc(coupled)
+    blocking = coupled
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=1, formatter=xDSMFormatterFlat()
     )
@@ -470,16 +473,16 @@ def test_backward_is_the_lower_triangle(coupled):
 
 
 def test_the_struct_is_a_permutation_of_the_whole_graph(coupled):
-    blocking = Blocking.scc(coupled)
+    blocking = coupled
     with pytest.raises(ValueError, match="permutation"):
         _matrix_struct(
-            blocking, blocking.graph.nodes[:2], depth=1, formatter=xDSMFormatterFlat()
+            blocking, coupled.nodes[:2], depth=1, formatter=xDSMFormatterFlat()
         )
 
 
 def test_the_page_is_self_contained_and_carries_its_own_data(coupled, tmp_path):
     doc = render_grouped_dsm_html(
-        Blocking.scc(coupled),
+        coupled,
         file_name="g",
         outdir=str(tmp_path),
         write=True,
@@ -497,7 +500,7 @@ def test_the_page_is_self_contained_and_carries_its_own_data(coupled, tmp_path):
 
 def test_the_two_orderings_differ_only_in_their_rows(coupled):
     """The comparison is only a comparison if everything but the order is held fixed."""
-    blocking = Blocking.scc(coupled)
+    blocking = coupled
     fmt = xDSMFormatterFlat()
     by_structure = _matrix_struct(
         blocking, structure_order(blocking), depth=1, formatter=fmt
@@ -554,18 +557,18 @@ def nested():
 
 
 def test_a_block_inside_one_subtree_does_not_cross(nested):
-    (block,) = grouping_report(Blocking.scc(nested)).coupled
+    (block,) = grouping_report(nested).coupled
     assert block.real == 3
     assert block.spans
     assert block.nests
     assert not block.crosses
     assert block.container == ("p",)
-    assert grouping_report(Blocking.scc(nested)).crossing == ()
-    assert grouping_report(Blocking.scc(nested)).nesting == (block,)
+    assert grouping_report(nested).crossing == ()
+    assert grouping_report(nested).nesting == (block,)
 
 
 def test_a_block_across_subsystems_still_crosses(coupled):
-    (block,) = grouping_report(Blocking.scc(coupled)).coupled
+    (block,) = grouping_report(coupled).coupled
     assert block.spans
     assert block.crosses
     assert not block.nests
@@ -576,13 +579,13 @@ def test_edges_are_counted_twice_over_group_and_over_subsystem(nested):
     """`p.x -> p.q.y` is a cross-group edge and is not two subsystems talking. Both
     figures are reported because at the tree's grain the first alone misleads.
     """
-    report = grouping_report(Blocking.scc(nested))
+    report = grouping_report(nested)
     assert report.cross_group_edges > report.cross_subsystem_edges
     assert report.cross_subsystem_edges == 1  # only `p.x -> t.w`
 
 
 def test_the_summary_says_which_grain_it_used(nested):
-    blocking = Blocking.scc(nested)
+    blocking = nested
     assert "by the tree" in grouping_report(blocking).summary()
     assert "by depth 1" in grouping_report(blocking, depth=1).summary()
     assert grouping_report(blocking).levels == 3
@@ -590,7 +593,7 @@ def test_the_summary_says_which_grain_it_used(nested):
 
 # ============================================================== the nested ribbon
 def test_the_ribbon_has_one_lane_per_level(nested):
-    blocking = Blocking.scc(nested)
+    blocking = nested
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
     )
@@ -607,7 +610,7 @@ def test_a_shallow_name_simply_has_no_inner_lane(nested):
     """How a ragged tree draws: `t` has a lane 0 and no lane 1, rather than a padded
     one or a special case.
     """
-    blocking = Blocking.scc(nested)
+    blocking = nested
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
     )
@@ -624,7 +627,7 @@ def test_hue_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
     """One hue per subsystem, and depth spent as a *tint* of it: the three namespaces of
     `p` are three shades of one colour, and `t` is a different colour entirely.
     """
-    blocking = Blocking.scc(nested)
+    blocking = nested
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
     )
@@ -661,7 +664,7 @@ def test_an_intermediate_namespace_is_coloured_even_with_no_node_of_its_own():
 
 
 def test_the_legend_is_hierarchical_and_indented(nested):
-    blocking = Blocking.scc(nested)
+    blocking = nested
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
     )
@@ -689,7 +692,7 @@ def sellar_mdf():
     Sellar under MDF, stated as structure: the optimiser nested around a cut MDA.
 
     `D1 <-> D2` is the coupling; `FixedPointCut` on `y2` turns it into a fixed point
-    `^problem.y2` over `D1, D2`; `NestInside(opt)` states that this fixed point is
+    `^problem.y2` over `D1, D2`; `nested_inside(opt)` states that this fixed point is
     answered *inside* the optimiser's iteration. Both problems get a driver, so the
     page has an algorithm to name. The shape `mdf.nested_blocking` gives the port's own
     graphs, in five nodes.
@@ -705,12 +708,12 @@ def sellar_mdf():
             A("mdo", "con"): call([V("y1")], [V("g")]),
         })
     )
-    cut = (Plan(g) + FixedPointCut(Cut(V("y2"), readers=[A("mda", "D1")]))).graph
+    cut = (Plan(g) + FixedPointCut((Cut(V("y2"), readers=(A("mda", "D1"),)),))).graph
     (inner,) = [n for n in cut.nodes if n not in g.nodes]
     driven = Assign(inner, PicardDriver()).apply(
         Assign(A("mdo", "opt"), SLSQPDriver()).apply(cut)
     )
-    return Blocking.scc((Plan(driven) + NestInside(A("mdo", "opt"))).graph), inner
+    return Blocking.scc(nested_inside(driven, A("mdo", "opt"))), inner
 
 
 def _spelt(names):
@@ -752,7 +755,7 @@ def test_structure_order_of_a_flat_blocking_puts_every_problem_ahead_of_its_body
             A("b", "z"): call([V("u")], [V("w")]),
         })
     )
-    cut = (Plan(g) + FixedPointCut(Cut(V("u"), readers=[A("a", "x")]))).graph
+    cut = (Plan(g) + FixedPointCut((Cut(V("u"), readers=(A("a", "x"),)),))).graph
     order = _spelt(structure_order(Blocking.scc(cut)))
     assert order[0].startswith("^problem.")
     assert order[1:] == [".a.x", ".a.y", ".b.z"]
@@ -879,7 +882,7 @@ def test_the_provenance_struct_keeps_the_top_level_s_coupled_boxes_only():
             A("g", "y"): call([V("c")], [V("u")]),
         })
     )
-    cut = (Plan(g) + FixedPointCut(Cut(V("u"), readers=[A("g", "x")]))).graph
+    cut = (Plan(g) + FixedPointCut((Cut(V("u"), readers=(A("g", "x"),)),))).graph
     blocking = Blocking.scc(cut)
     (block,) = [b for b in blocking.blocks if len(b) > 1]
     assert grouping_report(blocking).coupled and len(block) == 3
@@ -897,7 +900,6 @@ def test_the_provenance_struct_keeps_the_top_level_s_coupled_boxes_only():
             ),
         })
     )
-    single = Blocking.scc(single)
     by_provenance = _matrix_struct(
         single, structure_order(single), depth=None, formatter=fmt
     )
@@ -912,7 +914,7 @@ def test_the_provenance_struct_keeps_the_top_level_s_coupled_boxes_only():
 
 def test_a_coupled_block_nothing_drives_is_boxed_with_no_kind(coupled):
     """The uncut cycle: a box, since it is what a cut has not reached, and no solve."""
-    blocking = Blocking.scc(coupled)
+    blocking = coupled
     struct = _matrix_struct(
         blocking,
         structure_order(blocking),

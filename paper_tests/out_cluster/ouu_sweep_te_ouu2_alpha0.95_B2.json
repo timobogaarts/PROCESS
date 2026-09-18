@@ -1,0 +1,161 @@
+{
+ "name": "ouu_sweep_te_ouu2_alpha0.95_B2",
+ "source": "final",
+ "grid_kev": [
+  3.0,
+  3.8,
+  4.6,
+  5.4,
+  6.2,
+  7.0,
+  7.800000000000001,
+  8.600000000000001,
+  9.4,
+  10.2,
+  11.0,
+  11.8,
+  12.600000000000001,
+  13.4,
+  14.200000000000001,
+  15.0
+ ],
+ "t_e_shared_kev": 12.466859278269197,
+ "n": 16384,
+ "alpha": 0.95,
+ "constraints": [
+  "^cond.constraints.c24",
+  "^cond.constraints.c8",
+  "^cond.constraints.c17",
+  "^cond.constraints.c18",
+  "^cond.constraints.c67",
+  "^cond.constraints.c82",
+  "^cond.constraints.c83",
+  "^cond.constraints.c62",
+  "^cond.constraints.c32",
+  "^cond.constraints.c34",
+  "^cond.constraints.c35",
+  "^cond.constraints.c65"
+ ],
+ "reference_continuation": {
+  "cold_s": 13.165492055006325,
+  "warm_s": 0.018930842052213848,
+  "calls": 12,
+  "path_failed": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "failed_cold": 0.544217271895026
+ },
+ "all_constraints": {
+  "feasible_fraction_shared": 0.95526123046875,
+  "feasible_fraction_swept": 0.99871826171875,
+  "coe_mean_where_feasible_shared": 157.42300015030034,
+  "coe_mean_where_feasible_swept": 106.53473106508802,
+  "coe_mean_over_samples_feasible_both": {
+   "shared": 157.42300015030034,
+   "swept": 95.97936107948873,
+   "count": 15651
+  },
+  "chosen_t_e_kev": {
+   "p5": 11.8,
+   "p50": 15.0,
+   "p95": 15.0,
+   "at_shared_fraction": 0.07113609973721201
+  },
+  "feasible_fraction_per_grid_point": [
+   0.0,
+   0.0,
+   0.0,
+   0.01123046875,
+   0.3907470703125,
+   0.90142822265625,
+   0.99383544921875,
+   0.9979248046875,
+   0.99652099609375,
+   0.994384765625,
+   0.98895263671875,
+   0.9774169921875,
+   0.947509765625,
+   0.87646484375,
+   0.730712890625,
+   0.50537109375
+  ],
+  "failed_fraction_per_grid_point": [
+   1.0,
+   1.0,
+   0.92718505859375,
+   0.12969970703125,
+   0.0001220703125,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "graph_inequalities": {
+  "feasible_fraction_shared": 0.95526123046875,
+  "feasible_fraction_swept": 0.99871826171875,
+  "coe_mean_where_feasible_shared": 157.42300015030034,
+  "coe_mean_where_feasible_swept": 106.53473106508802,
+  "coe_mean_over_samples_feasible_both": {
+   "shared": 157.42300015030034,
+   "swept": 95.97936107948873,
+   "count": 15651
+  },
+  "chosen_t_e_kev": {
+   "p5": 11.8,
+   "p50": 15.0,
+   "p95": 15.0,
+   "at_shared_fraction": 0.07113609973721201
+  },
+  "feasible_fraction_per_grid_point": [
+   0.0,
+   0.0,
+   0.0,
+   0.01123046875,
+   0.3907470703125,
+   0.90142822265625,
+   0.99383544921875,
+   0.9979248046875,
+   0.99652099609375,
+   0.994384765625,
+   0.98895263671875,
+   0.9774169921875,
+   0.947509765625,
+   0.87646484375,
+   0.730712890625,
+   0.50537109375
+  ],
+  "failed_fraction_per_grid_point": [
+   1.0,
+   1.0,
+   0.92718505859375,
+   0.12969970703125,
+   0.0001220703125,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ }
+}

@@ -9,6 +9,7 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
+from cottax.blocking import problem_types  # noqa: E402
 
 from functional_process.cottax import mdf, sand  # noqa: E402
 from functional_process.cottax.indat import (  # noqa: E402
@@ -171,7 +172,7 @@ def main(argv=None):
         f"  stated as a nesting: {name.spelling} answers a block of "
         f"{len(nested.blocks[index])} nodes whose interior is "
         f"{len(nested.inner[index].blocks)} blocks "
-        f"({sum(1 for t in nested.inner[index].problem_types if t is not None)} driven) "
+        f"({sum(1 for t in problem_types(nested.inner[index]) if t)} driven) "
         f"-- `Blocking.nest` states it, `schedule_for` cannot run it (see `mdf.py`)"
     )
 

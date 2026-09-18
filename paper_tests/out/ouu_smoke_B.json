@@ -1,0 +1,424 @@
+{
+ "n": 32,
+ "alpha": 0.9,
+ "m_worst": 4,
+ "eps_failed": 0.02,
+ "with_c16": true,
+ "warm_starts": true,
+ "objective": "rated",
+ "inputs": "physics",
+ "n_inputs": 18,
+ "table": "build",
+ "hfact_sigma": 0.1,
+ "hfact_belief": {
+  "sigma": 0.1,
+  "interval_90": [
+   0.8483301741208367,
+   1.1787863151706772
+  ],
+  "lowest_decile_mean": 0.8397353695342166,
+  "highest_decile_mean": 1.1928678602293437
+ },
+ "jac": "fwd",
+ "chunks": null,
+ "pairing": "one",
+ "closed": {
+  "^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg"
+ },
+ "uncertain": [
+  ".physics.hfact",
+  ".physics.alphan",
+  ".physics.alphat",
+  ".physics.f_p_alpha_plasma_deposited",
+  ".physics.f_temp_plasma_ion_electron",
+  ".physics.f_sync_reflect",
+  ".impurity_radiation.f_nd_impurity_electron_array[13]",
+  ".stellarator.bmn",
+  ".stellarator.f_asym",
+  ".stellarator.f_rad",
+  ".fwbs.f_p_blkt_multiplication",
+  ".fwbs.declfw",
+  ".fwbs.declblkt",
+  ".tfcoil.temp_tf_cryo",
+  ".heat_transport.eta_turbine",
+  ".current_drive.eta_ecrh_injector_wall_plug",
+  ".heat_transport.f_p_fw_coolant_pump_total_heat",
+  ".divertor.tdiv"
+ ],
+ "start": {
+  "f": 127.11462382980065,
+  "g_cvar": {
+   "^cond.constraints.c24": 0.9240673666805874,
+   "^cond.constraints.c8": 0.7875217604153344,
+   "^cond.constraints.c17": -0.3151609840341156,
+   "^cond.constraints.c18": 0.22762889308934753,
+   "^cond.constraints.c67": 0.6368274075121763,
+   "^cond.constraints.c82": -0.5664004489377921,
+   "^cond.constraints.c83": -1.25903325367549e-05,
+   "^cond.constraints.c62": 0.013609441798537847,
+   "^cond.constraints.c32": -0.688351590656978,
+   "^cond.constraints.c34": -0.8602540823439361,
+   "^cond.constraints.c35": 0.00016180866633175306,
+   "^cond.constraints.c65": -0.9758967828782356,
+   "^cond.constraints.c16": 0.7698422778851286
+  },
+  "failed_fraction": 0.0,
+  "diagnostics": {
+   "coe_nominal": 123.59794465461539,
+   "levelised": 85.57035161237991,
+   "mean_coe_where_converged_and_positive_net": 171.04785608248702,
+   "mean_concost": 10038.617545489931,
+   "mean_g": [
+    0.16468796056039617,
+    -0.2788542248893714,
+    -0.4615654017522679,
+    -0.5894472167638688,
+    -0.33295495676039755,
+    -0.5664004489377917,
+    -1.25903325367549e-05,
+    -0.09155022266216087,
+    -0.6883515906569783,
+    -0.8602540823439357,
+    0.00016180866633175306,
+    -0.9758967828782348,
+    -0.48549843999250714
+   ],
+   "mean_net_mw": 1485.4984399925074,
+   "median_coe_where_converged": 124.7015439109427,
+   "net_nominal_mw": 982.3810652667855,
+   "p_net_nonpositive": 0.0,
+   "p_violated": [
+    0.59375,
+    0.1875,
+    0.0,
+    0.09375,
+    0.15625,
+    0.0,
+    0.0,
+    0.09375,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.53125
+   ],
+   "rated": 127.11462382980065,
+   "steps_max": 7.0,
+   "steps_mean": 5.15625
+  },
+  "jac_f": [
+   -76.59292611906089,
+   78.57759222523838,
+   1.7455361997811294,
+   -0.42580275125731903,
+   -5.587209558825354,
+   4.938263582673346
+  ]
+ },
+ "x_start": [
+  4.703724863747863,
+  26.694370149249416,
+  5.673208206328849,
+  35.319929504548796,
+  0.7380005121197526,
+  0.03359040614117263
+ ],
+ "max_iter": 3,
+ "move_limit": 0.125,
+ "tol": 0.0001,
+ "ftol": 1e-06,
+ "gtol": 0.0001,
+ "seed": 0,
+ "backend": "cpu",
+ "device": "cpu",
+ "design": [
+  ".physics.b_plasma_toroidal_on_axis",
+  ".physics.rmajor",
+  ".physics.temp_plasma_electron_vol_avg_kev",
+  ".tfcoil.t_tf_superconductor_quench",
+  ".tfcoil.f_a_tf_turn_cable_copper",
+  ".physics.f_nd_alpha_thermal_electron"
+ ],
+ "ixc": [
+  2,
+  3,
+  4,
+  56,
+  59,
+  109
+ ],
+ "bounds": {
+  ".physics.b_plasma_toroidal_on_axis": [
+   4.0,
+   10.0
+  ],
+  ".physics.rmajor": [
+   10.0,
+   30.0
+  ],
+  ".physics.temp_plasma_electron_vol_avg_kev": [
+   3.0,
+   15.0
+  ],
+  ".tfcoil.t_tf_superconductor_quench": [
+   1.0,
+   50.0
+  ],
+  ".tfcoil.f_a_tf_turn_cable_copper": [
+   0.3,
+   0.9
+  ],
+  ".physics.f_nd_alpha_thermal_electron": [
+   0.0001,
+   0.4
+  ]
+ },
+ "deterministic": {
+  "coe_dollar_per_mwh": 123.59794465431324,
+  "objf": 1.2359794465431324,
+  "x": [
+   4.703724863747863,
+   26.694370149249416,
+   5.673208206328849,
+   35.319929504548796,
+   0.7380005121197526,
+   0.03359040614117263
+  ],
+  "inequalities_at_nominal": {
+   "^cond.constraints.c24": 0.0014830274689185963,
+   "^cond.constraints.c8": -0.48676127028711247,
+   "^cond.constraints.c17": -0.5101638572844543,
+   "^cond.constraints.c18": -0.6818612727852973,
+   "^cond.constraints.c67": -0.526003859241994,
+   "^cond.constraints.c82": -0.5664004489377918,
+   "^cond.constraints.c83": -1.2590332536976945e-05,
+   "^cond.constraints.c62": -0.11913456361570351,
+   "^cond.constraints.c32": -0.688351590656978,
+   "^cond.constraints.c34": -0.8602540823439361,
+   "^cond.constraints.c35": 0.00016180866633175306,
+   "^cond.constraints.c65": -0.9758967828782357
+  }
+ },
+ "final": {
+  "f": 127.11462383113698,
+  "g_cvar": {
+   "^cond.constraints.c24": 0.924067366782826,
+   "^cond.constraints.c8": 0.7875217606541596,
+   "^cond.constraints.c17": -0.31516098403363024,
+   "^cond.constraints.c18": 0.22762889317037743,
+   "^cond.constraints.c67": 0.6368274077458446,
+   "^cond.constraints.c82": -0.5664004489377921,
+   "^cond.constraints.c83": -1.25903325367549e-05,
+   "^cond.constraints.c62": 0.013609441784331489,
+   "^cond.constraints.c32": -0.688351590656978,
+   "^cond.constraints.c34": -0.8602540823439361,
+   "^cond.constraints.c35": 0.00016180866633175306,
+   "^cond.constraints.c65": -0.9758967828782356,
+   "^cond.constraints.c16": 0.769842277946329
+  },
+  "failed_fraction": 0.0,
+  "feasible": false,
+  "x": {
+   ".physics.b_plasma_toroidal_on_axis": 4.703724863747863,
+   ".physics.rmajor": 26.694370149249416,
+   ".physics.temp_plasma_electron_vol_avg_kev": 5.673208206328849,
+   ".tfcoil.t_tf_superconductor_quench": 35.319929504548796,
+   ".tfcoil.f_a_tf_turn_cable_copper": 0.7380005121197526,
+   ".physics.f_nd_alpha_thermal_electron": 0.03359040614117263
+  },
+  "x_over_x0": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "diagnostics": {
+   "coe_nominal": 123.59794465614937,
+   "levelised": 85.57035160503398,
+   "mean_coe_where_converged_and_positive_net": 171.04785611897432,
+   "mean_concost": 10038.61754556827,
+   "mean_g": [
+    0.16468796059552943,
+    -0.278854224830798,
+    -0.4615654017522027,
+    -0.5894472167392257,
+    -0.33295495670461434,
+    -0.5664004489377917,
+    -1.25903325367549e-05,
+    -0.0915502226544988,
+    -0.6883515906569783,
+    -0.8602540823439357,
+    0.00016180866633175306,
+    -0.9758967828782348,
+    -0.485498440135649
+   ],
+   "mean_net_mw": 1485.4984401356492,
+   "median_coe_where_converged": 124.70154388084052,
+   "net_nominal_mw": 982.3810652530728,
+   "p_net_nonpositive": 0.0,
+   "p_violated": [
+    0.59375,
+    0.1875,
+    0.0,
+    0.09375,
+    0.15625,
+    0.0,
+    0.0,
+    0.09375,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.53125
+   ],
+   "rated": 127.11462383113698,
+   "steps_max": 4.0,
+   "steps_mean": 4.0
+  },
+  "active": [
+   "^cond.constraints.c83",
+   "^cond.constraints.c35"
+  ],
+  "violated": [
+   "^cond.constraints.c24",
+   "^cond.constraints.c8",
+   "^cond.constraints.c18",
+   "^cond.constraints.c67",
+   "^cond.constraints.c62",
+   "^cond.constraints.c16"
+  ],
+  "design_at_bound": []
+ },
+ "robust": {
+  "x": {
+   ".physics.b_plasma_toroidal_on_axis": 4.703724863747863,
+   ".physics.rmajor": 26.694370149249416,
+   ".physics.temp_plasma_electron_vol_avg_kev": 5.673208206328849,
+   ".tfcoil.t_tf_superconductor_quench": 35.319929504548796,
+   ".tfcoil.f_a_tf_turn_cable_copper": 0.7380005121197526,
+   ".physics.f_nd_alpha_thermal_electron": 0.03359040614117263
+  },
+  "source": "final (infeasible)",
+  "f": 127.11462383113698
+ },
+ "converged": false,
+ "reason": "iteration limit reached",
+ "scipy": {
+  "success": false,
+  "status": 9,
+  "message": "Iteration limit reached",
+  "major_iterations": 3,
+  "outer_calls": 1
+ },
+ "outer": [
+  {
+   "nit": 3,
+   "nfev": 4,
+   "njev": 3,
+   "status": 9,
+   "message": "Iteration limit reached",
+   "on_move_limit": true,
+   "move_limit": 0.25,
+   "f": 130.08014240154736,
+   "max_g_cvar": 0.9026292520986113,
+   "failed_fraction": 0.0,
+   "feasible": false,
+   "moved": 0.25,
+   "x": [
+    4.688690797496152,
+    27.23406416591831,
+    5.779499801904969,
+    44.14991188068599,
+    0.9,
+    0.041988007676465794
+   ],
+   "action": "restart from best feasible with box +-0.125"
+  }
+ ],
+ "best_feasible": null,
+ "model_calls": 5,
+ "compile_s": 20.231954426999437,
+ "wall_s": 20.283752842995455,
+ "build_s": 12.629535526997643,
+ "timing": {
+  "forward_compile_s": 8.89291518000391,
+  "forward_warm_s": 0.007092032996297348,
+  "forward_us_per_sample": 221.62603113429213,
+  "fused_compile_s": 20.231954426999437,
+  "fused_warm_median_s": 0.013284563996421639,
+  "fused_warm_min_s": 0.013100520998705178,
+  "fused_over_forward": 1.8731672573093392
+ },
+ "trace": [
+  {
+   "call": 1,
+   "f": 127.11462382980065,
+   "max_g_cvar": 0.9240673666805874,
+   "failed_fraction": 0.0,
+   "x": [
+    4.703724863747863,
+    26.694370149249416,
+    5.673208206328849,
+    35.319929504548796,
+    0.7380005121197526,
+    0.03359040614117263
+   ],
+   "steps_mean": 5.15625,
+   "steps_max": 7.0,
+   "model_s": 20.231954426999437
+  },
+  {
+   "call": 2,
+   "f": 161.76172296284906,
+   "max_g_cvar": 3.2750878125586933,
+   "failed_fraction": 0.03125,
+   "x": [
+    4.693533536693339,
+    27.192781959302796,
+    5.776312639489809,
+    44.14991188056047,
+    0.8999999999159736,
+    0.041988007676465794
+   ],
+   "steps_mean": 5.09375,
+   "steps_max": 7.0,
+   "model_s": 0.022762786997191142
+  },
+  {
+   "call": 3,
+   "f": 127.24684430832052,
+   "max_g_cvar": 0.9215016371151394,
+   "failed_fraction": 0.0,
+   "x": [
+    4.7027057310424105,
+    26.744211330254753,
+    5.683518649644945,
+    36.20292774214997,
+    0.7542004608993746,
+    0.03443016629470195
+   ],
+   "steps_mean": 4.0625,
+   "steps_max": 6.0,
+   "model_s": 0.013284563996421639
+  },
+  {
+   "call": 4,
+   "f": 130.08014240154736,
+   "max_g_cvar": 0.9026292520986113,
+   "failed_fraction": 0.0,
+   "x": [
+    4.688690797496152,
+    27.23406416591831,
+    5.779499801904969,
+    44.14991188068599,
+    0.9,
+    0.041988007676465794
+   ],
+   "steps_mean": 3.09375,
+   "steps_max": 6.0,
+   "model_s": 0.013100520998705178
+  }
+ ]
+}
