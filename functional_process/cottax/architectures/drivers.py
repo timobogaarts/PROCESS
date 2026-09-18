@@ -687,6 +687,358 @@ class SlsqpDriver(Driver):
         return _sqp_callback(conditions, start, host)
 
 
+BOXED_CONVERGED = 0
+"""`Status` for a `BoxedSlsqpDriver` run that converged: SLSQP succeeded strictly
+inside its move box, or a re-centred call moved by less than `tol`."""
+
+BOXED_STATUS: dict[str, int] = {
+    "iteration limit": 1,
+    "outer limit": 2,
+    "box shrunk": 3,
+}
+"""`Status` per way a `BoxedSlsqpDriver` run stopped short: the major-iteration
+budget spent, the outer-call budget spent, or the move box halved below `delta_min`
+without a feasible success."""
+
+
+class BoxedSlsqpDriver(Driver):
+    """`SlsqpDriver`'s problem, solved under **move limits**: SLSQP has no trust
+    region, and on a problem whose conditions are sample statistics (a CVaR, a median:
+    piecewise smooth, with kinks where samples change order) its first unboxed QP step
+    lands far out where the model stops converging. So every SLSQP call is boxed to
+    `x (1 -+ delta)` around its start in the driver's scaled coordinates, and the run
+    is a loop of such calls:
+
+    - a call whose answer sits on a face of the box (and not on the problem's own
+      bound) is **re-centred** there and the next call starts from it;
+    - a call that ends **infeasible** (an inequality above `gtol`, an equality beyond
+      it) or that SLSQP gave up on (a status other than success, "positive directional
+      derivative" or the iteration limit) **halves** the box and restarts from the
+      incumbent -- the cheapest feasible point seen, or, until there is one, the least
+      infeasible. An infeasible call that is *less* infeasible than any point before,
+      with no feasible point yet, is progress and is re-centred with the box kept, so a
+      run started outside the feasible region walks in box by box (`paper_tests/
+      ouu.smoke` started at the deterministic optimum and had no need of this);
+    - the run has **converged** when SLSQP reports success strictly inside its box, a
+      re-centred call moves by less than `tol` (relative, scaled), or two re-centred
+      calls in a row improve the objective by less than `ftol_outer`.
+
+    Two hooks a body computing its own statistics wants:
+
+    - `jacobian`: `f(flat_x) -> [n_conditions, n_x]` in the block's own condition
+      order and the unknowns' flat order, unscaled. When given, values are taken
+      **eagerly** through the condition map (so a body memoising per point is hit) and
+      the rows from this; when `None`, `jax.jacfwd` through the condition map, as
+      `SlsqpDriver`.
+    - `warm_start`: `f(flat_x) -> None`, called with each iterate SLSQP accepts and
+      with the incumbent on a restart -- the body then starts its next
+      evaluation from that point's answer, never from a line-search trial's, which is
+      what keeps a far trial from handing bad starts to a nearer one.
+
+    A per-call memo (three points: SLSQP asks the objective and the constraints at one
+    point, and its callback at the accepted one) keeps a value and a Jacobian per
+    distinct point. Reports `Steps` (major iterations over every call), `Converged`
+    and `Status` (`BOXED_CONVERGED`, or a `BOXED_STATUS` code).
+    """
+
+    accepts = staticmethod(is_optimise)
+    requires = (Start,)
+
+    n_equality: int = 0
+    n_inequality: int = 0
+    bounds: tuple = ()
+    scaled: bool = True
+    condition_scale: tuple = ()
+    max_iter: int = 100
+    """Major iterations, summed over every SLSQP call."""
+    max_outer: int = 60
+    """How many SLSQP calls the loop allows itself."""
+    tolerance: float = 1e-6
+    """SLSQP's own `ftol`, per call."""
+    delta: float = 0.25
+    """The move box: each call may move each coordinate by this fraction of itself."""
+    delta_min: float = 1e-3
+    """The box below which a restart is given up on."""
+    tol: float = 1e-4
+    """A re-centred call that moves less than this (scaled, relative) has converged."""
+    ftol_outer: float = 1e-5
+    """Two re-centred calls improving `f` by less than this (relative) have converged."""
+    gtol: float = 1e-4
+    """An inequality above this, or an equality beyond it, makes a call infeasible."""
+    jacobian: object = None
+    """`f(flat_x) -> matrix` in the block's condition order, or `None` for `jacfwd`."""
+    warm_start: object = None
+    """`f(flat_x) -> None`, called with each accepted iterate, or `None`."""
+    callback: object = None
+    """`f(entry: dict) -> None` after every SLSQP call, with what it did, or `None`."""
+
+    @property
+    def reports(self) -> tuple:
+        """`(Steps, Converged, Status)`, as the other SQP drivers here."""
+        return (Steps, Converged, Status)
+
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        """Values for the block's unknowns, then `steps`, `converged` and `status`."""
+        from scipy.optimize import minimize  # noqa: PLC0415
+
+        as_written = conditions.conditions
+        conditions = by_role(
+            conditions, "BoxedSlsqpDriver", self.n_equality, self.n_inequality
+        )
+        order = [as_written.index(c) for c in conditions.conditions]
+        start = start_from(data, "BoxedSlsqpDriver", conditions)
+        _flat, unravel = ravel_pytree(start)
+        sizes = condition_sizes(conditions, start)
+        meq = entry_count(sizes, 1, self.n_equality)
+        driver = self
+        own_jacobian, warm_start, user_callback = (
+            self.jacobian,
+            self.warm_start,
+            self.callback,
+        )
+        max_iter, max_outer, ftol = self.max_iter, self.max_outer, self.tolerance
+        delta_min, tol, ftol_outer, gtol = (
+            self.delta_min,
+            self.tol,
+            self.ftol_outer,
+            self.gtol,
+        )
+
+        def host(live, flat_start):
+            evaluate, jacobian, _both, _unravel, scale, cond_scale, (lower, upper) = (
+                scaled_problem(driver, live, flat_start, unravel, sizes)
+            )
+            if own_jacobian is not None:
+                # Eagerly through the condition map: the body is called outside any
+                # trace, so a body that memoises per point (the batched program) is
+                # hit, and its own rows are what the Jacobian is.
+                def evaluate(x_scaled):
+                    flat = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+                    raw, _ = ravel_pytree(live(*_unravel(flat)))
+                    return np.asarray(raw, dtype=float) * cond_scale
+
+                def jacobian(x_scaled):
+                    raw = np.asarray(
+                        own_jacobian(np.asarray(x_scaled, dtype=float) / scale),
+                        dtype=float,
+                    )[order]
+                    return raw * cond_scale[:, None] / scale[None, :]
+
+            cache: dict = {}
+            KEPT = 3
+
+            def _slot(x):
+                key = x.tobytes()
+                if key not in cache:
+                    while len(cache) >= KEPT:
+                        del cache[next(iter(cache))]
+                    cache[key] = [None, None]
+                return cache[key]
+
+            def values_at(x):
+                slot = _slot(np.asarray(x, dtype=float))
+                if slot[0] is None:
+                    slot[0] = evaluate(np.asarray(x, dtype=float))
+                return slot[0]
+
+            def jacobian_at(x):
+                slot = _slot(np.asarray(x, dtype=float))
+                if slot[1] is None:
+                    slot[1] = jacobian(np.asarray(x, dtype=float))
+                return slot[1]
+
+            def objective(x):
+                return float(values_at(x)[0])
+
+            def objective_gradient(x):
+                return jacobian_at(x)[0]
+
+            constraints = [
+                {
+                    "type": "eq",
+                    "fun": lambda x: values_at(x)[1 : 1 + meq],
+                    "jac": lambda x: jacobian_at(x)[1 : 1 + meq],
+                },
+                {
+                    "type": "ineq",
+                    "fun": lambda x: -values_at(x)[1 + meq :],
+                    "jac": lambda x: -jacobian_at(x)[1 + meq :],
+                },
+            ]
+            x0 = flat_start * scale
+            constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
+
+            def violation_at(v) -> float:
+                """The largest violation: `|eq|` and `ie` above zero, `0` if none."""
+                worst = 0.0
+                if meq:
+                    worst = max(worst, float(np.max(np.abs(v[1 : 1 + meq]))))
+                if len(v) > 1 + meq:
+                    worst = max(worst, float(np.max(v[1 + meq :])))
+                return worst
+
+            def feasible_at(v) -> bool:
+                return violation_at(v) <= gtol
+
+            def adopt(x_scaled):
+                if warm_start is not None:
+                    warm_start(np.asarray(x_scaled, dtype=float) / scale)
+
+            x = np.asarray(x0, dtype=float)
+            delta = driver.delta
+            best = None
+            stalls, total_nit, n_outer = 0, 0, 0
+            converged, status, reason = False, BOXED_STATUS["iteration limit"], ""
+            last_status = None
+            while total_nit < max_iter and n_outer < max_outer:
+                half = delta * np.where(np.abs(x) > 0.0, np.abs(x), 1.0)
+                lo = np.maximum(lower, x - half)
+                hi = np.minimum(upper, x + half)
+                result = minimize(
+                    objective,
+                    x,
+                    jac=objective_gradient,
+                    bounds=list(zip(lo, hi, strict=True)),
+                    constraints=constraints,
+                    method="SLSQP",
+                    options={"maxiter": max_iter - total_nit, "ftol": ftol},
+                    callback=adopt,
+                )
+                n_outer += 1
+                last_status = int(result.status)
+                total_nit += max(int(result.nit), 1)
+                x_new = np.asarray(result.x, dtype=float)
+                # SLSQP leaves its answer ~1e-6 inside a bound, so a face is read to
+                # 1e-5 of the box's half-width; a face that is the problem's own
+                # bound is not one.
+                face = 1e-5 * half
+                on_face = bool(
+                    np.any((np.abs(x_new - lo) < face) & (lo > lower + 1e-12))
+                    | np.any((np.abs(x_new - hi) < face) & (hi < upper - 1e-12))
+                )
+                v = values_at(x_new)
+                feasible = feasible_at(v)
+                moved = float(np.max(np.abs(x_new - x)))
+                entry = {
+                    "outer": n_outer,
+                    "nit": int(result.nit),
+                    "nfev": int(result.nfev),
+                    "njev": int(result.njev),
+                    "status": last_status,
+                    "message": str(result.message),
+                    "on_move_limit": on_face,
+                    "move_limit": delta,
+                    "f": float(v[0]),
+                    "max_eq": float(np.max(np.abs(v[1 : 1 + meq]))) if meq else 0.0,
+                    "max_ie": float(np.max(v[1 + meq :])) if len(v) > 1 + meq else 0.0,
+                    "feasible": feasible,
+                    "moved": moved,
+                    "x": (x_new / scale).tolist(),
+                    "action": "",
+                }
+                previous_best = (
+                    best["f"] if best is not None and best["feasible"] else None
+                )
+                # The incumbent: the cheapest feasible point seen, or, until one has
+                # been, the least infeasible -- so a run started outside the feasible
+                # region can walk in, box by box, instead of shrinking where it stands.
+                violation = violation_at(v)
+                improved = (
+                    best is None
+                    or (feasible and (not best["feasible"] or v[0] < best["f"]))
+                    or (
+                        not feasible
+                        and not best["feasible"]
+                        and violation < best["violation"]
+                    )
+                )
+                if improved:
+                    best = {
+                        "feasible": feasible,
+                        "f": float(v[0]),
+                        "violation": violation,
+                        "x": x_new.copy(),
+                    }
+                if not feasible or last_status not in {0, 8, 9}:
+                    # Ended infeasible, or SLSQP gave up (incompatible constraints).
+                    # A status-8 line search at a feasible point is not that: the
+                    # statistics are piecewise smooth, so the linear model is wrong at
+                    # a kink, and the call is re-centred like any other.
+                    if improved and not feasible and last_status in {0, 8, 9}:
+                        # Less infeasible than anything before, with no feasible point
+                        # yet: progress, so re-centre with the box as it is.
+                        x = x_new
+                        adopt(x)
+                        stalls = 0
+                        entry["action"] = "re-centred (infeasible, but less so)"
+                        if user_callback is not None:
+                            user_callback(entry)
+                        continue
+                    # Otherwise a smaller box from the incumbent.
+                    delta *= 0.5
+                    if best is not None:
+                        x = best["x"].copy()
+                        adopt(x)
+                    entry["action"] = f"restart from the incumbent, box +-{delta:.3g}"
+                    if user_callback is not None:
+                        user_callback(entry)
+                    if delta < delta_min:
+                        status = BOXED_STATUS["box shrunk"]
+                        reason = f"move limit shrunk below {delta_min:g}"
+                        break
+                    continue
+                x = x_new
+                adopt(x)
+                if last_status == 0 and not on_face:
+                    converged, reason = True, "SLSQP success strictly inside the box"
+                elif moved < tol:
+                    converged, reason = True, f"re-centred call moved {moved:.2e} < tol"
+                elif previous_best is not None and (
+                    v[0] >= previous_best - ftol_outer * abs(previous_best)
+                ):
+                    stalls += 1
+                    if stalls >= 2:
+                        converged = True
+                        reason = f"two re-centred calls improved f by < {ftol_outer:g}"
+                else:
+                    stalls = 0
+                entry["action"] = reason if converged else "re-centred"
+                if user_callback is not None:
+                    user_callback(entry)
+                if converged:
+                    status = BOXED_CONVERGED
+                    break
+                if last_status == 9:
+                    status = BOXED_STATUS["iteration limit"]
+                    break
+            else:
+                status = (
+                    BOXED_STATUS["iteration limit"]
+                    if total_nit >= max_iter
+                    else BOXED_STATUS["outer limit"]
+                )
+            # The answer: the last point where it is feasible and no worse than the
+            # best, else the incumbent, else the last point.
+            v_final = values_at(x)
+            if feasible_at(v_final) and (
+                best is None or not best["feasible"] or v_final[0] <= best["f"] + 1e-12
+            ):
+                answer = x
+            elif best is not None:
+                answer = best["x"]
+            else:
+                answer = x
+            adopt(answer)
+            return (
+                np.asarray(answer, dtype=float) / scale,
+                int(total_nit),
+                bool(converged),
+                int(status),
+            )
+
+        return _sqp_callback(conditions, start, host)
+
+
 class SeededNewtonDriver(Driver):
     """`cottax.drivers.NewtonDriver`, plus a fallback starting guess derived from the
     block's own **context** when the one supplied in `env` is unusable.

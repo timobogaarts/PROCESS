@@ -39,7 +39,10 @@ functional_process/
     architectures/        mda.py recipes.py (cutting the cycles), mdf.py idf.py sand.py
                           (the optimisation architectures, as graph ops), evaluate.py
                           (seeding and running a schedule), session.py (one input file,
-                          every architecture), drivers.py host_cache.py (the algorithms)
+                          every architecture), drivers.py host_cache.py (the algorithms),
+                          closing.py stages.py beliefs.py ouu.py (an equality closed
+                          inside the MDA, the two-stage split, the belief draw, and
+                          optimisation under uncertainty over them)
     visualization/        grouping.py render_xdsm.py: the grouped DSM the notebooks draw
 
   tests/
