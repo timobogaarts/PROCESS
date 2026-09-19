@@ -29,9 +29,18 @@ distributions (`uq.beliefs_for("old")`); `--inputs physics` (the default) holds 
 economic rows (`kinds.ECONOMIC`) at their nominal too, `--inputs all` samples them.
 `held=` is what `two_stage` is handed.
 
+`--lifts winding_pack` takes the pack's sizing rule out of the coil (`LIFTS`,
+`architectures.lift.lift_winding_pack`): its width becomes a design variable (PROCESS
+ixc 140) and `j_tf_wp <= f j_c` (icc 33) a chance constraint beside the others -- and
+it releases `f_j_tf_wp_critical_max` from the `build` table's held rows, since holding
+that margin was what made every sample share one coil. So
+`--lifts winding_pack --table build` is variant D with the coil decided once and its
+margin uncertain: the difference in the price of robustness is the coil's share.
+
     PY=~/miniconda3/envs/process_port/bin/python; export JAX_PLATFORMS=cpu
     $PY paper_tests/ouu.py --smoke [--n 256] [--alpha 0.9] [--max-iter 200] [--objective levelised]
-                           [--pairing one] [--closure bracketed] [--table build] [--inputs physics]
+                           [--pairing one] [--closure bracketed] [--lifts winding_pack]
+                           [--table build] [--inputs physics]
                            [--with-c16 [--alpha16 0.5]]
                            [--te-recourse K --te-range lo,hi] [--jac fwd] [--chunk C] [--tol 1e-4]
                            [--ftol 1e-6] [--gtol 1e-4] [--move-limit 0.25] [--start RUN.json]
@@ -70,6 +79,7 @@ from common import OUT, deterministic_values, option, write_csv, write_json  # n
 
 from functional_process.configurations import kinds  # noqa: E402
 from functional_process.cottax.architectures import beliefs as beliefs_  # noqa: E402
+from functional_process.cottax.architectures import lift as lift_  # noqa: E402
 from functional_process.cottax.architectures import ouu, session  # noqa: E402
 from functional_process.cottax.architectures.drivers import BOXED_CONVERGED  # noqa: E402
 
@@ -77,6 +87,18 @@ NAME = "stellarator_helias"
 LOGS = OUT / "ouu_logs"
 INPUT_SETS = ("all", "physics")
 TABLES = ("new", "old", "build")
+LIFTS = {
+    "winding_pack": (lift_.lift_winding_pack, (".constraints.f_j_tf_wp_critical_max",)),
+}
+"""The sizing choices `--lifts` can take out of the models (`kinds.SIZING_CHOICES`
+marks them `Decision.LIFT`), each with the belief rows it releases from the `build`
+table's held set. The winding pack: `kinds.BUILD_LEAVES` holds
+`f_j_tf_wp_critical_max` at its nominal *because* the pack is re-sized per sample,
+so the margin has to be a build number for every sample to share one coil.
+Lifting the pack width to a design variable is what makes the margin safe to
+sample: the coil is chosen once, and the rule it was sized by is a chance
+constraint held against the sampled margin. With `--table new` nothing is held but
+the economic rows and the release is a no-op."""
 HFACT_SIGMA = 0.10
 C16 = kinds.C16
 TE = kinds.TE
@@ -103,13 +125,20 @@ class Choice:
     te_recourse: int
     te_range: tuple | None
     closure: str = "bracketed"
+    lifts: tuple[str, ...] = ()
+
+    @property
+    def released(self) -> tuple[str, ...]:
+        """The belief rows `--lifts` releases from the held set (`LIFTS`)."""
+        return tuple(row for name in self.lifts for row in LIFTS[name][1])
 
     @property
     def held(self) -> tuple[str, ...]:
         """The rows of `kinds.BELIEFS` held at their nominal."""
         held: tuple[str, ...] = ()
         if self.table == "build":
-            held += kinds.BUILD_LEAVES
+            released = self.released
+            held += tuple(row for row in kinds.BUILD_LEAVES if row not in released)
         if self.inputs == "physics":
             held += kinds.ECONOMIC
         return held
@@ -146,6 +175,7 @@ class Choice:
             hfact_sigma=pick("--hfact-sigma", "hfact_sigma", HFACT_SIGMA, float),
             pairing=pick("--pairing", "pairing", "one", str),
             closure=pick("--closure", "closure", "bracketed", str),
+            lifts=tuple(v for v in pick("--lifts", "lifts", ",".join(p.get("lifts", ())), str).split(",") if v),
             alpha16=option(argv, "--alpha16", p.get("alpha16"), float) if "--alpha16" in argv else p.get("alpha16"),
             te_recourse=pick("--te-recourse", "te_recourse", 0),
             te_range=(
@@ -161,6 +191,9 @@ class Choice:
             raise SystemExit(f"--table {chosen['table']!r}; one of {TABLES}")
         if chosen["closure"] not in ouu.CLOSURES:
             raise SystemExit(f"--closure {chosen['closure']!r}; one of {ouu.CLOSURES}")
+        unknown = [name for name in chosen["lifts"] if name not in LIFTS]
+        if unknown:
+            raise SystemExit(f"--lifts {unknown}; one of {tuple(LIFTS)}")
         return cls(**chosen)
 
 
@@ -186,6 +219,7 @@ def build(choice: Choice, extra_columns: tuple = (), live=None) -> ouu.TwoStage:
         design_values=design_values,
         closing_values=closing_values,
         closure=choice.closure,
+        lifts=tuple(LIFTS[name][0] for name in choice.lifts),
         extra_columns=extra_columns,
     )
 
@@ -252,7 +286,8 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
     print(f"built in {model.build_s:.1f} s: N {n} (+ nominal row), alpha {alpha} (m = {model.m}), "
           f"objective {model.objective}, inputs {choice.inputs} ({len(model.beliefs)} rows, "
           f"{len(model.held)} held), table {choice.table} (hfact sigma {hfact_sigma_of(model)}), "
-          f"pairing {model.pairing}, closure {model.closure} ({len(model.design)} design places: "
+          f"pairing {model.pairing}, closure {model.closure}"
+          f"{'' if not choice.lifts else f', lifts {list(choice.lifts)}'} ({len(model.design)} design places: "
           f"{[v.spelling.rsplit('.', 1)[-1] for v in model.design]}"
           f"{'' if model.te_grid is None else f', T_e recourse on {len(model.te_grid)} points'}), "
           f"first stage {len(model.stages.first)} of {model.stages.n_nodes} nodes, "
@@ -310,7 +345,7 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
         "objective": model.objective, "inputs": choice.inputs, "n_inputs": len(model.beliefs),
         "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)), "jac": jac, "chunks": chunks,
-        "pairing": model.pairing, "closure": model.closure,
+        "pairing": model.pairing, "closure": model.closure, "lifts": list(choice.lifts), "released": list(choice.released),
         "closed": {c.spelling: v.spelling for c, v in model.closed.pairings.items()},
         "closing_problems": model.closed.report["closing_problems"],
         "uncertain": [b.path for b in model.beliefs], "held": list(model.held), "dropped": list(model.dropped),
@@ -368,7 +403,7 @@ def evidence(model: ouu.TwoStage, fns: dict, x_det: np.ndarray, x_rob: np.ndarra
         "n": model.n, "alpha": model.alpha, "seed": model.seed, "fresh_seed": fresh_seed, "inputs": choice.inputs,
         "objective": model.objective, "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)),
-        "pairing": model.pairing, "closure": model.closure,
+        "pairing": model.pairing, "closure": model.closure, "lifts": list(choice.lifts), "released": list(choice.released),
         "robust_source": source, "backend": jax.default_backend(),
         "constraints": list(model.names),
         "design": ouu.design_table(model, x_det, x_rob),
