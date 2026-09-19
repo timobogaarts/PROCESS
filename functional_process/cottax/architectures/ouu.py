@@ -9,7 +9,11 @@ The formulation the 2026-09-17 handoff settled on ("variant D", `~/jaxgraph`,
   the electron temperature too; with `lifts`, plus every sizing choice lifted out of
   the models (`lift.lift_winding_pack`: the pack width, its rule a chance constraint).
 - **Second stage**, per belief sample: the power balance `c2` closed by the density
-  inside the MDA (`closing.close`, `kinds.PAIRINGS["one"]`), and with `te_recourse = K`
+  inside the MDA (`closing.close`, `kinds.PAIRINGS["one"]`) -- by default the
+  `bracketed` closure (`CLOSURES`: the root find over the density alone, the
+  cycle's Picards nested inside it, `closing.bracketed()` converging from any
+  start), or the `flattened` one (the Picards' copies folded in, three unknowns,
+  `closing.safeguarded()`, which stalls from far starts) -- and with `te_recourse = K`
   the temperature chosen per sample from a grid of `K` values -- the cheapest feasible
   one, else the least infeasible -- with `stop_gradient` on the choice so the outer
   derivative is the envelope theorem's at the chosen point.
@@ -156,6 +160,17 @@ MWh the plant is rated for (`p_plant_electric_net_required_mw` x nominal
 availability) -- finite and differentiable, which `mean` (coe ~ 1 / net) is not; but
 it does not price a shortfall, so without `c16` as a constraint it is the wrong one."""
 JAC_MODES = ("fwd", "rev")
+CLOSURES = ("bracketed", "flattened")
+"""How the closing equality is answered inside the MDA (`closing.close`): `bracketed`
+is `flatten=False` and `closing.bracketed()` -- the root find keeps its one unknown,
+the Picards on its cycle nested and re-converged per residual evaluation, the root
+bracketed then found by a safeguarded Newton, from any start (the default);
+`flattened` is `flatten=True` and `closing.safeguarded()` -- the cut copies folded
+into one square problem of three unknowns under a capped Broyden Newton, which
+stalls from far starts (commit `e8888787`). The flattening and the driver are one
+choice, since the bracketed driver answers one unknown only and the flattened form
+is what the Newton was built for, so they are named together rather than passed
+separately."""
 
 COE = ".costs.coe"
 NET = ".heat_transport.p_plant_electric_net_mw"
@@ -235,6 +250,8 @@ class TwoStage:
     """
 
     closed: closing.Closed
+    closure: str
+    """Which of `CLOSURES` closed the equality."""
     point: PathMap
     """Every schedule input at the nominal: the deterministic start (the file's own
     design, or `design_values`), the closing unknowns' start ports at their roots."""
@@ -437,6 +454,25 @@ def resolve_columns(
     return tuple(resolved)
 
 
+def close(session, pairings, closure: str = "bracketed") -> closing.Closed:
+    """`closing.close(session, pairings)` under `closure` (one of `CLOSURES`):
+    `bracketed` nested with `closing.bracketed()`, `flattened` with
+    `closing.safeguarded()` (`close`'s own default driver).
+
+    Raises
+    ------
+    ValueError
+        If `closure` is not one of `CLOSURES`.
+    """
+    if closure == "bracketed":
+        return closing.close(
+            session, pairings, flatten=False, driver=closing.bracketed()
+        )
+    if closure == "flattened":
+        return closing.close(session, pairings, flatten=True)
+    raise ValueError(f"closure {closure!r}; one of {CLOSURES}")
+
+
 def two_stage(
     session,
     *,
@@ -453,14 +489,15 @@ def two_stage(
     alpha16: float | None = None,
     design_values=None,
     closing_values=None,
-    flatten: bool = True,
+    closure: str = "bracketed",
     lifts: Iterable = (),
     extra_columns: Iterable[str] = (),
 ) -> TwoStage:
     """Assemble the two-stage problem on `session` (a `session.Session`, a
     configuration or its name).
 
-    The closed MDA (`closing.close(session, kinds.PAIRINGS[pairing])`) is seeded and
+    The closed MDA (`closing.close(session, kinds.PAIRINGS[pairing])`, under
+    `closure`: one of `CLOSURES`, `bracketed` by default) is seeded and
     primed at the configuration's own cold design (`closing.seed`, `mdf.prime`) --
     or at `design_values` / `closing_values`, as `closing.seed` takes them -- and that
     point is the nominal. The beliefs are `beliefs` minus `held` (spellings), the
@@ -485,14 +522,16 @@ def two_stage(
     Raises
     ------
     ValueError
-        If `objective` or `pairing` is unknown, or `with_c16` is asked of a pairing
-        that closes `c16`.
+        If `objective`, `pairing` or `closure` is unknown, or `with_c16` is asked of
+        a pairing that closes `c16`.
     KeyError
         If an extra column is not a variable of the closed graph.
     """
     began = time.perf_counter()
     if objective not in OBJECTIVES:
         raise ValueError(f"objective {objective!r}; one of {OBJECTIVES}")
+    if closure not in CLOSURES:
+        raise ValueError(f"closure {closure!r}; one of {CLOSURES}")
     if pairing not in kinds.PAIRINGS:
         raise ValueError(f"pairing {pairing!r}; one of {tuple(kinds.PAIRINGS)}")
     if with_c16 and C16 in kinds.PAIRINGS[pairing]:
@@ -501,7 +540,7 @@ def two_stage(
             f"it per sample"
         )
     held = tuple(held)
-    built = closing.close(session, kinds.PAIRINGS[pairing], flatten=flatten)
+    built = close(session, kinds.PAIRINGS[pairing], closure)
     live = built.session
     problem = built.problem
     env = closing.seed(built, live.reference.cold, design_values, closing_values)
@@ -597,6 +636,7 @@ def two_stage(
 
     return TwoStage(
         closed=built,
+        closure=closure,
         point=point,
         nominal_out=primed,
         var_of=var_of,
@@ -1544,6 +1584,7 @@ def design_table(
 __all__ = [
     "ALPHA",
     "BUILD_TABLE",
+    "CLOSURES",
     "DEFAULT",
     "EPS_FAILED",
     "FAILED_F",
@@ -1561,6 +1602,7 @@ __all__ = [
     "Statistics",
     "TwoStage",
     "best_feasible",
+    "close",
     "condition_path",
     "cvar_path",
     "design_table",

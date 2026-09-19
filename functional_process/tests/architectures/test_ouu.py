@@ -1,5 +1,7 @@
 """`architectures.ouu` on `stellarator_helias`: the two-stage problem assembled on the
-build table at N = 32, alpha 0.75, from the file's own cold design.
+build table at N = 32, alpha 0.75, from the file's own cold design, under the default
+`bracketed` closure (the density's root find alone, the Picards nested inside it) --
+and once under the `flattened` one, the handoff's form, so both stay covered.
 
 Three things are checked, all deterministic: the batched program's nominal row is the
 un-batched closed MDA (and the hoisted program is the un-hoisted one, every row); the
@@ -107,12 +109,18 @@ def test_assembly_has_the_shape_the_handoff_states(model):
     assert model.n_g == 12
     assert model.m == 8  # ceil(0.25 * 32)
     assert model.unknowns[0].spelling == kinds.PAIRINGS["one"]["^cond.constraints.c2"]
-    assert len(model.unknowns) == len(model.guesses) == 3
+    # The default closure: the root find over the density alone, nested.
+    assert model.closure == "bracketed"
+    assert model.closed.flat is False
+    assert len(model.unknowns) == len(model.guesses) == 1
+    assert model.closed.report["closing_problems"] == {
+        ".Close.c2": (".physics.nd_plasma_electrons_vol_avg",)
+    }
     assert model.te_grid is None
     # The sample set: N + 1 rows, the nominal last, every batched value N + 1 long.
     k = len(model.beliefs)
     assert model.Theta.shape == (N + 1, k)
-    assert model.starts0.shape == (N + 1, 3)
+    assert model.starts0.shape == (N + 1, 1)
     assert all(np.asarray(v).shape[0] == N + 1 for v in model.theta.values())
     nominal = beliefs.nominal_coordinates(model.beliefs, model.nominal)
     assert np.array_equal(model.Theta[-1], nominal)
@@ -121,21 +129,24 @@ def test_assembly_has_the_shape_the_handoff_states(model):
     counts = {s.value: c.nodes for s, c in model.stages.counts.items()}
     assert counts["first"] == 66
     assert counts["second"] == 104
-    assert len(model.columns) == 4 + 12 + 2 + 3
-    assert model.layout["c_u"] == (18, 21)
-    # No other driver in the recourse schedule reports `Converged` here (the three
-    # Picards report nothing), so the verdict block is empty, and so is the extra one.
+    assert len(model.columns) == 4 + 12 + 2 + 1
+    assert model.layout["c_u"] == (18, 19)
+    # No other driver in the recourse schedule reports `Converged` here (the four
+    # Picards report nothing -- the density cycle's own is nested inside the root
+    # find, where the flattened closure folds it in), so the verdict block is empty,
+    # and so is the extra one.
     assert model.verdicts == ()
     assert model.extra == ()
-    assert model.layout["c_verdicts"] == (21, 21)
-    assert model.layout["c_extra"] == (21, 21)
+    assert model.layout["c_verdicts"] == (19, 19)
+    assert model.layout["c_extra"] == (19, 19)
     assert model.layout["verdicts"] == model.layout["extra"] == ()
     others = [
         step.problem.spelling
         for step in ouu.driven_problems(model.recourse)
         if step.problem != model.place
     ]
-    assert len(others) == 3
+    assert len(others) == 4
+    assert "^problem.physics.proton_rate_density.cycle" in others
     assert all(
         not step.reports
         for step in ouu.driven_problems(model.recourse)
@@ -160,9 +171,9 @@ def test_extra_columns_are_carried_through_and_ignored_by_the_measures(live):
     layout = model.layout
     assert [v.spelling for v in model.extra] == list(asked)
     assert layout["extra"] == asked
-    assert layout["c_extra"] == (21, 25)
-    assert len(model.columns) == 25
-    assert model.columns[21:] == model.extra
+    assert layout["c_extra"] == (19, 23)
+    assert len(model.columns) == 23
+    assert model.columns[19:] == model.extra
     fns = ouu.make(model)
     rows = np.asarray(
         jax.block_until_ready(
@@ -171,11 +182,15 @@ def test_extra_columns_are_carried_through_and_ignored_by_the_measures(live):
             )
         )
     )
-    assert rows.shape == (5, 25)
+    assert rows.shape == (5, 23)
     e0, _e1 = layout["c_extra"]
     for j, var in enumerate(model.extra):
         reference = float(np.asarray(model.nominal_out[var]))
-        assert _rel(rows[-1, e0 + j], reference) < 1e-10, var.spelling
+        # `c2` is round-off zero at the root, so it is compared absolutely: the
+        # bracketed driver re-evaluates the residual there and gets another zero.
+        assert _rel(rows[-1, e0 + j], reference) < 1e-10 or (
+            abs(rows[-1, e0 + j] - reference) < 1e-12
+        ), var.spelling
     hfact = rows[:, e0 + 3]
     assert np.allclose(hfact, np.asarray(model.theta[model.var_of[".physics.hfact"]]))
     valid = ouu.valid_rows(layout, rows)
@@ -209,9 +224,15 @@ def test_te_recourse_takes_the_temperature_off_the_design(live):
 
 
 def test_refusals(live):
-    """An unknown objective, and `with_c16` on a pairing that closes c16."""
+    """An unknown objective, an unknown closure, and `with_c16` on a pairing that
+    closes c16.
+    """
     with pytest.raises(ValueError, match="objective"):
         ouu.two_stage(live, n=4, objective="worst")
+    with pytest.raises(ValueError, match="closure"):
+        ouu.two_stage(live, n=4, closure="nested")
+    with pytest.raises(ValueError, match="closure"):
+        ouu.close(live, kinds.PAIRINGS["one"], "newton")
     with pytest.raises(ValueError, match="closes"):
         ouu.two_stage(live, n=4, pairing="two", with_c16=True)
 
@@ -237,7 +258,9 @@ def test_nominal_row_is_the_closed_mda_and_the_hoist_is_exact(model, fns):
     layout = model.layout
     nominal = rows[-1]
     assert nominal[layout["c_conv"]] > 0.5
-    assert nominal[layout["c_steps"]] == 0  # started from its own root
+    # Started from its own root: the bracketed driver spends one evaluation seeing
+    # that the residual is already zero there (`test_bracketed`).
+    assert nominal[layout["c_steps"]] <= 1
     primed = model.nominal_out
     for i, c in enumerate(model.columns):
         if i == layout["c_steps"]:
@@ -269,6 +292,69 @@ def test_nominal_row_is_the_closed_mda_and_the_hoist_is_exact(model, fns):
     assert whole_s < 120, whole_s
 
 
+def test_flattened_closure_answers_the_same_nominal_row(live, model, fns):
+    """`closure="flattened"`, the handoff's form: the closing problem is the Newton
+    over the density and the two cut copies, the un-batched closed MDA it is seeded
+    at is the bracketed one's to 1e-10 at every measured column, and the batched
+    program's nominal row is that MDA's to 1e-10 -- the same equalities the default
+    closure holds. What the two do not share is reported, not pinned: the failed
+    fraction and `f` at the cold design (the bracketed closure converges from any
+    start, the flattened Newton stalls in some samples).
+    """
+    flat = ouu.two_stage(live, n=N, alpha=ALPHA, seed=0, closure="flattened")
+    assert flat.closure == "flattened"
+    assert flat.closed.flat is True
+    assert [v.spelling for v in flat.design] == list(DESIGN)
+    assert len(flat.unknowns) == len(flat.guesses) == 3
+    assert flat.unknowns[0] == model.unknowns[0]
+    assert flat.starts0.shape == (N + 1, 3)
+    assert len(flat.columns) == 4 + 12 + 2 + 3
+    assert flat.layout["c_u"] == (18, 21)
+    assert np.array_equal(flat.Theta, model.Theta)  # the same Sobol' set
+    assert np.array_equal(flat.x0, model.x0)
+    layout = flat.layout
+    for c in flat.columns[: layout["c_steps"]]:
+        reference = float(np.asarray(model.nominal_out[c]))
+        assert _rel(np.asarray(flat.nominal_out[c]), reference) < 1e-10, c.spelling
+    flat_fns = ouu.make(flat)
+    rows = np.asarray(
+        jax.block_until_ready(
+            ouu.jitted(flat_fns, "run_batch")(
+                jnp.asarray(flat.x0), flat.theta, jnp.asarray(flat.starts0)
+            )
+        )
+    )
+    assert rows.shape == (N + 1, len(flat.columns))
+    nominal = rows[-1]
+    assert nominal[layout["c_conv"]] > 0.5
+    assert nominal[layout["c_steps"]] == 0  # the Newton at its own root
+    for i, c in enumerate(flat.columns):
+        if i == layout["c_steps"]:
+            continue
+        reference = float(np.asarray(flat.nominal_out[c]))
+        assert _rel(nominal[i], reference) < 1e-10, (c.spelling, nominal[i], reference)
+    conv = ouu.valid_rows(layout, rows[:-1])
+    assert conv.mean() > 0.9
+    # The two closures agree where both converged, on every measured column.
+    bracketed = np.asarray(
+        jax.block_until_ready(
+            ouu.jitted(fns, "run_batch")(
+                jnp.asarray(model.x0), model.theta, jnp.asarray(model.starts0)
+            )
+        )
+    )
+    both = conv & ouu.valid_rows(model.layout, bracketed[:-1])
+    assert both.sum() >= 0.9 * N
+    measured = slice(0, layout["c_steps"])
+    assert np.max(_rel(rows[:-1][both, measured], bracketed[:-1][both, measured])) < 1e-8
+    program = ouu.Program(flat_fns, flat.theta, flat.starts0)
+    values = program.at(flat.x0).values
+    print(
+        f"\nflattened closure at the cold design, N = {N}: failed "
+        f"{round(values[-1] * N)}/{N}, f {values[0]:.4f}"
+    )
+
+
 def test_value_jac_starts_is_finite_and_matches_a_central_difference(model, program):
     """One fused call: `[f, *cvar, failed]` and its Jacobian finite, the next starts
     the converged roots, and `d/d rmajor` a central difference of the forward program
@@ -280,7 +366,7 @@ def test_value_jac_starts_is_finite_and_matches_a_central_difference(model, prog
     assert jacobian.shape == (1 + model.n_g + 1, 6)
     assert np.all(np.isfinite(values))
     assert np.all(np.isfinite(jacobian))
-    assert evaluation.next_starts.shape == (N + 1, 3)
+    assert evaluation.next_starts.shape == (N + 1, 1)
     failed = values[-1]
     assert 0.0 <= failed <= 0.2
     # `f` is the levelised coe plus the failed penalty; the nominal row is in it.

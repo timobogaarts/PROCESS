@@ -370,8 +370,8 @@ def test_two_stage_assembles_with_the_pack_lifted(model, primed, lifted):
     assert np.all(model.x0 < model.upper)
     assert model.n_g == 13
     assert model.constraints[-1] == condition
-    assert len(model.columns) == 4 + 13 + 2 + 3
-    assert model.layout["c_u"] == (19, 22)
+    assert len(model.columns) == 4 + 13 + 2 + 1  # the bracketed closure: one unknown
+    assert model.layout["c_u"] == (19, 20)
     assert model.closed.report["lifts"][condition.spelling]["design"]["ixc"] == 140
     assert set(model.closed.report["inequalities"]) == set(model.constraints)
     assert model.closed.problem.n_inequality == 13
@@ -412,7 +412,7 @@ def test_value_jac_starts_column_for_the_pack_width(model):
     assert jacobian.shape == (1 + 13 + 1, 7)
     assert np.all(np.isfinite(values))
     assert np.all(np.isfinite(jacobian))
-    assert evaluation.next_starts.shape == (N + 1, 3)
+    assert evaluation.next_starts.shape == (N + 1, 1)
     assert 0.0 <= values[-1] <= 0.2
     # The lifted CVaR: active at the nominal design, the same in every sample.
     assert abs(values[13]) < 1e-8, values[13]

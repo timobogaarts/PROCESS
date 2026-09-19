@@ -4,7 +4,10 @@ line, the file handling and the plots over `architectures.ouu`.
 The formulation, the batched program and the outer solve are the port's
 (`functional_process/cottax/architectures/ouu.py`, whose docstring states them):
 `two_stage` assembles the two-stage problem -- the power balance `c2` closed by the
-density per belief sample (`kinds.PAIRINGS[--pairing]`), the graph split at the
+density per belief sample (`kinds.PAIRINGS[--pairing]`, under `--closure bracketed`
+(the default: the root find over the density alone, the Picards nested, converging
+from any start) or `--closure flattened` (the handoff's form: the cut copies folded
+into one Newton, which stalls from far starts; `ouu.CLOSURES`)), the graph split at the
 sampled leaves and the first stage hoisted out of the batch, the design the file's
 `ixc` minus what is closed and what is a belief, one scrambled Sobol' set of N
 samples with the nominal appended; `make` compiles it (`--jac fwd|rev`, `--chunk`);
@@ -28,7 +31,8 @@ economic rows (`kinds.ECONOMIC`) at their nominal too, `--inputs all` samples th
 
     PY=~/miniconda3/envs/process_port/bin/python; export JAX_PLATFORMS=cpu
     $PY paper_tests/ouu.py --smoke [--n 256] [--alpha 0.9] [--max-iter 200] [--objective levelised]
-                           [--pairing one] [--table build] [--inputs physics] [--with-c16 [--alpha16 0.5]]
+                           [--pairing one] [--closure bracketed] [--table build] [--inputs physics]
+                           [--with-c16 [--alpha16 0.5]]
                            [--te-recourse K --te-range lo,hi] [--jac fwd] [--chunk C] [--tol 1e-4]
                            [--ftol 1e-6] [--gtol 1e-4] [--move-limit 0.25] [--start RUN.json]
                            [--evidence [--fresh-seed 1]] [--name STEM] [--tag T] [--no-warm]
@@ -98,6 +102,7 @@ class Choice:
     alpha16: float | None
     te_recourse: int
     te_range: tuple | None
+    closure: str = "bracketed"
 
     @property
     def held(self) -> tuple[str, ...]:
@@ -140,6 +145,7 @@ class Choice:
             table=pick("--table", "table", "new", str),
             hfact_sigma=pick("--hfact-sigma", "hfact_sigma", HFACT_SIGMA, float),
             pairing=pick("--pairing", "pairing", "one", str),
+            closure=pick("--closure", "closure", "bracketed", str),
             alpha16=option(argv, "--alpha16", p.get("alpha16"), float) if "--alpha16" in argv else p.get("alpha16"),
             te_recourse=pick("--te-recourse", "te_recourse", 0),
             te_range=(
@@ -153,6 +159,8 @@ class Choice:
             raise SystemExit(f"--inputs {chosen['inputs']!r}; one of {INPUT_SETS}")
         if chosen["table"] not in TABLES:
             raise SystemExit(f"--table {chosen['table']!r}; one of {TABLES}")
+        if chosen["closure"] not in ouu.CLOSURES:
+            raise SystemExit(f"--closure {chosen['closure']!r}; one of {ouu.CLOSURES}")
         return cls(**chosen)
 
 
@@ -177,6 +185,7 @@ def build(choice: Choice, extra_columns: tuple = (), live=None) -> ouu.TwoStage:
         alpha16=choice.alpha16,
         design_values=design_values,
         closing_values=closing_values,
+        closure=choice.closure,
         extra_columns=extra_columns,
     )
 
@@ -243,7 +252,7 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
     print(f"built in {model.build_s:.1f} s: N {n} (+ nominal row), alpha {alpha} (m = {model.m}), "
           f"objective {model.objective}, inputs {choice.inputs} ({len(model.beliefs)} rows, "
           f"{len(model.held)} held), table {choice.table} (hfact sigma {hfact_sigma_of(model)}), "
-          f"pairing {model.pairing} ({len(model.design)} design places: "
+          f"pairing {model.pairing}, closure {model.closure} ({len(model.design)} design places: "
           f"{[v.spelling.rsplit('.', 1)[-1] for v in model.design]}"
           f"{'' if model.te_grid is None else f', T_e recourse on {len(model.te_grid)} points'}), "
           f"first stage {len(model.stages.first)} of {model.stages.n_nodes} nodes, "
@@ -301,7 +310,9 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
         "objective": model.objective, "inputs": choice.inputs, "n_inputs": len(model.beliefs),
         "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)), "jac": jac, "chunks": chunks,
-        "pairing": model.pairing, "closed": {c.spelling: v.spelling for c, v in model.closed.pairings.items()},
+        "pairing": model.pairing, "closure": model.closure,
+        "closed": {c.spelling: v.spelling for c, v in model.closed.pairings.items()},
+        "closing_problems": model.closed.report["closing_problems"],
         "uncertain": [b.path for b in model.beliefs], "held": list(model.held), "dropped": list(model.dropped),
         "started_from": str(start) if start is not None else "deterministic", "x_start": np.asarray(x0).tolist(),
         "max_iter": max_iter, "move_limit": delta, "tol": tol, "ftol": ftol, "gtol": gtol, "seed": model.seed,
@@ -357,6 +368,7 @@ def evidence(model: ouu.TwoStage, fns: dict, x_det: np.ndarray, x_rob: np.ndarra
         "n": model.n, "alpha": model.alpha, "seed": model.seed, "fresh_seed": fresh_seed, "inputs": choice.inputs,
         "objective": model.objective, "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)),
+        "pairing": model.pairing, "closure": model.closure,
         "robust_source": source, "backend": jax.default_backend(),
         "constraints": list(model.names),
         "design": ouu.design_table(model, x_det, x_rob),
