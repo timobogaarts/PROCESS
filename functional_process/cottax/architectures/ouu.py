@@ -490,6 +490,7 @@ def two_stage(
     design_values=None,
     closing_values=None,
     closure: str = "bracketed",
+    bound_overrides: Mapping[str, tuple[float, float]] | None = None,
     lifts: Iterable = (),
     extra_columns: Iterable[str] = (),
 ) -> TwoStage:
@@ -505,6 +506,10 @@ def two_stage(
     minus every sampled place minus `TE` under `te_recourse`; the graph is split at
     the sampled leaves and the closing start ports (and `TE`) and the two stages'
     schedules built.
+
+    `bound_overrides`: `{spelling: (lower, upper)}` replacing the file's own bounds for
+    those design places -- for asking whether an answer that sits on a bound is the
+    optimum or the box edge. It does not touch the deterministic problem.
 
     `lifts`: sizing choices lifted out of the models (`lift.lift_winding_pack`),
     applied to the closed graph (`lift.applied`): each lifted unknown joins the design
@@ -525,7 +530,8 @@ def two_stage(
         If `objective`, `pairing` or `closure` is unknown, or `with_c16` is asked of
         a pairing that closes `c16`.
     KeyError
-        If an extra column is not a variable of the closed graph.
+        If an extra column is not a variable of the closed graph, or a
+        `bound_overrides` key is not one of its design places.
     """
     began = time.perf_counter()
     if objective not in OBJECTIVES:
@@ -572,6 +578,14 @@ def two_stage(
     for unknown, lifted in lift.lifted_design(built).items():
         bounds[unknown] = tuple(lifted["bounds"])
         ixc_of[unknown] = lifted["ixc"]
+    for spelling, (low, high) in dict(bound_overrides or {}).items():
+        overridden = var_of.get(spelling)
+        if overridden is None or overridden not in bounds:
+            raise KeyError(
+                f"bound override {spelling!r} is not a design place of this problem: "
+                f"{sorted(v.spelling for v in bounds)}"
+            )
+        bounds[overridden] = (float(low), float(high))
     te_grid = None
     if te_recourse:
         te = var_of[TE]

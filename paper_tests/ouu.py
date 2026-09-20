@@ -40,6 +40,7 @@ margin uncertain: the difference in the price of robustness is the coil's share.
     PY=~/miniconda3/envs/process_port/bin/python; export JAX_PLATFORMS=cpu
     $PY paper_tests/ouu.py --smoke [--n 256] [--alpha 0.9] [--max-iter 200] [--objective levelised]
                            [--pairing one] [--closure bracketed] [--lifts winding_pack]
+                           [--bounds ".physics.rmajor:10,40"]
                            [--table build] [--inputs physics]
                            [--with-c16 [--alpha16 0.5]]
                            [--te-recourse K --te-range lo,hi] [--jac fwd] [--chunk C] [--tol 1e-4]
@@ -108,6 +109,25 @@ G_TOL = ouu.G_TOL
 # ---------------------------------------------------------------- the problem
 
 
+def _bounds_of(text: str) -> tuple[tuple[str, float, float], ...]:
+    """`place:lo,hi[;place:lo,hi]` as `((place, lo, hi), ...)`.
+
+    Raises
+    ------
+    SystemExit
+        If an entry is not `place:lo,hi`.
+    """
+    out = []
+    for entry in (e for e in text.split(";") if e.strip()):
+        try:
+            place, span = entry.split(":")
+            low, high = (float(v) for v in span.split(","))
+        except ValueError:
+            raise SystemExit(f"--bounds {entry!r}; expected place:lo,hi") from None
+        out.append((place, low, high))
+    return tuple(out)
+
+
 @dataclasses.dataclass(frozen=True)
 class Choice:
     """What the command line chose, in the port's terms."""
@@ -126,6 +146,8 @@ class Choice:
     te_range: tuple | None
     closure: str = "bracketed"
     lifts: tuple[str, ...] = ()
+    bounds: tuple[tuple[str, float, float], ...] = ()
+    """`--bounds place:lo,hi[;place:lo,hi]`: the file's own design bounds, replaced."""
 
     @property
     def released(self) -> tuple[str, ...]:
@@ -176,6 +198,7 @@ class Choice:
             pairing=pick("--pairing", "pairing", "one", str),
             closure=pick("--closure", "closure", "bracketed", str),
             lifts=tuple(v for v in pick("--lifts", "lifts", ",".join(p.get("lifts", ())), str).split(",") if v),
+            bounds=_bounds_of(pick("--bounds", "bounds_override", "", str)),
             alpha16=option(argv, "--alpha16", p.get("alpha16"), float) if "--alpha16" in argv else p.get("alpha16"),
             te_recourse=pick("--te-recourse", "te_recourse", 0),
             te_range=(
@@ -220,6 +243,7 @@ def build(choice: Choice, extra_columns: tuple = (), live=None) -> ouu.TwoStage:
         closing_values=closing_values,
         closure=choice.closure,
         lifts=tuple(LIFTS[name][0] for name in choice.lifts),
+        bound_overrides={place: (lo, hi) for place, lo, hi in choice.bounds} or None,
         extra_columns=extra_columns,
     )
 
@@ -346,6 +370,7 @@ def smoke(choice: Choice, max_iter: int, eps: float, delta: float = 0.25, jac: s
         "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)), "jac": jac, "chunks": chunks,
         "pairing": model.pairing, "closure": model.closure, "lifts": list(choice.lifts), "released": list(choice.released),
+        "bounds_override": [list(b) for b in choice.bounds],
         "closed": {c.spelling: v.spelling for c, v in model.closed.pairings.items()},
         "closing_problems": model.closed.report["closing_problems"],
         "uncertain": [b.path for b in model.beliefs], "held": list(model.held), "dropped": list(model.dropped),
@@ -404,6 +429,7 @@ def evidence(model: ouu.TwoStage, fns: dict, x_det: np.ndarray, x_rob: np.ndarra
         "objective": model.objective, "table": choice.table, "hfact_sigma": hfact_sigma_of(model),
         "hfact_belief": beliefs_.hfact_belief(hfact_sigma_of(model)),
         "pairing": model.pairing, "closure": model.closure, "lifts": list(choice.lifts), "released": list(choice.released),
+        "bounds_override": [list(b) for b in choice.bounds],
         "robust_source": source, "backend": jax.default_backend(),
         "constraints": list(model.names),
         "design": ouu.design_table(model, x_det, x_rob),
