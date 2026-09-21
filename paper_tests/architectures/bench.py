@@ -6,6 +6,9 @@ Run any script as a file, from the repo root, with the environment set (see READ
     JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=~/PROCESS:~/jaxgraph/src \\
         $PY paper_tests/architectures/solve.py --scheme minimal --optimiser vmcon
 
+`JAX_PLATFORMS` is the caller's: `cpu` for every table but the batched one, which is
+run twice, `cpu` and `cuda`.
+
 Every script writes one csv to `out/`, first line a comment saying which commits and
 machine produced it, so a table built from these files says where its numbers came from.
 """
@@ -21,7 +24,6 @@ import time
 from datetime import date
 from pathlib import Path
 
-os.environ.setdefault("JAX_PLATFORMS", "cpu")
 import jax  # noqa: E402
 
 jax.config.update("jax_enable_x64", True)  # PROCESS is float64; the Picards NaN without it
@@ -57,12 +59,14 @@ TOLERANCE = 1.0e-8
 port): the same number on both sides."""
 
 
-def arguments(description: str, *, optimiser: bool = True) -> argparse.Namespace:
+def arguments(description: str, *, optimiser: bool = True, batches: bool = False) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=description)
     p.add_argument("--configurations", nargs="*", default=list(NAMES), metavar="NAME")
     p.add_argument("--scheme", choices=sorted(SCHEMES), default="minimal")
     if optimiser:
         p.add_argument("--optimiser", choices=sorted(OPTIMISERS), default="vmcon")
+    if batches:
+        p.add_argument("--batches", nargs="*", type=int, default=[1, 16, 256, 4096], metavar="N")
     p.add_argument("--repeats", type=int, default=5, help="warm repeats to take the median of")
     return p.parse_args()
 

@@ -91,7 +91,50 @@ def main():
         lines.append(r"\hline")
     lines.append(r"\end{tabular}")
     text = "\n".join(lines) + "\n"
-    (bench.OUT / "table.tex").write_text(bench.provenance("table.py") .replace("#", "%") + "\n" + text)
+    (bench.OUT / "table.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    print(text)
+    batched(args)
+
+
+def batched(args):
+    """`out/table_batched.tex`: the block over N designs, per design -- the CPU at
+    N = 1 and at its largest batch, the GPU at 4096 and at the largest batch it took."""
+    cpu = bench.read(f"batched_{args.scheme}_cpu")
+    gpu = bench.read(f"batched_{args.scheme}_gpu")
+    if not cpu and not gpu:
+        return
+
+    def at(rows, name, arm, n=None):
+        mine = [r for r in rows if r["configuration"] == name and r["arm"] == arm]
+        if not mine:
+            return None
+        if n is None:
+            return max(mine, key=lambda r: int(r["N"]))
+        return next((r for r in mine if int(r["N"]) == n), None)
+
+    def cell(r):
+        return "--" if r is None else f"{num(r['evaluate_us_per_design'])} / {num(r['jacobian_us_per_design'])}"
+
+    lines = [
+        r"\begin{tabular}{llrrrrrr}",
+        r"machine & arm & $n$ & CPU $N{=}1$ & CPU $N{=}4096$ & GPU $N{=}4096$ & GPU largest & $N$ \\ \hline",
+        r"& & & \multicolumn{4}{c}{$\mu$s per design, evaluation / Jacobian} & \\",
+    ]
+    for name in bench.NAMES:
+        arms = [a for a in ("MDF", "IDF", "SAND") if at(cpu, name, a) or at(gpu, name, a)]
+        for i, arm in enumerate(arms):
+            top = at(gpu, name, arm)
+            lines.append(" & ".join([
+                SHORT.get(name, name) if i == 0 else "", arm,
+                (at(cpu, name, arm) or at(gpu, name, arm))["unknowns"],
+                cell(at(cpu, name, arm, 1)), cell(at(cpu, name, arm, 4096)),
+                cell(at(gpu, name, arm, 4096)), cell(top), top["N"] if top else "--",
+            ]) + r" \\")
+        if arms:
+            lines.append(r"\hline")
+    lines.append(r"\end{tabular}")
+    text = "\n".join(lines) + "\n"
+    (bench.OUT / "table_batched.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
     print(text)
 
 
