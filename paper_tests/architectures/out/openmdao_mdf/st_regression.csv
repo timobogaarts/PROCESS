@@ -1,0 +1,3 @@
+# om_mdf.py, 2026-09-21, PC-Timo (x86_64), PROCESS 3a1db1c2, cottax 6488a1c
+configuration,arm,components,design,sweeps,setup_s,cold_model_s,model_ms,totals_ms,iterations,status,driver_s,objf,max_eq,min_ie,zeroed_partials,dense_components,zeroed_sinks
+st_regression,MDF (OpenMDAO),262,14,6,77.04509420999966,16.442658726002264,59.99015700217569,96.72540099563776,11,converged,8.614618819003226,-16.588576683164522,7.614797681299024e-12,-1.8298584869569368e-10,0,5,1

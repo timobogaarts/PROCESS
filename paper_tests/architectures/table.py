@@ -94,6 +94,36 @@ def main():
     (bench.OUT / "table.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
     print(text)
     batched(args)
+    openmdao(args)
+
+
+def openmdao(args):
+    """`out/table_openmdao.tex`: the same MDF under OpenMDAO beside the port's, per
+    machine -- one converged MDA and one total Jacobian, warm, and the SLSQP run."""
+    om = by(bench.read("openmdao_mdf"), "configuration")
+    if not om:
+        return
+    it = by(bench.read(f"iteration_{args.scheme}"), "configuration", "arm")
+    sv = by(bench.read(f"solve_{args.scheme}_slsqp"), "configuration", "arm")
+    lines = [
+        r"\begin{tabular}{lrrrrrrrr}",
+        r"machine & components & \multicolumn{2}{c}{OpenMDAO: MDA / Jacobian (ms)} & SLSQP it & (s) & \multicolumn{2}{c}{port: eval / Jacobian (ms)} & SLSQP it (s) \\ \hline",
+    ]
+    for name in bench.NAMES:
+        o = om.get((name,))
+        if o is None:
+            continue
+        p_it, p_sv = it.get((name, "MDF")), sv.get((name, "MDF"))
+        lines.append(" & ".join([
+            SHORT.get(name, name), o["components"],
+            num(o["model_ms"]), num(o["totals_ms"]), str(iterations(o)), num(o["driver_s"]),
+            num(p_it["evaluate_ms"]) if p_it else "--", num(p_it["jacobian_ms"]) if p_it else "--",
+            f"{iterations(p_sv)} ({num(p_sv['warm_s'])})" if p_sv else "--",
+        ]) + r" \\")
+    lines.append(r"\end{tabular}")
+    text = "\n".join(lines) + "\n"
+    (bench.OUT / "table_openmdao.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    print(text)
 
 
 def batched(args):
