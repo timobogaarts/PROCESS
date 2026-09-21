@@ -94,7 +94,38 @@ def main():
     (bench.OUT / "table.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
     print(text)
     batched(args)
+    scaling(args)
     openmdao(args)
+
+
+def scaling(args):
+    """`out/table_scaling.tex`: wall time of one evaluation and one Jacobian of the
+    MDF block over a batch of N designs, in ms, CPU and GPU, per machine -- the
+    scaling study. `--` where the run refused (memory) or did not run."""
+    rows = {"cpu": bench.read(f"batched_{args.scheme}_cpu"), "gpu": bench.read(f"batched_{args.scheme}_gpu")}
+    ns = sorted({int(r["N"]) for rs in rows.values() for r in rs})
+    if not ns:
+        return
+    lines = [
+        r"\begin{tabular}{ll" + "r" * len(ns) + "}",
+        "machine & & " + " & ".join(f"$N={n}$" for n in ns) + r" \\ \hline",
+    ]
+    for name in bench.NAMES:
+        for platform in ("cpu", "gpu"):
+            mine = {int(r["N"]): r for r in rows[platform] if r["configuration"] == name and r["arm"] == "MDF"}
+            if not mine:
+                continue
+            for what, key in (("eval", "evaluate_ms"), ("jac", "jacobian_ms")):
+                lines.append(" & ".join([
+                    SHORT.get(name, name) if (platform, what) == ("cpu", "eval") or (platform == "gpu" and what == "eval" and not any(r["configuration"] == name for r in rows["cpu"])) else "",
+                    f"{platform.upper()} {what}",
+                    *[num(mine[n][key]) if n in mine else "--" for n in ns],
+                ]) + r" \\")
+        lines.append(r"\hline")
+    lines.append(r"\end{tabular}")
+    text = "\n".join(lines) + "\n"
+    (bench.OUT / "table_scaling.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    print(text)
 
 
 def openmdao(args):

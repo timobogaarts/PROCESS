@@ -11,7 +11,9 @@ fraction of its float32 rate).
     JAX_PLATFORMS=cpu $PY paper_tests/architectures/batched.py --configurations helias_5b
     JAX_PLATFORMS=cuda $PY paper_tests/architectures/batched.py --batches 1 16 256 4096 16384
 
-Each N is its own compilation; the time is the median of `--repeats` warm calls.
+Each N is its own compilation; the time is the median of `--repeats` warm calls. Past
+`--chunk` designs the batch is `lax.map`ped over chunks of one `vmap`, so memory is
+bounded by the chunk and N by patience alone.
 """
 
 from __future__ import annotations
@@ -71,6 +73,23 @@ def designs(x, n):
     return x[None, :] * (1.0 + 1e-3 * jnp.linspace(0.0, 1.0, n)[:, None])
 
 
+def chunked(f, chunk):
+    """`vmap(f)` over `chunk` designs at a time, `lax.map`ped over the batch: memory
+    bounded by the chunk, the per-design cost that of the vmap, any N."""
+    inner = jax.vmap(f)
+
+    def over(X):
+        n = X.shape[0]
+        if n <= chunk:
+            return inner(X)
+        full, rest = divmod(n, chunk)
+        out = jax.lax.map(inner, X[: full * chunk].reshape(full, chunk, -1))
+        out = out.reshape(full * chunk, *out.shape[2:])
+        return out if not rest else jnp.concatenate([out, inner(X[full * chunk:])])
+
+    return over
+
+
 def main():
     args = bench.arguments(__doc__, optimiser=False, batches=True)
     platform = jax.default_backend()
@@ -79,8 +98,8 @@ def main():
         live = bench.open_session(name, args)
         for arm in [a for a in live.arms if a != "MDA"]:
             f, x, block = block_of(live, arm, live.assemble(arm), args)
-            evaluate = jax.jit(jax.vmap(f))
-            jacobian = jax.jit(jax.vmap(jax.jacfwd(f)))
+            evaluate = jax.jit(chunked(f, args.chunk))
+            jacobian = jax.jit(chunked(jax.jacfwd(f), args.chunk))
             for n in args.batches:
                 X = designs(x, n)
                 try:
@@ -93,7 +112,7 @@ def main():
                     break
                 rows.append({
                     "configuration": name, "arm": arm, "platform": platform,
-                    "N": n, "unknowns": int(x.size), "block_nodes": block,
+                    "N": n, "chunk": min(n, args.chunk), "unknowns": int(x.size), "block_nodes": block,
                     "evaluate_us_per_design": 1e6 * e / n,
                     "jacobian_us_per_design": 1e6 * j / n,
                     "evaluate_ms": 1e3 * e, "jacobian_ms": 1e3 * j,
