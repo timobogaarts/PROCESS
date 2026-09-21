@@ -1,0 +1,6 @@
+# structure.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,problem,arm,nodes,cycles,cut_variables,problems,nested,steps,unknowns,objectives,equalities,inequalities
+stellarator_helias,optimise,MDA,169,3,3,5,0,158,0,0,0,0
+stellarator_helias,optimise,MDF,170,3,3,6,4,47,8,1,2,12
+stellarator_helias,optimise,IDF,170,3,3,4,2,47,11,1,5,12
+stellarator_helias,optimise,SAND,169,3,3,2,0,47,13,1,7,12

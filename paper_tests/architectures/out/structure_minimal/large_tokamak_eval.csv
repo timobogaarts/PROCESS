@@ -1,0 +1,4 @@
+# structure.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,problem,arm,nodes,cycles,cut_variables,problems,nested,steps,unknowns,objectives,equalities,inequalities
+large_tokamak_eval,root-find,MDA,275,3,5,6,0,251,0,0,0,0
+large_tokamak_eval,root-find,MDF,276,3,5,7,2,227,2,0,2,23

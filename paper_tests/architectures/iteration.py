@@ -53,6 +53,20 @@ def mda_row(live, args) -> dict:
     }
 
 
+def context_value(var, stage, seeded, cold):
+    """As `session.solve_block` closes the drive over its context: the MDA's value,
+    else the seeded one, else the file's, else zero (PROCESS's own default for a
+    quantity nothing has written)."""
+    if var in stage:
+        return stage[var]
+    if var in seeded:
+        return seeded[var]
+    try:
+        return jnp.asarray(ground_truth(cold, var))
+    except (AttributeError, KeyError):
+        return jnp.asarray(0.0)
+
+
 def optimiser_row(live, arm, build, args) -> dict:
     """One evaluation and one Jacobian of the arm's optimiser problem at its start."""
     if live.root_find:
@@ -63,10 +77,7 @@ def optimiser_row(live, arm, build, args) -> dict:
     stage = mda_env(live.reference, graph=live.machine_graph, data=cold, scheme=bench.SCHEMES[args.scheme])[1]
     seeded, _ = seed_block(schedule, drive, cold, stage, design=set())
     seeded.update(seed_starts(schedule, stage))
-    context = PathMap({
-        v: (stage[v] if v in stage else seeded.get(v, jnp.asarray(ground_truth(cold, v))))
-        for v in drive.context
-    })
+    context = PathMap({v: context_value(v, stage, seeded, cold) for v in drive.context})
     x, unravel = ravel_pytree(tuple(jnp.asarray(seeded[u]) for u in drive.unknowns))
     values, jacobian, _ = bind(drive.condition_map(context), unravel)
     _, compile_values = bench.timed(values, x)

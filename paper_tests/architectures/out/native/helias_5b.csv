@@ -1,0 +1,3 @@
+# native.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,design,constraints,pass_ms,loop_ms,gradient_ms,iterations,objf,max_eq,min_ie,convergence,solve_s
+helias_5b,3,4,18.983836002007592,38.86279899961664,399.25533600035124,4,0.7635182757593795,6.222355963814152e-12,0.07372877453187665,4.1472653622575905e-11,3.578422544997011

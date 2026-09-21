@@ -8,9 +8,11 @@ Writes `out/table.tex` (a `tabular` for `\\input`) and prints it. Columns:
     machine | arm | unknowns / conditions | block nodes | eval ms | jac ms
             | VMCON: iterations, time | SLSQP: iterations, time | objective
 
-with PROCESS's row per machine: its pass, its loop, its gradient, its iterations, its
-time, its objective. Times are warm wall-clock seconds; a status other than converged
-is written after the iteration count.
+with PROCESS's row per machine: its pass / its idempotence loop under `eval`, its
+finite-difference gradient under `jac`, its iterations, its full run under `cold`, its
+objective. `cold` includes assembly and compilation, `warm` is the same solve again;
+the `MDA` row's `eval` is one run of the analysis. A status other than converged is
+written after the iteration count.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ def num(v, digits=3):
 
 
 def iterations(row):
-    if row is None:
+    if row is None or row["status"] == "evaluated":
         return "--"
     it = row["iterations"]
     return it if row["status"] == "converged" else f"{it} ({row['status']})"
@@ -55,8 +57,8 @@ def main():
     native = by(bench.read("native"), "configuration")
 
     lines = [
-        r"\begin{tabular}{llrrrrrrrrr}",
-        r"machine & arm & $n$ / $m$ & nodes & eval (ms) & jac (ms) & VMCON it & VMCON (s) & SLSQP it & SLSQP (s) & $f^*$ \\ \hline",
+        r"\begin{tabular}{llrrrrrrrrrr}",
+        r"machine & arm & $n$ / $m$ & nodes & eval (ms) & jac (ms) & VMCON it & cold (s) & warm (s) & SLSQP it & warm (s) & $f^*$ \\ \hline",
     ]
     for name in bench.NAMES:
         arms = [a for a in bench.ARMS if (name, a) in structure]
@@ -70,8 +72,8 @@ def main():
                 it["block_nodes"],
                 num(it["evaluate_ms"]),
                 num(it["jacobian_ms"]),
-                str(iterations(v)), num(v["warm_s"]) if v else "--",
-                str(iterations(s)), num(s["warm_s"]) if s else "--",
+                str(iterations(v)), num(v["cold_s"]) if v and arm != "MDA" else "--", num(v["warm_s"]) if v and arm != "MDA" else "--",
+                str(iterations(s)), num(s["warm_s"]) if s and arm != "MDA" else "--",
                 num((v or s or {}).get("objf"), 6),
             ]) + r" \\")
         p = native.get((name,))
@@ -82,9 +84,9 @@ def main():
                 "--",
                 f"{num(p['pass_ms'])} / {num(p['loop_ms'])}",
                 num(p["gradient_ms"]),
-                p["iterations"], num(p["solve_s"]),
+                p["iterations"] if int(p["iterations"]) else "--", "--", num(p["solve_s"]),
                 "--", "--",
-                num(p["objf"], 6),
+                num(p["objf"], 6) if int(p["iterations"]) else "--",
             ]) + r" \\")
         lines.append(r"\hline")
     lines.append(r"\end{tabular}")

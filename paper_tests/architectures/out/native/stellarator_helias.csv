@@ -1,0 +1,3 @@
+# native.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,design,constraints,pass_ms,loop_ms,gradient_ms,iterations,objf,max_eq,min_ie,convergence,solve_s
+stellarator_helias,8,14,27.495352002006257,47.37299000044004,1229.536441001983,82,1.2149245752867868,4.9388937384264864e-11,-2.072286786614086e-11,5.240634012345582e-09,162.16063342800044

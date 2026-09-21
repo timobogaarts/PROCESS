@@ -1,0 +1,4 @@
+# solve.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,arm,optimiser,status,iterations,objf,max_eq,min_ie,assemble_s,cold_s,warm_s,solve_s,note
+spherical_tokamak_eval,MDA,vmcon,evaluated,0,,0.027791356950223944,-13.806617744627632,0.6853475690004416,14.694048666999151,0.046733629002119415,0.04263263599932543,
+spherical_tokamak_eval,MDF,vmcon,converged,2,,1.1553724643675878e-09,-13.759044363187051,9.679999493528157e-06,13.89324801100156,0.06526549200134468,0.01333497400264605,

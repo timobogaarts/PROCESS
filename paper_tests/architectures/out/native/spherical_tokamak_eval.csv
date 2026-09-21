@@ -1,0 +1,3 @@
+# native.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,design,constraints,pass_ms,loop_ms,gradient_ms,iterations,objf,max_eq,min_ie,convergence,solve_s
+spherical_tokamak_eval,3,18,10.016459000325995,20.139046999247512,200.88273100191145,0,0.5886069969146374,7.771561172376096e-14,-0.007040511699618168,0.0,1.0302809009990597

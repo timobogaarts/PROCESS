@@ -1,0 +1,4 @@
+# iteration.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,arm,evaluate_ms,jacobian_ms,compile_s,unknowns,block_nodes
+large_tokamak_eval,MDA,9.904137001285562,nan,8.65895159000138,0,250
+large_tokamak_eval,MDF,0.47894299859763123,0.7846539992897306,5.543288241999107,2,35

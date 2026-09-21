@@ -16,7 +16,7 @@ from cottax.core import problems  # noqa: E402
 from cottax.execution import RunnableGraph  # noqa: E402
 from cottax.execution.schedule import Schedule  # noqa: E402
 from cottax.mdao_architectures import coupled  # noqa: E402
-from cottax.pytree.problem import Equality, Inequality, Objective, condition_roles  # noqa: E402
+from cottax.pytree.problem import Equality, Inequality, Objective, condition_roles, is_optimise  # noqa: E402
 
 from functional_process.cottax.architectures.evaluate import without_excluded  # noqa: E402
 from functional_process.cottax.visualization.grouping import (  # noqa: E402
@@ -53,7 +53,7 @@ def top_of(graph) -> dict:
     """What the one outermost statement holds -- the optimiser, or an evaluation's
     root find: its unknowns and its conditions by role. Zeros where there is no single
     top (the MDA: every solve stands on its own)."""
-    top = graph.outermost_problems
+    top = [n for n in graph.outermost_problems if is_optimise(graph[n])] or list(graph.outermost_problems)
     if len(top) != 1:
         return {"unknowns": 0, "objectives": 0, "equalities": 0, "inequalities": 0}
     node = graph[top[0]]

@@ -108,21 +108,32 @@ def provenance(script: str) -> str:
             f"PROCESS {head(ROOT)}, cottax {head(Path(cottax.__file__).parents[2])}")
 
 
-def write(script: str, rows: list[dict], name: str) -> Path:
-    """`out/<name>.csv`: a provenance comment, then the rows."""
-    OUT.mkdir(exist_ok=True)
-    path = OUT / f"{name}.csv"
-    with path.open("w", newline="") as f:
-        f.write(provenance(script) + "\n")
-        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"wrote {path.relative_to(ROOT)} ({len(rows)} rows)")
-    return path
+def write(script: str, rows: list[dict], name: str) -> None:
+    """`out/<name>/<configuration>.csv`, one file per machine among `rows`: a
+    provenance comment, then its rows. A rerun of one machine replaces one file, and a
+    run is one process per machine (`run_all.sh`), since XLA's JIT on this box runs
+    out of section memory once enough programs have been compiled in one process."""
+    folder = OUT / name
+    folder.mkdir(parents=True, exist_ok=True)
+    for configuration in dict.fromkeys(r["configuration"] for r in rows):
+        mine = [r for r in rows if r["configuration"] == configuration]
+        path = folder / f"{configuration}.csv"
+        with path.open("w", newline="") as f:
+            f.write(provenance(script) + "\n")
+            writer = csv.DictWriter(f, fieldnames=list(mine[0]))
+            writer.writeheader()
+            writer.writerows(mine)
+        print(f"wrote {path.relative_to(ROOT)} ({len(mine)} rows)")
 
 
 def read(name: str) -> list[dict]:
-    path = OUT / f"{name}.csv"
-    with path.open() as f:
-        lines = [line for line in f if not line.startswith("#")]
-    return list(csv.DictReader(lines))
+    """Every machine's rows of `out/<name>/`, in `NAMES` order."""
+    rows = []
+    for configuration in NAMES:
+        path = OUT / name / f"{configuration}.csv"
+        if not path.exists():
+            continue
+        with path.open() as f:
+            lines = [line for line in f if not line.startswith("#")]
+        rows += list(csv.DictReader(lines))
+    return rows

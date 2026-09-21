@@ -1,0 +1,6 @@
+# structure.py, 2026-09-21, PC-Timo (x86_64), PROCESS 67df93e2, cottax 6488a1c
+configuration,problem,arm,nodes,cycles,cut_variables,problems,nested,steps,unknowns,objectives,equalities,inequalities
+low_aspect_ratio_DEMO,optimise,MDA,275,3,5,6,0,251,0,0,0,0
+low_aspect_ratio_DEMO,optimise,MDF,276,3,5,7,5,93,19,1,4,21
+low_aspect_ratio_DEMO,optimise,IDF,276,3,5,4,2,93,24,1,9,21
+low_aspect_ratio_DEMO,optimise,SAND,276,3,5,2,0,93,26,1,11,21
