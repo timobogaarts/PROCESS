@@ -10,7 +10,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.pytree.executable import ExecutableGraph
 from cottax.execution import RunnableGraph
 from cottax.execution.schedule import Drive, Schedule
 from cottax.pytree.graph import Graph
@@ -24,7 +23,8 @@ from cottax.pytree.problem import (
     is_fixed_point,
     is_optimise,
 )
-from cottax.pytree.rewrites import Assign, Combine, Residualise
+from cottax.mdao_architectures import SAND, Global, Mda
+from cottax.pytree.rewrites import Assign
 from cottax.pytree.spec import NodePath, VarPath
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
@@ -622,27 +622,18 @@ def array_valued_problems(graph, env, problems=None):
     )
 
 
-def sand_graph(graph, skip=(), keep=()):
-    """`graph` with every `FixedPoint` (bar `skip`/`keep`) residualised and every
-    problem (bar `keep`) combined into one `^problem.sand`.
+def sand_graph(graph, keep=()):
+    """`graph` with every statement on the optimiser's cycle (bar `keep`) residualised
+    where it has two sides and folded into the optimiser, which keeps its name:
+    `cottax.mdao_architectures.SAND`. Returns the graph and what was residualised.
+    A statement the design does not reach stays a solve of its own.
     """
-    keep = frozenset(keep)
-    plan = Plan(graph)
-    residualised = []
-    for problem in declared(graph):
-        if problem in skip or problem in keep:
-            continue
-        if not is_fixed_point(graph[problem]):
-            continue
-        plan = plan + Residualise(problem)
-        residualised.append(problem)
-    # The optimiser first: `+` concatenates and is order-preserving now (it used to
-    # absorb from whichever side it was written on), so the design variables lead the
-    # combined unknowns.
-    folding = [p for p in declared(plan.graph) if p not in keep]
-    folding.sort(key=lambda p: not is_optimise(plan.graph[p]))
-    plan = plan + Combine(NodePath((GetAttrKey("sand"),)), tuple(folding))
-    return plan.graph, tuple(residualised)
+    architecture = SAND(levels=PathMap({p: Mda for p in keep}))
+    absorbed = architecture.placed(graph)[Global]
+    residualised = tuple(
+        p for p in absorbed if any(not r.against_zero for r in graph[p].relations)
+    )
+    return (Plan(graph) + architecture).graph, residualised
 
 
 def constraints_outside_block(graph):

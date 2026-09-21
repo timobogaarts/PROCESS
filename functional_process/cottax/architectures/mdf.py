@@ -47,6 +47,7 @@ from functional_process.cottax.architectures.evaluate import (
     without_excluded,
 )
 from functional_process.cottax.architectures.mda import (
+    SCHEME,
     assign_drivers,
     cut_graph,
     default_drivers,
@@ -80,9 +81,8 @@ class Mdf:
     reported: tuple[VarPath, ...] = ()
     """Conditions assembled but **not driven**: a `RootFind`'s inequalities."""
     raw: Graph | None = None
-    """The graph before any cut, when the cut was a `recipes.Recipe` -- what `seed`
-    asks `evaluate.cold_state` about for a copy `data` has no value for. `None`
-    for `mda.cut_graph`, whose nine variables `data` always holds."""
+    """The graph before any cut -- what `seed` asks `evaluate.cold_state` about for a
+    copy `data` has no value for."""
 
 
 def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
@@ -136,10 +136,10 @@ def assemble(
     switch_values=None,
     omit=(),
     root_find=False,
-    cut=cut_graph,
+    scheme=SCHEME,
 ):
     """The whole MDF assembly: cut the raw cycles, add the conditions, build both
-    schedules. `cut` is `mda.cut_graph` or a `recipes.Recipe`.
+    schedules. `scheme` is how the cycles are opened (`mda.SCHEME`).
     """
     if root_find and n_equality != len(ixc):
         raise ValueError(
@@ -149,7 +149,7 @@ def assemble(
             f"the same non-square system, so there is nothing to root-find here"
         )
     raw = without_excluded(graph if graph is not None else graph_for())
-    driven = cut(raw)
+    driven = cut_graph(raw, scheme)
     graph, conditions, n_inequality, report = mdf_graph(
         driven,
         icc,
@@ -195,7 +195,7 @@ def assemble(
         report=report,
         problem_type='root-find' if root_find else 'optimise',
         reported=reported,
-        raw=None if cut is cut_graph else raw,
+        raw=raw,
     )
 
 
@@ -436,10 +436,10 @@ def verdict(out, kind: type[DriverReport], place: NodePath = None):
 
 
 
-def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, cut=cut_graph, **kwargs):
+def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCHEME, **kwargs):
     """MDF **stated as structure**: `ExecutableGraph(nested_inside(graph + Optimise, the Optimise))`.
     """
-    driven = cut(without_excluded(graph if graph is not None else graph_for()))
+    driven = cut_graph(without_excluded(graph if graph is not None else graph_for()), scheme)
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )

@@ -63,6 +63,7 @@ from functional_process.cottax.architectures.evaluate import (
 )
 from functional_process.cottax.architectures.mda import (
     assign_drivers,
+    SCHEME,
     cut_graph,
     default_drivers,
     guess_sources,
@@ -289,9 +290,9 @@ def close(
     raw = without_excluded(
         live.machine_graph if live.machine_graph is not None else graph_for()
     )
-    cut = cut_graph if live.cut is None else live.cut
+    scheme = SCHEME if live.scheme is None else live.scheme
     graph, _conditions, _n, report = mdf.mdf_graph(
-        cut(raw), ref.icc, ref.n_equality, ref.i_figure_merit, live.switch_values
+        cut_graph(raw, scheme), ref.icc, ref.n_equality, ref.i_figure_merit, live.switch_values
     )
     design = tuple(sand.iteration_variable_path(i) for i in ref.ixc)
     equalities = tuple(report["equalities"])
@@ -366,7 +367,7 @@ def close(
         n_equality=0,
         n_inequality=len(report["inequalities"]),
         report=report,
-        raw=None if cut is cut_graph else raw,
+        raw=raw,
     )
     return Closed(
         session=live,
@@ -418,8 +419,8 @@ def copies_from_mda(built: Closed, env) -> dict:
     KeyError
         If `env` lacks one of the MDA's inputs.
     """
-    cut = cut_graph if built.session.cut is None else built.session.cut
-    _driven, _runnable, schedule, run = mda_schedule(built.session.machine_graph, cut)
+    scheme = SCHEME if built.session.scheme is None else built.session.scheme
+    _driven, _runnable, schedule, run = mda_schedule(built.session.machine_graph, scheme)
     closing = set(built.closing)
     at_port = {var: built.start_port(var) for var in closing}
     inputs = {}

@@ -85,7 +85,7 @@ def _same(a, b, rtol=1e-10):
 @pytest.fixture(scope="module")
 def live():
     """The configuration, opened once for the module."""
-    return session.open_session(NAME)
+    return session.open_session(NAME, scheme=mda.HAND)   # the OUU line: `stages.KINDS` names the hand cuts' leaves
 
 
 @pytest.fixture(scope="module")
@@ -270,7 +270,7 @@ def test_every_other_output_is_the_unlifted_ones(closed, primed, lifted_run):
 @pytest.fixture(scope="module")
 def runnable():
     """The driven MDA graph `test_stages.py` measures (154 nodes), and it lifted."""
-    graph = mda.driven_graph(without_excluded(graph_for(load(NAME).machine)))
+    graph = mda.driven_graph(without_excluded(graph_for(load(NAME).machine)), mda.HAND)
     return graph, lift_winding_pack(graph)[0]
 
 

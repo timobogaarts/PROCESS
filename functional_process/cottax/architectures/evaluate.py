@@ -33,13 +33,14 @@ from cottax.execution.crossings import get_at
 
 from functional_process.cottax.architectures.drivers import SweepDriver
 from functional_process.cottax.architectures.mda import (
+    SCHEME,
     assign_drivers,
     cut_graph,
     default_drivers,
     given_start,
     guess_sources,
 )
-from functional_process.cottax.architectures.recipes import recipe
+from cottax.mdao_architectures import GaussSeidel
 from functional_process.cottax.input.indat import STATED_VALUES, graph_for
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -225,19 +226,19 @@ def strongly_typed(value):
 # ---------------------------------------------------------------- the MDA
 
 _MDA_SCHEDULES: dict = {}
-"""`(graph, cut) -> (driven, runnable, schedule, run)`, built once per key."""
+"""`(graph, scheme) -> (driven, runnable, schedule, run)`, built once per key."""
 
 
-def mda_schedule(graph=None, cut=cut_graph):
+def mda_schedule(graph=None, scheme=SCHEME):
     """`(driven, runnable, schedule, run)` for `graph` -- the MDA, assembled once.
 
-    `cut` turns the raw graph into one with a problem on every cycle: `mda.cut_graph`
-    (the hand-measured cuts) by default, or a `recipes.Recipe`.
+    `scheme` opens the raw graph's cycles and closes each with a consistency statement
+    (`cottax.mdao_architectures`): `mda.SCHEME` by default.
     """
-    key = (graph if graph is not None else graph_for(), cut)
+    key = (graph if graph is not None else graph_for(), scheme)
     cached = _MDA_SCHEDULES.get(key)
     if cached is None:
-        driven = cut(without_excluded(key[0]))
+        driven = cut_graph(without_excluded(key[0]), scheme)
         runnable = assign_drivers(driven, default_drivers(driven))
         schedule = Schedule(RunnableGraph(runnable))
         cached = _MDA_SCHEDULES[key] = (
@@ -406,16 +407,16 @@ def _driven_runner(step, fuse_upstream=True):
     return run
 
 
-def mda_env(reference, graph=None, data=None, cut=cut_graph):
+def mda_env(reference, graph=None, data=None, scheme=SCHEME):
     """Run the plain MDA schedule seeded from `data` (default `reference.data`); return
     its output env.
     """
     data = reference.data if data is None else data
-    driven, runnable, schedule, run = mda_schedule(graph, cut)
+    driven, runnable, schedule, run = mda_schedule(graph, scheme)
     # Seeded over the schedule's own inputs, which is where `Assign` minted each
-    # driver's `^guess.*` port; a guess port is grounded from the unknown it starts.
-    cold = None if cut is cut_graph else cold_state(data, graph)
-    env = seed_env(data, schedule, runnable, cold)
+    # driver's `^guess.*` port; a guess port is grounded from the unknown it starts,
+    # and a copy `data` has no value for from one cold pass of the graph.
+    env = seed_env(data, schedule, runnable, cold_state(data, graph))
     return driven, dict(run(PathMap(env)))
 
 
@@ -468,10 +469,9 @@ _COLD_SHAPES: dict = {}
 
 
 def cold_shapes(data, graph=None) -> dict:
-    """`{variable: ShapeDtypeStruct}` for every value the hand-cut MDA computes, by
-    `jax.eval_shape` -- traced, never run. **What a recipe's cut copy is shaped like**:
-    `mda.cut_graph`'s nine variables are all PROCESS quantities `data` holds, but a
-    recipe cuts port-internal ones too (`.physics.nd_plasma_electron_profile` is a
+    """`{variable: ShapeDtypeStruct}` for every value the MDA computes, by
+    `jax.eval_shape` -- traced, never run. **What a cut copy is shaped like**: a scheme
+    cuts port-internal variables too (`.physics.nd_plasma_electron_profile` is a
     201-point profile PROCESS never names), and a Picard refuses a scalar guess for an
     array unknown. Cached per graph.
     """
@@ -490,7 +490,7 @@ _COLD_STATES: dict = {}
 
 def cold_state(data, graph=None) -> dict:
     """`{variable: value}` after **one pass of the graph in binding order** -- what a
-    recipe's cut copies start from.
+    scheme's cut copies start from.
 
     PROCESS starts a solve the same way: every model reads what the models before it
     in call order just wrote and a data-structure default for anything after it. Said
@@ -503,7 +503,7 @@ def cold_state(data, graph=None) -> dict:
     key = graph if graph is not None else graph_for()
     cached = _COLD_STATES.get(key)
     if cached is None:
-        sweep = recipe("gauss_seidel")(without_excluded(key))
+        sweep = cut_graph(without_excluded(key), GaussSeidel())
         drivers = default_drivers(sweep)
         for problem in list(drivers):
             if is_fixed_point(sweep[problem]):

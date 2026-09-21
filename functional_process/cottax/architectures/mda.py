@@ -1,11 +1,9 @@
 """Turning `indat.GRAPH` into something that can actually be run."""
 
 import jax.numpy as jnp
-from cottax.pytree.executable import ExecutableGraph
 from cottax.execution import RunnableGraph
 from cottax.execution.schedule import Schedule
 from cottax.pytree.graph import Graph
-from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.pytree.names import PathMap
 from cottax.pytree.problem import (
     ConditionalNode,
@@ -17,9 +15,9 @@ from cottax.pytree.problem import (
     is_root_find,
     unknowns_of,
 )
-from cottax.pytree.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
-from cottax.pytree.spec import NodePath, VarPath
-from jax.tree_util import GetAttrKey
+from cottax.mdao_architectures import GaussSeidelMinimal, Scheme, coupling_reads
+from cottax.pytree.plan import Plan
+from cottax.pytree.rewrites import Assign, Cut, Supply, Undrive
 
 from functional_process.cottax.architectures.drivers import (
     PicardDriver,
@@ -27,136 +25,57 @@ from functional_process.cottax.architectures.drivers import (
     VmconDriver,
 )
 from functional_process.cottax.input.indat import GRAPH
-from functional_process.cottax.paths import (
-    fwbs,
-    pf_coil,
-    physics,
-    tfcoil,
-    times,
-    written,
-)
+from functional_process.cottax.paths import written
 from functional_process.cottax.queries import declared
 
-CUTS = (
-    resolve(physics.proton_rate_density, VarPath),
-    resolve(physics.fusden_alpha_total, VarPath),
-    resolve(physics.f_temp_plasma_electron_density_vol_avg, VarPath),
-    resolve(fwbs.f_ster_div_single, VarPath),
-    resolve(tfcoil.dx_tf_wp_primary_toroidal, VarPath),
-    resolve(times.t_plant_pulse_burn, VarPath),
-    resolve(pf_coil.ind_pf_cs_plasma_mutual, VarPath),
-    resolve(pf_coil.n_pf_coil_turns, VarPath),
-    resolve(tfcoil.dr_tf_plasma_case, VarPath),
-)
-"""The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`."""
-
-
-def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
-    """The `FixedPointCut`s `cut_graph` applies to `graph`, in order: one per raw cycle
-    of `CUTS` that actually exists in `graph`. Exposed so that a caller can *see* the
-    recipe (`Plan(graph) + op + ...`) rather than only its result.
+class Tabled(Scheme):
+    """A scheme from a table: on each cycle, the variables of `places` owned there,
+    cut for every reader on the cycle. The hand-measured nine of `HAND` are kept for
+    the OUU line, whose stage tables (`stages.KINDS`) name the leaves they mint.
     """
-    # Cuts are grouped by the cycle they break, and each group becomes **one**
-    # `FixedPointCut` -- i.e. one `FixedPoint` problem over however many unknowns that
-    # cycle needed. Applying them one at a time instead mints one problem per cut, and
-    # `ExecutableGraph` then refuses the block outright: *"declares several problems --
-    # one driver answers one problem, so `Combine` them into a single problem over
-    # every unknown, or `Nest` the others inside one of them. Which is a modelling
-    # decision"*. It is,
-    # and this is the decision: PROCESS iterates its whole pipeline to idempotence, so
-    # the two cut variables of the density/fusion cycle are two unknowns of one Picard
-    # iteration, not two nested loops.
-    #
-    # Every `closing_readers` call is made on the **uncut** graph, before any of the
-    # group is applied, so the readers a cut re-routes are the ones the original cycle
-    # had rather than ones a sibling cut already moved.
-    by_cycle: dict = {}
-    cycles = [frozenset(c) for c in graph.graph.cycles]
-    statements = frozenset(declared(graph))
-    for var in CUTS:
-        if var not in graph.graph.owners:
-            # Not produced in this configuration at all -- `closing_readers` refuses
-            # an unowned variable outright, and unowned is the strongest form of "no
-            # cycle to cut here": `.times.t_plant_pulse_burn` is a *plain boundary
-            # input* of the stellarator graph (its producer, `.tokamak.pulse.
-            # burn_time`, is a tokamak node), where `dx_tf_wp_primary_toroidal` is
-            # merely acyclic there.
-            continue
-        readers = graph.graph.closing_readers(var)
-        if not readers:
-            continue  # this cycle does not exist in this configuration
-        owner = graph.graph.owners[var]
-        key = next((i for i, c in enumerate(cycles) if owner in c), var)
-        if key is not var and any(n in statements for n in cycles[key]):
-            # **The SCC already declares its own problem, so it needs no cut.**
-            # `ExecutableGraph` allows a block exactly one problem -- *"one driver
-            # answers one problem, so `Combine` them into a single problem over every
-            # unknown, or `Nest` the others inside one of them"* -- and `cut_graph`'s
-            # whole job is to give a
-            # problem to an SCC that has none. Where a `FixedPointFunction`'s declared
-            # self-loop already sits inside the SCC, that job is done: the self-loop's
-            # driver re-runs every other node of the block on each iterate, which is
-            # exactly what a cut here would buy. Adding one anyway mints a *second*
-            # problem in the same block and `ExecutableGraph` refuses it outright.
-            #
-            # This is the same shape as the `closing_readers` skip above -- a cut
-            # applies where the cycle it names actually needs breaking -- and it is what
-            # lets `.tfcoil.dr_tf_plasma_case` be one table entry serving every machine:
-            # on `st_regression.IN.DAT` the TF case slot is `DrTfPlasmaCaseFromFraction`
-            # (an `ExplicitFunction`, no loop) and the three-node SCC has no problem, so
-            # the cut lands; on `large_tokamak_nof`/`_eval`/`low_aspect_ratio_DEMO` the
-            # slot is `DrTfPlasmaCaseFromInput` (a `FixedPointFunction`) and its
-            # `^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case` is in the
-            # SCC, so the cut is skipped and those three graphs are bit-for-bit what they
-            # were. Measured: without this guard all three raise *"declares 2
-            # problems"*.
-            continue
-        by_cycle.setdefault(key, []).append(Cut(var=var, readers=readers))
-    ops = []
-    for cuts in by_cycle.values():
-        # One cut keeps its historical name (`^problem.physics.proton_rate_density`);
-        # several need an explicit `place`, since no single variable names what closes
-        # them. Named after the first cut's own place with a `.cycle` component, which
-        # is unique (a variable is cut at most once) and reads as what it is:
-        # `^problem.physics.proton_rate_density.cycle`.
-        place = (
-            None
-            if len(cuts) == 1
-            else NodePath((*cuts[0].var.segments, GetAttrKey("cycle")))
+
+    places: tuple = ()
+
+    def cuts(self, graph, cycle):
+        named = set(self.places)
+        return tuple(
+            Cut(var, readers, self.mint_key)
+            for var, readers in coupling_reads(graph, cycle).items()
+            if var.spelling in named
         )
-        ops.append(FixedPointCut(tuple(cuts), place=place))
-    return tuple(ops)
+
+    def __repr__(self) -> str:
+        return f"tabled({len(self.places)} places)"
 
 
-def cut_graph(graph=GRAPH):
-    """`graph` (default: `indat.GRAPH`, the default-configuration graph), with every raw
-    cycle in `CUTS` that actually exists in `graph` cut into a declared `FixedPoint`
-    problem -- `cut_ops(graph)`, applied.
+HAND = Tabled(places=(
+    ".physics.proton_rate_density",
+    ".physics.fusden_alpha_total",
+    ".physics.f_temp_plasma_electron_density_vol_avg",
+    ".fwbs.f_ster_div_single",
+    ".tfcoil.dx_tf_wp_primary_toroidal",
+    ".times.t_plant_pulse_burn",
+    ".pf_coil.ind_pf_cs_plasma_mutual",
+    ".pf_coil.n_pf_coil_turns",
+    ".tfcoil.dr_tf_plasma_case",
+))
+"""The nine variables cut by hand before the schemes, chosen so that one Picard iterate
+is one PROCESS pass. Not the default: `stages.KINDS` is written against them."""
+
+SCHEME = GaussSeidelMinimal()
+"""How the raw graph's cycles are opened: a Gauss-Seidel sweep of each cycle in the
+order that cuts the fewest variables, one consistency statement per cycle
+(`cottax.mdao_architectures`). One Picard iterate of a cycle is then one sweep of it
+in that order, which is how PROCESS's own idempotence loop runs."""
+
+
+def cut_graph(graph=GRAPH, scheme=SCHEME):
+    """`graph` (default: `indat.GRAPH`, the default-configuration graph) with every
+    cycle opened by `scheme` and closed by a consistency statement of its own -- a
+    `FixedPoint` over the copies, under `^mda`, with no driver yet. `Plan(graph) +
+    scheme` is the same graph with the op recorded.
     """
-    for op in cut_ops(graph):
-        graph = op.apply(graph)
-
-    # Every problem gets `Start` ports, one per unknown, read from `^guess.<place>`.
-    #
-    # `cottax.execution.schedule.AbstractDriver` takes its starting values as *declared driver
-    # data* rather than reading them off the unknowns' own names: `Drive.role_data`
-    # walks the driver's `requires` and looks up the ports the problem declares, and
-    # `Drive.__check_init__` refuses both directions -- a driver requiring a kind the
-    # problem lacks, and a kind declared but not consumed. Every driver this port
-    # **The driver is part of the graph now.** `Assign` retypes each problem into a
-    # `Driven` -- problem plus algorithm -- and *mints* the ports that algorithm needs
-    # from its own `requires`: a Newton wants a `Start`, so `^guess.<place>` appears per
-    # unknown; a Picard wants nothing and nothing appears. That is one op where this used
-    # to need two (`Initialise` to declare the ports, then a separate `{problem: driver}`
-    # map handed to `schedule_for`), and it removes the failure mode between them --
-    # ports declared before the algorithm was known could be required-but-undeclared or
-    # declared-but-unconsumed, and both are now unrepresentable rather than refused.
-    #
-    # It stays here rather than in `schedule()` because the minted ports are real
-    # boundary inputs: a caller measuring this graph's boundary, or drawing it, must see
-    # them. Assigning is a modelling decision and is recorded in `Plan.ops` like any
-    # other, so it survives `subgraph`/`prune` without a side table.
-    return graph
+    return (Plan(graph) + scheme).graph
 
 
 def starts_for(graph, problem):
@@ -269,9 +188,9 @@ def _root_find_seed(conditions):
     )
 
 
-def driven_graph(graph=GRAPH, **driver_options):
+def driven_graph(graph=GRAPH, scheme=SCHEME, **driver_options):
     """`cut_graph` with an algorithm attached to every problem: the runnable graph."""
-    graph = cut_graph(graph)
+    graph = cut_graph(graph, scheme)
     return assign_drivers(graph, default_drivers(graph, **driver_options))
 
 

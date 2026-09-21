@@ -6,10 +6,13 @@ from PROCESS), with one *arm* per architecture:
 
 | arm    | recipe                                    | solved by                |
 |--------|-------------------------------------------|--------------------------|
-| `MDA`  | `mda.cut_graph` + `mda.default_drivers`   | the MDF's inner schedule |
-| `MDF`  | `mdf.assemble`                            | `mdf.solve`              |
-| `IDF`  | `idf.idf_graph` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
-| `SAND` | `sand.assemble` + `sand.sand_schedule`    | `evaluate.run_schedule`  |
+| `MDA`  | `mda.cut_graph` + `mda.default_drivers`   | the cut graph with the condition nodes, once |
+| `MDF`  | `sand.optimise_graph` + `MDF()`           | `evaluate.run_schedule`  |
+| `IDF`  | `idf.idf_graph` (`IDF()`)                 | `evaluate.run_schedule`  |
+| `SAND` | `sand.assemble` (`SAND()`)                | `evaluate.run_schedule`  |
+
+A root-find configuration's `MDF` is `mdf.assemble(root_find=True)`'s in-graph root
+find, solved by `mdf.in_graph_solve`.
 
 Each arm is assembled on its first call (`Session.assemble`, which a caller may
 make itself to take the build without solving) and only solved on the next. Every solve
@@ -32,6 +35,8 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+from cottax.mdao_architectures import MDF
+from cottax.pytree.plan import Plan
 from cottax.pytree.problem import Driven
 from jax.flatten_util import ravel_pytree
 
@@ -181,14 +186,14 @@ class BlockBuild:
     design_paths: set
     shape: dict = field(default_factory=dict)
     omitted: object = None
-    cut: object = None
+    scheme: object = None
     nested: bool = False
     """IDF: the disciplines' own problems are nested inside the block, and their
     `Start` ports are seeded from the MDA too."""
 
 
-def build_mdf(reference, machine_graph, switch_values, root_find=False, cut=None):
-    """Assemble the MDF arm. `cut=None` is `mda.cut_graph`."""
+def build_mdf(reference, machine_graph, switch_values, root_find=False, scheme=None):
+    """Assemble the MDF arm. `scheme=None` is `mda.SCHEME`."""
     problem = mdf.assemble(
         reference.ixc,
         reference.icc,
@@ -197,7 +202,7 @@ def build_mdf(reference, machine_graph, switch_values, root_find=False, cut=None
         graph=machine_graph,
         switch_values=switch_values,
         root_find=root_find,
-        **({} if cut is None else {"cut": cut}),
+        **({} if scheme is None else {"scheme": scheme}),
     )
     shape = mdf.mdf_shape(problem)
     build = MdfBuild(
@@ -298,7 +303,7 @@ def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
     return result
 
 
-def _block_build(combined, reference, env, optimiser, omitted, cut, nested):
+def _block_build(combined, reference, env, optimiser, omitted, scheme, nested):
     """The solve schedule for one combined problem, its driver recording into `trace`."""
     schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
     shape = sand.sand_shape(schedule)
@@ -327,28 +332,52 @@ def _block_build(combined, reference, env, optimiser, omitted, cut, nested):
             "driven": shape["unknowns"],
         },
         omitted=omitted,
-        cut=cut,
+        scheme=scheme,
         nested=nested,
     )
 
 
-def build_sand(reference, machine_graph, switch_values, optimiser=None, cut=None):
-    """Assemble the SAND arm. `cut=None` is `mda.cut_graph`."""
+def build_sand(reference, machine_graph, switch_values, optimiser=None, scheme=None):
+    """Assemble the SAND arm. `scheme=None` is `mda.SCHEME`."""
     driven, env = mda_env(
-        reference, graph=machine_graph, **({} if cut is None else {"cut": cut})
+        reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
     )
     combined, report = sand.assemble(
-        reference, driven, env, switch_values=switch_values, drop_arrays=cut is None
+        reference, driven, env, switch_values=switch_values, drop_arrays=False
     )
     return _block_build(
-        combined, reference, env, optimiser, report["omitted"], cut, nested=False
+        combined, reference, env, optimiser, report["omitted"], scheme, nested=False
     )
 
 
-def build_idf(reference, machine_graph, switch_values, optimiser=None, cut=None):
-    """Assemble the IDF arm. `cut=None` is `mda.cut_graph`."""
+def build_mdf_block(reference, machine_graph, switch_values, optimiser=None, scheme=None):
+    """Assemble the MDF arm **in the graph**: the cut MDA, the constraint and
+    objective nodes and the `Optimise`, then `cottax.mdao_architectures.MDF` -- every
+    consistency statement nested in the optimiser, every model's own solve inside
+    the consistency statement on its cycle. Solved as IDF and SAND are, by
+    `solve_block`, so the three arms differ in the architecture and nothing else.
+    """
+    driven, env = mda_env(
+        reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
+    )
+    with_problem, _optimiser, report = sand.optimise_graph(
+        driven,
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        switch_values=switch_values,
+    )
+    nested = (Plan(with_problem) + MDF()).graph
+    return _block_build(
+        nested, reference, env, optimiser, report["omitted"], scheme, nested=True
+    )
+
+
+def build_idf(reference, machine_graph, switch_values, optimiser=None, scheme=None):
+    """Assemble the IDF arm. `scheme=None` is `mda.SCHEME`."""
     _driven, env = mda_env(
-        reference, graph=machine_graph, **({} if cut is None else {"cut": cut})
+        reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
     )
     combined, _problem, report = idf.idf_graph(
         machine_graph if machine_graph is not None else graph_for(),
@@ -357,10 +386,10 @@ def build_idf(reference, machine_graph, switch_values, optimiser=None, cut=None)
         reference.n_equality,
         reference.i_figure_merit,
         switch_values=switch_values,
-        **({} if cut is None else {"cut": cut}),
+        **({} if scheme is None else {"scheme": scheme}),
     )
     return _block_build(
-        combined, reference, env, optimiser, report["omitted"], cut, nested=True
+        combined, reference, env, optimiser, report["omitted"], scheme, nested=True
     )
 
 
@@ -377,7 +406,7 @@ def solve_block(build: BlockBuild, reference, machine_graph, cold) -> dict:
         reference,
         graph=machine_graph,
         data=cold,
-        **({} if build.cut is None else {"cut": build.cut}),
+        **({} if build.scheme is None else {"scheme": build.scheme}),
     )[1]
     seeded, _borrowed = seed_block(
         solve_schedule, solve_drive, cold, stage_env, design=design_paths
@@ -466,9 +495,9 @@ class Session:
     """The driver **class** every `Optimise` in this session is answered by, or `None`
     for `mda.default_drivers`' own choice.
     """
-    cut: object = None
-    """How the raw graph's cycles are cut: `None` for `mda.cut_graph`'s hand-measured
-    table, or a `recipes.Recipe` (`jacobi`, `gauss_seidel`, `gauss_seidel_minimal`).
+    scheme: object = None
+    """How the raw graph's cycles are opened: `None` for `mda.SCHEME`, or any
+    `cottax.mdao_architectures.Scheme` (`Jacobi`, `GaussSeidel`, `GaussSeidelMinimal`).
     """
     builds: dict = field(default_factory=dict)
 
@@ -490,10 +519,11 @@ class Session:
             )
 
     def assemble(self, arm: str):
-        """The assembled `arm`, nothing solved: the `MdfBuild` (`MDA` and `MDF` share
-        it, under the key `"MDF"` in `builds`) or the `BlockBuild` (`IDF`, `SAND`),
-        built on the first call and kept in `builds` -- what `solve` runs, and what
-        a caller that wants the block itself (its schedule, its drive) takes.
+        """The assembled `arm`, nothing solved: the `MdfBuild` for `MDA` (the cut
+        MDA with the condition nodes, run once -- and the root-find `MDF` of a
+        configuration stating one), or the `BlockBuild` for `MDF`, `IDF` and `SAND` --
+        one optimiser in the graph, the architecture around it. Built on the first
+        call and kept in `builds`.
 
         Raises
         ------
@@ -501,25 +531,25 @@ class Session:
             If `arm` is not one of `Session.arms`.
         """
         self._check_arm(arm)
-        key = "MDF" if arm in {"MDA", "MDF"} else arm
+        key = "MDA" if arm == "MDA" or self.root_find else arm
         build = self.builds.get(key)
         if build is None:
-            if key == "MDF":
+            if key == "MDA":
                 build = build_mdf(
                     self.reference,
                     self.machine_graph,
                     self.switch_values,
                     root_find=self.root_find,
-                    cut=self.cut,
+                    scheme=self.scheme,
                 )
             else:
-                builder = build_sand if key == "SAND" else build_idf
+                builder = {"MDF": build_mdf_block, "IDF": build_idf, "SAND": build_sand}[key]
                 build = builder(
                     self.reference,
                     self.machine_graph,
                     self.switch_values,
                     optimiser=self.optimiser,
-                    cut=self.cut,
+                    scheme=self.scheme,
                 )
             self.builds[key] = build
         return build
@@ -537,7 +567,7 @@ class Session:
         cold = self.reference.cold if cold is None else cold
         if arm == "MDA":
             return solve_mda(build, cold)
-        if arm == "MDF":
+        if self.root_find:
             return solve_mdf(build, self.reference, cold, optimiser=self.optimiser)
         return solve_block(build, self.reference, self.machine_graph, cold)
 
@@ -558,7 +588,7 @@ class Session:
         return self.solve("SAND", cold)
 
 
-def open_session(configuration, optimiser=None, cut=None) -> Session:
+def open_session(configuration, optimiser=None, scheme=None) -> Session:
     """A `Session` for one configuration -- a `configurations.Configuration`, a name
     from `configurations.NAMES`, or an `IN.DAT` path (converted on the way in) --
     assembled from it alone, nothing solved.
@@ -578,5 +608,5 @@ def open_session(configuration, optimiser=None, cut=None) -> Session:
         switch_values=dict(configuration.problem.switches),
         root_find=configuration.problem.root_find,
         optimiser=optimiser,
-        cut=cut,
+        scheme=scheme,
     )

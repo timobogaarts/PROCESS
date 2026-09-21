@@ -37,7 +37,7 @@ from cottax.pytree.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
 from functional_process.configurations import kinds
-from functional_process.cottax.architectures import beliefs, ouu, session
+from functional_process.cottax.architectures import beliefs, mda, ouu, session
 from functional_process.cottax.architectures.drivers import (
     BOXED_CONVERGED,
     BoxedSlsqpDriver,
@@ -70,7 +70,7 @@ def _rel(a, b):
 @pytest.fixture(scope="module")
 def live():
     """The configuration, opened once for the module."""
-    return session.open_session(NAME)
+    return session.open_session(NAME, scheme=mda.HAND)   # the OUU line: `stages.KINDS` names the hand cuts' leaves
 
 
 @pytest.fixture(scope="module")
@@ -147,7 +147,7 @@ def test_assembly_has_the_shape_the_handoff_states(model):
         if step.problem != model.place
     ]
     assert len(others) == 4
-    assert "^problem.physics.proton_rate_density.cycle" in others
+    assert "^mda.physics.fusden_alpha_total.mda" in others      # the density cycle's statement
     assert all(
         not step.reports
         for step in ouu.driven_problems(model.recourse)
