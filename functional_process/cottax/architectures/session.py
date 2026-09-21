@@ -61,12 +61,6 @@ from functional_process.cottax.input.indat import configuration_from_indat, grap
 
 ARMS = ("MDA", "MDF", "IDF", "SAND")
 
-MDF_MAX_ITER = 800
-"""`VmconDriver.max_iter` for the MDF arm."""
-
-MDF_TOLERANCE = 1.0e-8
-"""`VmconDriver.tolerance` for the MDF arm."""
-
 SAND_MAX_ITER = 500
 """SQP iterations the SAND and IDF arms allow themselves."""
 
@@ -253,51 +247,29 @@ def solve_mda(build: MdfBuild, cold) -> dict:
     return result
 
 
-def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
-    """Solve an assembled MDF arm from `cold`."""
-    problem, root_find = build.problem, build.root_find
+def solve_root_find(build: MdfBuild, cold) -> dict:
+    """Solve a root-find configuration's `MDF` arm from `cold`: PROCESS's own square
+    system, the root find stated in the graph (`mdf.in_graph_root_find`)."""
+    problem = build.problem
     result = _blank(build.shape)
     env = mdf.seed(problem, cold)
     env, _primed = mdf.prime(problem, env)
-    if root_find:
-        built = build.in_graph
-        x, out, seconds = mdf.in_graph_solve(built, env)
-        steps = int(np.asarray(built.steps(out)))
-        converged = bool(np.asarray(built.successful(out)))
-        residuals = [float(np.asarray(out[c])) for c in problem.conditions]
-        # PROCESS's own last act in this mode: every inequality evaluated once at the
-        # answer, none of them driven.
-        inequalities = [float(np.asarray(out[c])) for c in problem.reported]
-        result.update(
-            iterations=steps,
-            objf=None,
-            max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
-            min_ie=min(inequalities) if inequalities else None,
-            status="converged" if converged else "not-converged",
-            seconds=seconds,
-            note="" if converged else f"root find: {mdf.verdict(out, mdf.Status)}",
-            x=tuple(float(np.asarray(v)) for v in x),
-        )
-        return result
-    trace: list = []
-    x, _out, seconds = mdf.solve(
-        problem,
-        env,
-        bounds=reference.bounds,
-        callback=recorder(trace),
-        tolerance=MDF_TOLERANCE,
-        max_iter=MDF_MAX_ITER,
-        **({} if optimiser is None else {"optimiser": optimiser}),
-    )
-    iterations, objf, max_eq, min_ie = trace_tail(trace)
+    built = build.in_graph
+    x, out, seconds = mdf.in_graph_solve(built, env)
+    steps = int(np.asarray(built.steps(out)))
+    converged = bool(np.asarray(built.successful(out)))
+    residuals = [float(np.asarray(out[c])) for c in problem.conditions]
+    # PROCESS's own last act in this mode: every inequality evaluated once at the
+    # answer, none of them driven.
+    inequalities = [float(np.asarray(out[c])) for c in problem.reported]
     result.update(
-        iterations=iterations,
-        objf=objf,
-        max_eq=max_eq,
-        min_ie=min_ie,
-        status=_status(trace, MDF_TOLERANCE, MDF_MAX_ITER),
+        iterations=steps,
+        objf=None,
+        max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
+        min_ie=min(inequalities) if inequalities else None,
+        status="converged" if converged else "not-converged",
         seconds=seconds,
-        note="" if trace else "first QP infeasible -- the start came back untouched",
+        note="" if converged else f"root find: {mdf.verdict(out, mdf.Status)}",
         x=tuple(float(np.asarray(v)) for v in x),
     )
     return result
@@ -568,7 +540,7 @@ class Session:
         if arm == "MDA":
             return solve_mda(build, cold)
         if self.root_find:
-            return solve_mdf(build, self.reference, cold, optimiser=self.optimiser)
+            return solve_root_find(build, cold)
         return solve_block(build, self.reference, self.machine_graph, cold)
 
     def mda(self, cold=None) -> dict:

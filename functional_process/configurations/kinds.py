@@ -310,13 +310,9 @@ KINDS: dict[str, Kind] = {
     ".vacuum.pres_div_chamber_burn": Kind.OPERATING,
     ".vacuum.pres_vv_chamber_base": Kind.OPERATING,
 
-    # -- numerics, switches, solver starts, pins and inert tokamak-only reads (section 3.4)
-    "^guess.fwbs.f_ster_div_single": Kind.NUMERICS,
-    "^guess.physics.fusden_alpha_total": Kind.NUMERICS,
-    "^guess.physics.proton_rate_density": Kind.NUMERICS,
-    "^guess.physics.temp_plasma_ion_vol_avg_kev": Kind.NUMERICS,
-    "^guess.power.delta_eta": Kind.NUMERICS,
-    "^guess.vacuum.d_duct": Kind.NUMERICS,
+    # -- numerics, switches, pins and inert tokamak-only reads (section 3.4). A solver's
+    # start (`^guess.*`) is numerics by kind, whichever variable the scheme cut
+    # (`stages.leaves`), so none is listed.
     ".costs.ifueltyp": Kind.NUMERICS,
     ".costs.ireactor": Kind.NUMERICS,
     ".costs.lsa": Kind.NUMERICS,

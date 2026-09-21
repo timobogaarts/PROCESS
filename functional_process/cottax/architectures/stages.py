@@ -57,6 +57,14 @@ from functional_process.configurations.kinds import (
     Kind,
 )
 from functional_process.cottax.architectures.evaluate import inputs_only, run_schedule
+from cottax.pytree.names import is_minted
+from cottax.pytree.problem import Start
+
+
+def is_start(v) -> bool:
+    """A `Start` datum: minted in the namespace `Assign` puts a solver's start in."""
+    return is_minted(v) and v.segments[0] == Start.mint_key
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -134,9 +142,14 @@ def leaves(
     ------
     KeyError
         If a boundary input of `graph` is not in `kinds` at all: the sort is a
-        hand-made table and a leaf it does not know has no stage.
+        hand-made table and a leaf it does not know has no stage. A `^guess.*` leaf
+        is numerics without a row.
     """
     inputs = graph.graph.boundary_inputs
+    # A solver's start (`^guess.<place>`, a `Start` datum `Assign` minted) is never a
+    # decision, whichever variable a scheme happened to cut: numerics, by kind, so the
+    # table need not name a leaf per cut.
+    kinds = {**{v.spelling: Kind.NUMERICS for v in inputs if is_start(v)}, **kinds}
     if unknown := [v.spelling for v in inputs if v.spelling not in kinds]:
         raise KeyError(
             f"{len(unknown)} boundary input(s) have no kind in the table, starting "

@@ -15,9 +15,9 @@ from cottax.pytree.problem import (
     is_root_find,
     unknowns_of,
 )
-from cottax.mdao_architectures import GaussSeidelMinimal, Scheme, coupling_reads
+from cottax.mdao_architectures import GaussSeidelMinimal
 from cottax.pytree.plan import Plan
-from cottax.pytree.rewrites import Assign, Cut, Supply, Undrive
+from cottax.pytree.rewrites import Assign, Supply, Undrive
 
 from functional_process.cottax.architectures.drivers import (
     PicardDriver,
@@ -27,40 +27,6 @@ from functional_process.cottax.architectures.drivers import (
 from functional_process.cottax.input.indat import GRAPH
 from functional_process.cottax.paths import written
 from functional_process.cottax.queries import declared
-
-class Tabled(Scheme):
-    """A scheme from a table: on each cycle, the variables of `places` owned there,
-    cut for every reader on the cycle. The hand-measured nine of `HAND` are kept for
-    the OUU line, whose stage tables (`stages.KINDS`) name the leaves they mint.
-    """
-
-    places: tuple = ()
-
-    def cuts(self, graph, cycle):
-        named = set(self.places)
-        return tuple(
-            Cut(var, readers, self.mint_key)
-            for var, readers in coupling_reads(graph, cycle).items()
-            if var.spelling in named
-        )
-
-    def __repr__(self) -> str:
-        return f"tabled({len(self.places)} places)"
-
-
-HAND = Tabled(places=(
-    ".physics.proton_rate_density",
-    ".physics.fusden_alpha_total",
-    ".physics.f_temp_plasma_electron_density_vol_avg",
-    ".fwbs.f_ster_div_single",
-    ".tfcoil.dx_tf_wp_primary_toroidal",
-    ".times.t_plant_pulse_burn",
-    ".pf_coil.ind_pf_cs_plasma_mutual",
-    ".pf_coil.n_pf_coil_turns",
-    ".tfcoil.dr_tf_plasma_case",
-))
-"""The nine variables cut by hand before the schemes, chosen so that one Picard iterate
-is one PROCESS pass. Not the default: `stages.KINDS` is written against them."""
 
 SCHEME = GaussSeidelMinimal()
 """How the raw graph's cycles are opened: a Gauss-Seidel sweep of each cycle in the

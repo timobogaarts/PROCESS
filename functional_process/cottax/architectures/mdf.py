@@ -16,10 +16,6 @@ from cottax.pytree.plan import Insert, Plan
 from cottax.pytree.problem import (
     Converged,
     DriverReport,
-    Equality,
-    Inequality,
-    Objective,
-    Residual,
     RootFind,
     Start,
     Steps,
@@ -37,7 +33,6 @@ from functional_process.cottax.architectures.drivers import (
     # beside the drivers that write it, not beside the one assembly that first read it.
     # Re-exported (`__all__`) so `mdf.Status` still resolves for every existing caller.
     Status,
-    VmconDriver,
 )
 from functional_process.cottax.architectures.evaluate import (
     cold_state,
@@ -261,79 +256,6 @@ def _inputs_only(mdf: Mdf, env):
     return {var: value for var, value in env.items() if var in inputs}
 
 
-def restart(mdf: Mdf, out):
-    """The env a next pass starts from: the run's own inputs, every `Start` port
-    re-seeded from the unknown its driver converged.
-    """
-    env = {var: out[var] for var in mdf.eager.inputs if var in out}
-    for guess, unknown in guess_ports(mdf).items():
-        env[guess] = out[unknown]
-    return env
-
-
-class MdfConditionMap(ConditionMap):
-    """`f(*design) -> conditions`, with a whole converged MDA inside every call."""
-
-    schedule: Schedule
-
-    def __call__(self, *design):
-        """The conditions at `design`, with the MDA driven to convergence there."""
-        if len(design) != len(self.unknowns):
-            raise TypeError(
-                f"MDF condition map takes {len(self.unknowns)} design variable(s) "
-                f"({', '.join(v.spelling for v in self.unknowns)}), got {len(design)}"
-            )
-        env = dict(self.context)
-        env.update(zip(self.unknowns, design, strict=True))
-        at = self.schedule.run(PathMap(env))
-        return tuple(at[condition] for condition in self.conditions)
-
-
-def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
-    """`f(*design) -> conditions` for `mdf`, everything else in `env` closed over."""
-    # Restricted to the schedule's own inputs (minus the design, supplied per call):
-    # the primed env is also a value store carrying the inner unknowns at their own
-    # names, and a `Schedule` refuses a value at an owned name (`_inputs_only`).
-    design = set(mdf.design)
-    context = {
-        var: value for var, value in _inputs_only(mdf, env).items() if var not in design
-    }
-    # `roles` is cottax's own answer to what this module worked around with
-    # `VmconDriver.n_equality`/`n_inequality`: the condition map now carries what each
-    # condition *is*, parallel to `conditions`, so the split travels on the driver seam
-    # instead of beside it (`_audit/optimise_design.md` §8, closed upstream). MDF's
-    # order is the one `mdf_graph` assembles -- objective, equalities, inequalities --
-    # and it is spelled here rather than counted by anyone.
-    if mdf.problem_type == 'root-find':
-        # Every condition vanishes at the answer, and none of them is an objective or a
-        # one-sided bound -- which is precisely `RootFind.condition_roles`.
-        roles = (Residual,) * len(mdf.conditions)
-    else:
-        n_equality = len(mdf.conditions) - 1 - mdf.n_inequality
-        roles = (
-            (Objective,) + (Equality,) * n_equality + (Inequality,) * mdf.n_inequality
-        )
-    return MdfConditionMap(
-        body=mdf.traceable.subgraph,
-        unknowns=mdf.design,
-        conditions=mdf.conditions,
-        roles=roles,
-        context=PathMap(context.items()),
-        schedule=mdf.traceable if traceable else mdf.eager,
-    )
-
-
-def driver(mdf: Mdf, bounds=(), callback=None, optimiser=VmconDriver, **kwargs):
-    """The block's optimiser, its equality/inequality counts read off the assembly."""
-    return optimiser(
-        n_equality=mdf.n_equality,
-        n_inequality=mdf.n_inequality,
-        bounds=bounds,
-        callback=callback,
-        **kwargs,
-    )
-
-
 class MdfNewtonDriver(SeededNewtonDriver):
     """`SeededNewtonDriver` that reports optimistix's verdict instead of raising it."""
 
@@ -373,58 +295,6 @@ class MdfNewtonDriver(SeededNewtonDriver):
             solution.result == optx.RESULTS.successful,
             getattr(solution.result, "_value", jnp.asarray(-1)),
         )
-
-
-def root_find_driver(mdf: Mdf, **kwargs) -> MdfNewtonDriver:
-    """The driver for a `RootFind` MDF -- `mdf.problem_type` decides, not the caller."""
-    if not mdf.problem_type == 'root-find':
-        raise TypeError(
-            f"this MDF states an {mdf.problem_type}, not a RootFind -- "
-            f"`mdf.driver` is the one to build"
-        )
-    return MdfNewtonDriver(**kwargs)
-
-
-def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
-    """Drive the outer problem, then re-run the MDA at the answer."""
-    conditions = condition_map(mdf, env)
-    start = tuple(jnp.asarray(env[var]) for var in mdf.design)
-    if optimiser is None and mdf.problem_type == 'root-find':
-        # A `RootFind` takes neither an objective nor a bound nor a per-iterate callback:
-        # `bounds` and `callback` are dropped here rather than forwarded, so that a
-        # caller passing the `Optimise` arm's arguments gets PROCESS's unbounded
-        # `fsolve` semantics and not a silently different problem. The step count comes
-        # back through the driver's own reports, in the env this returns (`verdict`).
-        optimiser = root_find_driver(mdf, **kwargs)
-    if isinstance(optimiser, type):
-        optimiser = driver(
-            mdf, bounds=bounds, callback=callback, optimiser=optimiser, **kwargs
-        )
-    optimiser = optimiser or driver(mdf, bounds=bounds, callback=callback, **kwargs)
-    started = time.perf_counter()
-    # The driver is called directly here, not through a `Drive`, so the driver-data
-    # mapping `Drive.role_data` would have built has to be built by hand: `Start` is
-    # what `VmconDriver.requires` names, and the design values are what starts it.
-    answered = optimiser(conditions, {Start: start})
-    elapsed = time.perf_counter() - started
-    # `Drive.__call__`'s own split, written out for the same reason the rest of this
-    # function is: the driver returns its unknowns and then one value per kind in
-    # `reports`, so the design is the first `len(mdf.design)` and the verdict is the
-    # rest.
-    x, verdict = answered[: len(mdf.design)], answered[len(mdf.design) :]
-    at = dict(env)
-    at.update(zip(mdf.design, x, strict=True))
-    # Through `run_schedule`, not a bare `mdf.eager(...)`: a direct `Schedule.__call__`
-    # dispatches every primitive eagerly and XLA compiles each one as its own module.
-    out = run_schedule(mdf.eager, _inputs_only(mdf, at))
-    out.update(
-        zip(
-            (kind.name_for(IN_GRAPH_PLACE) for kind in optimiser.reports),
-            verdict,
-            strict=True,
-        )
-    )
-    return tuple(x), out, elapsed
 
 
 def verdict(out, kind: type[DriverReport], place: NodePath = None):
@@ -654,12 +524,9 @@ __all__ = [
     "IN_GRAPH_PLACE",
     "InGraphRootFind",
     "Mdf",
-    "MdfConditionMap",
     "MdfNewtonDriver",
     "Status",
     "assemble",
-    "condition_map",
-    "driver",
     "in_graph_inputs",
     "in_graph_root_find",
     "in_graph_shape",
@@ -668,10 +535,8 @@ __all__ = [
     "mdf_shape",
     "nested_blocking",
     "prime",
-    "root_find_driver",
     "root_find_node",
     "seed",
-    "solve",
     "traceable_drivers",
     "verdict",
 ]

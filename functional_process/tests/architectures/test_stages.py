@@ -79,13 +79,13 @@ def configuration():
 @pytest.fixture(scope="module")
 def runnable(configuration):
     """The driven MDA graph the port runs: 154 nodes."""
-    return mda.driven_graph(without_excluded(graph_for(configuration.machine)), mda.HAND)
+    return mda.driven_graph(without_excluded(graph_for(configuration.machine)))
 
 
 @pytest.fixture(scope="module")
 def as_measured(configuration):
     """The driven MDA graph the handoff's stage check measured: 156 nodes."""
-    return mda.driven_graph(graph_for(configuration.machine), mda.HAND)
+    return mda.driven_graph(graph_for(configuration.machine))
 
 
 def rows(graph):
@@ -230,7 +230,7 @@ def test_hoist_reproduces_the_whole_graph(configuration):
     nominal on every shared place.
     """
     reference = native.reference_of(configuration)
-    _driven, runnable, schedule, _run = mda_schedule(graph_for(configuration.machine), mda.HAND)
+    _driven, runnable, schedule, _run = mda_schedule(graph_for(configuration.machine))
     env = seed_env(reference.cold, schedule, runnable)
     whole = run_schedule(schedule, env)
 
