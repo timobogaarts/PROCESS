@@ -32,15 +32,16 @@ from cottax import (
     RootFind,
     Start,
 )
-from cottax.abstract import runnable
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Driver, Schedule
+from cottax.pytree.nodes import implemented as runnable
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
-from cottax.problem import is_feasibility, is_root_find
-from cottax.rewrites import Assign
-from cottax.spec import NodePath
-from cottax.nodes import Implemented
-from cottax.names import PathMap
+from cottax.pytree.problem import is_feasibility, is_root_find
+from cottax.pytree.rewrites import Assign
+from cottax.pytree.spec import NodePath
+from cottax.pytree.nodes import Implemented
+from cottax.pytree.names import PathMap
 from jax.tree_util import DictKey
 
 from functional_process.tests._harness import (
@@ -292,7 +293,7 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
     """
     d = DuctDiameterRootFind()
     schedule = Schedule(
-        AnswerableGraph(
+        RunnableGraph(
             Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
         )
     )
@@ -315,7 +316,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
     """
     d = DuctDiameterRootFind()
     schedule = Schedule(
-        AnswerableGraph(
+        RunnableGraph(
             Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
         )
     )
@@ -467,7 +468,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     merged = Graph.of(PathMap({**dict(body.definitions), name: joined}))
 
     schedule = Schedule(
-        AnswerableGraph(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
+        RunnableGraph(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
     )
     env = {
         vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),

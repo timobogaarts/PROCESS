@@ -89,7 +89,7 @@ from functional_process.vocabulary import TFConductorModel
 # `.costs.cplife` **also** self-references within `avail`/`avail_2`/`avail_st` themselves
 # (Shape B, `next_steps.md` §5: a node whose own `Output` and `FromExactly` name the identical
 # `VarPath`) -- `to_graph(Avail(...))` raised `ValueError: reads ['.costs.cplife'], which
-# it also owns` directly from `cottax.spec`'s `__check_init__` before this was split.
+# it also owns` directly from `cottax.pytree.spec`'s `__check_init__` before this was split.
 # `CplifeAvail` (shared by `Avail`/`Avail2` -- their `itart == 1` cplife-adjustment
 # formula is identical, see the audit record) and `CplifeAvailSt` isolate exactly that
 # self-reference; both are now bodiless family bases too, each with one occupant per

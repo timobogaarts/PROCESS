@@ -26,14 +26,15 @@ import numpy as np
 import optimistix as optx
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Driver, Schedule
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.problem import RootFind, Start, is_root_find, shape_of
-from cottax.rewrites import Assign
-from cottax.spec import VarPath
+from cottax.pytree.problem import RootFind, Start, is_root_find, shape_of
+from cottax.pytree.rewrites import Assign
+from cottax.pytree.spec import VarPath
 from cottax.visualization.sequencing import problem_types
-from cottax.names import PathMap
+from cottax.pytree.names import PathMap
 
 from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
 from functional_process.tests._harness.process_reference import data_reference
@@ -795,7 +796,7 @@ class TestWindingPackTotalSize(Tier2Contract):
 # `WindingPackIntersectInputs` / `Intersect` / `WindingPackTotalSizePost`
 #
 # `winding_pack_total_size`'s `.tfcoil.j_tf_wp` self-loop cannot be a plain node -- one
-# node cannot read and own the same `VarPath` (`cottax.spec`'s "reads what it also
+# node cannot read and own the same `VarPath` (`cottax.pytree.spec`'s "reads what it also
 # owns" construction error). An earlier pass isolated it with a `WindingPackJTfWp`
 # `FixedPointFunction` that duplicated this entire function's computation just to
 # extract `j_tf_wp` alone. That class is gone: once `WindingPackTotalSizePost` owns
@@ -1095,7 +1096,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
     schedule = Schedule(
-        AnswerableGraph(Assign(Intersect().problem_name, driver).apply(graph))
+        RunnableGraph(Assign(Intersect().problem_name, driver).apply(graph))
     )
     out = schedule.run(PathMap(env))
 

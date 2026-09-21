@@ -36,7 +36,7 @@ def machine_label(suffix: str) -> str:
 
 def main(input_file: str | None = None):
     """Write `xdsm.html` for the model graph; return the XDSM path. Drawn as the
-    graph itself, which a drawing takes since cottax `4d33cf3` -- an `AnswerableGraph`
+    graph itself, which a drawing takes since cottax `4d33cf3` -- an `ExecutableGraph`
     refuses its undriven cycles, and a drawing draws them.
     """
     graph, suffix = machine_graph(input_file)
@@ -60,7 +60,7 @@ _SPLIT_FILE = re.compile(r"_[A-Z](?:_.*)?$")
 
 def grouped(depth: int | None = None, input_file: str | None = None):
     """Write `dsm_provenance.html`/`dsm_scc.html`: § 11's comparison, drawn."""
-    from cottax import AnswerableGraph
+    from cottax import ExecutableGraph
 
     from functional_process.cottax.architectures.mda import driven_graph
     from functional_process.cottax.visualization.grouping import (
@@ -77,7 +77,7 @@ def grouped(depth: int | None = None, input_file: str | None = None):
     # landed and is gone. `group_of` reads the grouping straight off the name.
     declared, suffix = machine_graph(input_file)
     graph = driven_graph(declared)
-    blocking = AnswerableGraph(graph)
+    blocking = ExecutableGraph(graph)
     report = grouping_report(blocking, depth=depth)
     print(f"grouped ({machine_label(suffix)}): {report.summary()}")
 
@@ -150,7 +150,7 @@ def grouped_uncut(depth: int | None = None, input_file: str | None = None):
     )
 
     declared, suffix = machine_graph(input_file)
-    # The graph itself, not `AnswerableGraph(declared)`: since cottax `bc1130a` a
+    # The graph itself, not `ExecutableGraph(declared)`: since cottax `bc1130a` a
     # blocking is answerable by construction, and the declared graph's cycles are
     # undriven, so none exists for it -- the drawings read a bare graph
     # (`grouping.Drawn`).
@@ -230,7 +230,7 @@ def cold_reference(input_file=None):
 
 def sand():
     """Write `xdsm_sand.html` for the assembled SAND graph."""
-    from cottax import AnswerableGraph
+    from cottax import ExecutableGraph
 
     from functional_process.cottax.architectures.evaluate import mda_env  # noqa: PLC0415
     from functional_process.cottax.architectures.sand import assemble  # noqa: PLC0415
@@ -272,7 +272,7 @@ def sand():
     # ordinary nodes between them, here 20 / 130 / 21 -- went with `fused` itself; a
     # run block there was drawn as a lump with no internal order even though it is a
     # totally ordered chain with **zero** coupling.)
-    for name, blocking in (("xdsm_sand", AnswerableGraph(combined)),):
+    for name, blocking in (("xdsm_sand", ExecutableGraph(combined)),):
         render_xdsm_html(
             blocking,
             file_name=name,

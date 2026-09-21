@@ -14,12 +14,13 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import TypeAlias
 
 import networkx as nx
-from cottax.abstract import body_of, is_problem, undriven
-from cottax.answerable import AnswerableGraph
-from cottax.graph import Graph
-from cottax.names import is_minted, unminted
-from cottax.problem import ConditionalNode, Driven, Eq, shape_of
-from cottax.spec import NodePath, VarPath
+from cottax.core import body_of, is_problem
+from cottax.pytree.problem import undriven
+from cottax.pytree.executable import ExecutableGraph
+from cottax.pytree.graph import Graph
+from cottax.pytree.names import is_minted, unminted
+from cottax.pytree.problem import ConditionalNode, Driven, Eq, shape_of
+from cottax.pytree.spec import NodePath, VarPath
 from cottax.visualization.sequencing import _draws_feedback, entries, interiors
 from cottax.visualization.xdsm import (
     PROBLEM_TYPE_TEXT,
@@ -246,8 +247,8 @@ def provenance_order(
     )
 
 
-Drawn: TypeAlias = Graph | AnswerableGraph
-"""What a page is drawn of: a `Graph`, or the `AnswerableGraph` proving one answerable,
+Drawn: TypeAlias = Graph | ExecutableGraph
+"""What a page is drawn of: a `Graph`, or the `ExecutableGraph` proving one answerable,
 read as its graph. Since cottax `bc1130a` an answerable graph is so by construction, so
 an uncut cycle (`paper_tests/dsms.py`'s `uncut_optimiser` page: the optimiser's cycle
 undriven, one SCC over most of the machine) has no proof -- and that picture is the one
@@ -258,9 +259,9 @@ has."""
 
 def graph_of(drawn: Drawn) -> Graph:
     """`drawn` as the value every walk here takes: the graph itself -- an
-    `AnswerableGraph` is read as its graph.
+    `ExecutableGraph` is read as its graph.
     """
-    return drawn.graph if isinstance(drawn, AnswerableGraph) else drawn
+    return drawn.graph if isinstance(drawn, ExecutableGraph) else drawn
 
 
 def blocks_of(drawn: Drawn) -> tuple[tuple[NodePath, ...], ...]:
@@ -517,7 +518,7 @@ UNDRIVEN = "undriven"
 
 def problem_kind(node) -> str | None:
     """The kind a problem row is marked with: `None` for a node with a body, else
-    `cottax.problem.shape_of`'s slug -- except `combined`.
+    `cottax.pytree.problem.shape_of`'s slug -- except `combined`.
 
     **`combined` is read off structure, and the reading is a heuristic.** `Combine`
     leaves no mark on the node it builds: the join is `Condition.__add__`, which
@@ -1499,7 +1500,7 @@ def render_grouped_dsm_html(
     mode: str | None = None,
 ) -> HtmlDoc:
     """`drawn`'s graph as a DSM in `order`, every row coloured by the group its name
-    declares -- a `Graph`, or the `AnswerableGraph` proving one answerable (`Drawn`).
+    declares -- a `Graph`, or the `ExecutableGraph` proving one answerable (`Drawn`).
 
     `mode` (`MODES`) picks the page: the *provenance* page bands the axes by namespace
     and boxes the top level's coupled blocks; the *structure* page bands them by nesting

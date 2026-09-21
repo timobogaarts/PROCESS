@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.names import PathMap
+from cottax.pytree.names import PathMap
 from scipy.stats import norm, qmc
 
 from functional_process.configurations.kinds import BELIEFS, Belief

@@ -32,7 +32,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.problem import Driven
+from cottax.pytree.problem import Driven
 from jax.flatten_util import ravel_pytree
 
 from functional_process import configurations

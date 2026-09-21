@@ -22,7 +22,7 @@ PORT = Path(__file__).resolve().parent.parent
 """`functional_process/` -- every `.py` under it is read."""
 
 PRIVATE: frozenset[str] = frozenset({
-    "cottax.evaluation.schedule._run_acyclic",
+    "cottax.execution.schedule._run_acyclic",
     "cottax.visualization.sequencing._draws_feedback",
     "cottax.visualization.xdsm._xesc",
 })

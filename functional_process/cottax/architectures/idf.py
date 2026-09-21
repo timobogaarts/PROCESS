@@ -22,10 +22,10 @@ The recipe, in cottax's ops:
 
 from __future__ import annotations
 
-from cottax.plan import Plan
-from cottax.problem import is_fixed_point
-from cottax.rewrites import Combine, Residualise
-from cottax.spec import NodePath
+from cottax.pytree.plan import Plan
+from cottax.pytree.problem import is_fixed_point
+from cottax.pytree.rewrites import Combine, Residualise
+from cottax.pytree.spec import NodePath
 from jax.tree_util import GetAttrKey
 
 from functional_process.cottax.architectures.evaluate import without_excluded

@@ -468,7 +468,7 @@ def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=
 # stalled specifically because "find a feasible ceff_i" has no objective to minimise and
 # `cottax` had no shape for pure feasibility -- inventing one (e.g. maximise `ceff_i`)
 # would assert a preference PROCESS's own 10%-shrink-until-it-fits loop neither states
-# nor needs: it stops at the *first* fitting value, not the largest. `cottax.problem.
+# nor needs: it stops at the *first* fitting value, not the largest. `cottax.pytree.problem.
 # Feasibility` (drafted this same session specifically to fill this gap) is built below,
 # joined with `DuctDiameterRootFind`'s `RootFind` via `Feasibility + RootFind ->
 # Feasibility` (`problem.py`'s own join rule, same SAND composition `Optimise + RootFind`

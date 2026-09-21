@@ -21,7 +21,7 @@ would otherwise overwrite the profile arrays a case needs to control.
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.spec import VarPath
+from cottax.pytree.spec import VarPath
 
 from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.tests._harness.sample_store import FROM_FILE

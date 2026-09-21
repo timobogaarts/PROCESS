@@ -10,21 +10,22 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Drive, Schedule
-from cottax.graph import Graph
-from cottax.names import MintKey, PathMap, prefix_path
-from cottax.nodes import ImplementedFunction
-from cottax.plan import Delete, Insert, Plan
-from cottax.problem import (
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Drive, Schedule
+from cottax.pytree.graph import Graph
+from cottax.pytree.names import MintKey, PathMap, prefix_path
+from cottax.pytree.nodes import ImplementedFunction
+from cottax.pytree.plan import Delete, Insert, Plan
+from cottax.pytree.problem import (
     Driven,
     Optimise,
     conditions_of,
     is_fixed_point,
     is_optimise,
 )
-from cottax.rewrites import Assign, Combine, Residualise
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.rewrites import Assign, Combine, Residualise
+from cottax.pytree.spec import NodePath, VarPath
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -525,7 +526,7 @@ class FixedPointResidual:
 
 def fixed_point_residuals(graph, env, problems=None):
     """`d(g(u) - u)/du` for every `FixedPoint` in `graph`, differentiated at `env`."""
-    from cottax.evaluation.schedule import _run_acyclic
+    from cottax.execution.schedule import _run_acyclic
 
     if problems is None:
         problems = tuple(n for n in declared(graph) if is_fixed_point(graph[n]))
@@ -649,7 +650,7 @@ def constraints_outside_block(graph):
     block -- `{constraint id: NodePath}` -- which today's evaluation seam cannot carry.
     """
     # The `Optimise`'s own block: the graph's own component holding it, asked of the
-    # graph and not of an `AnswerableGraph`, which refuses a block declaring two
+    # graph and not of an `ExecutableGraph`, which refuses a block declaring two
     # problems -- exactly the shape `sand_graph(keep=...)` leaves behind -- and this
     # question, *which constraints are outside the optimiser's block*, has the same
     # answer either way.
@@ -669,7 +670,7 @@ def residual_condition_scales(drive, env, floor=1e-12):
     """`((condition, factor), ...)` for exactly the SAND residual conditions, ready for
     `VmconDriver.condition_scale`.
     """
-    from cottax.names import unminted
+    from cottax.pytree.names import unminted
 
     def place(path):
         while (stripped := unminted(path)) != path:
@@ -720,12 +721,12 @@ def sand_schedule(
     # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
     assigned = assign_drivers(graph, drivers)
     # Nesting is an op on the *graph* now, not a call on the blocking: which statement's
-    # iteration answers which is recorded in `Graph.within`, and `AnswerableGraph`
+    # iteration answers which is recorded in `Graph.within`, and `ExecutableGraph`
     # reads it.
     if nest:
         from functional_process.cottax.queries import nested_inside  # noqa: PLC0415
         assigned = nested_inside(assigned, optimise)
-    return Schedule(AnswerableGraph(assigned))
+    return Schedule(RunnableGraph(assigned))
 
 
 def _definition(drive):

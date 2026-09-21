@@ -3,7 +3,7 @@
 import jax  # noqa: F401
 import jax.numpy as jnp
 import optimistix as optx  # noqa: F401
-from cottax.evaluation.schedule import (
+from cottax.execution.schedule import (
     Driver,
     ConditionMap,
 )
@@ -13,12 +13,12 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
     resolve,
 )
-from cottax.problem import (
+from cottax.pytree.problem import (
     RootFind,
     Start,
     is_root_find,
 )
-from cottax.spec import VarPath
+from cottax.pytree.spec import VarPath
 
 from functional_process.cottax.paths import (
     stellarator,

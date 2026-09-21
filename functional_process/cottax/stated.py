@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction
-from cottax.names import MintKey, VarPath, prefix_path
+from cottax.pytree.names import MintKey, VarPath, prefix_path
 
 __all__ = ["STATED", "StatesValues", "stated_port"]
 

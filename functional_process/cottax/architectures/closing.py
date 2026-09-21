@@ -30,12 +30,13 @@ the outer optimiser sees the objective and the inequalities only.
 import dataclasses
 
 import numpy as np
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
-from cottax.graph import Graph
-from cottax.names import PathMap
-from cottax.plan import Insert, Plan
-from cottax.problem import (
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
+from cottax.pytree.graph import Graph
+from cottax.pytree.names import PathMap
+from cottax.pytree.plan import Insert, Plan
+from cottax.pytree.problem import (
     ConditionalNode,
     Converged,
     Optimise,
@@ -44,8 +45,8 @@ from cottax.problem import (
     shape_of,
     unknowns_of,
 )
-from cottax.rewrites import Combine, Residualise
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.rewrites import Combine, Residualise
+from cottax.pytree.spec import NodePath, VarPath
 from cottax.visualization.sequencing import Solve, entries, problem_types, walk
 from jax.tree_util import GetAttrKey
 
@@ -201,7 +202,7 @@ class Closed:
         without its drivers, as `mdf.assemble` keeps it, and so without the `^guess.*`
         ports `Assign` mints.
         """
-        return self.problem.eager.answerable.graph
+        return self.problem.eager.executable.graph
 
     @property
     def report(self) -> dict:
@@ -343,7 +344,7 @@ def close(
             else with_bounds(driver, chosen[cond], ref.bounds)
         )
     assigned = assign_drivers(graph, drivers)
-    schedule = Schedule(AnswerableGraph(assigned))
+    schedule = Schedule(RunnableGraph(assigned))
     kept = tuple(v for v in design if v not in set(chosen.values()))
     report = dict(
         report,
@@ -446,7 +447,7 @@ OPTIMISE = NodePath((GetAttrKey("Opt"),))
 """Where `nested_blocking` binds the outer `Optimise`."""
 
 
-def nested_blocking(built: Closed, driver=None) -> AnswerableGraph:
+def nested_blocking(built: Closed, driver=None) -> ExecutableGraph:
     """The architecture as structure: the `Optimise` over the kept design inserted and
     `nested_inside` it, so the root finds and the MDA's fixed points are answered
     inside its iteration. For the picture -- `mdf.solve` drives the optimiser from
@@ -471,12 +472,12 @@ def nested_blocking(built: Closed, driver=None) -> AnswerableGraph:
                 driver, built.pairings[cond], built.session.reference.bounds
             )
         )
-    return AnswerableGraph(assign_drivers(with_problem, drivers))
+    return ExecutableGraph(assign_drivers(with_problem, drivers))
 
 
 def describe(graph) -> list[str]:
     """One line per driven or cyclic entry at every depth: its size and its problem."""
-    if isinstance(graph, AnswerableGraph):
+    if isinstance(graph, ExecutableGraph):
         graph = graph.graph
     lines = []
     for within, entry in walk(entries(graph)):

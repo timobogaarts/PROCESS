@@ -1,12 +1,13 @@
 """Turning `indat.GRAPH` into something that can actually be run."""
 
 import jax.numpy as jnp
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
-from cottax.graph import Graph
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
+from cottax.pytree.graph import Graph
 from cottax.interfaces.pytree_namespace_module import resolve
-from cottax.names import PathMap
-from cottax.problem import (
+from cottax.pytree.names import PathMap
+from cottax.pytree.problem import (
     ConditionalNode,
     Driven,
     Start,
@@ -16,8 +17,8 @@ from cottax.problem import (
     is_root_find,
     unknowns_of,
 )
-from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
+from cottax.pytree.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
 from functional_process.cottax.architectures.drivers import (
@@ -58,7 +59,7 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
     # Cuts are grouped by the cycle they break, and each group becomes **one**
     # `FixedPointCut` -- i.e. one `FixedPoint` problem over however many unknowns that
     # cycle needed. Applying them one at a time instead mints one problem per cut, and
-    # `AnswerableGraph` then refuses the block outright: *"declares several problems --
+    # `ExecutableGraph` then refuses the block outright: *"declares several problems --
     # one driver answers one problem, so `Combine` them into a single problem over
     # every unknown, or `Nest` the others inside one of them. Which is a modelling
     # decision"*. It is,
@@ -88,7 +89,7 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
         key = next((i for i, c in enumerate(cycles) if owner in c), var)
         if key is not var and any(n in statements for n in cycles[key]):
             # **The SCC already declares its own problem, so it needs no cut.**
-            # `AnswerableGraph` allows a block exactly one problem -- *"one driver
+            # `ExecutableGraph` allows a block exactly one problem -- *"one driver
             # answers one problem, so `Combine` them into a single problem over every
             # unknown, or `Nest` the others inside one of them"* -- and `cut_graph`'s
             # whole job is to give a
@@ -96,7 +97,7 @@ def cut_ops(graph=GRAPH) -> tuple[FixedPointCut, ...]:
             # self-loop already sits inside the SCC, that job is done: the self-loop's
             # driver re-runs every other node of the block on each iterate, which is
             # exactly what a cut here would buy. Adding one anyway mints a *second*
-            # problem in the same block and `AnswerableGraph` refuses it outright.
+            # problem in the same block and `ExecutableGraph` refuses it outright.
             #
             # This is the same shape as the `closing_readers` skip above -- a cut
             # applies where the cycle it names actually needs breaking -- and it is what
@@ -137,7 +138,7 @@ def cut_graph(graph=GRAPH):
 
     # Every problem gets `Start` ports, one per unknown, read from `^guess.<place>`.
     #
-    # `cottax.evaluation.schedule.AbstractDriver` takes its starting values as *declared driver
+    # `cottax.execution.schedule.AbstractDriver` takes its starting values as *declared driver
     # data* rather than reading them off the unknowns' own names: `Drive.role_data`
     # walks the driver's `requires` and looks up the ports the problem declares, and
     # `Drive.__check_init__` refuses both directions -- a driver requiring a kind the
@@ -190,7 +191,7 @@ SUPPLIED_STARTS = {
     ".stellarator.wp_width_r_min": ".stellarator.wp_width_r_min_guess",
 }
 """`unknown -> the graph-owned variable that is its starting guess`, applied by
-`supply_starts` as a `cottax.rewrites.Supply` on the problem's `Start` port.
+`supply_starts` as a `cottax.pytree.rewrites.Supply` on the problem's `Start` port.
 """
 
 GIVEN_STARTS = {
@@ -202,7 +203,7 @@ GIVEN_STARTS = {
 
 def given_start(unknown, fallback):
     """`GIVEN_STARTS`' value for `unknown`, shaped like `fallback`, or `fallback`."""
-    from cottax.names import unminted  # noqa: PLC0415
+    from cottax.pytree.names import unminted  # noqa: PLC0415
 
     # Keyed on the **quantity**, not on the minted copy. A `FixedPointCut`'s unknown is
     # `^hat.pf_coil.n_pf_coil_turns`; the number PROCESS writes is for
@@ -223,7 +224,7 @@ def seed_starts(schedule, env, exclude=()) -> dict:
     started from a cold zero does not converge.
     """
     exclude = set(exclude)
-    guesses = guess_sources(schedule.answerable.graph)
+    guesses = guess_sources(schedule.executable.graph)
     return {
         port: given_start(unknown, env[unknown])
         for port in schedule.inputs
@@ -331,7 +332,7 @@ def default_drivers(
     optimiser=VmconDriver,
 ) -> dict:
     """One driver per **problem**, chosen mechanically by problem type Takes a `Graph`
-    rather than an `AnswerableGraph`: since `Assign` puts the driver *in* the graph, the
+    rather than an `ExecutableGraph`: since `Assign` puts the driver *in* the graph, the
     choice has to be made before there is a blocking to speak of -- and it never needed
     one, because the problem's own type is what decides.
     """
@@ -370,4 +371,4 @@ def schedule(graph=GRAPH) -> Schedule:
     its default driver.
     """
     driven = driven_graph(graph)
-    return Schedule(AnswerableGraph(driven))
+    return Schedule(RunnableGraph(driven))

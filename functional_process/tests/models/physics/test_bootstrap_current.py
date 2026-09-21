@@ -53,7 +53,7 @@ non-finite, which the check steps aside for.
 import numpy as np
 import pytest
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.spec import VarPath
+from cottax.pytree.spec import VarPath
 
 from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.tests._harness.sample_store import FROM_FILE

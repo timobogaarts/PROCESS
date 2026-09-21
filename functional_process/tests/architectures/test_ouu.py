@@ -24,15 +24,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
-from cottax.graph import Graph
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
+from cottax.pytree.graph import Graph
 from cottax.interfaces.pytree_namespace_module import area, resolve
-from cottax.names import PathMap
-from cottax.nodes import ImplementedFunction
-from cottax.problem import Converged, Optimise, Steps
-from cottax.rewrites import Assign
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.names import PathMap
+from cottax.pytree.nodes import ImplementedFunction
+from cottax.pytree.problem import Converged, Optimise, Steps
+from cottax.pytree.rewrites import Assign
+from cottax.pytree.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
 from functional_process.configurations import kinds
@@ -563,7 +564,7 @@ def _toy_schedule(driver) -> tuple[Schedule, dict]:
     place = NodePath((GetAttrKey("Opt"),))
     graph = Graph.of({NodePath((GetAttrKey("Toy"),)): node, place: problem})
     driven = Assign(place, driver).apply(graph)
-    schedule = Schedule(AnswerableGraph(driven))
+    schedule = Schedule(RunnableGraph(driven))
     starts = dict(guess_sources(driven).items())
     return schedule, starts
 
@@ -610,7 +611,7 @@ def test_other_verdicts_lists_every_other_reporting_driver():
         place2: problem2,
     })
     driven = Assign(place2, driver2).apply(Assign(place, driver).apply(graph))
-    schedule = Schedule(AnswerableGraph(driven))
+    schedule = Schedule(RunnableGraph(driven))
     assert {s.problem for s in ouu.driven_problems(schedule)} == {place, place2}
     assert ouu.other_verdicts(schedule, place) == (Converged.name_for(place2),)
     assert ouu.other_verdicts(schedule, place2) == (Converged.name_for(place),)

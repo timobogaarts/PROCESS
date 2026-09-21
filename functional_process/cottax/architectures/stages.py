@@ -45,8 +45,9 @@ import dataclasses
 import enum
 from typing import TYPE_CHECKING
 
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
 
 from functional_process.configurations.kinds import (
     BELIEFS,
@@ -60,8 +61,8 @@ from functional_process.cottax.architectures.evaluate import inputs_only, run_sc
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from cottax.graph import Graph
-    from cottax.spec import NodePath, VarPath
+    from cottax.pytree.graph import Graph
+    from cottax.pytree.spec import NodePath, VarPath
 
 # ------------------------------------------------------------------ the leaves
 
@@ -428,8 +429,8 @@ def hoisted(
 
     `run(schedule, inputs) -> env` is `evaluate.run_schedule` by default.
     """
-    first = Schedule(AnswerableGraph(first_stage_graph(graph, stages)))
-    recourse = Schedule(AnswerableGraph(recourse_graph(graph, stages)))
+    first = Schedule(RunnableGraph(first_stage_graph(graph, stages)))
+    recourse = Schedule(RunnableGraph(recourse_graph(graph, stages)))
     first_env = run(first, inputs_only(first, env))
     return Hoisted(
         first=first, recourse=recourse, first_env=first_env, inputs=dict(env), run=run

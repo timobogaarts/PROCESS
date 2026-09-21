@@ -9,8 +9,8 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
     resolve,
 )
-from cottax.problem import Feasibility
-from cottax.spec import VarPath
+from cottax.pytree.problem import Feasibility
+from cottax.pytree.spec import VarPath
 
 from functional_process.cottax.paths import (
     blanket,

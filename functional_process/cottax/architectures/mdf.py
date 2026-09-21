@@ -7,12 +7,13 @@ import time
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import ConditionMap, Drive, Schedule
-from cottax.graph import Graph
-from cottax.names import PathMap
-from cottax.plan import Insert, Plan
-from cottax.problem import (
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import ConditionMap, Drive, Schedule
+from cottax.pytree.graph import Graph
+from cottax.pytree.names import PathMap
+from cottax.pytree.plan import Insert, Plan
+from cottax.pytree.problem import (
     Converged,
     DriverReport,
     Equality,
@@ -23,7 +24,7 @@ from cottax.problem import (
     Start,
     Steps,
 )
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.spec import NodePath, VarPath
 from cottax.visualization.sequencing import problem_types
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
@@ -163,7 +164,7 @@ def assemble(
     # separate objects. `reassign_drivers` is not needed -- neither graph carries a
     # driver yet, since `cut_graph` is structure only.
     eager_graph = assign_drivers(graph, drivers)
-    answerable = AnswerableGraph(eager_graph)
+    answerable = RunnableGraph(eager_graph)
     design = tuple(sand.iteration_variable_path(i) for i in ixc)
     eager = Schedule(answerable)
     missing = [d for d in design if d not in eager.inputs]
@@ -185,7 +186,7 @@ def assemble(
         graph=graph,
         eager=eager,
         traceable=Schedule(
-            AnswerableGraph(assign_drivers(graph, traceable_drivers(drivers)))
+            RunnableGraph(assign_drivers(graph, traceable_drivers(drivers)))
         ),
         design=design,
         conditions=driven_conditions,
@@ -206,7 +207,7 @@ def guess_ports(mdf: Mdf) -> dict:
     # deliberately undriven so that `Combine` can still join its problems. Asking that one
     # returns nothing, every port falls to `ground_truth`'s `0.0`, and the inner solves
     # start from exactly the cold point `prime` exists to get them off.
-    return guess_sources(mdf.eager.answerable.graph)
+    return guess_sources(mdf.eager.executable.graph)
 
 
 def seed(mdf: Mdf, data, design_values=None):
@@ -436,14 +437,14 @@ def verdict(out, kind: type[DriverReport], place: NodePath = None):
 
 
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, cut=cut_graph, **kwargs):
-    """MDF **stated as structure**: `AnswerableGraph(nested_inside(graph + Optimise, the Optimise))`.
+    """MDF **stated as structure**: `ExecutableGraph(nested_inside(graph + Optimise, the Optimise))`.
     """
     driven = cut(without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
     nested = nested_inside(with_problem, problem_name)
-    return AnswerableGraph(nested), problem_name, report
+    return ExecutableGraph(nested), problem_name, report
 
 
 IN_GRAPH_PLACE = NodePath((GetAttrKey("RootFind"),))
@@ -458,8 +459,8 @@ class InGraphRootFind:
     """The assembly this states -- a `RootFind` one (`assemble(root_find=True)`)."""
     graph: Graph
     """`mdf.graph` plus the `RootFind`, with every problem's driver `Assign`ed on."""
-    blocking: AnswerableGraph
-    """`AnswerableGraph(queries.nested_inside(graph, problem))`: the graph proved
+    blocking: ExecutableGraph
+    """`ExecutableGraph(queries.nested_inside(graph, problem))`: the graph proved
     answerable, nested at the problem.
     """
     schedule: Schedule
@@ -540,7 +541,7 @@ def in_graph_root_find(
     traceable: bool = True,
     **kwargs,
 ) -> InGraphRootFind:
-    """State `mdf`'s root find inside the graph and let `AnswerableGraph` decide what it
+    """State `mdf`'s root find inside the graph and let `ExecutableGraph` decide what it
     drives.
     """
     node = root_find_node(mdf)
@@ -559,7 +560,7 @@ def in_graph_root_find(
     # instead of raising it, which is what makes a non-converged outer solve a row.
     drivers[place] = driver or MdfNewtonDriver(**kwargs)
     assigned = nested_inside(assign_drivers(with_problem, drivers), place)
-    blocking = AnswerableGraph(assigned)
+    blocking = RunnableGraph(assigned)
     return InGraphRootFind(
         mdf=mdf,
         graph=assigned,

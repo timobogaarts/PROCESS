@@ -1,13 +1,13 @@
 """The graph queries this codebase spells its own way."""
 
-from cottax.abstract import problems
-from cottax.graph import Graph
-from cottax.names import NodePath
-from cottax.plan import Nest, Plan
+from cottax.core import problems
+from cottax.pytree.graph import Graph
+from cottax.pytree.names import NodePath
+from cottax.pytree.plan import Nest, Plan
 
 
 def declared(graph: Graph) -> tuple[NodePath, ...]:
-    """The problems of a graph -- `cottax.abstract.problems`, over the graph's definitions."""
+    """The problems of a graph -- `cottax.core.problems`, over the graph's definitions."""
     return problems(graph.definitions)
 
 

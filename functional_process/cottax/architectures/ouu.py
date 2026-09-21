@@ -46,7 +46,7 @@ two agree to round-off (`tests/architectures/test_ouu.py`).
 `Statistics`, reading the design places and owning `^cond.ouu.objective`,
 `^cond.ouu.cvar.<constraint>` and `^cond.ouu.failed` -- and the outer problem is an
 `Optimise` over the design reading them, `nested` on their cycle, so the architecture
-is a `Graph` + `Schedule(AnswerableGraph(...))` like the others. The node's body is
+is a `Graph` + `Schedule(RunnableGraph(...))` like the others. The node's body is
 the jitted batched program (`Program`), called outside any trace by the driver: a
 `jax.vmap` over a `Schedule.run` inside an `ImplementedFunction` inside a second
 `Schedule` would trace the batch into every evaluation of the outer graph, and the
@@ -93,13 +93,14 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
-from cottax.answerable import AnswerableGraph  # noqa: E402
-from cottax.evaluation.schedule import Drive, Schedule  # noqa: E402
-from cottax.graph import Graph  # noqa: E402
-from cottax.names import MintKey, PathMap, prefix_path  # noqa: E402
-from cottax.nodes import ImplementedFunction  # noqa: E402
-from cottax.problem import Converged, Optimise, Steps, unknowns_of  # noqa: E402
-from cottax.spec import NodePath, VarPath  # noqa: E402
+from cottax.pytree.executable import ExecutableGraph  # noqa: E402
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Drive, Schedule  # noqa: E402
+from cottax.pytree.graph import Graph  # noqa: E402
+from cottax.pytree.names import MintKey, PathMap, prefix_path  # noqa: E402
+from cottax.pytree.nodes import ImplementedFunction  # noqa: E402
+from cottax.pytree.problem import Converged, Optimise, Steps, unknowns_of  # noqa: E402
+from cottax.pytree.spec import NodePath, VarPath  # noqa: E402
 from jax import lax  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
@@ -632,8 +633,8 @@ def two_stage(
             varying=varying,
         ),
     )
-    first = Schedule(AnswerableGraph(stages.first_stage_graph(graph, split)))
-    recourse = Schedule(AnswerableGraph(stages.recourse_graph(graph, split)))
+    first = Schedule(RunnableGraph(stages.first_stage_graph(graph, split)))
+    recourse = Schedule(RunnableGraph(stages.recourse_graph(graph, split)))
     verdicts = other_verdicts(recourse, place)
     columns = (
         var_of[COE],
@@ -1161,7 +1162,7 @@ class Outer:
     graph: Graph
     """Undriven: the two nodes."""
     schedule: Schedule
-    """`Schedule(AnswerableGraph(the graph with the driver assigned))`."""
+    """`Schedule(RunnableGraph(the graph with the driver assigned))`."""
     driver: BoxedSlsqpDriver
     objective: VarPath
     cvars: tuple[VarPath, ...]
@@ -1175,7 +1176,7 @@ class Outer:
     @property
     def starts(self) -> dict:
         """`{start port: design place}` -- what an env hands the driver."""
-        return guess_sources(self.schedule.answerable.graph)
+        return guess_sources(self.schedule.executable.graph)
 
     @property
     def eps(self) -> float:
@@ -1255,7 +1256,7 @@ def outer(
         model=model,
         program=program,
         graph=graph,
-        schedule=Schedule(AnswerableGraph(driven)),
+        schedule=Schedule(RunnableGraph(driven)),
         driver=driver,
         objective=objective,
         cvars=cvars,

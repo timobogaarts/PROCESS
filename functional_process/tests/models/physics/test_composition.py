@@ -15,7 +15,7 @@ import inspect
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.spec import VarPath
+from cottax.pytree.spec import VarPath
 
 from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.tests._harness.sample_store import FROM_FILE
@@ -404,7 +404,7 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
 #
 # `.impurity_radiation.f_nd_impurity_electron_array` is both read (indices 2:13) and
 # written (indices 0/1) by `plasma_composition` -- a self-loop shape that would raise
-# `cottax.spec`'s "reads what it also owns" construction error if the array were
+# `cottax.pytree.spec`'s "reads what it also owns" construction error if the array were
 # addressed as one `VarPath` (see `_audit/next_steps.md` §5, "Shape B"). PROCESS's
 # other apparent self-loop in this unit, `.physics.first_call`, was never a genuine
 # cycle at all -- see `plasma_composition`'s own docstring -- so it is not ported and

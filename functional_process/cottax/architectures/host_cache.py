@@ -5,7 +5,7 @@ import functools
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.evaluation.schedule import ConditionMap
+from cottax.execution.schedule import ConditionMap
 
 # **There is no memo here any more** (`_audit/optimise_design.md` §37). `_BOUND` was a
 # list of compiled blocks scanned with `==`, and it existed because `bind` built its

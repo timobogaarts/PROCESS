@@ -17,7 +17,7 @@ about the profile objects. If a ported function secretly needed something else o
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.spec import VarPath
+from cottax.pytree.spec import VarPath
 
 from functional_process.tests._harness import Tier1Contract
 from functional_process.tests._harness.sample_store import FROM_FILE

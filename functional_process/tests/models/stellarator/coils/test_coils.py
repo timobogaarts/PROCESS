@@ -6,14 +6,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from functional_process.cottax.queries import declared
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.problem import RootFind, Start, driver_vars, shape_of
-from cottax.rewrites import Assign
-from cottax.spec import VarPath
+from cottax.pytree.problem import RootFind, Start, driver_vars, shape_of
+from cottax.pytree.rewrites import Assign
+from cottax.pytree.spec import VarPath
 from cottax.visualization.sequencing import problem_types
-from cottax.names import PathMap
+from cottax.pytree.names import PathMap
 
 from functional_process.tests._harness import (
     Sample,
@@ -521,7 +522,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
         to_graph(node)
     )
     (guess_path,) = driver_vars(graph[node.problem_name], Start)
-    schedule = Schedule(AnswerableGraph(graph))
+    schedule = Schedule(RunnableGraph(graph))
     wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
     lhs_path = resolve(stellarator.lhs, VarPath)
     rhs_path = resolve(stellarator.rhs, VarPath)

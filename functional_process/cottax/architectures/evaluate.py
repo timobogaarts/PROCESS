@@ -23,12 +23,13 @@ import pathlib
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Drive, Schedule
-from cottax.names import PathMap, unminted
-from cottax.plan import Delete
-from cottax.problem import is_fixed_point
-from cottax.tools.pytree import get_at
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Drive, Schedule
+from cottax.pytree.names import PathMap, unminted
+from cottax.pytree.plan import Delete
+from cottax.pytree.problem import is_fixed_point
+from cottax.execution.crossings import get_at
 
 from functional_process.cottax.architectures.drivers import SweepDriver
 from functional_process.cottax.architectures.mda import (
@@ -238,7 +239,7 @@ def mda_schedule(graph=None, cut=cut_graph):
     if cached is None:
         driven = cut(without_excluded(key[0]))
         runnable = assign_drivers(driven, default_drivers(driven))
-        schedule = Schedule(AnswerableGraph(runnable))
+        schedule = Schedule(RunnableGraph(runnable))
         cached = _MDA_SCHEDULES[key] = (
             driven,
             runnable,
@@ -508,7 +509,7 @@ def cold_state(data, graph=None) -> dict:
             if is_fixed_point(sweep[problem]):
                 drivers[problem] = SweepDriver()
         runnable = assign_drivers(sweep, drivers)
-        schedule = Schedule(AnswerableGraph(runnable))
+        schedule = Schedule(RunnableGraph(runnable))
         env = seed_env(data, schedule, runnable, cold_shapes(data, key))
         out = jit_schedule(schedule)(PathMap(env))
         cached = _COLD_STATES[key] = dict(out)
@@ -531,7 +532,7 @@ def seed_block(schedule, drive, base, fallback, design=()):
     # -- is it coupling, is it in `fallback`, what does `base` say -- is asked about the
     # unknown it starts, never about the port's own name. `fallback` is an MDA output
     # env, keyed by real paths, and no `DataStructure` field is spelled `^guess.*`.
-    guesses = guess_sources(schedule.answerable.graph)
+    guesses = guess_sources(schedule.executable.graph)
     for var in list(schedule.inputs) + list(drive.unknowns):
         source = guesses.get(var, var)
         # A **cut** (`^hat.*`) is coupling by the same argument as an unknown, and it is

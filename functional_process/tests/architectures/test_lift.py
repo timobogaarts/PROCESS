@@ -19,10 +19,11 @@ import time
 import jax
 import numpy as np
 import pytest
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
-from cottax.names import prefix_path
-from cottax.problem import Le, is_root_find
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
+from cottax.pytree.names import prefix_path
+from cottax.pytree.problem import Le, is_root_find
 
 from functional_process.configurations import load
 from functional_process.configurations.kinds import BUILD_LEAVES, KINDS, Kind
@@ -115,7 +116,7 @@ def lifted_run(lifted, primed):
     """
     graph, _condition, _report = lifted
     env, out = primed
-    schedule = Schedule(AnswerableGraph(graph))
+    schedule = Schedule(RunnableGraph(graph))
     inputs = set(schedule.inputs)
     at_root = {v: value for v, value in env.items() if v in inputs}
     at_root[WP_WIDTH_R_MIN] = out[WP_WIDTH_R_MIN]

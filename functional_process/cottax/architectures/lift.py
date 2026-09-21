@@ -57,12 +57,13 @@ import jax
 
 jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float64
 
-from cottax.answerable import AnswerableGraph  # noqa: E402
-from cottax.evaluation.schedule import Schedule  # noqa: E402
-from cottax.names import MintKey, PathMap, prefix_path  # noqa: E402
-from cottax.nodes import ImplementedFunction  # noqa: E402
-from cottax.plan import Delete, Insert, Plan, Unnest  # noqa: E402
-from cottax.problem import (  # noqa: E402
+from cottax.pytree.executable import ExecutableGraph  # noqa: E402
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule  # noqa: E402
+from cottax.pytree.names import MintKey, PathMap, prefix_path  # noqa: E402
+from cottax.pytree.nodes import ImplementedFunction  # noqa: E402
+from cottax.pytree.plan import Delete, Insert, Plan, Unnest  # noqa: E402
+from cottax.pytree.problem import (  # noqa: E402
     ConditionalNode,
     Driven,
     Le,
@@ -71,8 +72,8 @@ from cottax.problem import (  # noqa: E402
     shape_of,
     unknowns_of,
 )
-from cottax.rewrites import Undetermine, Undrive  # noqa: E402
-from cottax.spec import NodePath, VarPath  # noqa: E402
+from cottax.pytree.rewrites import Undetermine, Undrive  # noqa: E402
+from cottax.pytree.spec import NodePath, VarPath  # noqa: E402
 from cottax.visualization.sequencing import problem_types  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
@@ -89,7 +90,7 @@ from functional_process.vocabulary.iteration_variables import (  # noqa: E402
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from cottax.graph import Graph
+    from cottax.pytree.graph import Graph
 
 COND = MintKey("cond")
 SAFE = ("above", "below")
@@ -430,7 +431,7 @@ def applied(
         _resolve(r["design"]["unknown"], driven.graph.boundary_inputs)
         for r in reports.values()
     )
-    schedule = Schedule(AnswerableGraph(driven))
+    schedule = Schedule(RunnableGraph(driven))
     old = built.problem
     report = dict(
         old.report,

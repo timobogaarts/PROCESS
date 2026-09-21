@@ -3,19 +3,20 @@
 Two levels: a synthetic contraction mapping (exact, hand-computable fixed point --
 proves the iteration mechanics themselves, independent of any real node), and a real
 `FixedPointFunction` already registered in this codebase, driven end to end through
-`cottax.evaluation.schedule.Drive` (proves genuine integration, not just the driver in isolation).
+`cottax.execution.schedule.Drive` (proves genuine integration, not just the driver in isolation).
 """
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.answerable import AnswerableGraph
-from cottax.evaluation.schedule import Schedule
+from cottax.pytree.executable import ExecutableGraph
+from cottax.execution import RunnableGraph
+from cottax.execution.schedule import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
-from cottax.names import PathMap
-from cottax.problem import Start, driver_vars
-from cottax.rewrites import Assign
-from cottax.spec import VarPath
+from cottax.pytree.names import PathMap
+from cottax.pytree.problem import Start, driver_vars
+from cottax.pytree.rewrites import Assign
+from cottax.pytree.spec import VarPath
 
 from functional_process.cottax.architectures.drivers import (
     PicardDriver,
@@ -147,7 +148,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     # Built through `schedule_for` rather than by constructing a `Drive` directly: the
     # schedule is what the port actually runs, and it assembles the `Drive` itself, so
     # this test does not restate `Drive`'s constructor signature.
-    schedule = Schedule(AnswerableGraph(graph))
+    schedule = Schedule(RunnableGraph(graph))
     # The guess port is read off the problem rather than spelled out, the same way
     # `mda.starts_for` does it: the node is the authority on where its start is read.
     (guess,) = driver_vars(graph[problem], Start)

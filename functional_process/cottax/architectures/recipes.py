@@ -41,10 +41,10 @@ import dataclasses
 from collections.abc import Callable, Sequence
 
 import networkx as nx
-from cottax.graph import Graph
-from cottax.problem import ConditionalNode, is_fixed_point, is_root_find
-from cottax.rewrites import Combine, Cut, FixedPointCut, Nest
-from cottax.spec import NodePath, VarPath
+from cottax.pytree.graph import Graph
+from cottax.pytree.problem import ConditionalNode, is_fixed_point, is_root_find
+from cottax.pytree.rewrites import Combine, Cut, FixedPointCut, Nest
+from cottax.pytree.spec import NodePath, VarPath
 from jax.tree_util import GetAttrKey
 
 Component = tuple[NodePath, ...]
@@ -341,7 +341,7 @@ class Recipe:
     def plan(self, graph: Graph) -> tuple["Plan", tuple[ComponentCut, ...]]:
         """`cut`, as a `Plan`: the same graph, with every op the recipe applied
         recorded in `Plan.ops` -- the recipe made visible, one op per line."""
-        from cottax.plan import Plan  # noqa: PLC0415
+        from cottax.pytree.plan import Plan  # noqa: PLC0415
 
         _, records = self.cut(graph)
         plan = Plan(graph)

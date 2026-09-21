@@ -1,5 +1,5 @@
-"""Generic `AbstractDriver`s for `cottax.problem.FixedPoint` and
-`cottax.problem.Optimise`, local to this port.
+"""Generic `AbstractDriver`s for `cottax.pytree.problem.FixedPoint` and
+`cottax.pytree.problem.Optimise`, local to this port.
 """
 
 import dataclasses
@@ -10,9 +10,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
-from cottax.drivers import PicardDriver as CottaxPicardDriver
-from cottax.evaluation.schedule import ConditionMap, Driver
-from cottax.problem import (
+from cottax.execution.drivers import PicardDriver as CottaxPicardDriver
+from cottax.execution.schedule import ConditionMap, Driver
+from cottax.pytree.problem import (
     Converged,
     DriverReport,
     Start,
@@ -21,8 +21,8 @@ from cottax.problem import (
     is_optimise,
     is_root_find,
 )
-from cottax.problem.condition import Inequality, Objective
-from cottax.spec import VarPath
+from cottax.pytree.problem.condition import Inequality, Objective
+from cottax.pytree.spec import VarPath
 from jax.flatten_util import ravel_pytree
 
 from functional_process.cottax.architectures.host_cache import bind
@@ -1040,7 +1040,7 @@ class BoxedSlsqpDriver(Driver):
 
 
 class SeededNewtonDriver(Driver):
-    """`cottax.drivers.NewtonDriver`, plus a fallback starting guess derived from the
+    """`cottax.execution.drivers.NewtonDriver`, plus a fallback starting guess derived from the
     block's own **context** when the one supplied in `env` is unusable.
     """
 
@@ -1601,7 +1601,7 @@ class BracketedRootDriver(Driver):
 
 
 class PicardDriver(CottaxPicardDriver):
-    """`cottax.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
+    """`cottax.execution.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
     and therefore an **implicit adjoint**.
     """
 
@@ -1617,7 +1617,7 @@ class PicardDriver(CottaxPicardDriver):
         return (Steps,) if self.report_steps else ()
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """`cottax.drivers.PicardDriver.__call__`, behind this port's refusal message.
+        """`cottax.execution.drivers.PicardDriver.__call__`, behind this port's refusal message.
         """
         start_from(data, "PicardDriver", conditions)
         if not self.report_steps:
@@ -1737,7 +1737,7 @@ class VmconDriver(Driver):
 
         def host(live, flat_start):
             """One VMCON solve, on the host, on concrete NumPy."""
-            # **Compiled, and deliberately unlike `cottax.drivers.SLSQPDriver`**, which
+            # **Compiled, and deliberately unlike `cottax.execution.drivers.SLSQPDriver`**, which
             # leaves its inner model eager. An SQP iteration here converges a whole
             # PROCESS block; running it op by op costs far more than the one trace it
             # replaces, and the `pure_callback` boundary is per *solve*, not per

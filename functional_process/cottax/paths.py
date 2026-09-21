@@ -52,7 +52,7 @@ globals().update({name: getattr(data, name) for name in AREAS})
 def written(names: Iterable) -> list[str]:
     """Names as they are written, sorted -- what a message lists.
 
-    Was `cottax.names.written` until cottax dropped its spelling helper (2026-09-12,
+    Was `cottax.pytree.names.written` until cottax dropped its spelling helper (2026-09-12,
     `af5b2f9`): a place has no order of its own, so the spelling orders them and every
     message that lists names is deterministic.
     """

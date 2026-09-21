@@ -40,7 +40,7 @@ not the same gate reused, see the record's data-footprint table.
 
 At the **node** level, this conditional/unconditional read-then-write of `.costs.cplife`
 within one function body is a genuine Shape B self-loop (`next_steps.md` §5): a node
-whose own `Output` and `FromExactly` name the identical `VarPath`, which `cottax.spec`'s
+whose own `Output` and `FromExactly` name the identical `VarPath`, which `cottax.pytree.spec`'s
 `__check_init__` refuses outright (`reads [...], which it also owns`). `CplifeAvail`
 (shared by `Avail`/`Avail2`) and `CplifeAvailSt` isolate exactly that self-reference as
 `FixedPointFunction` declarations -- `Avail`/`Avail2`/`AvailSt` themselves are now

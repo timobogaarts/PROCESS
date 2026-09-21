@@ -20,8 +20,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.names import PathMap
-from cottax.problem import Converged, Steps
+from cottax.pytree.names import PathMap
+from cottax.pytree.problem import Converged, Steps
 
 from functional_process.configurations import kinds
 from functional_process.cottax.architectures import closing, mdf, session

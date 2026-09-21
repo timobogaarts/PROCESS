@@ -98,7 +98,7 @@ cases held their count. What moved on 2026-09-17:
 | was | is |
 |---|---|
 | `ConditionNode` / `FunctionNode` / `ImplementedFunctionNode` / `DrivenConditionNode` | `ConditionalNode` / `FunctionalNode` / `ImplementedFunctionalNode` / `DrivenConditionalNode` |
-| `cottax.abstract.Relation` / `Eq` / `Le` | `cottax.problem` (re-exported from `cottax`) |
+| `cottax.core.Relation` / `Eq` / `Le` | `cottax.pytree.problem` (re-exported from `cottax`) |
 | `rewrites.NestInside(outer)` | gone -- `functional_process.cottax.queries.nested_inside(graph, outer)`, one `Nest` per other outermost problem on `outer`'s cycle |
 | `Graph.nesting_tree` / `without_outermost_problem` | `Graph.interior` (graph minus its one outermost problem; raises `SeveralOutermost`) |
 | `Blocking` for a drawing | `cottax.partition.OrderedPartition` (any graph; `Blocking` adds the answerable checks, so `Blocking.scc` raises on an undriven cycle) |
