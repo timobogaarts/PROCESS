@@ -92,3 +92,13 @@ functional_process/warp/
 
 # paper_tests: the interactive DSM pages are ~26 MB and regenerate in 15 min (dsms.py)
 paper_tests/out/dsm/
+# JAX persistent compilation caches the drivers write beside themselves
+paper_tests/jitcache/
+paper_tests/cluster/logs/
+# the per-draw JSONs (~10 MB each) that --figures condenses to the tracked .npz/_summary pairs
+paper_tests/out/flex_*.json
+!paper_tests/out/flex_*_summary.json
+paper_tests/out/*.log
+# OpenMDAO report directories written beside the driver
+om_mdf_out/
+<stdin>_out/

@@ -1,0 +1,21 @@
+{
+ "label": "ga_best",
+ "places": [
+  ".physics.b_plasma_toroidal_on_axis",
+  ".physics.rmajor",
+  ".physics.temp_plasma_electron_vol_avg_kev",
+  ".tfcoil.t_tf_superconductor_quench",
+  ".tfcoil.f_a_tf_turn_cable_copper",
+  ".physics.f_nd_alpha_thermal_electron",
+  ".stellarator.wp_width_r_min"
+ ],
+ "x": [
+  4.653069769815411,
+  27.753099584506806,
+  5.673208206328849,
+  32.76211472918418,
+  0.723379871953628,
+  0.03359040614117263,
+  0.7429182135530156
+ ]
+}

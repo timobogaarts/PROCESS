@@ -161,6 +161,9 @@ def _setup(cfg):
              "both": (kinds.TE, ".physics.f_nd_alpha_thermal_electron")}[cfg["knobs"]]
     live = session.open_session("stellarator_helias")
     dv, cv = deterministic_values(live, "one")
+    if cfg.get("baseline", "process") != "process":        # ga.py's relaxed baseline
+        from ga import baseline_values
+        dv, cv = baseline_values(live, cfg["baseline"])
     beliefs = tuple(dataclasses.replace(b, a=cfg["sigma"]) if b.path == ".physics.hfact" else b
                     for b in kinds.BELIEFS)
     model = ouu.two_stage(live, n=cfg["n"], alpha=0.9, seed=0, lifts=(lift.lift_winding_pack,),

@@ -56,16 +56,50 @@ that cap it appears to gain 47 %, which is a 4.70 T magnet being run at 6.08 T.
 import jax
 jax.config.update("jax_enable_x64", True)
 
-import dsms
 from common import OUT, deterministic_values
 from cottax.answerable import AnswerableGraph
-from cottax.names import PathMap
-from cottax.plan import Insert, Plan
-from cottax.problem import Optimise
+from cottax.pytree.names import PathMap
+from cottax.pytree.plan import Insert, Plan
+from cottax.pytree.problem import Optimise
 from functional_process.cottax.architectures import closing, lift, ouu, session
 from functional_process.cottax.architectures.mda import assign_drivers, default_drivers
 from functional_process.cottax.queries import nested_inside
 from functional_process.configurations import kinds
+from functional_process.cottax.visualization.grouping import (
+    Drawn,
+    dependency_group_sequence,
+    graph_of,
+    provenance_order,
+    render_grouped_dsm_html,
+    structure_order,
+)
+from functional_process.cottax.visualization.render_xdsm import SPELLING
+
+
+def draw(drawn: Drawn, outdir, name: str, title: str) -> list[str]:
+    """Both orderings of one answerable graph as interactive DSM pages; the two file
+    names. (Was `paper_tests/dsms.py`'s, the one piece of it the UQ still needs.)
+    """
+    graph = graph_of(drawn)
+    axis = dependency_group_sequence(graph, depth=None)
+    common = {"depth": None, "outdir": str(outdir), "write": True, "formatter": SPELLING}
+    render_grouped_dsm_html(
+        drawn,
+        order=provenance_order(graph.nodes, depth=None, owners=graph.graph.owners, groups=axis),
+        title=f"{title} -- ordered by provenance",
+        file_name=f"{name}_provenance",
+        mode="provenance",
+        **common,
+    )
+    render_grouped_dsm_html(
+        drawn,
+        order=structure_order(drawn),
+        title=f"{title} -- ordered by structure (run order, solves nested)",
+        file_name=f"{name}_scc",
+        mode="structure",
+        **common,
+    )
+    return [f"{name}_provenance.html", f"{name}_scc.html"]
 
 OPERATING = (kinds.TE, ".physics.f_nd_alpha_thermal_electron")
 
@@ -117,7 +151,7 @@ def render():
 
     out = OUT / "dsm" / "stellarator_helias"
     out.mkdir(parents=True, exist_ok=True)
-    files = dsms.draw(drawn, out, "flexibility",
+    files = draw(drawn, out, "flexibility",
                       "the operator's problem: T_e and the helium fraction optimised over a "
                       "fixed build, the density closing the power balance inside the MDA")
     print("wrote", files, f"({len(graph.nodes)} nodes)")
