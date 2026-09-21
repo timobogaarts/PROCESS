@@ -57,8 +57,8 @@ def main():
     native = by(bench.read("native"), "configuration")
 
     lines = [
-        r"\begin{tabular}{llrrrrrrrrrr}",
-        r"machine & arm & $n$ / $m$ & nodes & eval (ms) & jac (ms) & VMCON it & cold (s) & warm (s) & SLSQP it & warm (s) & $f^*$ \\ \hline",
+        r"\begin{tabular}{llrrrrrrrrrrr}",
+        r"machine & arm & $n$ / $m$ & nodes & eval (ms) & in-program ($\\mu$s) & jac (ms) & VMCON it & cold (s) & warm (s) & SLSQP it & warm (s) & $f^*$ \\ \hline",
     ]
     for name in bench.NAMES:
         arms = [a for a in bench.ARMS if (name, a) in structure]
@@ -71,6 +71,7 @@ def main():
                 f"{st['unknowns']} / {int(st['equalities']) + int(st['inequalities'])}",
                 it["block_nodes"],
                 num(it["evaluate_ms"]),
+                num(it.get("serial_us")),
                 num(it["jacobian_ms"]),
                 str(iterations(v)), num(v["cold_s"]) if v and arm != "MDA" else "--", num(v["warm_s"]) if v and arm != "MDA" else "--",
                 str(iterations(s)), num(s["warm_s"]) if s and arm != "MDA" else "--",
@@ -83,6 +84,7 @@ def main():
                 f"{p['design']} / {p['constraints']}",
                 "--",
                 f"{num(p['pass_ms'])} / {num(p['loop_ms'])}",
+                "--",
                 num(p["gradient_ms"]),
                 p["iterations"] if int(p["iterations"]) else "--", "--", num(p["solve_s"]),
                 "--", "--",

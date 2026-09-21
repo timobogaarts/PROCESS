@@ -5,7 +5,9 @@ Jacobian of it, each compiled once and then timed as the median of `--repeats` c
 For MDF that evaluation *is* the MDA converged inside the optimiser's iteration and the
 Jacobian goes through the converged solve (implicit differentiation); for IDF and SAND
 it is one pass of the models, the coupling copies being the optimiser's own. The `MDA`
-row is the analysis alone, run once from the file's design. The compile time of each
+row is the analysis alone, run once from the file's design. `serial_us` is one evaluation with no dispatch
+in it: `SERIAL_K` evaluations chained inside one program, each design fed by the last
+result, per evaluation. The compile time of each
 program is reported beside it, since a cold run pays it once; `block_nodes` is how much
 of the graph the unknowns reach -- what one iteration re-runs -- the rest being context
 computed once.
@@ -18,6 +20,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.flatten_util import ravel_pytree
@@ -46,6 +49,7 @@ def mda_row(live, args) -> dict:
     _, compile_seconds = bench.timed(run, values)          # traced and compiled here
     return {
         "evaluate_ms": 1e3 * bench.median_seconds(lambda: run(values), args.repeats),
+        "serial_us": float("nan"),
         "jacobian_ms": float("nan"),
         "compile_s": compile_seconds,
         "unknowns": 0,
@@ -67,6 +71,26 @@ def context_value(var, stage, seeded, cold):
         return jnp.asarray(0.0)
 
 
+SERIAL_K = 100
+
+
+def in_program_serial(cm, unravel, x):
+    """`SERIAL_K` evaluations one after another **inside one program**, each design
+    depending on the last evaluation's every condition, so nothing can be batched or
+    hoisted: the cost of one evaluation with no dispatch in it -- what an optimiser
+    embedded in the same program pays per iteration."""
+    def f(flat):
+        return ravel_pytree(cm(*unravel(flat)))[0]
+
+    def step(xk, _):
+        y = f(xk)
+        return xk * (1 + 1e-12 * jnp.tanh(y).sum() / y.size), y
+
+    run = jax.jit(lambda x0: jax.lax.scan(step, x0, None, length=SERIAL_K)[1])
+    run(x)
+    return run
+
+
 def optimiser_row(live, arm, build, args) -> dict:
     """One evaluation and one Jacobian of the arm's optimiser problem at its start."""
     if live.root_find:
@@ -79,11 +103,14 @@ def optimiser_row(live, arm, build, args) -> dict:
     seeded.update(seed_starts(schedule, stage))
     context = PathMap({v: context_value(v, stage, seeded, cold) for v in drive.context})
     x, unravel = ravel_pytree(tuple(jnp.asarray(seeded[u]) for u in drive.unknowns))
-    values, jacobian, _ = bind(drive.condition_map(context), unravel)
+    cm = drive.condition_map(context)
+    values, jacobian, _ = bind(cm, unravel)
     _, compile_values = bench.timed(values, x)
     _, compile_jacobian = bench.timed(jacobian, x)
+    serial = in_program_serial(cm, unravel, x)
     return {
         "evaluate_ms": 1e3 * bench.median_seconds(lambda: values(x), args.repeats),
+        "serial_us": 1e6 * bench.median_seconds(lambda: serial(x), args.repeats) / SERIAL_K,
         "jacobian_ms": 1e3 * bench.median_seconds(lambda: jacobian(x), args.repeats),
         "compile_s": compile_values + compile_jacobian,
         "unknowns": int(np.size(x)),
