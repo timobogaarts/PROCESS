@@ -51,7 +51,7 @@ from functional_process.cottax.models.stellarator.stellarator_fwbs_s4 import Bla
 from functional_process.cottax.models.stellarator.structure import StructureMasses
 from functional_process.cottax.models.total_process import StellaratorProcess
 from functional_process.cottax.models.vacuum.namespace import Vacuum
-from functional_process.cottax.models.vacuum.vacuum import DuctDiameterRootFind, VacuumOld
+from functional_process.cottax.models.vacuum.vacuum import VacuumOld
 from functional_process.models.stellarator.preset_config import machine_config_for_istell
 
 machine = StellaratorProcess(
@@ -241,7 +241,6 @@ machine = StellaratorProcess(
     ),
     vacuum=Vacuum(
         vacuum_old=VacuumOld(),
-        duct_diameter_root_find=DuctDiameterRootFind(),
     ),
     availability=Availability(
         electric_production=PlantElectricProductionSingleCoolant(),

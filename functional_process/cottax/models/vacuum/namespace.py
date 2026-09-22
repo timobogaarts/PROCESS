@@ -2,10 +2,7 @@
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
-from functional_process.cottax.models.vacuum.vacuum import (
-    DuctDiameterRootFind,
-    VacuumOld,
-)
+from functional_process.cottax.models.vacuum.vacuum import VacuumOld
 
 
 class Vacuum(ModelNamespace):
@@ -18,15 +15,19 @@ class Vacuum(ModelNamespace):
     # `TOPOLOGY_SWITCHES`'s docstring above. `VacuumPumpingSimple` stays
     # ported-but-unregistered.
     vacuum_old: VacuumOld = VacuumOld()
-    # `DuctDiameterRootFind` -- registered as a deliberate island: every `VarPath` it
-    # reads/owns is minted and unique to it (`.vacuum.d_duct`/`l1`/`l2`/`l3`/`xmult_i`/
-    # `ceff_i`), so it has no producer/consumer edge to any other node registered here
-    # today, the same shape `coils.py`'s unregistered `Jcrit*` nodes are flagged with
-    # (see this module's own docstring). Registered anyway, on explicit instruction, as
-    # a perfectly valid undriven `RootFind` problem sitting in the graph -- see that
-    # class's own docstring. `vacuum.py`'s own `DuctFeasibility` (a bare `Feasibility`
-    # `ConditionalNode`, not a `NodalDeclaration` -- see its docstring for why it cannot be
-    # passed to `to_graph()`/listed here the same way) is *not* registered: joining it
-    # with this node into one combined block is demonstrated in `test_vacuum.py`, not
-    # asserted by this graph.
-    duct_diameter_root_find: DuctDiameterRootFind = DuctDiameterRootFind()
+    # `DuctDiameterRootFind` is **not registered**, and that is the point of it.
+    # Every `VarPath` it reads or owns is minted and unique to it
+    # (`.vacuum.d_duct`/`l1`/`l2`/`l3`/`xmult_i`/`ceff_i`), so registering it put an
+    # island in every machine's graph: a node with no producer or consumer edge to
+    # anything else, answering a question no other node asks. The duct sizing the
+    # machine actually uses is `VacuumOld`'s -- `solve_duct_geometry` run eagerly --
+    # and that has not changed.
+    #
+    # It was registered for a while on explicit instruction, to have a valid undriven
+    # `RootFind` sitting in the graph. The cost was paid twice over: `evaluate`'s
+    # `EXCLUDED_NODE_NAMES` existed solely to delete it again before any architecture
+    # was assembled, so the declared graph and the graph that ran disagreed by one
+    # solve for a reason no graph operation accounts for. A demonstration that the
+    # shape is real and drivable belongs where it is demonstrated -- the class's own
+    # docstring in `vacuum.py`, and `test_vacuum.py`'s test-only driver -- not in
+    # every machine a user assembles.

@@ -120,11 +120,11 @@ def seed_starts(schedule, env, exclude=()) -> dict:
 
 
 ROOT_FIND_SEEDS = {
-    # PROCESS's own starting value, `d = np.full(4, 1e-6)`
-    # (`process/models/vacuum.py:379`) -- a flat constant there, so a flat constant
-    # here. Every `VarPath` of this node is minted, so cold or warm there is nothing in
-    # `data` to seed it from: this is its *only* starting guess, not a fallback.
-    ".vacuum.d_duct": lambda context: (1.0e-6,),
+    # `.vacuum.d_duct` had the only entry here -- PROCESS's own `d = np.full(4, 1e-6)`
+    # (`process/models/vacuum.py:379`), needed because every `VarPath` of
+    # `DuctDiameterRootFind` is minted and there was nothing in `data` to seed it from.
+    # That node is no longer registered in any machine (`vacuum/namespace.py`), so the
+    # entry went with it. `test_vacuum.py`'s test-only driver supplies its own start.
 }
 """Fallback starting guesses for `RootFind` unknowns, as `f(context) -> tuple`, used
 only when the value seeded from `data` is unusable (see `SeededNewtonDriver`).

@@ -57,9 +57,18 @@ def resolve(name: str) -> pathlib.Path:
 
 # ------------------------------------------------------------------ the graph
 
-EXCLUDED_NODE_NAMES = ("duct_diameter_root_find",)
-"""`.vacuum.duct_diameter_root_find`: no real `DataStructure` field backs any of its
-`VarPath`s, so it is dropped from every graph before assembly.
+EXCLUDED_NODE_NAMES: tuple[str, ...] = ()
+"""Nodes to drop from a graph before assembly -- **empty, and worth keeping empty.**
+
+Its one entry was `.vacuum.duct_diameter_root_find`, an island `vacuum/namespace.py`
+registered on purpose: no real `DataStructure` field backs any of its `VarPath`s and no
+other node read what it produced, so every architecture deleted it again here before
+solving anything. That made the declared graph and the graph that ran differ by one
+solve, for a reason no graph operation accounts for -- a name matched in a tuple. The
+island is unregistered now, so nothing needs deleting.
+
+A node that has to be removed before a graph can be assembled is a statement about the
+model, not about the harness. Unregister it where it is declared, and this stays empty.
 """
 
 
