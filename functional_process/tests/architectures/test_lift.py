@@ -190,8 +190,14 @@ def test_lift_refuses_what_it_cannot_take_apart(closed, lifted):
     with pytest.raises(KeyError, match="not a problem"):
         lift_winding_pack(lifted[0])
     problem = next(p for p in declared(graph) if p.spelling == INTERSECT)
+    # A genuine fixed point: the one `closing.close` makes by cutting the
+    # `f_ster_div_single` cycle. Was `^problem.power.delta_eta_step`, until that node
+    # stopped declaring a problem at all -- its "self-loop" read PROCESS's incoming
+    # field rather than its own earlier output, and it now reads `.power.delta_eta_in`
+    # (see `DeltaEtaStep`). Every fixed point in this port is cut-made now, so a cut
+    # one is what this test has to take.
     fixed_point = next(
-        p for p in declared(graph) if p.spelling == "^problem.power.delta_eta_step"
+        p for p in declared(graph) if p.spelling == "^mda.fwbs.f_ster_div_single"
     )
     with pytest.raises(ValueError, match="one of"):
         lift.lift(graph, problem, unknown=WP_WIDTH_R_MIN, safe="wide")

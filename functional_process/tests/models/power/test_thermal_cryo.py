@@ -540,8 +540,8 @@ class TestCryoLoads(Tier1Contract):
 
 
 # ---------------------------------------------------------------------------
-# DeltaEtaStep -- the `.power.delta_eta` self-loop, cut into a FixedPointFunction
-# node, and ComponentThermalPowers's corresponding drop of that Output.
+# DeltaEtaStep -- `.power.delta_eta` computed from the heat flows, and
+# ComponentThermalPowers's corresponding drop of that Output.
 # ---------------------------------------------------------------------------
 
 _DELTA_ETA_SWITCH_COMBOS = [
@@ -579,26 +579,35 @@ _DELTA_ETA_SWITCH_COMBOS = [
 def test_delta_eta_step_to_graph_builds(
     i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
 ):
-    """`to_graph(DeltaEtaStep arm)` succeeds -- the actual point of this split.
+    """`to_graph(DeltaEtaStep arm)` succeeds, as **one plain node** -- the actual
+    point of this split.
 
     Before this split, `to_graph(ComponentThermalPowers(...))` raised `ValueError:
     reads ['.power.delta_eta', ...], which it also owns` for every configuration
     (`cottax` refuses to build a node that both reads and owns one `VarPath`).
-    `DeltaEtaStep`'s built-in `FixedPointFunction` cut mints a `^cond.power.delta_eta`
-    copy for the body to write and the real `.power.delta_eta` for the paired
-    `FixedPoint` problem node to own, so neither piece reads and owns the same path.
-    `i_p_coolant_pumping`/`i_blkt_dual_coolant`/`i_thermal_electric_conversion` used
-    to be static kwargs threaded straight through to this node; they now select one
-    of `DeltaEtaStep`'s eight arms via `DELTA_ETA_STEP`.
+    `DeltaEtaStep` answered that with a `FixedPointFunction` cut, which minted a
+    `^cond.power.delta_eta` copy and a paired `FixedPoint` problem node -- two nodes
+    where PROCESS has one routine.
+
+    It now answers it the way the dataflow actually runs: the entering value is
+    PROCESS's incoming field, so it is read as `.power.delta_eta_in` and the node owns
+    `.power.delta_eta`. Neither piece reads and owns one path because there is only
+    one piece. `i_p_coolant_pumping`/`i_blkt_dual_coolant`/
+    `i_thermal_electric_conversion` used to be static kwargs threaded straight through
+    to this node; they now select one of `DeltaEtaStep`'s eight arms via
+    `DELTA_ETA_STEP`.
     """
     arm = _delta_eta_step_arm(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
     node = DELTA_ETA_STEP[arm]()
     graph = to_graph(node)
-    names = {n.spelling for n in graph.nodes}
     cls_name = type(node).__name__
-    assert names == {f"['{cls_name}']", f"^problem['{cls_name}']"}
+    assert {n.spelling for n in graph.nodes} == {f"['{cls_name}']"}
+    assert ".power.delta_eta" in {o.spelling for o in node.outputs}
+    reads = {i.spelling for i in node.inputs}
+    assert ".power.delta_eta_in" in reads
+    assert ".power.delta_eta" not in reads
 
 
 _SIX_SELF_LOOP_VARPATHS = (
@@ -674,7 +683,7 @@ def _delta_eta_step_kwargs(**overrides):
         "p_div_rad_total_mw": 15.0,
         "p_div_coolant_pump_mw": 6.0,
         "i_shld_primary_heat": 1.0,
-        "delta_eta": 0.05,
+        "delta_eta_in": 0.05,
     }
     kwargs.update(overrides)
     return kwargs
@@ -682,7 +691,7 @@ def _delta_eta_step_kwargs(**overrides):
 
 def _component_thermal_powers_call_kwargs(step_kwargs):
     """The subset of `calculate_component_thermal_powers`'s ~30 parameters that
-    `DeltaEtaStep.step`'s inputs correspond to, plus fixed/irrelevant values for the
+    `DeltaEtaStep`'s inputs correspond to, plus fixed/irrelevant values for the
     rest (the ones only `eta_turbine`/`etath_liq`/`temp_turbine_coolant_in` depend
     on) -- used only to cross-check `DeltaEtaStep` against the underlying pure
     function it shares helpers with, not as a harness sample.
@@ -715,7 +724,7 @@ def _component_thermal_powers_call_kwargs(step_kwargs):
         "i_shld_primary_heat": step_kwargs["i_shld_primary_heat"],
         "eta_turbine": 0.4,
         "etath_liq": 0.4,
-        "delta_eta": step_kwargs["delta_eta"],
+        "delta_eta": step_kwargs["delta_eta_in"],
         "temp_blkt_coolant_out": 700.0,
         "outlet_temp_liq": 700.0,
         "temp_turbine_coolant_in": 600.0,
@@ -729,7 +738,7 @@ def _component_thermal_powers_call_kwargs(step_kwargs):
 def test_delta_eta_step_matches_calculate_component_thermal_powers(
     i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
 ):
-    """`DeltaEtaStep.step` computes exactly the `delta_eta` element
+    """`DeltaEtaStep` computes exactly the `delta_eta` element
     `calculate_component_thermal_powers` would, for the same inputs -- both call the
     same extracted helpers (`calculate_p_fw_blkt_coolant_pump_mw`/
     `calculate_p_fw_blkt_heat_deposited_mw`/`calculate_p_shld_heat_deposited_mw`/
@@ -742,7 +751,7 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
     node = DELTA_ETA_STEP[arm]()
-    delta_eta_from_step = node.step(**step_kwargs)
+    delta_eta_from_step = node(**step_kwargs)
 
     full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
     full_result = calculate_component_thermal_powers(
@@ -796,20 +805,20 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
 ):
     """The entering `.power.delta_eta` value has **zero** effect on the value
-    `DeltaEtaStep.step` produces -- not merely "small," exactly zero, confirmed by
+    `DeltaEtaStep` produces -- not merely "small," exactly zero, confirmed by
     `jax.grad`.
 
     This is the surprising finding this split turned up (see `calculate_delta_eta`'s
     and `DeltaEtaStep`'s docstrings): the two `calculate_plant_thermal_efficiency`
     branches that read `delta_eta` write `eta_turbine`, and nothing downstream of
     `eta_turbine` feeds back into computing the next `delta_eta` within this call. So
-    although `.power.delta_eta` is a genuine structural self-reference (same `VarPath`
-    read and owned -- `to_graph` rejects it as a plain node, see
-    `test_delta_eta_step_to_graph_builds`), it is a numerically inert one: were a
-    driver ever assigned to the resulting `FixedPoint` problem, it would converge in
-    exactly one iteration from any starting point. Same lesson `_audit/next_steps.md`
-    § 5's `Divertor` case taught this project -- verify a cycle is real, don't assume
-    it from the shape alone.
+    although PROCESS reads and writes one field here, the read is numerically inert:
+    the `FixedPoint` this node used to declare would have converged in exactly one
+    iteration from any starting point, which is why the node now reads the entering
+    value as `.power.delta_eta_in` and declares no problem at all (see
+    `test_delta_eta_step_to_graph_builds`). This test is the evidence for that change
+    and outlives it. Same lesson `_audit/next_steps.md` § 5's `Divertor` case taught
+    this project -- verify a cycle is real, don't assume it from the shape alone.
     """
     arm = _delta_eta_step_arm(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
@@ -818,10 +827,10 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     base_kwargs = _delta_eta_step_kwargs()
 
     def delta_eta_next(delta_eta):
-        out = node.step(**{**base_kwargs, "delta_eta": delta_eta})
+        out = node(**{**base_kwargs, "delta_eta_in": delta_eta})
         return out
 
-    grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta"])
+    grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta_in"])
     assert grad == 0.0
 
 

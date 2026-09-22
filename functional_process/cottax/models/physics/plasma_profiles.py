@@ -99,21 +99,35 @@ class ParabolicGradientLengths(ExplicitFunction):
         )
 
 
-class IonVolAvgTemperature(FixedPointFunction):
-    """cottax node: `calculate_ion_vol_avg_temperature`, as a fixed point."""
+class IonVolAvgTemperature(ExplicitFunction):
+    """cottax node: `calculate_ion_vol_avg_temperature`.
+
+    **A plain node, not a fixed point.** The incumbent `temp_plasma_ion_vol_avg_kev`
+    this selects between is PROCESS's *input* value -- the field as the IN.DAT left it,
+    which is exactly what `f_temp_plasma_ion_electron <= 0` means by "use the input
+    directly" -- and not a previous iterate of this node. Read as
+    `.physics.temp_plasma_ion_vol_avg_kev_in`, a free place `evaluate.KNOWN_MINT_VALUES`
+    resolves back to the same PROCESS field, the self-read is gone and with it the
+    minted problem, the cut and the driver: PROCESS stores the input and the result in
+    one field, and only that made this look like a solve.
+
+    `u = g(u)` is a fixed point worth the name only when the value read can be this
+    node's own earlier output. It never could be here: on the `> 0` arm `g` does not
+    depend on `u` at all, and on the other arm `g` is the identity.
+    """
 
     temp_plasma_ion_vol_avg_kev = OutputInto(physics)
 
-    def step(
+    def __call__(
         self,
         f_temp_plasma_ion_electron=From(physics),
         temp_plasma_electron_vol_avg_kev=From(physics),
-        temp_plasma_ion_vol_avg_kev=From(physics),
+        temp_plasma_ion_vol_avg_kev_in=From(physics),
     ):
         return calculate_ion_vol_avg_temperature(
             f_temp_plasma_ion_electron,
             temp_plasma_electron_vol_avg_kev,
-            temp_plasma_ion_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev_in,
         )
 
 

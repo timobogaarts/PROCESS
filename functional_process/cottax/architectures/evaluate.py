@@ -76,6 +76,24 @@ def without_excluded(graph):
 # ----------------------------------------------------------- ground truth
 
 KNOWN_MINT_VALUES = {
+    # --- the three incoming-value places that replaced three self-loops ---
+    #
+    # `IonVolAvgTemperature`, `DrTfPlasmaCaseFromInput` and `DeltaEtaStep` each used to
+    # read the field they own, which made each of them a `FixedPointFunction` with a
+    # cut, a minted `^cond.` copy and a driver. None of the three ever read a previous
+    # iterate: the value is PROCESS's *incoming* field -- the IN.DAT value for the
+    # first two ("use the input directly" is what `f_temp_plasma_ion_electron <= 0`
+    # means, and the second clamps the input against a geometric floor), and an inert
+    # read for the third. Each now reads a free `..._in` place instead, and each
+    # resolves here to the very field it used to read, which is why no value moves.
+    #
+    # Nothing new is asked of PROCESS: these are identities, not inversions, and no
+    # IN.DAT name, `INPUT_VARIABLES` entry or `DataStructure` field is added.
+    ".physics.temp_plasma_ion_vol_avg_kev_in": (
+        lambda d: d.physics.temp_plasma_ion_vol_avg_kev
+    ),
+    ".tfcoil.dr_tf_plasma_case_in": (lambda d: d.tfcoil.dr_tf_plasma_case),
+    ".power.delta_eta_in": (lambda d: d.power.delta_eta),
     # `.stellarator.coilcurrent` -- a local in `st_coil` (`process/models/stellarator/
     # coils/calculate.py:46,378`), never stored, but exactly recoverable from two real
     # fields: `calculate.py:276` writes `data.tfcoil.c_tf_total = data.tfcoil.n_tf_coils

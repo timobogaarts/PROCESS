@@ -313,6 +313,23 @@ KINDS: dict[str, Kind] = {
     # -- numerics, switches, pins and inert tokamak-only reads (section 3.4). A solver's
     # start (`^guess.*`) is numerics by kind, whichever variable the scheme cut
     # (`stages.leaves`), so none is listed.
+    # The incoming values of three fields PROCESS both reads and writes. Each node used
+    # to read the field it owned, which made it a `FixedPointFunction` with a cut and a
+    # driver; each now reads its incoming value as a free `..._in` place and owns the
+    # computed field (`IonVolAvgTemperature`, `DeltaEtaStep`, `DrTfPlasmaCaseFromInput`;
+    # `evaluate.KNOWN_MINT_VALUES` resolves each back to the field it mirrors). That
+    # makes them boundary inputs of this graph, so they need a kind here.
+    #
+    # Numerics rather than operating: on this machine neither reaches an answer.
+    # `f_temp_plasma_ion_electron = 0.95 > 0`, so `IonVolAvgTemperature` returns
+    # `0.95 * T_e` and never consults the entering 12.9 keV; and the entering
+    # `delta_eta` is `del`'d on the first line of the step
+    # (`test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta`). Both are pins the
+    # port restates, which is what this section is for. A configuration with
+    # `f_temp_plasma_ion_electron <= 0` would make the first one an operating
+    # temperature, and would need its own row.
+    ".physics.temp_plasma_ion_vol_avg_kev_in": Kind.NUMERICS,
+    ".power.delta_eta_in": Kind.NUMERICS,
     ".costs.ifueltyp": Kind.NUMERICS,
     ".costs.ireactor": Kind.NUMERICS,
     ".costs.lsa": Kind.NUMERICS,

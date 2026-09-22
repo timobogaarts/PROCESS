@@ -91,23 +91,30 @@ class TfGlobalGeometryStraightCase(TfGlobalGeometry, WrapsFunction):
     dr_tf_internal_midplane = OutputInto(tfcoil)
 
 
-class DrTfPlasmaCaseFromInput(FixedPointFunction):
+class DrTfPlasmaCaseFromInput(ExplicitFunction):
     """`i_f_dr_tf_plasma_case == False`.
 
-    `large_tokamak_eval`'s arm, and a self-loop.
+    `large_tokamak_eval`'s arm. **A plain node, not a self-loop**: the value clamped
+    here is the IN.DAT's `dr_tf_plasma_case`, read as the free place
+    `.tfcoil.dr_tf_plasma_case_in` (`evaluate.KNOWN_MINT_VALUES` resolves it back to
+    the same PROCESS field), and never this node's own earlier output. The clamp is
+    idempotent -- `max(max(u, c), c) == max(u, c)` -- so the "fixed point" it used to
+    declare was reached by the first evaluation from any starting guess. Its sibling
+    `DrTfPlasmaCaseFromFraction` never read the field at all, which is the same
+    quantity written without the loop.
     """
 
     dr_tf_plasma_case = OutputInto(tfcoil)
 
-    def step(
+    def __call__(
         self,
-        dr_tf_plasma_case=From(tfcoil),
+        dr_tf_plasma_case_in=From(tfcoil),
         r_tf_inboard_in=From(build),
         dr_tf_inboard=From(build),
         n_tf_coils=From(tfcoil),
     ):
         return dr_tf_plasma_case_from_input(
-            dr_tf_plasma_case=dr_tf_plasma_case,
+            dr_tf_plasma_case=dr_tf_plasma_case_in,
             r_tf_inboard_in=r_tf_inboard_in,
             dr_tf_inboard=dr_tf_inboard,
             n_tf_coils=n_tf_coils,
