@@ -579,7 +579,7 @@ class Belief:
     note: str = ""
 
 
-BELIEFS: tuple[Belief, ...] = (
+BELIEFS_SCREENING: tuple[Belief, ...] = (
     Belief(".physics.hfact", "lognormal", 0.10, 0.0, "confinement multiplier; PROCESS's closure variable, here a belief"),
     Belief(".physics.alphan", "relative", 0.20, 0.0, "density profile exponent"),
     Belief(".physics.alphat", "relative", 0.20, 0.0, "temperature profile exponent"),
@@ -608,12 +608,68 @@ BELIEFS: tuple[Belief, ...] = (
     Belief(".costs.ucsc", "factor", 0.7, 1.5, "superconductor unit costs, the (9,) array scaled together"),
     Belief("dummy", "uniform", 0.0, 1.0, "read by nothing: the estimators' noise floor"),
 )
-"""The belief table, canonical: `paper_tests/ouu.belief_table("new", 0.10)` -- `uq.INPUTS`
-with `hfact` lognormal(0.10) rather than 0.15 and the tungsten fraction and field ripple
-uniform within 20 % rather than lognormal(ln 2 / 2). The `dummy` row, read by nothing,
-is the estimators' noise floor and stays. Nine of the paths are not beliefs by `KINDS`
-(`ECONOMIC`'s `life_plant`, `BUILD_LEAVES`, `tdiv`, `f_rad`, `temp_tf_cryo`,
-`f_t_plant_available`): sampled as scatter, or as a belief about operation."""
+"""The 2026-09-17 screening table (26 rows + `dummy`), kept importable under this name:
+`paper_tests/ouu.belief_table("new", 0.10)` -- `uq.INPUTS` with `hfact` lognormal(0.10)
+rather than 0.15 and the tungsten fraction and field ripple uniform within 20 % rather
+than lognormal(ln 2 / 2). Superseded as the canonical `BELIEFS` on 2026-09-22 by a
+pruned table of the beliefs that actually move the flexibility answer (a stellarator
+0-D closure and its two constraint-limit beliefs); this table stays importable for
+whoever still wants the wide screening set (`ga.py`, `paper_tests/uq.py`-style studies).
+Nine of the paths are not beliefs by `KINDS` (`ECONOMIC`'s `life_plant`, `BUILD_LEAVES`,
+`tdiv`, `f_rad`, `temp_tf_cryo`, `f_t_plant_available`): sampled as scatter, or as a
+belief about operation."""
+
+BELIEFS: tuple[Belief, ...] = (
+    # -- PLASMA: the 0-D closure standing in for a transport solver
+    Belief(".physics.hfact", "lognormal", 0.10, 0.0, "confinement multiplier; PROCESS's closure variable, here a belief"),
+    Belief(".physics.alphan", "relative", 0.20, 0.0, "density profile exponent"),
+    Belief(".physics.alphat", "relative", 0.20, 0.0, "temperature profile exponent"),
+    Belief(".physics.f_temp_plasma_ion_electron", "uniform", 0.85, 1.0, "$T_i / T_e$"),
+    Belief(".physics.f_p_alpha_plasma_deposited", "uniform", 0.90, 0.99, "alpha power deposited in the plasma"),
+    Belief(".impurity_radiation.f_nd_impurity_electron_array[13]", "relative", 0.20, 0.0, "tungsten fraction (index 13, the only seeded non-alpha impurity) (relative +-20 %)"),
+    # -- LIMITS: constraint thresholds that are themselves physics beliefs
+    Belief(".physics.beta_vol_avg_max", "uniform", 0.035, 0.05, "c24's stellarator beta limit (nominal 0.04)"),
+    Belief(".constraints.f_t_alpha_energy_confinement_min", "uniform", 3.0, 6.0, "c62's He-exhaust limit: rho* = tau_He* / tau_E (nominal 4)"),
+    Belief("dummy", "uniform", 0.0, 1.0, "read by nothing: the estimators' noise floor"),
+)
+"""The canonical belief table, pruned 2026-09-22 to the two groups that actually carry
+the flexibility answer -- everything else the screening table (`BELIEFS_SCREENING`)
+carried is held at the file's value instead of sampled, because it does not change
+which worlds are operable or by how much.
+
+**A digression that belongs in this docstring's history, not its current shape.**
+Pruning down to just PLASMA + LIMITS first reproducibly broke
+`ouu.two_stage(...).make()`'s `jacfwd`-through-`vmap` trace with a jaxlib MLIR error
+(`"jit(branched_error_if_impl)": operand type mismatch: expected 'tensor<1xf64>', got
+'tensor<Nx1xf64>'`) -- bisected 2026-09-22 to `^mda.fwbs.f_ster_div_single`'s driven
+`FixedPoint` (the divertor wetted-fraction cycle) becoming a function of first-stage
+constants alone once nothing reaching it was sampled any more. The *cause* was never
+the belief table's composition: it was `architectures.drivers.PicardDriver` (the
+driver `mda.default_drivers` assigns every `FixedPoint`) calling `optx.fixed_point`
+at optimistix's default `throw=True`, which raises out of `equinox`'s
+`EnumerationItem.error_if` when a step budget is exhausted -- deliberately, on cottax's
+own reasoning ("a budget is only honest if running out of it is loud") -- and that
+`error_if` reproducibly fails to *lower at all* under a `jax.jacfwd` composed with a
+`vmap`. A first working fix was to keep the belief table one row wider (`tdiv`
+sampled, avoiding the all-constant case that triggered it) -- diagnosed and shipped
+same day, then replaced same day again once the actual driver bug was found and
+fixed at the source (`PicardDriver.__call__` now calls `optx.fixed_point(...,
+throw=False)`; see its docstring for the full account). With the driver fixed, the
+table needs no extra row: PLASMA + LIMITS alone traces and runs cleanly, `tdiv` held
+at nominal like every other screening-table row outside the two kept groups. Nothing
+about *this* table changed across that detour -- only the mechanism understood well
+enough to fix instead of route around.
+
+**PLASMA** (six rows, the 0-D closure
+standing in for a transport solver -- confinement, the two profile exponents, the
+ion/electron temperature ratio, the deposited alpha fraction, the tungsten
+concentration) and **LIMITS** (two rows, the constraint thresholds that are themselves
+physics beliefs rather than engineering specifications: `beta_vol_avg_max`, c24's
+stellarator beta limit, and `f_t_alpha_energy_confinement_min`, c62's He-exhaust
+limit). Both `LIMITS` paths are boundary inputs the constraint nodes read directly
+(`test_beliefs_are_boundary_inputs`; `decision_kinds.md` section 2 lists them as the
+two belief-kind constraint limits already). The `dummy` row, read by nothing, is the
+estimators' noise floor and stays, per `beliefs.py`'s convention."""
 
 ECONOMIC: tuple[str, ...] = (
     ".costs.f_t_plant_available",
@@ -654,13 +710,31 @@ PAIRINGS: dict[str, dict[str, str]] = {
         "^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
         C16: TE,
     },
+    "he": {
+        "^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
+        "^cond.constraints.c62": ".physics.f_nd_alpha_thermal_electron",
+    },
 }
 """Which equalities the MDA closes per sample, and by what (`ouu.PAIRINGS`): `one` is
 the power balance by the density; `two` adds the net electric power closed by the
-thermal alpha fraction, `te` by the electron temperature. `one` is the settled form:
-closing c16 by the alpha fraction needs a negative fraction in 42 % of samples at the
-deterministic design, so c16 is a chance constraint instead, and the temperature and
-the alpha fraction are shared operating set-points."""
+thermal alpha fraction, `te` by the electron temperature. `one` is the settled form
+for c16: closing it by the alpha fraction needs a negative fraction in 42 % of samples
+at the deterministic design, so c16 is dropped from this constraint set rather than
+closed or reported.
+
+`he` (2026-09-22) is the settled form for the helium fraction: c62 -- `tau_He* / tau_E
+>= f_t_alpha_energy_confinement_min`, an inequality, not an equality -- is named as a
+closure alongside c2, so the thermal alpha fraction stops being a free operator knob
+and becomes what particle balance says it is: `n_He = rho* tau_E S_alpha`, driven by
+`closing.close` to the point where c62's normalised residual is exactly zero -- the
+same point where the inequality would sit tight, since the residual `close` drives is
+the one the file already reports as `(value - limit) / scale` for c62's `Le` relation
+too (`sand.constraint_nodes`: one normalised residual per constraint id, whichever
+relation reads it). `c2` and `c62` share a cycle on this graph (both read the density
+and the alpha fraction through the power balance and the He production rate), so
+`closing.close` folds them into one square, two-unknown root find over `(n_e,
+f_nd_alpha_thermal_electron)` -- `flatten=True`, the only legal choice once two closing
+variables' cycles overlap."""
 
 HISTORIC_PAIRING: dict[str, str] = {
     "^cond.constraints.c2": ".physics.hfact",

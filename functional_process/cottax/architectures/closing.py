@@ -266,23 +266,34 @@ def close(
     flatten: bool = True,
     driver=None,
 ) -> Closed:
-    """Close each equality in `pairings` by the variable it names, inside the MDA.
+    """Close each equality, or each inequality named as a closure, in `pairings` by the
+    variable it names, inside the MDA.
 
     `session`: a `session.Session`, or what `open_session` takes (a configuration or
-    its name). `pairings`: `{condition spelling: variable spelling}`, the condition an
-    active equality of the file and the variable one of its design variables; default
-    `kinds.PAIRINGS["one"]`. `flatten`: the declared problems on a root find's cycle
-    are combined into it (`flattened`); otherwise nested inside it and driven by
-    Picard. Two root finds on one cycle are flattened together into one square
-    problem over both closing variables, and refused when `flatten` is off. `driver`:
-    the driver assigned to every closing problem, default `safeguarded()`; a
-    `bracketed()` driver is given the closing variable's bounds from the reference
-    (`with_bounds`) and, answering one unknown only, wants `flatten=False`.
+    its name). `pairings`: `{condition spelling: variable spelling}`, the condition
+    one of the file's active equalities *or* one of its inequalities, and the
+    variable one of its design variables; default `kinds.PAIRINGS["one"]`. Naming an
+    inequality drives its residual to exactly zero with the same `RootFind` machinery
+    an equality gets -- legitimate because `sand.constraint_nodes` gives every active
+    constraint, equality or inequality, the same one scalar (`^cond.constraints.c<n>`,
+    the normalised residual, index 1 of `(residual, normalised_residual, value,
+    bound)`), so the zero a closing root find drives it to is the same point where the
+    original `<=` relation would sit tight -- an operating choice (run exactly at the
+    limit) stated as a structural one. Once named this way the condition is dropped
+    from `report["inequalities"]`: it is no longer a free condition anything else can
+    read as a constraint, the same way a closed equality is not carried as one.
+    `flatten`: the declared problems on a root find's cycle are combined into it
+    (`flattened`); otherwise nested inside it and driven by Picard. Two root finds on
+    one cycle are flattened together into one square problem over both closing
+    variables, and refused when `flatten` is off. `driver`: the driver assigned to
+    every closing problem, default `safeguarded()`; a `bracketed()` driver is given
+    the closing variable's bounds from the reference (`with_bounds`) and, answering
+    one unknown only, wants `flatten=False`.
 
     Raises
     ------
     ValueError
-        If one variable is named for two equalities, or two root finds share a cycle
+        If one variable is named for two conditions, or two root finds share a cycle
         and `flatten` is off.
     """
     live = _session(session)
@@ -296,12 +307,25 @@ def close(
     )
     design = tuple(sand.iteration_variable_path(i) for i in ref.ixc)
     equalities = tuple(report["equalities"])
+    # An inequality may be named as a closure too (`he`: c62), so the pool a pairing's
+    # condition resolves against is both -- see the docstring on why driving that
+    # residual to zero is the same point the inequality would sit tight at.
+    closable = equalities + tuple(report["inequalities"])
     chosen = {
-        _resolve(c, equalities, "an equality"): _resolve(v, design, "a design variable")
+        _resolve(c, closable, "an equality or a closable inequality"): _resolve(
+            v, design, "a design variable"
+        )
         for c, v in (pairings if pairings is not None else kinds.PAIRINGS["one"]).items()
     }
     if len(set(chosen.values())) != len(chosen):
-        raise ValueError("one variable cannot close two equalities")
+        raise ValueError("one variable cannot close two conditions")
+    # A closed inequality is no longer a free condition: drop it from the reported
+    # set the same way an equality never entered it (`report["equalities"]` is built
+    # once, at assembly, and never carried into `report["inequalities"]`).
+    report = dict(
+        report,
+        inequalities=tuple(c for c in report["inequalities"] if c not in chosen),
+    )
     places: dict = {}
     for cond, var in chosen.items():
         place = place_for(cond)
@@ -366,6 +390,167 @@ def close(
         conditions=(report["objective"], *report["inequalities"]),
         n_equality=0,
         n_inequality=len(report["inequalities"]),
+        report=report,
+        raw=raw,
+    )
+    return Closed(
+        session=live,
+        problem=problem,
+        pairings=chosen,
+        places=places,
+        design=kept,
+        flat=flatten,
+    )
+
+
+def close_conditions(
+    session,
+    pairings: dict[str, str],
+    *,
+    flatten: bool = True,
+    driver=None,
+    rewrite=None,
+    bounds: dict[str, tuple[float, float]] | None = None,
+) -> Closed:
+    """`close`, for **any** active condition and **any** boundary input: an
+    inequality may be named as a closure (its normalised residual driven to zero,
+    so the machine sits exactly on that limit in every world -- the helium
+    particle balance `c62` closed by the thermal alpha fraction), and the variable
+    need not be one of the file's `ixc` (the power balance `c2` closed by the
+    heating power `p_hcd_primary_extra_heat_mw`, an input PROCESS holds at 75 MW).
+
+    Additive to `close`, whose contract it keeps: same ops, same drivers, same
+    `Closed`. `close` itself now takes an inequality as a closure too (the
+    stellarator's `he` pairing), over the file's design variables; the differences
+    here are (i) `pairings` resolves the condition against the objective's equalities
+    *and* inequalities and the variable against every boundary input of the problem
+    graph, not only the `ixc`, (ii) a closed inequality leaves
+    `report["inequalities"]` (it is no longer a constraint of the outer problem, it is
+    satisfied with equality inside the MDA) and is listed in `report["closed_inequalities"]`,
+    (iii) `rewrite`, a `Graph -> Graph` applied to the problem graph -- the cut MDA
+    with the condition and objective nodes -- before any root find is inserted, so a
+    study's own ops (a `Rewire` of what the cost node reads, a `Redefine` of a limit)
+    are part of the closed graph and the report (`report["rewrite"]`, its name), and
+    (iv) `bounds`, `{variable spelling: (lower, upper)}` for a closing variable that is
+    not an `ixc` (the reference has no bounds for it), what `with_bounds` gives a
+    `bracketed()` driver and what `Closed.session.reference.bounds` is extended with
+    in the report (`report["closing_bounds"]`).
+
+    Raises
+    ------
+    KeyError
+        If a condition is not active in this file, or a variable is not a boundary
+        input of the problem graph.
+    ValueError
+        As `close`.
+    """
+    live = _session(session)
+    ref = live.reference
+    raw = without_excluded(
+        live.machine_graph if live.machine_graph is not None else graph_for()
+    )
+    scheme = SCHEME if live.scheme is None else live.scheme
+    graph, _conditions, _n, report = mdf.mdf_graph(
+        cut_graph(raw, scheme), ref.icc, ref.n_equality, ref.i_figure_merit, live.switch_values
+    )
+    if rewrite is not None:
+        graph = rewrite(graph)
+    design = tuple(sand.iteration_variable_path(i) for i in ref.ixc)
+    equalities = tuple(report["equalities"])
+    inequalities = tuple(report["inequalities"])
+    inputs = tuple(graph.graph.boundary_inputs)
+    chosen = {
+        _resolve(c, equalities + inequalities, "an active condition"): _resolve(
+            v, inputs, "a boundary input of the problem graph"
+        )
+        for c, v in pairings.items()
+    }
+    if len(set(chosen.values())) != len(chosen):
+        raise ValueError("one variable cannot close two conditions")
+    closed_inequalities = tuple(c for c in chosen if c in inequalities)
+    remaining = tuple(c for c in inequalities if c not in chosen)
+    places: dict = {}
+    for cond, var in chosen.items():
+        place = place_for(cond)
+        places[cond] = place
+        graph = (
+            Plan(graph) + Insert(PathMap(((place, RootFind((cond,), (var,))),)))
+        ).graph
+    components = {
+        cond: next(c for c in graph.graph.components if p in c)
+        for cond, p in places.items()
+    }
+    # The conditions grouped by cycle: two root finds on one cycle are one group,
+    # flattened into one square problem; a root find on a cycle of its own is a group
+    # of one and keeps its own problem (`close` maps every place onto the one combined
+    # problem when any two share a cycle, which is right for two pairings and wrong
+    # for three).
+    groups: list[list] = []
+    for cond, component in components.items():
+        for group in groups:
+            if set(component) & set(components[group[0]]):
+                if not flatten:
+                    raise ValueError(
+                        f"the root find for {cond.spelling} shares a cycle with another -- "
+                        f"pick pairings whose cycles are disjoint, or `flatten` them into "
+                        f"one square problem"
+                    )
+                group.append(cond)
+                break
+        else:
+            groups.append([cond])
+    if flatten:
+        for group in groups:
+            first_cond = group[0]
+            graph, combined = flattened(graph, places[first_cond])
+            for cond in group:
+                places[cond] = combined
+    for place in dict.fromkeys(places.values()):
+        graph = nested_inside(graph, place)
+    given = {
+        v: (float(lo), float(hi)) for v, lo, hi in ref.bounds
+    }
+    for spelling, (lo, hi) in (bounds or {}).items():
+        given[_resolve(spelling, inputs, "a boundary input of the problem graph")] = (
+            float(lo),
+            float(hi),
+        )
+    all_bounds = tuple((v, lo, hi) for v, (lo, hi) in given.items())
+    drivers = default_drivers(graph)
+    for cond, place in places.items():
+        drivers[place] = (
+            safeguarded()
+            if driver is None
+            else with_bounds(driver, chosen[cond], all_bounds)
+        )
+    assigned = assign_drivers(graph, drivers)
+    schedule = Schedule(RunnableGraph(assigned))
+    kept = tuple(v for v in design if v not in set(chosen.values()))
+    report = dict(
+        report,
+        inequalities=remaining,
+        closed_inequalities=tuple(c.spelling for c in closed_inequalities),
+        closing={c.spelling: v.spelling for c, v in chosen.items()},
+        closing_problems={
+            p.spelling: tuple(u.spelling for u in unknowns_of(assigned[p]))
+            for p in dict.fromkeys(places.values())
+        },
+        closing_bounds={
+            v.spelling: given[v] for v in chosen.values() if v in given
+        },
+        rewrite=None if rewrite is None else getattr(rewrite, "__name__", repr(rewrite)),
+        flattened=flatten,
+        blocks=len(assigned.graph.components),
+        driven_blocks=sum(1 for t in problem_types(assigned) if t is not None),
+    )
+    problem = mdf.Mdf(
+        graph=graph,
+        eager=schedule,
+        traceable=schedule,
+        design=kept,
+        conditions=(report["objective"], *remaining),
+        n_equality=0,
+        n_inequality=len(remaining),
         report=report,
         raw=raw,
     )
@@ -502,6 +687,7 @@ __all__ = [
     "SafeguardedNewtonDriver",
     "bracketed",
     "close",
+    "close_conditions",
     "condition_scale",
     "copies_from_mda",
     "cycle_of",

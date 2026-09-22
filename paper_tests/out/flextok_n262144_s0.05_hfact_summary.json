@@ -1,0 +1,200 @@
+{
+ "operable": 0.8625831604003906,
+ "n": 262144,
+ "coe_process": 510.28805964714627,
+ "installed_mw": 84.81531012779104,
+ "heating_process_mw": 75.0,
+ "cd_process_mw": 9.81531012779103,
+ "coe_q": [
+  NaN,
+  NaN,
+  NaN
+ ],
+ "net_q": [
+  410.6046641142491,
+  499.54112846119176,
+  618.4084662698974
+ ],
+ "p_heat_q": [
+  -0.4000084552364462,
+  -0.40000000030730415,
+  4.294011807328607e-05
+ ],
+ "f_he_q": [
+  0.041920482504805116,
+  0.05945916026646669,
+  0.07992230820220958
+ ],
+ "te_q": [
+  11.222109270076556,
+  12.246180117301543,
+  13.667614665857647
+ ],
+ "ne_q": [
+  7.89806472171124e+19,
+  8.11520790880712e+19,
+  8.200823642737433e+19
+ ],
+ "xe_q": [
+  0.00023929831070501633,
+  0.00035242333606402577,
+  0.0005077485733041331
+ ],
+ "active": {
+  "c60": 0.09616974982420916,
+  "c72": 0.09616974982420916,
+  "c_pf_cs_coils_peak_ma": 0.09616974982420916,
+  "lower": 0.07105487769822352,
+  "c16": 0.010313062475400338,
+  "c68": 0.045002454438110566,
+  "c5": 0.03395969414605455,
+  "c13": 1.3267233030103352e-05,
+  "c15": 3.5379288080275605e-05,
+  "c24": 8.844822020068901e-06
+ },
+ "below_process_coe": 0.9999955775889899,
+ "coe_nominal_operator": 374.05656683590274,
+ "below_nominal_coe": 0.407573821095785,
+ "p_heat_zero": 0.9777375829754866,
+ "p_heat_above_installed": 0.0,
+ "binding": {
+  "c16": 0.49060322571690307,
+  "c30": 0.03792021763873081,
+  "c68": 0.18679732393193238,
+  "lower": 0.25680815034838855,
+  "c5": 0.02784332232184993,
+  "c15": 2.7760042195264137e-05
+ },
+ "operability_corr": {
+  ".physics.hfact": 0.49997816769261505,
+  ".physics.alphan": 0.03464366703824179,
+  ".physics.alphat": 0.06264499184815071,
+  ".physics.f_temp_plasma_ion_electron": 0.24953203568852278,
+  ".physics.f_p_alpha_plasma_deposited": 0.07531827334957147,
+  ".impurity_radiation.f_nd_impurity_electron_array[13]": 0.000526585632325298,
+  ".physics.f_beta_norm_max": -0.0014442127052302044,
+  ".constraints.f_t_alpha_energy_confinement_min": -0.20677288982740175,
+  "dummy": -0.001386712029025594
+ },
+ "fixed_conditions": {
+  "c25": -0.16784262810283584,
+  "c33": -0.2579256445326107,
+  "c34": -0.16815186125167725,
+  "c35": -4.4392427794970324e-05,
+  "c36": 0.0071511295257073075,
+  "c65": -0.6696264972750281,
+  "c31": 0.0125850077068729,
+  "c32": -0.12376347762999983
+ },
+ "point": [
+  "   PROCESS's own point (the port, c2 by the heating power, c1 by the beta, f_He at PROCESS's):",
+  "      heating 75.00 MW (file 75), CD 9.82 MW, installed = 84.82 MW",
+  "      ^cond.constraints.c62                              -0.418773",
+  "      .physics.f_t_alpha_energy_confinement              7.09387",
+  "      .costs.coe                                         509.465",
+  "      .heat_transport.p_plant_electric_net_mw            400.076",
+  "      .physics.p_fusion_total_mw                         1649.41",
+  "      PROCESS itself: coe 510.29, net 400.0, P_fus 1649.4",
+  "   the same design under the study's closures (c62 held with equality at rho* = 5):",
+  "      heating 53.68 MW, f_He 0.0652 (PROCESS 0.0857), beta 0.03983 (PROCESS 0.03888)",
+  "      coe 404.60, net 507.9 MW",
+  "      conditions (normalised, <= 0 satisfied): c30 -2.69e-01, c15 -8.60e-01, c16 -2.70e-01, c24 -2.45e-01, c25 -1.68e-01, c26 -5.09e-01, c27 -3.83e-01, c33 -2.58e-01, c34 -1.68e-01, c35 -4.44e-05, c36 +7.15e-03, c60 -1.07e-04, c65 -6.70e-01, c72 -1.55e-05, c81 -6.77e-01, c68 +6.97e-02, c31 +1.26e-02, c32 -1.24e-01, c5 -4.24e-06, c8 -4.30e-01, c9 -3.92e-01, c13 -2.10e-02, c_pf_cs_coils_peak_ma +4.88e-13, lower -2.68e-01",
+  "      violated at PROCESS's own point in the port: {'^cond.constraints.c2': 2.6777358108631688e-11, '^cond.constraints.c11': 0.0008068455325229706, '^cond.constraints.c36': 0.007151129555115432, '^cond.constraints.c31': 0.012585007755381294, '^cond.constraints.c13': 0.0001114409864467758}"
+ ],
+ "nominal": {
+  "i": 262144,
+  "operable": true,
+  "psi": 1.2989609388114333e-15,
+  "binding": "c68",
+  "note": "coe minimised",
+  "converged": true,
+  "feasible": false,
+  "coe": 374.05656683590274,
+  "net_mw": 530.0927559583812,
+  "ne": 8.121182593564608e+19,
+  "te": 11.941958575351652,
+  "xe": 0.00040548557542357345,
+  "p_heat": -0.4000015185497734,
+  "f_he": 0.06788386389620199,
+  "beta": 0.03746419400115684,
+  "max_g": 0.002000009700131911,
+  "g": [
+   -0.8317227314525867,
+   -0.7228166947598267,
+   -0.325231889895953,
+   -0.2854199919590312,
+   -0.5108451016567384,
+   -0.3825419248873355,
+   -0.00010674628288374435,
+   -1.552521678197522e-05,
+   -0.6812891187518244,
+   0.002000009700131911,
+   0.002000003268170847,
+   -0.4748026528462787,
+   -0.440296875951821,
+   -0.14833673342270737,
+   0.0,
+   0.002000007592748867
+  ],
+  "active": [
+   "c60",
+   "c72",
+   "c68",
+   "c5",
+   "c_pf_cs_coils_peak_ma",
+   "lower"
+  ],
+  "calls": 60,
+  "jcalls": 16
+ },
+ "sigma": 0.05,
+ "wall": 968.6266205287538,
+ "movable": [
+  "c30",
+  "c15",
+  "c16",
+  "c24",
+  "c26",
+  "c27",
+  "c60",
+  "c72",
+  "c81",
+  "c68",
+  "c5",
+  "c8",
+  "c9",
+  "c13",
+  "c_pf_cs_coils_peak_ma",
+  "lower"
+ ],
+ "fixed": [
+  "c25",
+  "c33",
+  "c34",
+  "c35",
+  "c36",
+  "c65",
+  "c31",
+  "c32"
+ ],
+ "design": {
+  ".physics.b_plasma_toroidal_on_axis": 4.956240617090718,
+  ".physics.rmajor": 8.000000000138815,
+  ".physics.temp_plasma_electron_vol_avg_kev": 12.653769947954046,
+  ".physics.nd_plasma_electrons_vol_avg": 8.108494238106408e+19,
+  ".build.dr_cs": 0.5907911107243272,
+  ".physics.q95": 3.349314485222847,
+  ".build.dr_bore": 2.0397268740816266,
+  ".pf_coil.j_cs_flat_top_end": 17438088.013876185,
+  ".physics.f_c_plasma_non_inductive": 0.44232507216862604,
+  ".tfcoil.t_tf_superconductor_quench": 19.176520343544855,
+  ".tfcoil.dr_tf_nose_case": 0.20161189323220702,
+  ".tfcoil.dx_tf_turn_steel": 0.008085108218129558,
+  ".tfcoil.f_a_tf_turn_cable_copper": 0.8997880037570971,
+  ".tfcoil.c_tf_turn": 82589.78536912253,
+  ".pf_coil.f_a_cs_turn_steel": 0.6927877677514707,
+  ".impurity_radiation.f_nd_impurity_electron_array[12]": 0.0006169413251211742,
+  ".tfcoil.dr_tf_wp_with_insulation": 0.5709492026633564,
+  ".current_drive.p_hcd_installed_mw": 84.81531012779104
+ }
+}

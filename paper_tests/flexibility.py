@@ -107,7 +107,29 @@ def _parse(argv=None):
     p.add_argument("--n", type=int, default=1024)
     p.add_argument("--which", default="deterministic", choices=("deterministic", "robust", "both"))
     p.add_argument("--sigma", type=float, default=0.10, help="hfact belief sigma")
-    p.add_argument("--knobs", default="both", choices=("te", "he", "both"))
+    p.add_argument("--knobs", default="te", choices=("te",),
+                   help="the operator's only remaining free set-point. T_e "
+                        "parametrises the ignition curve of an ignited plasma "
+                        "(the operator physically sets fuelling; closing c2 by n_e "
+                        "at a chosen T_e traces the same curve), so this is a label, "
+                        "not a claim of a second physical knob. `he` and `both` are "
+                        "gone: under `--pairing he` the helium fraction is closed by "
+                        "c62 inside the MDA, not offered to the operator")
+    p.add_argument("--pairing", default="he", choices=("one", "two", "te", "he"),
+                   help="which equalities (`configurations.kinds.PAIRINGS`) close "
+                        "inside the MDA. `he` (default): c2 by the density, c62 (an "
+                        "inequality, driven to its zero) by the thermal alpha "
+                        "fraction -- the helium fraction stops being an operator "
+                        "knob and becomes what particle balance says it is")
+    p.add_argument("--table", default="flex", choices=("flex", "screening"),
+                   help="the belief table: `flex` (default) is the pruned 8-row "
+                        "PLASMA + LIMITS table (`configurations.kinds.BELIEFS`); "
+                        "`screening` is the retired 26-row table "
+                        "(`kinds.BELIEFS_SCREENING`)")
+    p.add_argument("--tag", default="",
+                   help="a label inserted into the default --out path and the "
+                        "--figures glob (e.g. `he`), so a run under one pairing/table "
+                        "does not collide with another's tracked files")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--order", default="index", choices=("index", "hfact"),
                    help="the order draws are walked in (warm-start locality)")
@@ -129,6 +151,9 @@ def _parse(argv=None):
                         "on, so it has no margin to absorb that.")
     p.add_argument("--design-json", default=None,
                    help='a design to certify: {"label":, "places": [...], "x": [...]}')
+    p.add_argument("--condense", action="store_true",
+                   help="also write the condensed `.npz` + `_summary.json` pair "
+                        "`figures` reads, alongside the per-draw JSON")
     p.add_argument("--figures", action="store_true",
                    help="draw the figures from the runs already in out/ and stop")
     p.add_argument("--dsm", action="store_true",
@@ -156,24 +181,38 @@ def _setup(cfg):
     from functional_process.cottax.architectures import lift, ouu, session
     from functional_process.configurations import kinds
 
-    knobs = {"te": (kinds.TE,),
-             "he": (".physics.f_nd_alpha_thermal_electron",),
-             "both": (kinds.TE, ".physics.f_nd_alpha_thermal_electron")}[cfg["knobs"]]
+    knobs = {"te": (kinds.TE,)}[cfg["knobs"]]
+    pairing = cfg.get("pairing", "he")
+    # `he`/`two`/`te` close more than one condition inside the MDA, and where their
+    # cycles overlap (`he`: c2 and c62 both read the density and the alpha fraction)
+    # `close` refuses `flatten=False` outright -- so only a single-condition pairing
+    # (`one`) can use the globally-convergent `bracketed()` driver over one unknown;
+    # everything else needs the combined square root find (`safeguarded()` Newton).
+    closure = "bracketed" if len(kinds.PAIRINGS[pairing]) == 1 else "flattened"
     live = session.open_session("stellarator_helias")
-    dv, cv = deterministic_values(live, "one")
+    dv, cv = deterministic_values(live, pairing)
     if cfg.get("baseline", "process") != "process":        # ga.py's relaxed baseline
         from ga import baseline_values
         dv, cv = baseline_values(live, cfg["baseline"])
+    table = {"flex": kinds.BELIEFS, "screening": kinds.BELIEFS_SCREENING}[cfg.get("table", "flex")]
     beliefs = tuple(dataclasses.replace(b, a=cfg["sigma"]) if b.path == ".physics.hfact" else b
-                    for b in kinds.BELIEFS)
+                    for b in table)
+    # `held` was `BUILD_LEAVES + ECONOMIC` (the four rows a build/economic-only run
+    # keeps at nominal); the pruned `flex` table never draws them in the first place,
+    # so there is nothing left to hold -- `held=()`. Harmless no-op against
+    # `screening`, which still carries those rows and would need them held to match
+    # the old runs; this study only ever asks `screening` for a like-for-like check,
+    # never a production run, so that case is left unheld deliberately.
+    extra_columns = ("^cond.constraints.c62",) if pairing == "he" else ()
     model = ouu.two_stage(live, n=cfg["n"], alpha=0.9, seed=0, lifts=(lift.lift_winding_pack,),
-                          beliefs=beliefs,
-                          held=tuple(kinds.BUILD_LEAVES) + tuple(kinds.ECONOMIC),
-                          design_values=dv, closing_values=cv)
+                          beliefs=beliefs, held=(), pairing=pairing, closure=closure,
+                          design_values=dv, closing_values=cv, extra_columns=extra_columns)
     places = [v.spelling for v in model.design]
     op = np.array([places.index(p) for p in knobs])
     fns = ouu.make(model, hoist=False)
     run, L = fns["run_batch"], fns["layout"]
+    u_names = [v.spelling for v in model.unknowns]
+    extra_names = list(L["extra"])
 
     @jax.jit
     def row(z, xf, th, st):
@@ -193,11 +232,40 @@ def _setup(cfg):
     _STATE.update(
         jax=jax, jnp=jnp, np=np, ouu=ouu, kinds=kinds, model=model, places=places,
         op=op, knobs=knobs, L=L, row=row, jrow=jrow, vjrow=vjrow,
+        u_names=u_names, extra_names=extra_names,
         lo=np.asarray(model.lower, float), hi=np.asarray(model.upper, float),
         require_net=float(cfg.get("require_net", 0.0) or 0.0),
         names=[c.spelling.rsplit(".", 1)[-1] for c in model.constraints]
               + ([] if not cfg.get("require_net", 0.0) else ["c16_net"]))
     return _STATE
+
+
+def _f_alpha(state, r, x_fixed, z_star):
+    """The helium fraction (`.physics.f_nd_alpha_thermal_electron`) for one solved
+    row: from `x_fixed`/`z_star` where it is still a free design place (pairing
+    `one`), else from the closing problem's own unknowns column of the run's output
+    `r` -- where `he`/`two`/`te` close it inside the MDA, it is no longer addressable
+    through `places`/`z_star` at all.
+    """
+    path = ".physics.f_nd_alpha_thermal_electron"
+    places, knobs = state["places"], state["knobs"]
+    if path in places:
+        if path in knobs:
+            return float(z_star[knobs.index(path)])
+        return float(x_fixed[places.index(path)])
+    u_names = state["u_names"]
+    if path in u_names:
+        u0 = state["L"]["c_u"][0]
+        return float(r[u0 + u_names.index(path)])
+    return float("nan")
+
+
+def _extras(state, r) -> dict:
+    """`{spelling: value}` for every `extra_columns` the model was built with (e.g.
+    `^cond.constraints.c62`'s residual under pairing `he`), read off one solved row.
+    """
+    e0, _e1 = state["L"]["c_extra"]
+    return {name: float(r[e0 + j]) for j, name in enumerate(state["extra_names"])}
 
 
 def _compile(state, x0):
@@ -325,18 +393,20 @@ def solve_sample(state, i, x_fixed, z0, extra_starts=()):
     g = G(z_star)          # the graph's conditions plus the power requirement
     places, kinds, names = state["places"], state["kinds"], state["names"]
     knobs = state["knobs"]
-    return {
+    row_out = {
         "i": int(i), "operable": operable, "psi": psi, "note": note,
         "converged": bool(r[c_conv] > 0.5),
         "feasible": bool(r[c_conv] > 0.5 and r[c_net] > 0 and g.max() <= FEAS),
         "coe": float(r[c_coe]), "net_mw": float(r[c_net]),
         "te": float(z_star[0]) if kinds.TE in knobs else float(x_fixed[places.index(kinds.TE)]),
-        "f_alpha": (float(z_star[-1]) if ".physics.f_nd_alpha_thermal_electron" in knobs
-                    else float(x_fixed[places.index(".physics.f_nd_alpha_thermal_electron")])),
+        "f_alpha": _f_alpha(state, r, x_fixed, z_star),
         "max_g": float(g.max()),
         "active": [names[k] for k in range(len(names)) if g[k] > -1e-3],
         "calls": len(vc), "jcalls": len(jc),
     }
+    if state["extra_names"]:
+        row_out["extras"] = _extras(state, r)
+    return row_out
 
 
 def _slice(args):
@@ -391,7 +461,7 @@ def summarise(rows, model, n, label, out=print):
     feas = np.array([r["operable"] for r in rows])
     psi = np.array([r["psi"] for r in rows])
     coe = np.array([r["coe"] for r in rows]); net = np.array([r["net_mw"] for r in rows])
-    te = np.array([r["te"] for r in rows])
+    te = np.array([r["te"] for r in rows]); f_alpha = np.array([r["f_alpha"] for r in rows])
     out(f"   operable in {feas.mean():.3f} of draws ({feas.sum()}/{n})"
         f"   psi p50 {np.median(psi):+.4f}  p95 {np.percentile(psi,95):+.4f}")
     if feas.any():
@@ -400,6 +470,7 @@ def summarise(rows, model, n, label, out=print):
         out(f"   net MW p5 {q(net,5):7.1f}  p50 {q(net,50):7.1f}  p95 {q(net,95):7.1f}"
             f"   spread {q(net,95)/max(q(net,5),1e-9):.2f}x")
         out(f"   T_e    p5 {q(te,5):6.2f}  p50 {q(te,50):6.2f}  p95 {q(te,95):6.2f} keV")
+        out(f"   f_He   p5 {q(f_alpha,5):6.4f}  p50 {q(f_alpha,50):6.4f}  p95 {q(f_alpha,95):6.4f}")
         act = Counter(a for r in rows if r["feasible"] for a in r["active"])
         out("   active: " + ", ".join(f"{k} {v/feas.sum():.2f}" for k, v in act.most_common(5)))
     out(f"   {np.mean([r['calls'] for r in rows]):.1f} value pts/draw, "
@@ -416,8 +487,88 @@ def summarise(rows, model, n, label, out=print):
         out(f"      {c:+.3f} {('+' if c > 0 else '-') * min(20, int(abs(c)*40)):20s} {path}")
 
 
-def figures(pattern="flex_n262144_s{sigma}_hfact"):
-    """The figures, from the condensed `.npz` + `_summary.json` in `out/`."""
+def condense_run(json_path, out_stem=None, label=None):
+    """One raw per-draw JSON (`main`'s `--out`) to `<stem>.npz` + `<stem>_summary.json`
+    -- the condensed pair `figures` reads. `out_stem` overrides the path stem
+    (default: `json_path` minus its trailing `.json`); `label` picks one of the raw
+    file's `rows` (default: its only one).
+    """
+    import numpy as np
+    raw = json.load(open(json_path))
+    rows_by_label = raw["rows"]
+    label = label or next(iter(rows_by_label))
+    rows = sorted(rows_by_label[label], key=lambda r: r["i"])
+    stem = out_stem if out_stem is not None else (
+        json_path[:-5] if json_path.endswith(".json") else json_path)
+    names = raw.get("constraint_names")
+    if not names:  # older raw files never carried it: recover it from what fired
+        seen = []
+        for r in rows:
+            for a in r["active"]:
+                if a not in seen:
+                    seen.append(a)
+        names = sorted(seen)
+    n = len(rows)
+    psi = np.array([r["psi"] for r in rows])
+    coe = np.array([r["coe"] for r in rows])
+    net = np.array([r["net_mw"] for r in rows])
+    te = np.array([r["te"] for r in rows])
+    f_alpha = np.array([r["f_alpha"] for r in rows])
+    max_g = np.array([r["max_g"] for r in rows])
+    operable = np.array([r["operable"] for r in rows], dtype=bool)
+    active = np.zeros((n, len(names)), dtype=bool)
+    for i, r in enumerate(rows):
+        for a in r["active"]:
+            if a in names:
+                active[i, names.index(a)] = True
+    arrays = dict(constraint_names=np.asarray(names), psi=psi, coe=coe, net_mw=net,
+                  te=te, f_alpha=f_alpha, max_g=max_g, operable=operable, active=active)
+    extra_names = sorted({k for r in rows for k in r.get("extras", {})})
+    for key in extra_names:                     # e.g. `^cond.constraints.c62`'s residual
+        short = key.rsplit(".", 1)[-1]
+        arrays[short] = np.array([r.get("extras", {}).get(key, np.nan) for r in rows])
+    npz_path = f"{stem}.npz"
+    np.savez(npz_path, **arrays)
+    feas = operable & (net > 0)                 # the `net > 0` correction `figures` applies
+    def q(v, ps):
+        return {str(p): float(np.percentile(v[feas], p)) for p in ps} if feas.any() else {}
+    summary = {
+        "n": raw.get("n", n), "places": raw.get("places", []),
+        "operating": raw.get("operating", []), "designs": raw.get("designs", {}),
+        "order": raw.get("order"), "restarts": raw.get("restarts", 0),
+        "sigma": raw.get("sigma"), "pairing": raw.get("pairing"),
+        "table": raw.get("table"), "timings": raw.get("timings", {}),
+        "n_rows": n, "operable": float(feas.mean()), "n_operable": int(feas.sum()),
+        "psi": q(psi, (5, 50, 90, 95, 99)),
+        "among_operable": {
+            "coe": q(coe, (5, 25, 50, 75, 95)), "net_mw": q(net, (5, 25, 50, 75, 95)),
+            "te": q(te, (5, 25, 50, 75, 95)), "f_alpha": q(f_alpha, (5, 25, 50, 75, 95)),
+            **{short: q(arrays[short], (5, 25, 50, 75, 95)) for short in
+               (k.rsplit(".", 1)[-1] for k in extra_names)},
+        },
+        "active_fraction": {
+            name: (float(active[feas, j].mean()) if feas.any() else 0.0)
+            for j, name in enumerate(names)
+        },
+    }
+    summary_path = f"{stem}_summary.json"
+    json.dump(summary, open(summary_path, "w"), indent=1)
+    print(f"wrote {npz_path}, {summary_path}")
+    return npz_path, summary_path
+
+
+def figures(pattern="flex_n262144_s{sigma}_hfact", tag=""):
+    """The figures, from the condensed `.npz` + `_summary.json` in `out/` --
+    `condense_run` first, over the matching raw per-draw JSON, for any sigma whose
+    pair is missing. `tag` (e.g. `he`) selects `flex_<tag>_n262144_s{sigma}_hfact*`
+    instead of the untagged `flex_n262144_s{sigma}_hfact*`.
+    """
+    if tag:
+        pattern = f"flex_{tag}_n262144_s{{sigma}}_hfact"
+    for sigma in ("0.10", "0.05", "0.02"):
+        stem = f"{OUT}/{pattern.format(sigma=sigma)}"
+        if not os.path.exists(f"{stem}.npz") and os.path.exists(f"{stem}.json"):
+            condense_run(f"{stem}.json", out_stem=stem)
     import numpy as np, matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -463,19 +614,21 @@ def figures(pattern="flex_n262144_s{sigma}_hfact"):
     a.set_xlabel("fraction of operable draws where active")
     a.set_title("red = fixed by the build, blue = the operator can move it")
     plt.tight_layout(rect=(0, 0, 1, 0.96))
-    plt.savefig(f"{OUT}/flex_histograms.png", dpi=140)
-    print(f"wrote {OUT}/flex_histograms.png")
+    out_png = f"{OUT}/flex_{tag}_histograms.png" if tag else f"{OUT}/flex_histograms.png"
+    plt.savefig(out_png, dpi=140)
+    print(f"wrote {out_png}")
 
 
 def main(argv=None):
     a = _parse(argv)
     if a.figures:
-        return figures()
+        return figures(tag=a.tag)
     if a.dsm:
         from flexibility_dsm import render  # noqa: PLC0415
         return render()
     cfg = {"n": a.n, "sigma": a.sigma, "knobs": a.knobs, "jit_cache": a.jit_cache,
            "require_net": a.require_net,
+           "pairing": a.pairing, "table": a.table,
            "restarts": a.restarts}
     t0 = time.perf_counter()
     state = _setup(cfg)
@@ -538,13 +691,21 @@ def main(argv=None):
               f"peak RSS/worker {max(timings[label]['rss_mb']):.0f} MB", flush=True)
         out[label] = rows
 
-    path = a.out or f"{OUT}/flex_n{a.n}_s{a.sigma:.2f}_{a.knobs}.json"
+    tag_prefix = f"{a.tag}_" if a.tag else ""
+    path = a.out or f"{OUT}/flex_{tag_prefix}n{a.n}_s{a.sigma:.2f}_{a.knobs}.json"
     json.dump({"n": a.n, "places": places, "operating": list(state["knobs"]),
                "workers": a.workers, "order": a.order, "restarts": a.restarts,
-               "sigma": a.sigma, "knobs": a.knobs, "timings": timings,
+               "sigma": a.sigma, "knobs": a.knobs, "pairing": a.pairing,
+               "table": a.table, "constraint_names": state["names"],
+               "timings": timings,
                "designs": {k: v.tolist() for k, v in designs.items()}, "rows": out},
               open(path, "w"), indent=1)
     print(f"\nwrote {path}")
+    if a.condense:
+        base_stem = path[:-5] if path.endswith(".json") else path
+        for label in out:
+            stem = base_stem if len(out) == 1 else f"{base_stem}_{label}"
+            condense_run(path, out_stem=stem, label=label)
 
 
 if __name__ == "__main__":

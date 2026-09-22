@@ -191,6 +191,24 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel, sizes=
     )
 
 
+def finite_difference_jacobian(evaluate, x_scaled, epsfcn):
+    """`Evaluators.fcnvmc2`'s own quotient, in a driver's scaled coordinates: each
+    coordinate perturbed to `x * (1 +/- epsfcn)`, `2n` value-only calls of `evaluate`,
+    the columns stacked. What `VmconDriver(epsfcn=...)` and `SlsqpDriver(epsfcn=...)`
+    hand their SQP instead of `jax.jacfwd`, so that the derivative stops being a
+    difference between the port and PROCESS.
+    """
+    columns = []
+    for i in range(len(x_scaled)):
+        forward = np.array(x_scaled, dtype=float)
+        backward = np.array(x_scaled, dtype=float)
+        forward[i] = x_scaled[i] * (1.0 + epsfcn)
+        backward[i] = x_scaled[i] * (1.0 - epsfcn)
+        step = forward[i] - backward[i]
+        columns.append((evaluate(forward) - evaluate(backward)) / step)
+    return np.stack(columns, axis=1)
+
+
 _SUMMARY_HEADS = 3
 """How many names of each kind `summary` quotes before `...`."""
 
@@ -504,6 +522,10 @@ class SlsqpDriver(Driver):
     condition_scale: tuple = ()
     max_iter: int = 100
     tolerance: float = 1e-8
+    epsfcn: float | None = None
+    """When set, `finite_difference_jacobian` at this relative step replaces
+    `jax.jacfwd` -- `VmconDriver.epsfcn`, for this SQP.
+    """
     callback: object = None
     """`f(iteration, x_unscaled) -> None`, or `None`."""
 
@@ -528,7 +550,7 @@ class SlsqpDriver(Driver):
         sizes = condition_sizes(conditions, start)
         meq = entry_count(sizes, 1, self.n_equality)
         driver, user_callback = self, self.callback
-        max_iter, tolerance = self.max_iter, self.tolerance
+        max_iter, tolerance, epsfcn = self.max_iter, self.tolerance, self.epsfcn
 
         def host(live, flat_start):
             # `_both` discarded on purpose. `scipy`'s SLSQP takes separate `fun`
@@ -585,7 +607,11 @@ class SlsqpDriver(Driver):
             def jacobian_at(x):
                 slot = _slot(x)
                 if slot[1] is None:
-                    slot[1] = jacobian(x)
+                    slot[1] = (
+                        jacobian(x)
+                        if epsfcn is None
+                        else finite_difference_jacobian(evaluate, x, epsfcn)
+                    )
                 return slot[1]
 
             iteration = [0]
@@ -1617,19 +1643,43 @@ class PicardDriver(CottaxPicardDriver):
         return (Steps,) if self.report_steps else ()
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """`cottax.execution.drivers.PicardDriver.__call__`, behind this port's refusal message.
+        """`cottax.execution.drivers.PicardDriver.__call__`, behind this port's refusal
+        message, and with `throw=False` on the `optx.fixed_point` call -- **not**
+        `super().__call__()`, which cottax's own `PicardDriver` (`~/jaxgraph`) leaves
+        at optimistix's default `throw=True`.
+
+        `throw=True` raises out of `equinox`'s `EnumerationItem.error_if` when a step
+        budget is exhausted, deliberately (`cottax.execution.drivers.optimistix
+        .PicardDriver`'s own docstring: "a budget is only honest if running out of it
+        is loud"). Under `jax.jacfwd` composed with a batched (`vmap`) call, that
+        `error_if` reproducibly fails to *lower* at all -- `jaxlib.mlir...MLIRError:
+        "jit(branched_error_if_impl)": operand type mismatch: expected
+        'tensor<1xf64>', got 'tensor<Nx1xf64>'` -- for at least one driven sub-problem
+        of this graph (`^mda.fwbs.f_ster_div_single`, found 2026-09-22 while pruning
+        `configurations.kinds.BELIEFS`: dropping every belief that reaches that node
+        left it a function of first-stage constants alone, and *that* is what
+        triggered it -- not vmap size, not which belief, the mix of a first-stage
+        input into an otherwise per-sample call). `throw=False` reports the same
+        verdict as data instead of as a raised exception -- which this port already
+        reads (`Steps`/`Converged` when `report_steps=True`; the caller has no way to
+        see the raised one anyway inside a batched trace) -- and the crash is gone
+        with it, verified by rerunning the pruned belief table (no `tdiv`, no other
+        workaround) through the exact `flexibility.py` machinery
+        (`hoist=False`, `jacfwd` through the batched program).
         """
-        start_from(data, "PicardDriver", conditions)
-        if not self.report_steps:
-            return super().__call__(conditions, data)
-        flat_guess, unravel = ravel_pytree(data[Start])
+        start = start_from(data, "PicardDriver", conditions)
+        flat_guess, unravel = ravel_pytree(start)
 
         def iterate(flat, args):
             nxt, _ = ravel_pytree(conditions(*unravel(flat)))
             return nxt
 
         solver = optx.FixedPointIteration(rtol=self.rtol, atol=self.atol)
-        solution = optx.fixed_point(iterate, solver, flat_guess, max_steps=self.max_steps)
+        solution = optx.fixed_point(
+            iterate, solver, flat_guess, max_steps=self.max_steps, throw=False
+        )
+        if not self.report_steps:
+            return unravel(solution.value)
         return (*unravel(solution.value), solution.stats["num_steps"])
 
 
@@ -1757,20 +1807,6 @@ class VmconDriver(Driver):
             )
             scaled_lower, scaled_upper = scaled_box
 
-            def finite_difference(x_scaled):
-                """`Evaluators.fcnvmc2`'s own quotient, in this driver's coordinates."""
-                columns = []
-                for i in range(len(x_scaled)):
-                    forward = np.array(x_scaled, dtype=float)
-                    backward = np.array(x_scaled, dtype=float)
-                    forward[i] = x_scaled[i] * (1.0 + epsfcn)
-                    backward[i] = x_scaled[i] * (1.0 - epsfcn)
-                    step = forward[i] - backward[i]
-                    columns.append(
-                        (scaled_values(forward) - scaled_values(backward)) / step
-                    )
-                return np.stack(columns, axis=1)
-
             # Flipped by the first `_Problem.__call__`. `_refuse_inert_objective` is a
             # statement about the problem, not about an iterate, and its docstring says
             # why running it per-iteration would fail working configurations.
@@ -1798,7 +1834,9 @@ class VmconDriver(Driver):
                     # `2n` exact Jacobians to throw away.
                     if epsfcn is not None:
                         values = scaled_values(x_scaled)
-                        full = finite_difference(x_scaled)
+                        full = finite_difference_jacobian(
+                            scaled_values, x_scaled, epsfcn
+                        )
                     elif fused:
                         values, full = both(x_scaled)
                     else:
