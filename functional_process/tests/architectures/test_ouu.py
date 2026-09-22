@@ -129,7 +129,7 @@ def test_assembly_has_the_shape_the_handoff_states(model):
     # The split: the whole coil and radial build hoisted, the plasma per sample.
     counts = {s.value: c.nodes for s, c in model.stages.counts.items()}
     assert counts["first"] == 66
-    assert counts["second"] == 104
+    assert counts["second"] == 102
     assert len(model.columns) == 4 + 12 + 2 + 1
     assert model.layout["c_u"] == (18, 19)
     # No other driver in the recourse schedule reports `Converged` here (the four
@@ -146,8 +146,15 @@ def test_assembly_has_the_shape_the_handoff_states(model):
         for step in ouu.driven_problems(model.recourse)
         if step.problem != model.place
     ]
-    assert len(others) == 4
-    assert "^mda.physics.fusden_alpha_total.mda" in others      # the density cycle's statement
+    assert len(others) == 2
+    # The density cycle's statement. It is `nd_plasma_fuel_ions_vol_avg`, not
+    # `fusden_alpha_total`, because `acb7f34d` replaced `mda.CUTS` -- a fixed table of
+    # nine hand-picked loop-carried variables -- with `GaussSeidelMinimal`, which
+    # derives the minimal cut per cycle. Both open the same cycle; the algorithm
+    # chooses a different variable on it. The `Tabled` scheme that wrapped the hand
+    # table was kept at `acb7f34d` "for the OUU line", never wired to it, and deleted
+    # at `48cc2c14`; this literal outlived it.
+    assert "^mda.physics.nd_plasma_fuel_ions_vol_avg.mda" in others
     assert all(
         not step.reports
         for step in ouu.driven_problems(model.recourse)

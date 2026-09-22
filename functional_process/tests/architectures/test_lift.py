@@ -275,7 +275,7 @@ def test_every_other_output_is_the_unlifted_ones(closed, primed, lifted_run):
 
 @pytest.fixture(scope="module")
 def runnable():
-    """The driven MDA graph `test_stages.py` measures (154 nodes), and it lifted."""
+    """The driven MDA graph `test_stages.py` measures (152 nodes), and it lifted."""
     graph = mda.driven_graph(without_excluded(graph_for(load(NAME).machine)))
     return graph, lift_winding_pack(graph)[0]
 
@@ -319,7 +319,7 @@ def test_stage_split_before_and_after_the_lift(runnable, label, before, after):
     """
     plain, lifted_graph = runnable
     table = {**KINDS, WP_WIDTH_R_MIN.spelling: Kind.BUILD}
-    assert (len(plain.nodes), len(lifted_graph.nodes)) == (154, 155)
+    assert (len(plain.nodes), len(lifted_graph.nodes)) == (152, 153)
     stage_before = split(plain, _rows(plain, KINDS)[label])
     stage_after = split(lifted_graph, _rows(lifted_graph, table)[label])
     hits_before, _ = violations(plain, stage_before)
@@ -392,7 +392,7 @@ def test_two_stage_assembles_with_the_pack_lifted(model, primed, lifted):
     # first stage -- a constraint the same in every sample until a coil row is
     # sampled (`held=ECONOMIC` makes `f_j_tf_wp_critical_max` reach it).
     counts = {s.value: c.nodes for s, c in model.stages.counts.items()}
-    assert counts == {"first": 67, "second": 104, "recourse": 0}
+    assert counts == {"first": 67, "second": 102, "recourse": 0}
     assert model.stages.stage[lift.place_for(WP_WIDTH_R_MIN)] is Stage.FIRST
     owned = stages.owned_by_spelling(model.closed.graph)
     for place in COIL:

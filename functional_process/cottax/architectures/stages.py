@@ -33,10 +33,13 @@ both ends are kept and re-checks that both are on one cycle, so the subgraphs ca
 the whole graph's nesting and drivers unchanged.
 
 The counts this file measures are in `tests/architectures/test_stages.py`; the
-handoff's table (`~/jaxgraph`, `plans/handoff_2026-09-17.md`) was measured on the
-graph *with* `.vacuum.duct_diameter_root_find` (156 nodes) and before `kinds.py` added
-the two section-4 lifetimes to `CLAIMED_BUILD_OUTPUTS`, which is why the test states
-both graphs.
+handoff's table (`~/jaxgraph`, `plans/handoff_2026-09-17.md`) was measured before
+`kinds.py` added the two section-4 lifetimes to `CLAIMED_BUILD_OUTPUTS`, which is why
+the test checks two claim sets against the same graph. (It was also measured with
+`.vacuum.duct_diameter_root_find` still in the graph; `4147b6bc` unregistered that
+island -- nothing produced what it read or read what it produced -- so the graph the
+test builds today no longer carries it, and the two claim sets are checked on one
+graph, not two.)
 """
 
 from __future__ import annotations
