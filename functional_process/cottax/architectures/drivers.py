@@ -10,6 +10,7 @@ subtracts.
 """
 
 import dataclasses
+import functools
 import warnings
 
 import equinox as eqx
@@ -33,7 +34,15 @@ from cottax.pytree.mint import Minted
 from cottax.pytree.path import VarPath
 from jax.flatten_util import ravel_pytree
 
-from functional_process.cottax.architectures.host_cache import bind
+from functional_process.cottax.architectures.host_cache import (
+    _flat_key,
+    _rebuild,
+    _Structure,
+    bind,
+)
+from functional_process.cottax.architectures.host_cache import (
+    condition_sizes as host_condition_sizes,
+)
 from functional_process.cottax.paths import written
 
 UNSCALABLE_BELOW = 1e-12
@@ -76,12 +85,11 @@ def gap_order(symbols) -> list[int]:
 def condition_sizes(conditions: Gaps, start) -> tuple[int, ...]:
     """How many flat entries each stacked condition contributes, in
     `condition_places` order -- `1` for a scalar, the size for an array. Traced
-    (`jax.eval_shape`), never run.
+    (`jax.eval_shape`), never run, and once per block structure
+    (`host_cache.condition_sizes`): the sizes are structural, and tracing the block on
+    every solve was most of a warm solve's fixed cost.
     """
-    objectives, gaps = jax.eval_shape(lambda s: conditions(*s), tuple(start))
-    return tuple(
-        int(np.prod(sh.shape, dtype=int)) for sh in (*objectives, *gaps)
-    )
+    return host_condition_sizes(conditions, start)
 
 
 def flat_gaps(conditions: Gaps, unknowns) -> jnp.ndarray:
@@ -1145,14 +1153,25 @@ class SeededNewtonDriver(GapDriver):
                 f"one in env at its `^guess.*` port, or give this driver a `seed`"
             )
         flat_guess, unravel = ravel_pytree(start)
+        # One compiled Newton per block structure, as `host_cache.bind`'s programs are:
+        # `optx.root_find` is a `filter_jit`, and handed a fresh `residual` closure on
+        # every call it missed its cache and compiled again -- ~0.3 s in every warm
+        # solve of a machine whose schedule runs this driver on the host (helias_5b),
+        # for a Newton whose arithmetic takes microseconds.
+        key, leaves = _flat_key((gaps, unravel))
+        value = _seeded_newton(_Structure(key), leaves, flat_guess, self.rtol, self.atol)
+        return unravel(value)
 
-        def residual(flat, args=None):
-            return flat_gaps(gaps, unravel(flat))
 
-        solution = optx.root_find(
-            residual, optx.Newton(rtol=self.rtol, atol=self.atol), flat_guess
-        )
-        return unravel(solution.value)
+@functools.partial(jax.jit, static_argnums=(0, 3, 4))
+def _seeded_newton(structure, array_leaves, flat_guess, rtol, atol):
+    """`SeededNewtonDriver`'s root find, compiled once per block structure."""
+    gaps, unravel = _rebuild(structure, array_leaves)
+
+    def residual(flat, args=None):
+        return flat_gaps(gaps, unravel(flat))
+
+    return optx.root_find(residual, optx.Newton(rtol=rtol, atol=atol), flat_guess).value
 
 
 def _usable(start) -> bool:

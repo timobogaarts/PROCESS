@@ -6,6 +6,7 @@ subtracts.
 """
 
 import functools
+import math
 
 import equinox as eqx
 import jax
@@ -59,6 +60,33 @@ def bind(conditions: Gaps, unravel):
         _timed(fn, structure, leaves)
         for fn in (_values, _jacobian, _values_and_jacobian)
     )
+
+
+def condition_sizes(conditions: Gaps, start) -> tuple[int, ...]:
+    """How many flat entries each stacked condition contributes -- the objectives, then
+    one gap per relation -- **once per block structure**.
+
+    The sizes are structural: they depend on the block's structure and its arrays'
+    shapes, never on a value, so they are the same at every warm solve. Taking them by
+    `jax.eval_shape` on the call (as `drivers.condition_sizes` did) traced the whole
+    block -- nested Picards included -- on every solve, because a fresh lambda leaves
+    nothing to cache: 0.2-1.1 s per warm solve, most of the fixed cost the paper's solve
+    times carried. The trace now runs once per (structure, shapes), keyed as `bind`'s
+    programs are.
+    """
+    key, leaves = _flat_key((conditions, tuple(start)))
+    shapes = tuple((tuple(jnp.shape(a)), jnp.result_type(a)) for a in leaves)
+    return _sizes(_Structure(key), shapes)
+
+
+@functools.lru_cache(maxsize=256)
+def _sizes(structure, shapes):
+    def stacked(arrays):
+        conditions, start = _rebuild(structure, arrays)
+        return conditions(*start)
+
+    objectives, gaps = jax.eval_shape(stacked, [jax.ShapeDtypeStruct(s, d) for s, d in shapes])
+    return tuple(int(math.prod(sh.shape)) for sh in (*objectives, *gaps))
 
 
 def _rebuild(structure, array_leaves):

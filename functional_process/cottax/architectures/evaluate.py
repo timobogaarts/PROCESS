@@ -23,6 +23,7 @@ import pathlib
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from cottax.interfaces import (
     Delete,
     Drive,
@@ -248,9 +249,19 @@ def ground_truth(data, var):
 
 
 def strongly_typed(value):
-    """`value` as a jax array whose `weak_type` is `False`, whatever it came in as."""
-    array = jnp.asarray(value)
-    return jax.lax.convert_element_type(array, array.dtype)
+    """`value` as an array whose type is not weak, whatever it came in as.
+
+    A jax array is kept (strengthened if weak); anything else -- a Python or NumPy
+    number off the `DataStructure` -- becomes a **NumPy** array, which is never weak and
+    which `jax.jit` takes as an argument directly, converting it on its own call path.
+    Making each of a schedule's few hundred inputs a jax array here instead
+    (`jnp.asarray`, then `convert_element_type`, one dispatch each) cost ~50-100 us a
+    value: ~30 ms of every warm solve's ~45 ms of seeding, for values a compiled program
+    would have accepted as they were.
+    """
+    if isinstance(value, jax.Array):
+        return jax.lax.convert_element_type(value, value.dtype) if value.weak_type else value
+    return np.asarray(value)
 
 
 # ---------------------------------------------------------------- the MDA
@@ -581,7 +592,7 @@ def seed_block(schedule, drive, base, fallback, design=()):
             borrowed.append(source)
             continue
         try:
-            env[var] = jnp.asarray(ground_truth(base, source))
+            env[var] = strongly_typed(ground_truth(base, source))
             continue
         except (AttributeError, KeyError):
             pass
@@ -589,5 +600,5 @@ def seed_block(schedule, drive, base, fallback, design=()):
             env[var] = fallback[source]
             borrowed.append(source)
         else:
-            env[var] = jnp.asarray(0.0)
+            env[var] = np.asarray(0.0)
     return env, tuple(borrowed)

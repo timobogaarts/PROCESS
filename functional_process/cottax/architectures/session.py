@@ -407,8 +407,13 @@ def solve_block(build: BlockBuild, reference, machine_graph, cold) -> dict:
             except (AttributeError, KeyError):
                 context[var] = jnp.asarray(0.0)
 
+    # Compiled whole where it traces -- the host SQP is a `jax.pure_callback`, so the
+    # steps before and after it compile around it -- and walked step by step where it
+    # does not (`run_schedule` records the verdict per schedule). `whole=False` walked
+    # every solve schedule: the upstream steps, a host-side Newton and the trailing
+    # steps each a dispatch from Python, ~30 ms of a helias_5b warm solve.
     started = time.perf_counter()
-    out = run_schedule(solve_schedule, inputs_only(solve_schedule, seeded), whole=False)
+    out = run_schedule(solve_schedule, inputs_only(solve_schedule, seeded))
     elapsed = time.perf_counter() - started
 
     # The driver refuses a non-finite problem and reports `VMCON_NON_FINITE` through

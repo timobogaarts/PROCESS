@@ -49,7 +49,8 @@ def machine_row(name, columns, last_rule=True):
 
 PAPER = Path.home() / "graph_paper" / "listings" / "process_cases"
 """Where `--paper` puts the two tabulars the paper `\\input`s."""
-PAPER_NAMES = {"table.tex": "architectures_table.tex", "table_batched.tex": "architectures_batched.tex"}
+PAPER_NAMES = {"table.tex": "architectures_table.tex", "table_batched.tex": "architectures_batched.tex",
+               "table_openmdao.tex": "architectures_openmdao.tex"}
 
 IDF_IS_SAND = {"large_tokamak_nof", "low_aspect_ratio_DEMO", "st_regression"}
 """Machines whose IDF and SAND assemble to the same problem (same unknowns, nodes and
@@ -244,31 +245,39 @@ def scaling(args):
 
 
 def openmdao(args):
-    """`out/table_openmdao.tex`: the same MDF under OpenMDAO beside the port's, per
-    machine -- one converged MDA and one total Jacobian, warm, and the SLSQP run."""
+    """`out/table_openmdao.tex`: one evaluation and one Jacobian of each optimisation's
+    MDF, warm, in three codes -- the port (in-program, `iteration.py`), OpenMDAO (the
+    same bodies as one component per model: a warm MDA, which is one sweep, and
+    `compute_totals`) and PROCESS (its evaluation loop and its finite-difference
+    gradient). Single runs, not batched: the batching figure has the port alone."""
     om = by(bench.read("openmdao_mdf"), "configuration")
     if not om:
         return
     it = by(bench.read(f"iteration_{args.scheme}"), "configuration", "arm")
-    sv = by(bench.read(f"solve_{args.scheme}_slsqp"), "configuration", "arm")
+    native = by(bench.read("native"), "configuration")
+    bar = r"@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}"
+    first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
     lines = [
-        r"\begin{tabular}{lrrrrrrrr}",
-        r"machine & components & \multicolumn{2}{c}{OpenMDAO: MDA / Jacobian (ms)} & SLSQP it & (s) & \multicolumn{2}{c}{port: eval / Jacobian (ms)} & SLSQP it (s) \\ \hline",
+        r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
+        r"\begin{tabular}{l" + first + "r" + bar + "rrr" + bar + "rrr}",
+        r"\toprule",
+        r"\rule{0pt}{2.4ex} & & \multicolumn{3}{c}{evaluation (ms)} & \multicolumn{3}{c}{Jacobian (ms)} \\",
+        r"machine & models & port & OpenMDAO & PROCESS & port & OpenMDAO & PROCESS \\[0.3ex]",
+        r"\midrule",
     ]
     for name in bench.NAMES:
-        o = om.get((name,))
-        if o is None:
+        o, m, p = om.get((name,)), it.get((name, "MDF")), native.get((name,))
+        if o is None or m is None or p is None:
             continue
-        p_it, p_sv = it.get((name, "MDF")), sv.get((name, "MDF"))
         lines.append(" & ".join([
-            SHORT.get(name, name), o["components"],
-            num(o["model_ms"]), num(o["totals_ms"]), str(iterations(o)), num(o["driver_s"]),
-            num(p_it["evaluate_ms"]) if p_it else "--", num(p_it["jacobian_ms"]) if p_it else "--",
-            f"{iterations(p_sv)} ({num(p_sv['warm_s'])})" if p_sv else "--",
+            (r"\rule{0pt}{2.4ex}" if lines[-1] == r"\midrule" else "")
+            + rf"\texttt{{{name.replace('_', chr(92) + '_')}}}", o["components"],
+            fixed(1e-3 * float(m["serial_us"])), fixed(o["model_ms"]), fixed(p["loop_ms"]),
+            fixed(1e-3 * float(m["serial_jacobian_us"])), fixed(o["totals_ms"]), fixed(p["gradient_ms"]),
         ]) + r" \\")
-    lines.append(r"\end{tabular}")
+    lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
-    (bench.OUT / "table_openmdao.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    write_table("table_openmdao.tex", text, args)
     print(text)
 
 
