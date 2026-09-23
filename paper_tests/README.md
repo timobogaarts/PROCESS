@@ -23,6 +23,7 @@ from and is compared against).
 | `flexibility.py` | **the study.** Fix the machine, let the operator re-optimise per belief draw; the coe histogram against the deterministic optimum. Its docstring is the recipe and the answer table. |
 | `flexibility_dsm.py` | the graph that study solves, as two interactive DSM pages (`out/dsm/`); its docstring is the graph recipe from the uncut base graph, step by step with node counts |
 | `ga.py` | the converse question: a genetic algorithm over the machine, scored by the batched MDA across sampled worlds -- is there a machine that fares better? |
+| `reference_problems.py` | the problem each of the seven reference configurations poses, one table each (design variables `ixc` with bounds, objective, equality and inequality `icc`, each with PROCESS's label), plus the model switches that tell them apart: `out/reference_problems.{md,tex}`; `--paper` also writes `~/graph_paper/listings/process_cases/reference_problems.tex`, which the paper's appendix `\input`s |
 | `common.py` | the env pin, `process_reference`, `deterministic_values` |
 | `decision_kinds.md`, `output_kinds.md` | the census behind `kinds.py`: every build decision (design variable or fixed), every belief, and the guarantee that no build decision is left in the graph |
 | `cluster/` | `job_flex.sh` (N = 262144 on one Snellius `rome` node in ~6 min) and its environment |
