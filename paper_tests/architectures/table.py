@@ -126,16 +126,15 @@ def main():
     # The first rule, between the names and the numbers, heavier than the three
     # between the number groups.
     first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
-    # The times group: the model's own cost (eval, jac, in-program), then each driver's
-    # warm solve beside its **own** time -- the solve minus the seconds inside the model
-    # calls it made (`solve.py`'s `model_s`): the optimiser's loop, VMCON's QP, the
-    # preparation of the start. PROCESS's own time needs its model calls counted the same
-    # way (`native.py`'s `model_s`); until a row has them it prints `--`.
+    # The times group: the model's cost per call (eval, jac, in-program), then each
+    # driver's warm solve beside the **model time** inside it -- the seconds in the model
+    # calls it made (`solve.py`'s `model_s`, `native.py`'s for PROCESS). The rest of the
+    # solve is the optimiser's: its loop, VMCON's QP, the preparation of the start.
     def header(arm, iterations, times, answer=True):
-        last = "own & $f^*$" if answer else no_answer("own")
+        last = "model & $f^*$" if answer else no_answer("model")
         return (rf"\rule{{0pt}}{{2.4ex}}{arm} arm & $n$ & $m_\mathrm{{eq}}$ & $m_\mathrm{{ineq}}$ & nodes"
                 rf" & {iterations[0]} it & {iterations[1]} & eval (ms) & jac (ms)"
-                rf" & {times[0]} (ms) & own & {times[1]} (ms) & {last} \\[0.3ex]")
+                rf" & {times[0]} (ms) & model & {times[1]} (ms) & {last} \\[0.3ex]")
 
     def no_answer(cell):
         """The last time column where there is no objective: the rule before `f^*` is
@@ -143,11 +142,12 @@ def main():
         (4 + 0.2 + 4 pt) and the empty `f^*` cell stands unruled."""
         return rf"\multicolumn{{1}}{{r@{{\hspace{{8.2pt}}}}}}{{{cell}}} &"
 
-    def own(row, total="warm_s"):
-        """A solve's time outside its model calls, in ms; `--` where they were not counted."""
+    def model(row):
+        """The seconds a solve spent inside its model calls, in ms; `--` where they were
+        not counted."""
         if not row or row.get("model_s") in (None, ""):
             return "--"
-        return ms(float(row[total]) - float(row["model_s"]))
+        return ms(row["model_s"])
 
     def root_find(name):
         return structure[(name, "MDF")].get("problem") == "root-find"
@@ -170,8 +170,8 @@ def main():
                 marked(v), marked(s),
                 fixed(1e-3 * float(it["serial_us"])),
                 fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-                ms(v["warm_s"]) if v else "--", own(v),
-                ms(s["warm_s"]) if s else "--", own(s),
+                ms(v["warm_s"]) if v else "--", model(v),
+                ms(s["warm_s"]) if s else "--", model(s),
                 fixed((v or s or {}).get("objf"), 4),
             ]) + r" \\")
         p = native.get((name,))
@@ -182,7 +182,7 @@ def main():
                 p["design"], mdf["equalities"], mdf["inequalities"], "--",
                 f"\\checkmark\\ {p['iterations']}", "--",
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
-                ms(p["solve_s"]), own(p, total="solve_s"), "--", "--",
+                ms(p["solve_s"]), model(p), "--", "--",
                 fixed(p["objf"], 4),
             ]) + r" \\[0.3ex]")
 
@@ -192,8 +192,8 @@ def main():
     # to `fsolve`, MINPACK's hybrid Powell. Its column is headed "it" like the others,
     # but what it holds is function evaluations -- its difference Jacobian's columns
     # included -- since MINPACK reports no iterations: the caption has to say so. The
-    # Newton runs inside the compiled schedule, so it has no host-side model calls to
-    # subtract: no "own" time there.
+    # Newton runs inside the compiled schedule, with no host-side model calls to count:
+    # no model time there.
     roots = [n for n in bench.NAMES if (n, "MDF") in structure and root_find(n)]
     if roots:
         lines += [r"\midrule\midrule", header("Evaluation", ("Newton", "Powell it"), ("Newton", "Powell"), answer=False)]
@@ -219,7 +219,7 @@ def main():
                 "--", f"\\checkmark\\ {evaluations}" if solved else (evaluations or "--"),
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
                 "--", "--", ms(p["solve_s"]),
-            ]) + " & " + no_answer(own(p, total="solve_s")) + r" \\[0.3ex]")
+            ]) + " & " + no_answer(model(p)) + r" \\[0.3ex]")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     write_table("table.tex", text, args)
