@@ -37,9 +37,10 @@ SHORT = {"stellarator_helias": "helias", "helias_5b": "helias-5b", "large_tokama
 
 def machine_row(name, columns):
     """The machine's own name -- the configuration's, as the paper's figures print it --
-    as a row spanning the table, over its arms: no machine column, however long the
-    name."""
-    return rf"\multicolumn{{{columns}}}{{l}}{{\rule{{0pt}}{{2.4ex}}\texttt{{{name.replace('_', chr(92) + '_')}}}}} \\"
+    in the first column, over its arms: that column is as wide as the longest name, and
+    the rules between the groups run through the row unbroken."""
+    cell = rf"\rule{{0pt}}{{2.4ex}}\texttt{{{name.replace('_', chr(92) + '_')}}}"
+    return cell + " &" * (columns - 1) + r" \\"
 
 
 PAPER = Path.home() / "graph_paper" / "listings" / "process_cases"
@@ -112,9 +113,12 @@ def main():
     # the times, the answer. `booktabs` rules and `|` do not meet cleanly, so the
     # separator is a hairline with its own padding, and the rules lose their gaps.
     bar = r"@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}"
+    # The first rule, between the names and the numbers, heavier than the three
+    # between the number groups.
+    first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
     lines = [
         r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
-        r"\begin{tabular}{l" + bar + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
+        r"\begin{tabular}{l" + first + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
         r"\toprule",
         r"\rule{0pt}{2.4ex}arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes"
         r" & VMCON it & SLSQP it & eval (ms) & jac (ms) & VMCON (s) & SLSQP (s) & $f^*$ \\[0.3ex]",

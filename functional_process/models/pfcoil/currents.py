@@ -175,8 +175,23 @@ def _solv(gmat, bvec, n_groups):
     `1/0` in the jitted program only and the whole tangent is `nan` there and finite
     here. A derivative that exists or not depending on a fusion decision is not a
     derivative, so it is no longer taken this way.
+
+    **The SVD is of the `n_groups x n_groups` triangle of a thin QR, not of the tall
+    matrix** (2026-09-23), and that is a batching fix. `A = QR` with `Q` orthonormal gives
+    `A = (Q u) s v^T` for `R = u s v^T`: the same singular values and right vectors, and
+    left vectors `Q u` up to the per-column signs the pseudo-inverse already ignores --
+    equal to the direct SVD to 3.5e-16 on the CPU. What changes is the kernel. On CUDA,
+    `jnp.linalg.svd` is cuSOLVER's Jacobi SVD, batched only when both dimensions are at
+    most 32; `A` is 74 rows tall, so under `vmap` it ran one SVD per design, each some
+    60 device events with blocking copies back to the host -- a cost *per design* no
+    batch amortises, and the whole of the tokamak blocks' flat ~0.4-2 ms per design on
+    the GPU. The QR batches, and the `R` it leaves is small enough for the batched SVD:
+    the `large_tokamak_nof` MDF block went from ~1950 to ~25 us per design at N = 4096
+    on an RTX 3080.
     """
-    umat, sigma, vmat = jnp.linalg.svd(gmat[:, :n_groups], full_matrices=False)
+    qmat, rmat = jnp.linalg.qr(gmat[:, :n_groups], mode="reduced")
+    u_small, sigma, vmat = jnp.linalg.svd(rmat, full_matrices=False)
+    umat = qmat @ u_small
 
     work2 = umat.T @ bvec
 

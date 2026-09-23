@@ -109,10 +109,15 @@ def main():
             for n in args.batches:
                 X = designs(x, n)
                 try:
-                    _, compile_e = bench.timed(evaluate, X)
-                    _, compile_j = bench.timed(jacobian, X)
-                    e = bench.median_seconds(lambda: evaluate(X), args.repeats)
-                    j = bench.median_seconds(lambda: jacobian(X), args.repeats)
+                    # Compilation alone: `lower().compile()`, then every timed call goes
+                    # through that executable. Timing the first *call* instead counted
+                    # one execution into `compile_s`, which at N = 262144 was most of it
+                    # and made the compile time look as if it grew with N.
+                    e_run, compile_e = bench.timed(lambda: evaluate.lower(X).compile())
+                    j_run, compile_j = bench.timed(lambda: jacobian.lower(X).compile())
+                    bench.timed(e_run, X), bench.timed(j_run, X)       # warm, untimed
+                    e = bench.median_seconds(lambda: e_run(X), args.repeats)
+                    j = bench.median_seconds(lambda: j_run(X), args.repeats)
                 except Exception as refusal:  # noqa: BLE001 -- out of memory, most likely
                     print(f"{name} {arm} N={n}: {type(refusal).__name__}: {str(refusal)[:80]}")
                     break
