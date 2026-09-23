@@ -90,6 +90,7 @@ def arguments(description: str, *, optimiser: bool = True, batches: bool = False
                        "merged into the machine's csv, so one process per arm adds up")
     if paper:
         p.add_argument("--paper", action="store_true", help="also write the paper's copy of each table")
+    p.add_argument("--once", action="store_true", help=argparse.SUPPRESS)  # om_mdf.py's
     p.add_argument("--repeats", type=int, default=5, help="warm repeats to take the median of")
     return p.parse_args()
 

@@ -301,9 +301,14 @@ def values_of(live, graph, report):
     return {v: value(v) for v in graph.graph.variables}
 
 
-def problem_of(live):
+def problem_of(live, once=False):
     """The MDF problem: every model a component in binding order, each root find with
-    its body in a Newton group, the whole under NLBGS, SLSQP over the design."""
+    its body in a Newton group, the whole under NLBGS, SLSQP over the design.
+
+    `once`: the top level under `NonlinearRunOnce` instead -- every component called
+    once, in order, the couplings left as they are. Not an MDA: the framework's cost of
+    one pass over the models, what any OpenMDAO model of these components pays per
+    evaluation however its cycles are grouped."""
     ref = live.reference
     raw = without_excluded(live.machine_graph)
     graph, _conditions, _n, report = mdf.mdf_graph(raw, ref.icc, ref.n_equality, ref.i_figure_merit, live.switch_values)
@@ -324,7 +329,8 @@ def problem_of(live):
 
     prob = om.Problem()
     top = prob.model
-    top.nonlinear_solver = om.NonlinearBlockGS(maxiter=500, atol=1e-10, rtol=1e-10, iprint=0)
+    top.nonlinear_solver = (om.NonlinearRunOnce() if once else
+                            om.NonlinearBlockGS(maxiter=500, atol=1e-10, rtol=1e-10, iprint=0))
     top.linear_solver = om.DirectSolver()
     driven_bodies = {graph.graph.owners[c]: n for n in graph.nodes if isinstance(graph[n], ConditionalNode) and is_root_find(graph[n]) for c in graph[n].conditions}
     placed = set()
@@ -365,8 +371,30 @@ def problem_of(live):
     return prob, graph, report
 
 
+def once(args):
+    """`--once`: one pass over the components, warm -- `out/openmdao_once/`."""
+    rows = []
+    for name_ in args.configurations:
+        live = bench.open_session(name_, args)
+        if live.root_find:
+            continue
+        (prob, graph, _report), setup_s = bench.timed(problem_of, live, once=True)
+        _, cold_s = bench.timed(prob.run_model)
+        pass_s = bench.median_seconds(prob.run_model, args.repeats)
+        rows.append({
+            "configuration": name_, "arm": "one pass (OpenMDAO)",
+            "components": len(graph.nodes), "setup_s": setup_s, "cold_pass_s": cold_s,
+            "pass_ms": 1e3 * pass_s,
+        })
+        print(rows[-1])
+    if rows:
+        bench.write("om_mdf.py", rows, "openmdao_once")
+
+
 def main():
     args = bench.arguments(__doc__, optimiser=False)
+    if "--once" in sys.argv:
+        return once(args)
     rows = []
     for name_ in args.configurations:
         live = bench.open_session(name_, args)
@@ -376,6 +404,7 @@ def main():
         _, cold_s = bench.timed(prob.run_model)
         sweeps = prob.model.nonlinear_solver._iter_count
         model_s = bench.median_seconds(prob.run_model, args.repeats)
+        warm_sweeps = prob.model.nonlinear_solver._iter_count   # the timed, warm MDA's
         totals_s = bench.median_seconds(lambda: prob.compute_totals(), args.repeats)
         began = time.perf_counter()
         result = prob.run_driver()
@@ -387,7 +416,7 @@ def main():
         rows.append({
             "configuration": name_, "arm": "MDF (OpenMDAO)",
             "components": len(graph.nodes), "design": len(live.reference.ixc),
-            "sweeps": sweeps, "setup_s": setup_s, "cold_model_s": cold_s,
+            "sweeps": sweeps, "warm_sweeps": warm_sweeps, "setup_s": setup_s, "cold_model_s": cold_s,
             "model_ms": 1e3 * model_s, "totals_ms": 1e3 * totals_s,
             "iterations": prob.driver.iter_count, "status": "converged" if result.success else "failed",
             "driver_s": driver_s, "objf": objf,
