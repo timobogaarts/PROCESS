@@ -11,8 +11,11 @@
 # moves the cottax that venv sees.
 set -u
 HOST="snellius.surf.nl"
-DEST="$HOST:/home/tbogaarts/"
-SRC=(jaxgraph PROCESS)               # relative to $HOME, so the remote layout matches
+# REMOTE_HOME / SYNC_SRC retarget it: the architecture jobs mirror PROCESS alone into a
+# fresh ~/arch_run (their cottax is pin.sh's export), leaving the old mirror as it is.
+DEST="$HOST:${REMOTE_HOME:-/home/tbogaarts}/"
+# shellcheck disable=SC2206
+SRC=(${SYNC_SRC:-jaxgraph PROCESS})  # relative to $HOME, so the remote layout matches
 COMMON_OPTS=(-avz --progress --delete)
 EXCLUDES=(
     --exclude .git --exclude __pycache__ --exclude '*.pyc' --exclude '*.egg-info'
@@ -21,6 +24,8 @@ EXCLUDES=(
     --exclude /jaxgraph/docs/build --exclude /jaxgraph/build
     --exclude /PROCESS/paper_tests/out --exclude /PROCESS/paper_tests/out_cluster
     --exclude /PROCESS/paper_tests/cluster/logs
+    --exclude /PROCESS/paper_tests/cluster/pins.env      # pin.sh writes it there
+    --exclude /PROCESS/paper_tests/architectures/out     # the cluster's own rows
     --exclude /PROCESS/documentation           # 70 MB of docs the study never reads
     --exclude /PROCESS/process.log --exclude /PROCESS/err.log --exclude '*.process.log'
     --exclude /PROCESS/OUT.DAT --exclude /PROCESS/MFILE.DAT --exclude /PROCESS/tracking

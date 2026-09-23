@@ -6,7 +6,7 @@ For MDF that evaluation *is* the MDA converged inside the optimiser's iteration 
 Jacobian goes through the converged solve (implicit differentiation); for IDF and SAND
 it is one pass of the models, the coupling copies being the optimiser's own. The `MDA`
 row is the analysis alone, run once from the file's design. `serial_us` is one evaluation with no dispatch
-in it: `SERIAL_K` evaluations chained inside one program, each design fed by the last
+in it (`serial_jacobian_us` one Jacobian): `SERIAL_K` evaluations chained inside one program, each design fed by the last
 result, per evaluation. The compile time of each
 program is reported beside it, since a cold run pays it once; `block_nodes` is how much
 of the graph the unknowns reach -- what one iteration re-runs -- the rest being context
@@ -109,6 +109,7 @@ def mda_row(live, args) -> dict:
         "evaluate_ms": 1e3 * bench.median_seconds(lambda: run(values), args.repeats),
         "serial_us": float("nan"),
         "jacobian_ms": float("nan"),
+        "serial_jacobian_us": float("nan"),
         "compile_s": compile_seconds,
         "unknowns": 0,
         "block_nodes": len(driven.nodes),
@@ -133,16 +134,19 @@ def context_value(var, stage, seeded, cold):
 SERIAL_K = 100
 
 
-def in_program_serial(cm, unravel, x):
+def in_program_serial(cm, unravel, x, jacobian=False):
     """`SERIAL_K` evaluations one after another **inside one program**, each design
     depending on the last evaluation's every condition, so nothing can be batched or
     hoisted: the cost of one evaluation with no dispatch in it -- what an optimiser
-    embedded in the same program pays per iteration."""
+    embedded in the same program pays per iteration. With `jacobian`, the same chain
+    over `jax.jacfwd` of the evaluation: one Jacobian with no dispatch in it."""
     def f(flat):
         return ravel_pytree(cm(*unravel(flat)))[0]
 
+    g = jax.jacfwd(f) if jacobian else f
+
     def step(xk, _):
-        y = f(xk)
+        y = g(xk)
         return xk * (1 + 1e-12 * jnp.tanh(y).sum() / y.size), y
 
     run = jax.jit(lambda x0: jax.lax.scan(step, x0, None, length=SERIAL_K)[1])
@@ -167,10 +171,12 @@ def optimiser_row(live, arm, build, args) -> dict:
     _, compile_values = bench.timed(values, x)
     _, compile_jacobian = bench.timed(jacobian, x)
     serial = in_program_serial(cm, unravel, x)
+    serial_jacobian = in_program_serial(cm, unravel, x, jacobian=True)
     return {
         "evaluate_ms": 1e3 * bench.median_seconds(lambda: values(x), args.repeats),
         "serial_us": 1e6 * bench.median_seconds(lambda: serial(x), args.repeats) / SERIAL_K,
         "jacobian_ms": 1e3 * bench.median_seconds(lambda: jacobian(x), args.repeats),
+        "serial_jacobian_us": 1e6 * bench.median_seconds(lambda: serial_jacobian(x), args.repeats) / SERIAL_K,
         "compile_s": compile_values + compile_jacobian,
         "unknowns": int(np.size(x)),
         "block_nodes": len(drive.nodes),       # what the unknowns reach; the rest is context

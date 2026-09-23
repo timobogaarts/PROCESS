@@ -1,22 +1,26 @@
-"""The paper's table from the four csvs: one row per machine and arm, PROCESS's own
-run beside them.
+"""The paper's table from the four csvs: one row per machine and optimising arm,
+PROCESS's own run beside them.
 
     $PY paper_tests/architectures/table.py [--scheme minimal]
 
-Writes `out/table.tex` (a `tabular` for `\\input`) and prints it. Columns:
+Writes `out/table.tex` (a booktabs `tabular` for `\\input`) and prints it. Columns:
 
-    machine | arm | unknowns / conditions | block nodes | eval ms | jac ms
-            | VMCON: iterations, time | SLSQP: iterations, time | objective
+    machine | arm | n | equalities | inequalities | block nodes | eval ms | jac ms
+            | VMCON: iterations, warm s | SLSQP: iterations, warm s | objective
 
-with PROCESS's row per machine: its pass / its idempotence loop under `eval`, its
-finite-difference gradient under `jac`, its iterations, its full run under `cold`, its
-objective. `cold` includes assembly and compilation, `warm` is the same solve again;
-the `MDA` row's `eval` is one run of the analysis. A status other than converged is
-written after the iteration count.
+`eval` and `jac` are in-program (`serial_us`, `serial_jacobian_us`: no dispatch in
+them). PROCESS's row per machine: its idempotence loop under `eval` (what it pays per
+optimiser call), its finite-difference gradient under `jac`, its iterations and its
+full run, its objective; its equality/inequality split is the MDF arm's, the same
+problem. A mark precedes each iteration count: a tick for a solve that returned
+converged, a cross otherwise. Times carry two significant figures, the objective four,
+none in exponent notation. The `MDA` rows and the cold solve (mostly compilation) are
+not printed.
 """
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -26,6 +30,16 @@ import bench  # noqa: E402
 SHORT = {"stellarator_helias": "helias", "helias_5b": "helias-5b", "large_tokamak_nof": "tokamak",
          "large_tokamak_eval": "tokamak (eval)", "low_aspect_ratio_DEMO": "LAR demo",
          "spherical_tokamak_eval": "ST (eval)", "st_regression": "ST"}
+
+
+IDF_IS_SAND = {"large_tokamak_nof", "low_aspect_ratio_DEMO", "st_regression"}
+"""Machines whose IDF and SAND assemble to the same problem (same unknowns, nodes and
+schedule; checked 2026-09-23 on cottax 078fb9f): no implicit model, so IDF has no
+discipline solve to keep local. The tables print the SAND row only."""
+
+
+def shown(name, arm):
+    return arm != "MDA" and not (arm == "IDF" and name in IDF_IS_SAND)
 
 
 def by(rows, *keys):
@@ -49,6 +63,30 @@ def iterations(row):
     return it if row["status"] == "converged" else f"{it} ({row['status']})"
 
 
+def fixed(v, digits=2):
+    """`v` to `digits` significant figures, as a plain decimal: `1230 -> 1200`,
+    `0.0702 -> 0.070`; `--` for a missing value."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return "--"
+    if x != x:
+        return "--"
+    if x == 0:
+        return "0"
+    x = float(f"{x:.{digits}g}")
+    decimals = max(0, digits - 1 - math.floor(math.log10(abs(x))))
+    return f"{x:.{decimals}f}"
+
+
+def marked(row):
+    """The iteration count behind a tick (converged) or a cross (anything else)."""
+    if row is None or row["status"] == "evaluated":
+        return "--"
+    mark = r"\checkmark" if row["status"] == "converged" else r"$\times$"
+    return f"{mark}\\ {row['iterations']}"
+
+
 def main():
     args = bench.arguments(__doc__, optimiser=False)
     structure = by(bench.read(f"structure_{args.scheme}"), "configuration", "arm")
@@ -58,40 +96,45 @@ def main():
 
     lines = [
         r"\begin{tabular}{llrrrrrrrrrrr}",
-        r"machine & arm & $n$ / $m$ & nodes & eval (ms) & in-program ($\\mu$s) & jac (ms) & VMCON it & cold (s) & warm (s) & SLSQP it & warm (s) & $f^*$ \\ \hline",
+        r"\toprule",
+        r"machine & arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & eval (ms) & jac (ms)"
+        r" & VMCON it & VMCON (s) & SLSQP it & SLSQP (s) & $f^*$ \\",
     ]
     for name in bench.NAMES:
-        arms = [a for a in bench.ARMS if (name, a) in structure]
+        arms = [a for a in bench.ARMS if shown(name, a) and (name, a) in structure]
+        if not arms:
+            continue
+        lines.append(r"\midrule")
         for i, arm in enumerate(arms):
             st, it = structure[(name, arm)], iteration[(name, arm)]
             v, s = solves["vmcon"].get((name, arm)), solves["slsqp"].get((name, arm))
             lines.append(" & ".join([
                 SHORT.get(name, name) if i == 0 else "",
                 arm,
-                f"{st['unknowns']} / {int(st['equalities']) + int(st['inequalities'])}",
+                st["unknowns"], st["equalities"], st["inequalities"],
                 it["block_nodes"],
-                num(it["evaluate_ms"]),
-                num(it.get("serial_us")),
-                num(it["jacobian_ms"]),
-                str(iterations(v)), num(v["cold_s"]) if v and arm != "MDA" else "--", num(v["warm_s"]) if v and arm != "MDA" else "--",
-                str(iterations(s)), num(s["warm_s"]) if s and arm != "MDA" else "--",
-                num((v or s or {}).get("objf"), 6),
+                fixed(1e-3 * float(it["serial_us"])),
+                fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
+                marked(v), fixed(v["warm_s"]) if v else "--",
+                marked(s), fixed(s["warm_s"]) if s else "--",
+                fixed((v or s or {}).get("objf"), 4),
             ]) + r" \\")
         p = native.get((name,))
         if p is not None:
+            mdf = structure[(name, "MDF")]
+            solved = int(p["iterations"]) > 0
             lines.append(" & ".join([
                 "", "PROCESS",
-                f"{p['design']} / {p['constraints']}",
+                p["design"], mdf["equalities"], mdf["inequalities"],
                 "--",
-                f"{num(p['pass_ms'])} / {num(p['loop_ms'])}",
-                "--",
-                num(p["gradient_ms"]),
-                p["iterations"] if int(p["iterations"]) else "--", "--", num(p["solve_s"]),
+                fixed(p["loop_ms"]),
+                fixed(p["gradient_ms"]),
+                f"\\checkmark\\ {p['iterations']}" if solved else "--",
+                fixed(p["solve_s"]),
                 "--", "--",
-                num(p["objf"], 6) if int(p["iterations"]) else "--",
+                fixed(p["objf"], 4) if solved else "--",
             ]) + r" \\")
-        lines.append(r"\hline")
-    lines.append(r"\end{tabular}")
+    lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     (bench.OUT / "table.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
     print(text)
@@ -184,7 +227,7 @@ def batched(args):
         r"& & & \multicolumn{4}{c}{$\mu$s per design, evaluation / Jacobian} & \\",
     ]
     for name in bench.NAMES:
-        arms = [a for a in ("MDF", "IDF", "SAND") if at(cpu, name, a) or at(gpu, name, a)]
+        arms = [a for a in ("MDF", "IDF", "SAND") if shown(name, a) and (at(cpu, name, a) or at(gpu, name, a))]
         for i, arm in enumerate(arms):
             top = at(gpu, name, arm)
             lines.append(" & ".join([

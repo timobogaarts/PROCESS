@@ -116,6 +116,12 @@ def median_seconds(fn, repeats: int) -> float:
 
 
 def head(repo: Path) -> str:
+    """`repo`'s short commit; on the cluster, where the trees are rsync mirrors without
+    their `.git`, the job states it instead (`COMMIT_PROCESS`, `COMMIT_COTTAX`, written
+    by `cluster/pin.sh` from the laptop)."""
+    stated = os.environ.get("COMMIT_COTTAX" if "jaxgraph" in str(repo) or "cottax" in str(repo) else "COMMIT_PROCESS")
+    if stated:
+        return stated
     try:
         return subprocess.check_output(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"], text=True).strip()
     except Exception:  # noqa: BLE001
