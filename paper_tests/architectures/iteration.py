@@ -12,7 +12,15 @@ program is reported beside it, since a cold run pays it once; `block_nodes` is h
 of the graph the unknowns reach -- what one iteration re-runs -- the rest being context
 computed once.
 
+`--epsfcn` adds the other way of getting the same Jacobian: PROCESS's own central
+difference, `x * (1 +/- epsfcn)` per coordinate, `2n` value-only evaluations of the
+*same* compiled block (`fd_jacobian_ms`), and how far its entries land from `jacfwd`'s
+(`fd_rel_median`, `fd_rel_max`, over the `fd_entries` that are not negligible
+beside the largest in their own row).
+It writes `out/iteration_<scheme>_fd/` so the autodiff table is not overwritten.
+
     $PY paper_tests/architectures/iteration.py [--scheme minimal] [--repeats 5]
+    $PY paper_tests/architectures/iteration.py --epsfcn --configurations stellarator_helias
 """
 
 from __future__ import annotations
@@ -37,8 +45,58 @@ from functional_process.cottax.architectures.evaluate import (  # noqa: E402
     seed_block,
     seed_env,
 )
+from functional_process.cottax.architectures.drivers import finite_difference_jacobian  # noqa: E402
 from functional_process.cottax.architectures.host_cache import bind  # noqa: E402
 from functional_process.cottax.architectures.mda import seed_starts  # noqa: E402
+
+
+NEGLIGIBLE = 1e-6
+"""Below this fraction of its row's largest entry, a Jacobian entry cannot move that
+condition, and `fd_columns` does not count it as a disagreement."""
+
+
+def finite_difference(values, x, epsfcn):
+    """`drivers.finite_difference_jacobian` on the bound block: `2n` value-only calls,
+    PROCESS's derivative on the port's block -- the one thing `VmconDriver(epsfcn=...)`
+    does differently from `jax.jacfwd`, taken out on its own to be timed and compared.
+    """
+    return finite_difference_jacobian(
+        lambda flat: np.asarray(values(jnp.asarray(flat))), np.asarray(x, dtype=float), epsfcn
+    )
+
+
+def fd_columns(values, jacobian, x, args) -> dict:
+    """The finite-difference Jacobian's cost and its distance from `jacfwd`'s, or the
+    same keys as `nan` where there is nothing to differentiate (the `MDA` row).
+    """
+    if not getattr(args, "epsfcn", None):
+        return {}
+    if x is None:
+        return dict.fromkeys(
+            ("fd_jacobian_ms", "fd_calls", "fd_rel_median", "fd_rel_max", "fd_entries"),
+            float("nan"),
+        )
+    exact = np.asarray(jacobian(x), dtype=float)
+    approx = finite_difference(values, x, args.epsfcn)
+    # **Per row, against that row's own largest entry.** A plain `exact != 0.0` mask
+    # reports a relative error of 3e+03 on `d(c24)/d(nd_plasma_electrons_vol_avg)`,
+    # where `jacfwd` says `-2.6e-37` and the difference says `-8.3e-34`: both are zero
+    # as far as any SQP step is concerned, and the statistic is then about rounding,
+    # not about the derivative. An entry below `NEGLIGIBLE` of the largest in its own
+    # row cannot move that condition, so it is excluded rather than allowed to set
+    # `fd_rel_max`.
+    row_scale = np.max(np.abs(exact), axis=1, keepdims=True)
+    live = np.abs(exact) > NEGLIGIBLE * row_scale
+    relative = np.abs(approx[live] - exact[live]) / np.abs(exact[live])
+    return {
+        "fd_jacobian_ms": 1e3 * bench.median_seconds(
+            lambda: finite_difference(values, x, args.epsfcn), args.repeats
+        ),
+        "fd_calls": 2 * int(np.size(x)),
+        "fd_rel_median": float(np.median(relative)) if relative.size else float("nan"),
+        "fd_rel_max": float(np.max(relative)) if relative.size else float("nan"),
+        "fd_entries": int(live.sum()),
+    }
 
 
 def mda_row(live, args) -> dict:
@@ -54,6 +112,7 @@ def mda_row(live, args) -> dict:
         "compile_s": compile_seconds,
         "unknowns": 0,
         "block_nodes": len(driven.nodes),
+        **fd_columns(None, None, None, args),
     }
 
 
@@ -115,11 +174,12 @@ def optimiser_row(live, arm, build, args) -> dict:
         "compile_s": compile_values + compile_jacobian,
         "unknowns": int(np.size(x)),
         "block_nodes": len(drive.nodes),       # what the unknowns reach; the rest is context
+        **fd_columns(values, jacobian, x, args),
     }
 
 
 def main():
-    args = bench.arguments(__doc__, optimiser=False)
+    args = bench.arguments(__doc__, optimiser=False, epsfcn=True)
     rows = []
     for name in args.configurations:
         live = bench.open_session(name, args)
@@ -128,7 +188,8 @@ def main():
             row = mda_row(live, args) if arm == "MDA" else optimiser_row(live, arm, build, args)
             rows.append({"configuration": name, "arm": arm, **row})
             print(rows[-1])
-    bench.write("iteration.py", rows, f"iteration_{args.scheme}")
+    folder = f"iteration_{args.scheme}" + ("_fd" if args.epsfcn else "")
+    bench.write("iteration.py", rows, folder)
 
 
 if __name__ == "__main__":
