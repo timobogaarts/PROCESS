@@ -102,7 +102,7 @@ def main():
     rows = []
     for name in args.configurations:
         live = bench.open_session(name, args)
-        for arm in [a for a in live.arms if a != "MDA"]:
+        for arm in [a for a in live.arms if a != "MDA" and (not args.arms or a in args.arms)]:
             f, x, block = block_of(live, arm, live.assemble(arm), args)
             evaluate = jax.jit(chunked(f, args.chunk))
             jacobian = jax.jit(chunked(jax.jacfwd(f), args.chunk))
@@ -130,7 +130,7 @@ def main():
                     "compile_s": compile_e + compile_j,
                 })
                 print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in rows[-1].items()})
-    bench.write("batched.py", rows, f"batched_{args.scheme}_{platform}")
+    bench.write("batched.py", rows, f"batched_{args.scheme}_{platform}", merge_on="arm")
 
 
 if __name__ == "__main__":

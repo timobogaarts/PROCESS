@@ -47,10 +47,15 @@ mkdir -p paper_tests/cluster/logs
     [ "$JAX_PLATFORMS" = cuda ] && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     echo "cottax $COMMIT_COTTAX ($COTTAX_SRC), PROCESS $COMMIT_PROCESS"
     python -c "import cottax, jax; print('cottax', cottax.__file__, 'jax', jax.__version__, jax.devices())"
-    echo "== $(date '+%F %T') batched.py $NAME N=$BATCHES chunk=$CHUNK"
-    # shellcheck disable=SC2086
-    python -u paper_tests/architectures/batched.py --scheme "$SCHEME" --configurations "$NAME" \
-        --batches $BATCHES --chunk "$CHUNK"
-    rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
-    echo "== $(date '+%F %T') exit $rc"
+    # One process per arm: every N is two compiles, and XLA's CPU JIT runs out of
+    # section memory ("LLVM ERROR: Unable to allocate section memory") once some tens
+    # of programs are compiled in one process. batched.py merges each arm's rows in.
+    for ARM in ${ARMS:-MDF IDF SAND}; do
+        echo "== $(date '+%F %T') batched.py $NAME $ARM N=$BATCHES chunk=$CHUNK"
+        # shellcheck disable=SC2086
+        python -u paper_tests/architectures/batched.py --scheme "$SCHEME" --configurations "$NAME" \
+            --arms "$ARM" --batches $BATCHES --chunk "$CHUNK"
+        rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
+        echo "== $(date '+%F %T') exit $rc"
+    done
 } > "$LOG" 2>&1

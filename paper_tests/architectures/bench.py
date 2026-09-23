@@ -84,6 +84,10 @@ def arguments(description: str, *, optimiser: bool = True, batches: bool = False
     if batches:
         p.add_argument("--batches", nargs="*", type=int, default=[1, 16, 256, 4096], metavar="N")
         p.add_argument("--chunk", type=int, default=4096, help="designs per vmap; larger batches are lax.map'ed over chunks")
+    if batches:
+        p.add_argument("--arms", nargs="*", default=None, metavar="ARM",
+                       help="only these arms (default: every optimising arm); the rows are "
+                       "merged into the machine's csv, so one process per arm adds up")
     if paper:
         p.add_argument("--paper", action="store_true", help="also write the paper's copy of each table")
     p.add_argument("--repeats", type=int, default=5, help="warm repeats to take the median of")
@@ -137,7 +141,7 @@ def provenance(script: str) -> str:
             f"PROCESS {head(ROOT)}, cottax {head(Path(cottax.__file__).parents[2])}")
 
 
-def write(script: str, rows: list[dict], name: str) -> None:
+def write(script: str, rows: list[dict], name: str, merge_on: str | None = None) -> None:
     """`out/<name>/<configuration>.csv`, one file per machine among `rows`: a
     provenance comment, then its rows. A rerun of one machine replaces one file, and a
     run is one process per machine (`run_all.sh`), since XLA's JIT on this box runs
@@ -147,9 +151,18 @@ def write(script: str, rows: list[dict], name: str) -> None:
     for configuration in dict.fromkeys(r["configuration"] for r in rows):
         mine = [r for r in rows if r["configuration"] == configuration]
         path = folder / f"{configuration}.csv"
+        if merge_on and path.exists():
+            # Keep the rows this run did not produce (another arm's, from another
+            # process), so a machine split over processes adds up to one file. The
+            # provenance line is this run's.
+            ran = {r[merge_on] for r in mine}
+            with path.open() as f:
+                kept = [r for r in csv.DictReader(line for line in f if not line.startswith("#"))
+                        if r[merge_on] not in ran]
+            mine = kept + mine
         with path.open("w", newline="") as f:
             f.write(provenance(script) + "\n")
-            writer = csv.DictWriter(f, fieldnames=list(mine[0]))
+            writer = csv.DictWriter(f, fieldnames=list(mine[-1]))
             writer.writeheader()
             writer.writerows(mine)
         print(f"wrote {path.relative_to(ROOT)} ({len(mine)} rows)")
