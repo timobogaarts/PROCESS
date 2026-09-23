@@ -116,19 +116,23 @@ def main():
     # The first rule, between the names and the numbers, heavier than the three
     # between the number groups.
     first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
+    def header(iterations, times):
+        return (r"\rule{0pt}{2.4ex}arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes"
+                rf" & {iterations[0]} it & {iterations[1]} & eval (ms) & jac (ms)"
+                rf" & {times[0]} (s) & {times[1]} (s) & $f^*$ \\[0.3ex]")
+
+    def root_find(name):
+        return structure[(name, "MDF")].get("problem") == "root-find"
+
     lines = [
         r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
         r"\begin{tabular}{l" + first + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
         r"\toprule",
-        r"\rule{0pt}{2.4ex}arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes"
-        r" & VMCON it & SLSQP it & eval (ms) & jac (ms) & VMCON (s) & SLSQP (s) & $f^*$ \\[0.3ex]",
+        header(("VMCON", "SLSQP it"), ("VMCON", "SLSQP")),
     ]
-    for name in bench.NAMES:
-        arms = [a for a in bench.ARMS if shown(name, a) and (name, a) in structure]
-        if not arms:
-            continue
+    for name in [n for n in bench.NAMES if (n, "MDF") in structure and not root_find(n)]:
         lines += [r"\midrule", machine_row(name, 12)]
-        for arm in arms:
+        for arm in [a for a in bench.ARMS if shown(name, a) and (name, a) in structure]:
             st, it = structure[(name, arm)], iteration[(name, arm)]
             v, s = solves["vmcon"].get((name, arm)), solves["slsqp"].get((name, arm))
             lines.append(" & ".join([
@@ -143,14 +147,45 @@ def main():
         p = native.get((name,))
         if p is not None:
             mdf = structure[(name, "MDF")]
-            solved = int(p["iterations"]) > 0
             lines.append(" & ".join([
                 "PROCESS",
                 p["design"], mdf["equalities"], mdf["inequalities"], "--",
-                f"\\checkmark\\ {p['iterations']}" if solved else "--", "--",
+                f"\\checkmark\\ {p['iterations']}", "--",
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
                 fixed(p["solve_s"]), "--",
-                fixed(p["objf"], 4) if solved else "--",
+                fixed(p["objf"], 4),
+            ]) + r" \\[0.3ex]")
+
+    # The root finds (`i_process_run_mode = -2`) under their own header: neither side
+    # runs an optimiser. The port's MDF states the root find in the graph and a Newton
+    # (optimistix) answers it, whichever optimiser the session holds; PROCESS hands it
+    # to `fsolve`, MINPACK's hybrid Powell, which counts function evaluations -- its
+    # difference Jacobian's columns included -- not iterations.
+    roots = [n for n in bench.NAMES if (n, "MDF") in structure and root_find(n)]
+    if roots:
+        lines += [r"\midrule\midrule", header(("Newton", "Powell ev"), ("Newton", "Powell"))]
+    for name in roots:
+        lines += [r"\midrule", machine_row(name, 12)]
+        st, it = structure[(name, "MDF")], iteration[(name, "MDF")]
+        v = solves["vmcon"].get((name, "MDF"))
+        lines.append(" & ".join([
+            "MDF",
+            st["unknowns"], st["equalities"], st["inequalities"], it["block_nodes"],
+            marked(v), "--",
+            fixed(1e-3 * float(it["serial_us"])),
+            fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
+            fixed(v["warm_s"]) if v else "--", "--", "--",
+        ]) + r" \\")
+        p = native.get((name,))
+        if p is not None:
+            evaluations = p.get("fsolve_evaluations")
+            solved = evaluations and float(p["max_eq"]) < 1e-6
+            lines.append(" & ".join([
+                "PROCESS",
+                p["design"], st["equalities"], st["inequalities"], "--",
+                "--", f"\\checkmark\\ {evaluations}" if solved else (evaluations or "--"),
+                fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
+                "--", fixed(p["solve_s"]), "--",
             ]) + r" \\[0.3ex]")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"

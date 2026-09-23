@@ -30,6 +30,7 @@ from process.core.solver import constraints  # noqa: E402
 from process.core.solver.evaluators import Evaluators  # noqa: E402
 from process.core.solver.iteration_variables import load_iteration_variables, load_scaled_bounds  # noqa: E402
 from process.core.solver.objectives import objective_function  # noqa: E402
+from process.core.solver.solver import FSolve  # noqa: E402
 from process.main import SingleRun  # noqa: E402
 
 INPUTS = bench.ROOT / "tests" / "regression" / "input_files"
@@ -74,7 +75,23 @@ def solve_row(name: str) -> dict:
     run = SingleRun(str(scratch_copy(name)), "vmcon")
     data = run.data
     data.numerics.epsvmc = bench.TOLERANCE
-    _, seconds = bench.timed(run.run)
+    # A root find (`i_process_run_mode = -2`) is `FSolve`: scipy's `fsolve` (MINPACK's
+    # hybrid Powell, finite-difference Jacobian), which sets no `n_solver_iterations`
+    # and whose own counts `solver.py` discards. Its work is counted here instead, as
+    # the calls to the equality constraints it solves -- function evaluations, the
+    # difference Jacobian's columns included, not iterations.
+    calls = [0]
+    counted = FSolve.evaluate_eq_cons
+
+    def counting(self, x):
+        calls[0] += 1
+        return counted(self, x)
+
+    FSolve.evaluate_eq_cons = counting
+    try:
+        _, seconds = bench.timed(run.run)
+    finally:
+        FSolve.evaluate_eq_cons = counted
     m = int(data.numerics.n_equality_constraints + data.numerics.n_inequality_constraints)
     meq = int(data.numerics.n_equality_constraints)
     conf, *_ = constraints.constraint_eqns(m, -1, data)
@@ -82,6 +99,7 @@ def solve_row(name: str) -> dict:
     optimising = int(data.numerics.ioptimz) >= 0 if hasattr(data.numerics, "ioptimz") else True
     return {
         "iterations": int(data.numerics.n_solver_iterations),
+        "fsolve_evaluations": calls[0],
         "objf": float(objective_function(data.numerics.i_figure_merit, data)) if optimising else float("nan"),
         "max_eq": float(np.max(np.abs(conf[:meq]))) if meq else 0.0,
         "min_ie": float(np.min(conf[meq:])) if m > meq else float("nan"),
