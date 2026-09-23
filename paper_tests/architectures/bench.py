@@ -142,7 +142,7 @@ def provenance(script: str) -> str:
             f"PROCESS {head(ROOT)}, cottax {head(Path(cottax.__file__).parents[2])}")
 
 
-def write(script: str, rows: list[dict], name: str, merge_on: str | None = None) -> None:
+def write(script: str, rows: list[dict], name: str, merge_on: tuple[str, ...] = ()) -> None:
     """`out/<name>/<configuration>.csv`, one file per machine among `rows`: a
     provenance comment, then its rows. A rerun of one machine replaces one file, and a
     run is one process per machine (`run_all.sh`), since XLA's JIT on this box runs
@@ -156,10 +156,10 @@ def write(script: str, rows: list[dict], name: str, merge_on: str | None = None)
             # Keep the rows this run did not produce (another arm's, from another
             # process), so a machine split over processes adds up to one file. The
             # provenance line is this run's.
-            ran = {r[merge_on] for r in mine}
+            ran = {tuple(str(r[k]) for k in merge_on) for r in mine}
             with path.open() as f:
                 kept = [r for r in csv.DictReader(line for line in f if not line.startswith("#"))
-                        if r[merge_on] not in ran]
+                        if tuple(r[k] for k in merge_on) not in ran]
             mine = kept + mine
         with path.open("w", newline="") as f:
             f.write(provenance(script) + "\n")

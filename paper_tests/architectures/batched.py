@@ -130,7 +130,7 @@ def main():
                     "compile_s": compile_e + compile_j,
                 })
                 print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in rows[-1].items()})
-    bench.write("batched.py", rows, f"batched_{args.scheme}_{platform}", merge_on="arm")
+    bench.write("batched.py", rows, f"batched_{args.scheme}_{platform}", merge_on=("arm", "N"))
 
 
 if __name__ == "__main__":

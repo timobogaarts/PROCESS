@@ -47,15 +47,17 @@ mkdir -p paper_tests/cluster/logs
     [ "$JAX_PLATFORMS" = cuda ] && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     echo "cottax $COMMIT_COTTAX ($COTTAX_SRC), PROCESS $COMMIT_PROCESS"
     python -c "import cottax, jax; print('cottax', cottax.__file__, 'jax', jax.__version__, jax.devices())"
-    # One process per arm: every N is two compiles, and XLA's CPU JIT runs out of
-    # section memory ("LLVM ERROR: Unable to allocate section memory") once some tens
-    # of programs are compiled in one process. batched.py merges each arm's rows in.
+    # One process per (arm, N): each is two compiles. XLA's CPU JIT runs out of room
+    # for code sections ("LLVM ERROR: Unable to allocate section memory") once about a
+    # dozen of the large programs are compiled in one process -- not RAM: the tokamak
+    # peaked at 7.7 GB of 200. batched.py merges each (arm, N)'s row in.
     for ARM in ${ARMS:-MDF IDF SAND}; do
-        echo "== $(date '+%F %T') batched.py $NAME $ARM N=$BATCHES chunk=$CHUNK"
-        # shellcheck disable=SC2086
-        python -u paper_tests/architectures/batched.py --scheme "$SCHEME" --configurations "$NAME" \
-            --arms "$ARM" --batches $BATCHES --chunk "$CHUNK"
-        rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
-        echo "== $(date '+%F %T') exit $rc"
+        for N in $BATCHES; do
+            echo "== $(date '+%F %T') batched.py $NAME $ARM N=$N chunk=$CHUNK"
+            python -u paper_tests/architectures/batched.py --scheme "$SCHEME" --configurations "$NAME" \
+                --arms "$ARM" --batches "$N" --chunk "$CHUNK"
+            rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
+            echo "== $(date '+%F %T') exit $rc"
+        done
     done
 } > "$LOG" 2>&1

@@ -20,7 +20,7 @@ if [ -z "${COTTAX_ALLOW_DIRTY:-}" ] && [ -n "$(git -C ~/jaxgraph status --porcel
 fi
 PROCESS="$(git -C ~/PROCESS rev-parse --short HEAD)"
 # The mirror carries the working tree, so a dirty PROCESS is what runs: say so.
-[ -z "$(git -C ~/PROCESS status --porcelain -- functional_process process paper_tests/architectures ':!paper_tests/architectures/out')" ] \
+[ -z "$(git -C ~/PROCESS status --porcelain --untracked-files=no -- functional_process process paper_tests/architectures ':!paper_tests/architectures/out')" ] \
     || PROCESS="${PROCESS}+dirty"
 
 echo "cottax $COTTAX -> $HOST:~/cottax_$COTTAX ; PROCESS $PROCESS"
