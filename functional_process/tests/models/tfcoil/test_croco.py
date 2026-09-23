@@ -23,9 +23,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from functional_process.tests._harness import Tier1Contract
-from functional_process.tests._harness.process_reference import unpacked
-from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.input.indat import (
     CROCO_SUPERCONDUCTOR_PROPERTIES,
     CROCO_TEMPERATURE_MARGIN,
@@ -48,6 +45,9 @@ from functional_process.cottax.models.tfcoil.namespace import (
     CrocoSuperconductingTfCoil,
     SuperconductingTfCoil,
 )
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import unpacked
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.superconductors import (
     SuperconductorModel,
@@ -541,8 +541,8 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
 
 def test_croco_nodes_own_the_tape_stack(tmp_path):
     """The CroCo nodes produce the `*croco*`/`*hts_tape*` fields, not read them."""
-    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
     from functional_process.cottax.input.indat import graph_for
+    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
 
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
@@ -570,7 +570,7 @@ def test_croco_nodes_own_the_tape_stack(tmp_path):
         # boundary as a read of a coincidence.
         ".tfcoil.f_a_tf_turn_cable_space_extra_void",
     ):
-        assert any(str(v) == f"VarPath({field})" for v in graph.graph.owners), field
+        assert any(repr(v) == f"VarPath({field})" for v in graph.graph.owners), field
     assert owned  # the set is non-empty, so the assertion above is meaningful
 
 

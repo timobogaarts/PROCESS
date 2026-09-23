@@ -3,22 +3,15 @@
 import jax  # noqa: F401
 import jax.numpy as jnp
 import optimistix as optx  # noqa: F401
-from cottax.execution.schedule import (
-    Driver,
-    ConditionMap,
-)
+from cottax.execution.driver import Driver
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import ConditionMap, is_root_find
 from cottax.interfaces.pytree_namespace_module import (
     From,
     ImplicitFunction,
     OutputInto,
-    resolve,
 )
-from cottax.pytree.problem import (
-    RootFind,
-    Start,
-    is_root_find,
-)
-from cottax.pytree.spec import VarPath
+from cottax.pytree.mint import Minted
 
 from functional_process.cottax.paths import (
     stellarator,
@@ -173,27 +166,38 @@ class Intersect(ImplicitFunction):
         return intersect_residual(wp_width_r_min, wp_width_r, lhs, wp_width_r, rhs)
 
 
-_WP_WIDTH_R_PATH = resolve(stellarator.wp_width_r, VarPath)
-_LHS_PATH = resolve(stellarator.lhs, VarPath)
-_RHS_PATH = resolve(stellarator.rhs, VarPath)
+CurveX = Minted("curve_x")
+CurveLhs = Minted("curve_lhs")
+CurveRhs = Minted("curve_rhs")
+"""How `IntersectBisectionNewtonPolish` names the three curve samples it brackets over.
+
+Driver **data**, not context: what an algorithm reads for itself is an ordinary read at
+a name derived from the problem's unknown, so `Assign` mints `^curve_x.stellarator
+.wp_width_r_min` and friends and a `Rename` points each at the node that computes it (or
+a caller supplies it at the boundary). The block's own values are not reachable from a
+driver -- a `ConditionMap` answers `conditions(*unknowns)` and nothing else.
+"""
 
 
 class IntersectBisectionNewtonPolish(Driver):
-    """Concrete `AbstractDriver` answering `Intersect`'s declared `RootFind` -- exactly
-    the algorithm `intersect` (above) already uses: `optx.Bisection` over the curves'
-    full x-overlap, then a few exact Newton corrections (`_intersect_newton_polish`).
+    """Concrete `Driver` answering `Intersect`'s declared root find -- exactly the
+    algorithm `intersect` (above) already uses: `optx.Bisection` over the curves'
+    full x-overlap, then a few exact Newton corrections
+    (`_intersect_newton_polish`).
+
+    The curves arrive as driver data (`CurveX` / `CurveLhs` / `CurveRhs`), one place per
+    unknown per naming; the start is optional, since `intersect`'s own domain clamping
+    makes any point a safe `xin` and the median of the x samples is the principled
+    default.
     """
 
     accepts = staticmethod(is_root_find)
-    requires = (Start,)
+    requires = (Start, CurveX, CurveLhs, CurveRhs)
 
     def __call__(self, conditions: ConditionMap, data):
-        # `requires` stays empty: this driver does not *need* a start -- `intersect`'s
-        # own domain clamping makes any point a safe `xin`, so it has a principled
-        # default. `data.get` rather than `data[Start]` for exactly that reason.
         start = data.get(Start)
-        wp_width_r = conditions.context[_WP_WIDTH_R_PATH]
-        lhs = conditions.context[_LHS_PATH]
-        rhs = conditions.context[_RHS_PATH]
+        (wp_width_r,) = data[CurveX]
+        (lhs,) = data[CurveLhs]
+        (rhs,) = data[CurveRhs]
         xin = start[0] if start is not None else jnp.median(wp_width_r)
         return (intersect(wp_width_r, lhs, wp_width_r, rhs, xin),)

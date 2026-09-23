@@ -15,18 +15,18 @@ import inspect
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import VarPath
 
-from functional_process.tests._harness import Tier1Contract, legacy_sample
-from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.input.indat import PLASMA_COMPOSITION
-from functional_process.cottax.paths import impurity_radiation
 from functional_process.cottax.models.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
     PlasmaCompositionNonIgnited,
     calculate_effective_charge_ionisation_profiles,
     plasma_composition,
 )
+from functional_process.cottax.paths import impurity_radiation
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 from process.models.physics import impurity_radiation as impurity

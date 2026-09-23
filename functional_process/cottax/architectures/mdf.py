@@ -7,20 +7,21 @@ import time
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import ConditionMap, Drive, Schedule
-from cottax.pytree.graph import Graph
-from cottax.pytree.names import PathMap
-from cottax.pytree.plan import Insert, Plan
-from cottax.pytree.problem import (
-    Converged,
-    DriverReport,
-    RootFind,
-    Start,
-    Steps,
+from cottax.execution.drivers.kinds import Converged, Start, Steps
+from cottax.interfaces import (
+    Absorb,
+    ConditionMap,
+    Drive,
+    ExecutableGraph,
+    Graph,
+    Insert,
+    Plan,
+    RunnableGraph,
+    Schedule,
+    is_driven,
 )
-from cottax.pytree.spec import NodePath, VarPath
+from cottax.interfaces.statements import RootFind
+from cottax.pytree.path import NodePath, PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey
@@ -29,7 +30,7 @@ from functional_process.cottax.architectures import sand
 from functional_process.cottax.architectures.drivers import (
     SeededNewtonDriver,
     # `Status` was written here, for `MdfNewtonDriver`, and moved to `drivers` when
-    # `VmconDriver` and `SlsqpDriver` started reporting one too: a port kind belongs
+    # `VmconDriver` and `SlsqpDriver` started reporting one too: a port naming belongs
     # beside the drivers that write it, not beside the one assembly that first read it.
     # Re-exported (`__all__`) so `mdf.Status` still resolves for every existing caller.
     Status,
@@ -59,9 +60,7 @@ class Mdf:
     """
 
     graph: Graph
-    """The MDA graph plus one `ImplementedFunction` per active constraint and one for
-    the objective.
-    """
+    """The MDA graph plus one node per active constraint and one for the objective."""
     eager: Schedule
     traceable: Schedule
     design: tuple[VarPath, ...]
@@ -81,32 +80,19 @@ class Mdf:
 
 
 def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
-    """`graph` with `sand.constraint_nodes`' and `sand.objective_nodes`' nodes inserted.
+    """`graph` with `sand.condition_graph`'s nodes inserted -- the conditions, with no
+    requirement and no `Optimise`: this arm drives the optimiser from outside the graph.
     """
-    nodes, equalities, inequalities, omitted = sand.constraint_nodes(
-        graph, icc, n_equality, switch_values, omit
+    inserted, report = sand.condition_graph(
+        graph, icc, n_equality, i_figure_merit, switch_values, omit
     )
-    objective = None
-    if i_figure_merit is not None:
-        from functional_process.cottax.input.indat import (
-            objective_selection,  # noqa: PLC0415
-        )
-
-        objective_built, objective = sand.objective_nodes(
-            graph, objective_selection(i_figure_merit), switch_values
-        )
-        nodes.update(objective_built)
-    inserted = (Plan(graph) + Insert(PathMap(nodes.items()))).graph
+    objective = report["objective"]
     return (
         inserted,
-        ((objective,) if objective is not None else ()) + (*equalities, *inequalities),
-        len(inequalities),
-        {
-            "equalities": equalities,
-            "inequalities": inequalities,
-            "objective": objective,
-            "omitted": omitted,
-        },
+        ((objective,) if objective is not None else ())
+        + (*report["equalities"], *report["inequalities"]),
+        len(report["inequalities"]),
+        report,
     )
 
 
@@ -167,7 +153,7 @@ def assemble(
         raise ValueError(
             f"design variable(s) {[d.spelling for d in missing]} are not boundary "
             f"inputs of the MDA graph -- a node already produces them, so the optimiser "
-            f"cannot own them (see `sand.optimise_graph` on the same conflict)"
+            f"cannot own them (see `sand.problem_graph` on the same conflict)"
         )
     report["blocks"] = len(eager_graph.graph.components)
     report["driven_blocks"] = sum(1 for t in problem_types(eager_graph) if t is not None)
@@ -297,23 +283,40 @@ class MdfNewtonDriver(SeededNewtonDriver):
         )
 
 
-def verdict(out, kind: type[DriverReport], place: NodePath = None):
-    """What a driver said about its own run, out of the env a solve returned."""
-    return out.get(kind.name_for(IN_GRAPH_PLACE if place is None else place))
+def report_place(node, naming):
+    """Where `naming`'s report of a driven statement lands, or `None` where its driver
+    does not report one. A report is named from the statement's **first unknown**
+    (`^status.<u>`), so this asks the node and never spells a path.
+    """
+    node = node.node if isinstance(node, Drive) else node
+    if not is_driven(node) or naming not in node.driver.reports:
+        return None
+    return node.reports[node.driver.reports.index(naming)]
 
 
-
-
+def verdict(out, naming, node):
+    """What a driver said about its own run, out of the env a solve returned. `node` is
+    the driven statement, or the `Drive` answering it.
+    """
+    place = report_place(node, naming)
+    return None if place is None else out.get(place)
 
 
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCHEME, **kwargs):
     """MDF **stated as structure**: `ExecutableGraph(nested_inside(graph + Optimise, the Optimise))`.
     """
     driven = cut_graph(without_excluded(graph if graph is not None else graph_for()), scheme)
-    with_problem, problem_name, report = sand.optimise_graph(
+    with_problem, problem_name, report = sand.problem_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
-    nested = nested_inside(with_problem, problem_name)
+    # `problem_graph` leaves the requirements standing for an architecture to absorb,
+    # and this route states the nesting itself instead of taking one -- so it does the
+    # absorb an architecture would do first, or the proof refuses them.
+    required = report["required"]
+    absorbed = (
+        Absorb(problem_name, required).apply(with_problem) if required else with_problem
+    )
+    nested = nested_inside(absorbed, problem_name)
     return ExecutableGraph(nested), problem_name, report
 
 
@@ -336,9 +339,9 @@ class InGraphRootFind:
     schedule: Schedule
     problem: NodePath
 
-    def verdict(self, out, kind: type[DriverReport]):
+    def verdict(self, out, naming):
         """What the outer driver said about its own run, out of a run's env."""
-        return out.get(kind.name_for(self.problem))
+        return verdict(out, naming, self.graph[self.problem])
 
     def steps(self, out) -> int | None:
         """How many Newton steps the outer solve took, from that run's env."""
@@ -388,8 +391,8 @@ class InGraphRootFind:
         return self.mdf.reported
 
 
-def root_find_node(mdf: Mdf) -> RootFind:
-    """The `RootFind` `mdf` states, as a cottax node: owns `design`, reads `conditions`.
+def root_find_node(mdf: Mdf):
+    """The root find `mdf` states, as a cottax node: owns `design`, reads `conditions`.
     """
     if not mdf.problem_type == 'root-find':
         raise TypeError(
@@ -398,10 +401,7 @@ def root_find_node(mdf: Mdf) -> RootFind:
             f"(`_audit/in_graph_rootfind.md` §1 measures it), but its outer driver is a "
             f"`VmconDriver`, which does not trace, so that is a separate change"
         )
-    return RootFind(
-        conditions=tuple(c for c in mdf.conditions),
-        unknowns=tuple(v for v in mdf.design),
-    )
+    return RootFind(tuple(mdf.conditions), tuple(mdf.design))
 
 
 def in_graph_root_find(
@@ -535,6 +535,7 @@ __all__ = [
     "mdf_shape",
     "nested_blocking",
     "prime",
+    "report_place",
     "root_find_node",
     "seed",
     "traceable_drivers",

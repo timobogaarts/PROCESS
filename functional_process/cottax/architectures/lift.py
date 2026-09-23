@@ -7,39 +7,30 @@ nothing. Under uncertainty it re-sizes a *build* quantity in every belief sample
 which violates non-anticipativity (`~/jaxgraph`, `plans/handoff_2026-09-17.md`,
 narrative item 2; the decision on the winding pack is item 1 of "Decisions on the 14
 sizing choices"). The lift is the rewrite that takes the rule apart, in cottax's own
-ops and one node composed by hand:
+ops, and nothing composed by hand:
 
     Undrive(problem)        the algorithm goes first, deliberately (a driven problem)
     Unnest(...)             a nesting either way, since the cycle is about to open
     Undetermine(problem)    the unknown becomes a boundary input -- the design
                             variable the optimiser will own -- and the statement a
                             requirement asserting `residual = 0`
-    Delete((problem,))      the requirement: a graph that asserts what it does not
-                            enforce is not one a `Schedule` runs, and the inequality
-                            is enforced outside it, beside PROCESS's own constraints
-    Insert(.Lift.<name>)    an `ImplementedFunction` reading the residual (which its
-                            body still computes -- the producer stays, as it does
-                            under a `Cut`) and owning `^cond.lift.<unknown>` =
-                            `sign * residual / scale`, `sign` chosen so that the
-                            *safe* side is negative: the `<= 0` spelling every
-                            `Optimise` here reads, `sand.optimise_graph` /
-                            `closing.nested_blocking` / `ouu.outer` alike
-
-**Why the last step is composed and not a cottax op.** The relation `Eq` becomes `Le`
-on the residual; cottax has `Le` as a relation symbol and `Compare` to mint a gap
-between two *places*, but no op that restates a one-sided relation with a sign, and
-no place that is zero to compare against. `Compare(place, ((residual, residual),),
-compare=negate)` would spell it but names the condition `^cond.^cond...`, a minted
-name minted again. So the inequality is one inserted node, said here, and the
-`Relation((condition,), (), Le)` a caller would state in an `Optimise` is what
-`report["relation"]` carries. `unlift` is not provided: the inverse is a fresh
-`Insert` of the problem, and nothing needs it.
+    Replace(problem, ...)   that requirement relaxed to the inequality with the wanted
+                            sign: `residual <= 0` (`safe="below"`) or `0 <= residual`
+                            (`safe="above"`). A relation is between two places and a
+                            side of `None` is zero, so the sign is said in the
+                            statement and no node computes one
 
 **The safe side is the modeller's.** `safe="above"`: a positive residual is
-admissible, so the condition is `-residual <= 0`; `safe="below"`: `residual <= 0`.
-Which side is safe is not in the graph -- it is what the rule *meant*, and the caller
-says it. `lift_winding_pack` establishes it for the coil and
+admissible, so the requirement becomes `0 <= residual`; `safe="below"`: `residual <=
+0`. Which side is safe is not in the graph -- it is what the rule *meant*, and the
+caller says it. `lift_winding_pack` establishes it for the coil and
 `tests/architectures/test_lift.py` pins it numerically (a wider pack satisfies).
+
+**A relaxed requirement determines nothing**, so a graph holding one is not by itself
+executable (`check_no_bare_conditions`): an architecture absorbs it into the optimiser.
+Where the optimiser is *outside* the graph a `Schedule` runs -- the closed MDA, the
+OUU recourse -- `keep=False` drops it and the caller states the same inequality in its
+own `Optimise`, off `report["relation"]`.
 
 `applied` is the `Closed`-level hook `ouu.two_stage(lifts=...)` uses: every lift on
 both of the closed problem's graphs, its `Mdf` rebuilt (design, conditions, schedule,
@@ -57,23 +48,29 @@ import jax
 
 jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float64
 
-from cottax.pytree.executable import ExecutableGraph  # noqa: E402
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule  # noqa: E402
-from cottax.pytree.names import MintKey, PathMap, prefix_path  # noqa: E402
-from cottax.pytree.nodes import ImplementedFunction  # noqa: E402
-from cottax.pytree.plan import Delete, Insert, Plan, Unnest  # noqa: E402
-from cottax.pytree.problem import (  # noqa: E402
-    ConditionalNode,
-    Driven,
+from cottax.interfaces import (
+    Delete,
+    Function,
+    Graph,
+    Implemented,
+    Insert,
     Le,
+    Plan,
     Relation,
-    conditions_of,
+    RelationalCondition,
+    Replace,
+    RunnableGraph,
+    Schedule,
+    Undetermine,
+    Undrive,
+    Unnest,
+    is_bare_condition,
+    is_driven,
+    is_problem,
     shape_of,
-    unknowns_of,
 )
-from cottax.pytree.rewrites import Undetermine, Undrive  # noqa: E402
-from cottax.pytree.spec import NodePath, VarPath  # noqa: E402
+from cottax.pytree.mint import MintKey  # noqa: E402
+from cottax.pytree.path import NodePath, PathMap, VarPath  # noqa: E402
 from cottax.visualization.sequencing import problem_types  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
@@ -90,60 +87,39 @@ from functional_process.vocabulary.iteration_variables import (  # noqa: E402
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from cottax.pytree.graph import Graph
 
 COND = MintKey("cond")
+"""The namespace an `ImplicitFunction` mints its residual in: `^cond.<unknown>`."""
+
 SAFE = ("above", "below")
 """Which sign of the residual is admissible: `above` -- `residual >= 0` is safe, so
-the condition is `-residual <= 0`; `below` -- `residual <= 0` is safe, the condition
-is `residual <= 0`."""
-PLACE = NodePath((GetAttrKey("Lift"),))
-"""Where the lifted inequality's node binds: `.Lift.wp_width_r_min`, beside
-`closing.PLACE`'s `.Close.c2`."""
-LIFT = GetAttrKey("lift")
-"""The namespace under `^cond` a lifted condition is named in: `^cond.lift.<unknown>`.
-Not `^cond.<unknown>`, which is the residual's own name (an `ImplicitFunction` mints
-`^cond.u` for the residual of `u`)."""
+the statement becomes `0 <= residual`; `below` -- `residual <= 0` is safe, and the
+statement says so."""
 
 
-def condition_for(unknown: VarPath) -> VarPath:
-    """`^cond.lift.<unknown>`: `.stellarator.wp_width_r_min` ->
-    `^cond.lift.stellarator.wp_width_r_min`.
+def relaxed(residual: VarPath, safe: str) -> RelationalCondition:
+    """The requirement `residual = 0` relaxed to the inequality whose admissible side
+    is `safe`: `residual <= 0` below, `0 <= residual` above.
     """
-    return prefix_path(VarPath((LIFT, *unknown.segments)), COND)
-
-
-def place_for(unknown: VarPath) -> NodePath:
-    """`.Lift.<the unknown's last component>`."""
-    return NodePath((*PLACE.segments, GetAttrKey(unknown.spelling.split(".")[-1])))
-
-
-@dataclasses.dataclass(frozen=True)
-class SignedResidual:
-    """The lifted inequality's body: `sign * residual / scale`, `scale` absent = 1.
-    A frozen dataclass and not a closure, so a graph built twice has one body and one
-    jit key (cottax's `Pairwise` rule).
-    """
-
-    sign: float
-
-    def __call__(self, residual, scale=None):
-        """The condition: negative on the safe side."""
-        value = self.sign * residual
-        return value if scale is None else value / scale
+    relation = (
+        Relation(None, residual, Le)
+        if safe == "above"
+        else Relation(residual, None, Le)
+    )
+    return RelationalCondition((relation,), (), ())
 
 
 # ---------------------------------------------------------------- the generic lift
 
 
-def _one_unknown(graph: Graph, problem: NodePath, unknown: VarPath) -> ConditionalNode:
+def _one_unknown(graph: Graph, problem: NodePath, unknown: VarPath):
     node = graph[problem]
-    if not isinstance(node, ConditionalNode):
+    if not (is_problem(node) or is_bare_condition(node)):
         raise TypeError(
             f"{problem.spelling} is a {type(node).__name__} and determines nothing, "
             f"so there is no sizing choice to lift"
         )
-    owned = tuple(unknowns_of(node))
+    owned = tuple(node.unknowns)
     if unknown not in owned:
         raise KeyError(
             f"{unknown.spelling} is not an unknown of {problem.spelling}, which "
@@ -158,8 +134,8 @@ def _one_unknown(graph: Graph, problem: NodePath, unknown: VarPath) -> Condition
     if shape_of(node) != "root-find":
         raise ValueError(
             f"{problem.spelling} is a {shape_of(node)}, not a root find: a lifted "
-            f"condition is a residual with a sign, and only a root find states one "
-            f"against zero (`Residualise` a fixed point first)"
+            f"condition is a residual relaxed to an inequality, and only a root find "
+            f"states one against zero"
         )
     return node
 
@@ -170,17 +146,25 @@ def lift(
     *,
     unknown: VarPath,
     safe: str,
-    scale: VarPath | None = None,
+    relation: Relation | None = None,
+    keep: bool = True,
 ) -> tuple[Graph, VarPath, dict]:
-    """`graph` with the root find `problem` lifted: its `unknown` a boundary input and
-    its residual an inequality `^cond.lift.<unknown> <= 0`, the admissible sign of the
-    residual given by `safe` (`SAFE`). `scale`: a place the signed residual is divided
-    by, so the condition is dimensionless like PROCESS's normalised residuals
-    (`^cond.constraints.c<n>`); `None` leaves it in the residual's own units.
+    """`graph` with the root find `problem` lifted: its `unknown` a boundary input, and
+    its statement the inequality whose admissible side is `safe` (`SAFE`) instead of
+    the equality a solver held.
 
-    Returns the graph, the condition's path and a report: the ops applied (as
-    `repr`s), the driver dropped, what was unnested, the sign, and `relation`, the
-    `Relation((condition,), (), Le)` a caller states in an `Optimise`.
+    `relation`: the inequality to state instead of the residual's own -- two places the
+    graph already computes, where the rule is more honestly written between them
+    (`j <= f j_c`). `None` uses `residual` and `safe`.
+
+    `keep`: leave the relaxed requirement in the graph, for an architecture to absorb
+    into the optimiser. `False` drops it -- what a caller whose optimiser is outside
+    this graph needs, since a bare requirement is not executable; the same inequality
+    is then stated in that caller's own `Optimise`, off `report["relation"]`.
+
+    Returns the graph, the residual's path -- the condition, `<= 0` or `>= 0` as `safe`
+    says -- and a report: the ops applied (as `repr`s), the driver dropped, what was
+    unnested, the sign, and `relation`, the `Relation` a caller states.
 
     Raises
     ------
@@ -189,17 +173,19 @@ def lift(
     KeyError
         If `unknown` is not what `problem` determines.
     TypeError
-        If `problem` has a body.
+        If `problem` determines nothing.
     """
     if safe not in SAFE:
         raise ValueError(f"safe {safe!r}; one of {SAFE}")
     node = _one_unknown(graph, problem, unknown)
-    (residual,) = conditions_of(node)
-    driver = type(node.driver).__name__ if isinstance(node, Driven) else None
+    (residual,) = node.conditions
+    driver = type(node.driver).__name__ if is_driven(node) else None
     sign = -1.0 if safe == "above" else 1.0
-    condition = condition_for(unknown)
-    place = place_for(unknown)
-    reads = (residual,) if scale is None else (residual, scale)
+    statement = (
+        relaxed(residual, safe)
+        if relation is None
+        else RelationalCondition((relation,), (), ())
+    )
 
     plan = Plan(graph)
     if driver is not None:
@@ -215,32 +201,28 @@ def lift(
             plan += Unnest(inner)
             unnested.append(inner.spelling)
     plan += Undetermine(problem)
-    plan += Delete((problem,))
-    plan += Insert(
-        PathMap((
-            (place, ImplementedFunction(reads, (condition,), SignedResidual(sign))),
-        ))
-    )
+    plan += Replace(problem, statement) if keep else Delete((problem,))
     report = {
         "problem": problem.spelling,
         "shape": "root-find",
         "unknown": unknown.spelling,
         "residual": residual.spelling,
-        "condition": condition.spelling,
-        "node": place.spelling,
+        "condition": (
+            residual.spelling
+            if relation is None
+            else statement.relations[0].lhs.spelling
+        ),
+        "node": problem.spelling if keep else None,
         "safe": safe,
         "sign": sign,
-        "scale": None if scale is None else scale.spelling,
+        "kept": keep,
         "driver": driver,
         "unnested": tuple(unnested),
         "ops": tuple(repr(op) for op in plan.ops),
-        "relation": Relation((condition,), (), Le),
-        "composed": (
-            "the inequality is one Insert of an ImplementedFunction computing "
-            "sign * residual / scale: cottax has no op restating a one-sided relation "
-            "with a sign, and Compare needs two places"
-        ),
+        "relation": statement.relations[0],
+        "statement": statement,
     }
+    condition = residual if relation is None else statement.relations[0].lhs
     return plan.graph, condition, report
 
 
@@ -294,7 +276,7 @@ def _stellarator(name: str) -> VarPath:
     return VarPath((STELLARATOR, GetAttrKey(name)))
 
 
-def lift_winding_pack(graph: Graph) -> tuple[Graph, VarPath, dict]:
+def lift_winding_pack(graph: Graph, *, keep: bool = True) -> tuple[Graph, VarPath, dict]:
     """The one lift the 2026-09-17 decisions call for: `^problem.stellarator.coils.
     intersect` taken apart, `.stellarator.wp_width_r_min` a design variable, and the
     inequality `j_tf_wp <= f_j_tf_wp_critical_max * j_c` -- PROCESS's icc 33 -- in the
@@ -318,10 +300,11 @@ def lift_winding_pack(graph: Graph) -> tuple[Graph, VarPath, dict]:
     wide side of the root -- a wider pack carries less current density than it may.
     `safe="above"`, and the condition is `-(lhs - rhs) / lhs = rhs / lhs - 1`.
 
-    Two nodes are inserted: `.stellarator.coils.winding_pack_current_density`, owning
-    `j_tf_sc_wp` and `j_tf_sc_wp_max` at the chosen width (the second is the
-    `scale`), and the lift's own `.Lift.wp_width_r_min`. The report is `lift`'s plus
-    `design`: the unknown, `BOUNDS`, `IXC`, and `Kind.BUILD` for `stages.leaves`.
+    One node is inserted, `.stellarator.coils.winding_pack_current_density`, owning
+    `j_tf_sc_wp` and `j_tf_sc_wp_max` at the chosen width; the relaxed requirement is
+    `j_tf_sc_wp <= j_tf_sc_wp_max` between them, which is icc 33 itself and needs no
+    node to normalise. The report is `lift`'s plus `design`: the unknown, `BOUNDS`,
+    `IXC`, and `Kind.BUILD` for `stages.leaves`.
 
     Raises
     ------
@@ -341,15 +324,17 @@ def lift_winding_pack(graph: Graph) -> tuple[Graph, VarPath, dict]:
             PathMap((
                 (
                     CURRENT_DENSITY,
-                    ImplementedFunction(
-                        reads=(
-                            WP_WIDTH_R_MIN,
-                            _stellarator("wp_width_r"),
-                            _stellarator("lhs"),
-                            _stellarator("rhs"),
+                    Implemented(
+                        Function(
+                            (
+                                WP_WIDTH_R_MIN,
+                                _stellarator("wp_width_r"),
+                                _stellarator("lhs"),
+                                _stellarator("rhs"),
+                            ),
+                            (J_TF_SC_WP, J_TF_SC_WP_MAX),
                         ),
-                        owns=(J_TF_SC_WP, J_TF_SC_WP_MAX),
-                        fn=WindingPackCurrentDensity(),
+                        WindingPackCurrentDensity(),
                     ),
                 ),
             ))
@@ -360,7 +345,8 @@ def lift_winding_pack(graph: Graph) -> tuple[Graph, VarPath, dict]:
         problem,
         unknown=WP_WIDTH_R_MIN,
         safe="above",
-        scale=J_TF_SC_WP_MAX,
+        relation=Relation(J_TF_SC_WP, J_TF_SC_WP_MAX, Le),
+        keep=keep,
     )
     report = dict(
         report,
@@ -398,8 +384,9 @@ def applied(
     Each lift (`lift_winding_pack`, or any `graph -> (graph, condition, report)` whose
     report carries `design`) is applied to both the driven graph the schedule runs
     and the undriven one `closing.nested_blocking` draws; the `Mdf` is rebuilt: the
-    design plus each lifted unknown, the conditions and `report["inequalities"]`
-    plus each condition, one more inequality apiece, a fresh `Schedule`, and
+    design plus each lifted unknown, one more inequality apiece, a fresh `Schedule`,
+    `report["lift_relations"]` (the `Relation` each lift left, which the caller's own
+    `Optimise` states, since this graph holds no optimiser to absorb it) and
     `report["lifts"]` (condition spelling -> the lift's report). `env` is a
     `closing.seed` env of the un-lifted problem; the un-lifted problem is primed once
     (`mdf.prime`) and each lifted unknown written at the root it found, since a place
@@ -417,9 +404,13 @@ def applied(
     driven, undriven = built.graph, built.problem.graph
     reports: dict = {}
     conditions: list[VarPath] = []
+    relations: list = []
     for one in lifts:
-        driven, condition, report = one(driven)
-        undriven, same, _ = one(undriven)
+        # `keep=False`: the optimiser of a closed problem is outside the graph this
+        # schedule runs, so a relaxed requirement left in it would be a bare condition
+        # the proof refuses. The inequality is carried as a relation instead.
+        driven, condition, report = one(driven, keep=False)
+        undriven, same, _ = one(undriven, keep=False)
         if same != condition:
             raise ValueError(
                 f"{one.__name__} lifted {condition.spelling} on the driven graph and "
@@ -427,6 +418,7 @@ def applied(
             )
         reports[condition.spelling] = report
         conditions.append(condition)
+        relations.append(report["relation"])
     unknowns = tuple(
         _resolve(r["design"]["unknown"], driven.graph.boundary_inputs)
         for r in reports.values()
@@ -435,7 +427,7 @@ def applied(
     old = built.problem
     report = dict(
         old.report,
-        inequalities=tuple(old.report["inequalities"]) + tuple(conditions),
+        lift_relations=tuple(old.report.get("lift_relations", ())) + tuple(relations),
         lifts=reports,
         blocks=len(driven.graph.components),
         driven_blocks=sum(1 for t in problem_types(driven) if t is not None),
@@ -447,7 +439,7 @@ def applied(
         traceable=schedule,
         design=tuple(old.design) + unknowns,
         conditions=tuple(old.conditions) + tuple(conditions),
-        n_inequality=old.n_inequality + len(conditions),
+        n_inequality=old.n_inequality + len(relations),
         report=report,
     )
     lifted = dataclasses.replace(built, problem=problem, design=problem.design)
@@ -488,17 +480,13 @@ __all__ = [
     "IXC",
     "J_TF_SC_WP",
     "J_TF_SC_WP_MAX",
-    "LIFT",
-    "PLACE",
     "SAFE",
     "WP_WIDTH_R_MIN",
-    "SignedResidual",
     "WindingPackCurrentDensity",
     "applied",
-    "condition_for",
     "kind_table",
     "lift",
     "lift_winding_pack",
     "lifted_design",
-    "place_for",
+    "relaxed",
 ]

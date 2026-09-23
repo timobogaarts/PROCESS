@@ -93,14 +93,18 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
-from cottax.pytree.executable import ExecutableGraph  # noqa: E402
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Drive, Schedule  # noqa: E402
-from cottax.pytree.graph import Graph  # noqa: E402
-from cottax.pytree.names import MintKey, PathMap, prefix_path  # noqa: E402
-from cottax.pytree.nodes import ImplementedFunction  # noqa: E402
-from cottax.pytree.problem import Converged, Optimise, Steps, unknowns_of  # noqa: E402
-from cottax.pytree.spec import NodePath, VarPath  # noqa: E402
+from cottax.execution.drivers.kinds import Converged, Steps  # noqa: E402
+from cottax.interfaces import (  # noqa: E402
+    Drive,
+    Function,
+    Graph,
+    Implemented,
+    RunnableGraph,
+    Schedule,
+)
+from cottax.interfaces.statements import Optimise  # noqa: E402
+from cottax.pytree.mint import MintKey, prefix_path, unminted  # noqa: E402
+from cottax.pytree.path import NodePath, PathMap, VarPath  # noqa: E402
 from jax import lax  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
@@ -207,10 +211,12 @@ def cvar_path(constraint) -> VarPath:
 
 def label_of(constraint) -> str:
     """`c24` for `^cond.constraints.c24`; `f_nd_alpha_thermal_electron_lower` for a
-    `RecourseBound`.
+    `RecourseBound`; `j_tf_sc_wp` for a `Gap`.
     """
     if isinstance(constraint, RecourseBound):
         return f"{constraint.var.spelling.rsplit('.', 1)[-1]}_{constraint.side}"
+    if isinstance(constraint, Gap):
+        return constraint.spelling.split("-")[0].rsplit(".", 1)[-1]
     return constraint.spelling.rsplit(".", 1)[-1]
 
 
@@ -242,6 +248,39 @@ class RecourseBound:
         if self.side == "lower":
             return (self.lower - value) / span
         return (value - self.upper) / span
+
+    def at(self, env):
+        """This side's violation in `env`."""
+        return self.residual(env[self.var])
+
+
+@dataclasses.dataclass(frozen=True)
+class Gap:
+    """A relation stated between two places, as a per-sample inequality: `lhs - rhs`,
+    a side of `None` being zero. What a lift leaves behind (`lift.lift`) -- the
+    statement carries the sign, so nothing in the graph computes a signed residual.
+    """
+
+    lhs: VarPath | None
+    rhs: VarPath | None
+
+    @classmethod
+    def of(cls, relation) -> "Gap":
+        """The gap of a `cottax.relational.Relation`."""
+        return cls(relation.lhs, relation.rhs)
+
+    @property
+    def spelling(self) -> str:
+        """`<lhs>-<rhs>`, the column's name."""
+        return (
+            f"{'0' if self.lhs is None else self.lhs.spelling}-"
+            f"{'0' if self.rhs is None else self.rhs.spelling}"
+        )
+
+    def at(self, env):
+        """`lhs - rhs` in `env`."""
+        left = 0.0 if self.lhs is None else env[self.lhs]
+        return left - (0.0 if self.rhs is None else env[self.rhs])
 
 
 @dataclasses.dataclass(frozen=True)
@@ -394,14 +433,34 @@ def _closing_ports(
 ) -> tuple[tuple[VarPath, ...], tuple[VarPath, ...]]:
     """The closing problem's unknowns and their start ports, parallel."""
     place = next(iter(built.places.values()))
-    unknowns = tuple(unknowns_of(built.graph[place]))
+    unknowns = tuple(built.graph[place].unknowns)
     ports = {u: g for g, u in guess_sources(built.graph).items()}
     return unknowns, tuple(ports[u] for u in unknowns)
 
 
 def _problem_of(verdict: VarPath) -> str:
-    """`^driver_out.converged^problem.Close.c2` -> `^problem.Close.c2`."""
-    return "^problem" + verdict.spelling.split("^problem", 1)[1]
+    """The unknown a report is named from: `^converged.s.u` -> `.s.u`. A driven
+    statement names its reports off its **first unknown**, so that is what a verdict
+    column identifies itself by.
+    """
+    return unminted(verdict).spelling
+
+
+def _report_of(graph, place: NodePath, naming):
+    """Where `naming`'s report of the driven statement at `place` lands.
+
+    Raises
+    ------
+    KeyError
+        If that statement's driver reports nothing under `naming`.
+    """
+    found = mdf.report_place(graph[place], naming)
+    if found is None:
+        raise KeyError(
+            f"{place.spelling}'s driver reports no {naming!r} -- the closing driver "
+            f"has to report its steps and its verdict for a row to be judged"
+        )
+    return found
 
 
 def driven_problems(schedule: Schedule) -> tuple[Drive, ...]:
@@ -424,8 +483,8 @@ def other_verdicts(schedule: Schedule, place: NodePath) -> tuple[VarPath, ...]:
     for step in driven_problems(schedule):
         if step.problem == place:
             continue
-        converged = Converged.name_for(step.problem)
-        if converged in step.reports:
+        converged = mdf.report_place(step.node, Converged)
+        if converged is not None:
             verdicts.append(converged)
     return tuple(verdicts)
 
@@ -597,7 +656,9 @@ def two_stage(
     lower = np.array([bounds[v][0] for v in design])
     upper = np.array([bounds[v][1] for v in design])
 
-    constraints = tuple(problem.report["inequalities"])
+    constraints = tuple(problem.report["inequalities"]) + tuple(
+        Gap.of(r) for r in problem.report.get("lift_relations", ())
+    )
     if with_c16:
         constraints += (var_of[C16],)
     if len(built.pairings) > 1:
@@ -642,8 +703,8 @@ def two_stage(
         var_of[AVAIL],
         var_of[CONCOST],
         *constraints,
-        Steps.name_for(place),
-        Converged.name_for(place),
+        _report_of(built.graph, place, Steps),
+        _report_of(built.graph, place, Converged),
         *unknowns,
         *verdicts,
         *extra,
@@ -752,7 +813,7 @@ def make(
     te_var, te_grid = model.var_of[TE], model.te_grid
 
     def _column(c, env):
-        value = c.residual(env[c.var]) if isinstance(c, RecourseBound) else env[c]
+        value = c.at(env) if hasattr(c, "at") else env[c]
         return jnp.asarray(value, dtype=jnp.float64).reshape(())
 
     def first(x_flat):
@@ -1181,12 +1242,11 @@ class Outer:
     @property
     def eps(self) -> float:
         """The failed-fraction bound the statistics node subtracts."""
-        return self.graph[STATISTICS].fn.eps
+        return self.graph[STATISTICS].implementation.eps
 
-    @staticmethod
-    def verdict(out, kind) -> object:
+    def verdict(self, out, naming) -> object:
         """What the driver said, out of a run's env."""
-        return out.get(kind.name_for(OPTIMISE))
+        return mdf.verdict(out, naming, self.schedule.executable.graph[OPTIMISE])
 
 
 class _Default:
@@ -1232,14 +1292,11 @@ def outer(
     objective = condition_path("objective")
     cvars = tuple(cvar_path(c) for c in model.constraints)
     failed = condition_path("failed")
-    node = ImplementedFunction(
-        reads=model.design,
-        owns=(objective, *cvars, failed),
-        fn=Statistics(program, driver_kwargs.pop("eps", EPS_FAILED)),
+    node = Implemented(
+        Function(model.design, (objective, *cvars, failed)),
+        Statistics(program, driver_kwargs.pop("eps", EPS_FAILED)),
     )
-    problem = Optimise(
-        objective=objective, unknowns=model.design, inequalities=(*cvars, failed)
-    )
+    problem = Optimise(objective, model.design, inequalities=(*cvars, failed))
     graph = Graph.of({STATISTICS: node, OPTIMISE: problem})
     driver = BoxedSlsqpDriver(
         n_inequality=len(cvars) + 1,
@@ -1611,6 +1668,7 @@ __all__ = [
     "STATISTICS",
     "TINY",
     "Evaluation",
+    "Gap",
     "Outer",
     "Program",
     "RecourseBound",

@@ -53,11 +53,8 @@ non-finite, which the check steps aside for.
 import numpy as np
 import pytest
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import VarPath
 
-from functional_process.tests._harness import Tier1Contract, legacy_sample
-from functional_process.tests._harness.sample_store import FROM_FILE
-from functional_process.cottax.paths import physics
 from functional_process.cottax.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
@@ -77,6 +74,9 @@ from functional_process.cottax.models.physics.bootstrap_current import (
     enforce_bootstrap_current_fraction_max,
     ps_fraction_scene,
 )
+from functional_process.cottax.paths import physics
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.physics.bootstrap_current import SauterBootstrapCurrent
 from process.models.physics.physics import ps_fraction_scene as process_ps_fraction_scene

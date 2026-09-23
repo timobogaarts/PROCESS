@@ -60,7 +60,7 @@ class Problem:
     """`ixc id -> (lower, upper)`, the file's own where it states one."""
     switches: dict[str, int] = field(default_factory=dict)
     """The static switch arguments the constraint and objective nodes are bound with
-    (`architectures.sand.SWITCH_PARAMETER_NAMES`)."""
+    (`cottax.models.constraints.SWITCH_PARAMETER_NAMES`)."""
     root_find: bool = False
     """A root find over the equalities (`i_process_run_mode = -2`) rather than an
     optimisation: no objective, the inequalities evaluated once at the answer."""

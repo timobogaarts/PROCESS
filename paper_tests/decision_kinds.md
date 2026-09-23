@@ -7,7 +7,7 @@ cottax port. Everything below was listed programmatically:
 `stated`) and `boundary.problem_graph` (the same graph with the 14 constraint nodes and the
 objective inserted; boundary **324**, the 13 extra being 10 constraint limits and 3 quantities
 the constraint nodes read that no stellarator node produces). The `Optimise` node built by
-`sand.optimise_graph` owns the 8 `ixc` places and reads `^cond.numerics.objf` plus
+`sand.problem_graph` owns the 8 `ixc` places and reads `^cond.numerics.objf` plus
 `^cond.constraints.c<n>` for the 14 `icc`. Values are the cold, initialised `DataStructure`
 (`SingleRun(...).data` before the solve); converged values are PROCESS's own (cached
 `reference_run`).

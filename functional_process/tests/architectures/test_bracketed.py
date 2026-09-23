@@ -20,8 +20,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.pytree.names import PathMap
-from cottax.pytree.problem import Converged, Steps
+from cottax.execution.drivers.kinds import Converged, Steps
+from cottax.pytree.path import PathMap
 
 from functional_process.configurations import kinds
 from functional_process.cottax.architectures import closing, mdf, session
@@ -84,12 +84,12 @@ def place_of(built):
 
 def verdict(built, out) -> tuple[int, bool, int, float, float]:
     """`(steps, converged, status, residual, density)` of the closing problem."""
-    place = place_of(built)
+    node = built.graph[place_of(built)]
     (cond,) = built.places
     return (
-        int(np.asarray(out[Steps.name_for(place)])),
-        bool(np.asarray(out[Converged.name_for(place)])),
-        int(np.asarray(out[Status.name_for(place)])),
+        int(np.asarray(mdf.verdict(out, Steps, node))),
+        bool(np.asarray(mdf.verdict(out, Converged, node))),
+        int(np.asarray(mdf.verdict(out, Status, node))),
         float(np.asarray(out[cond])),
         float(np.asarray(out[built.pairings[cond]])),
     )
@@ -250,7 +250,7 @@ def density_of(built, live):
     schedule = built.problem.eager
     env = mdf._inputs_only(built.problem, closing.seed(built, live.reference.cold))
     at = {v.spelling: v for v in [*env, *schedule.unknowns]}
-    place = place_of(built)
+    node = built.graph[place_of(built)]
 
     def one(rmajor, b_field):
         values = dict(env)
@@ -259,9 +259,9 @@ def density_of(built, live):
         out = schedule.run(PathMap(values))
         return (
             out[at[DENSITY_PATH]],
-            out[Steps.name_for(place)],
-            out[Converged.name_for(place)],
-            out[Status.name_for(place)],
+            mdf.verdict(out, Steps, node),
+            mdf.verdict(out, Converged, node),
+            mdf.verdict(out, Status, node),
         )
 
     return one, float(env[at[RMAJOR]]), float(env[at[BFIELD]])

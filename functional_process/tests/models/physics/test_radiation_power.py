@@ -21,11 +21,8 @@ would otherwise overwrite the profile arrays a case needs to control.
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import VarPath
 
-from functional_process.tests._harness import Tier1Contract, legacy_sample
-from functional_process.tests._harness.sample_store import FROM_FILE
-from functional_process.cottax.paths import impurity_radiation
 from functional_process.cottax.models.physics.radiation_power import (
     ImpurityRadiationTotals,
     PlasmaRadiationPowers,
@@ -35,6 +32,9 @@ from functional_process.cottax.models.physics.radiation_power import (
     calculate_radiation_powers,
     psync_albajar_fidone,
 )
+from functional_process.cottax.paths import impurity_radiation
+from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.physics import impurity_radiation as impurity
 from process.models.physics import radiation_power as reference_module

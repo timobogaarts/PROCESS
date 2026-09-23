@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction
-from cottax.pytree.names import MintKey, VarPath, prefix_path
+from cottax.pytree.mint import MintKey, prefix_path
+from cottax.pytree.path import VarPath
 
 __all__ = ["STATED", "StatesValues", "stated_port"]
 
@@ -26,7 +27,7 @@ class StatesValues(ExplicitFunction):
         return []
 
     @property
-    def inputs(self) -> tuple[In, ...]:
+    def inputs(self) -> tuple[VarPath, ...]:
         """One read per declared output, at the output's own place under `^stated`."""
         return tuple(stated_port(out) for out in self.outputs)
 

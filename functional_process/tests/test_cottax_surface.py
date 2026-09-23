@@ -5,11 +5,22 @@ rename upstream surfaces here as an `ImportError` from whichever module happened
 imported first -- one name, no list, and the next one only after the first is fixed.
 This test is the list: it reads the port's own imports with `ast` (so it cannot fall
 behind them) and asks cottax for every name at once, so a re-port begins with the whole
-diff rather than one line of it.
+diff rather than one line of it. Every `.py` under `functional_process/` and
+`paper_tests/`, and every code cell of every notebook under
+`architecture_examples/` -- a study written in a notebook is written over the same
+surface as one written in a module.
 
-`PRIVATE` is the second half: three names the port reaches for under an underscore. Each
-is a deliberate reach into cottax's inside and a candidate for an upstream export; a new
-one is a decision, so it fails here until it is written down.
+`ALLOWED` is the other half, and the stronger one: the cottax modules a study may be
+written over. Two packages -- `cottax.interfaces` (how models, statements and runs are
+written) and `cottax.mdao_architectures` (the recipes) -- plus the three things that sit
+below them by nature and keep their own names: a **driver** (`execution.driver` and the
+kinds), a **name** (`pytree.path`, `pytree.mint`) and a **picture** (`visualization`).
+Anything else is a reach past the interface: either it lacks a name (ask for it upstream)
+or the port is doing something a study should not.
+
+`PRIVATE` is the last half: the names the port reaches for under an underscore. Each is a
+deliberate reach into cottax's inside; a new one is a decision, so it fails here until it
+is written down. It is **empty**, and the point is to keep it that way.
 """
 
 from __future__ import annotations
@@ -18,25 +29,68 @@ import ast
 import importlib
 from pathlib import Path
 
-PORT = Path(__file__).resolve().parent.parent
-"""`functional_process/` -- every `.py` under it is read."""
+import nbformat
 
-PRIVATE: frozenset[str] = frozenset({
-    "cottax.execution.schedule._run_acyclic",
-    "cottax.visualization.sequencing._draws_feedback",
-    "cottax.visualization.xdsm._xesc",
-})
-"""The private cottax names the port uses, and nothing else may be added without
-saying so here: `_run_acyclic` runs a nested acyclic body inside SAND's one combined
-problem, `_draws_feedback` and `_xesc` are what `visualization/grouping.py` needs to
-group a DSM the way cottax draws one."""
+PORT = Path(__file__).resolve().parent.parent
+"""`functional_process/` -- every `.py` under it, and every notebook code cell."""
+
+PAPER = PORT.parent / "paper_tests"
+"""`paper_tests/` -- the thin CLIs over the port, read the same way."""
+
+ALLOWED: tuple[str, ...] = (
+    "cottax",
+    "cottax.interfaces",
+    "cottax.mdao_architectures",
+    "cottax.execution.driver",
+    "cottax.execution.drivers.kinds",
+    "cottax.pytree.path",
+    "cottax.pytree.mint",
+    "cottax.visualization",
+    "cottax.visualization.sequencing",
+)
+"""The cottax modules the port may import from. `cottax.interfaces` covers its own
+submodules (`cottax.interfaces.<module>`); every other entry is exact. `cottax` itself
+is the bare `import cottax` the notebooks make to print which checkout answered -- a
+path probe, not a name taken off it, and `import cottax.core` is still refused."""
+
+PRIVATE: frozenset[str] = frozenset()
+"""The private cottax names the port uses: none, and nothing may be added without
+saying so here."""
+
+
+def _allowed(module: str) -> bool:
+    """Whether `module` is one of `ALLOWED` -- `cottax.interfaces` by prefix, the rest
+    exactly, so `cottax.execution.drivers` does not ride in on
+    `cottax.execution.drivers.kinds`.
+    """
+    return module in ALLOWED or module.startswith("cottax.interfaces.")
+
+
+def _sources() -> list[tuple[str, str]]:
+    """`(where, source)` per thing to read: every `.py` under the port and
+    `paper_tests/`, then every code cell of every notebook, each as its own source so
+    one unparseable cell names itself.
+    """
+    out = [
+        (str(path), path.read_text())
+        for root in (PORT, PAPER)
+        for path in sorted(root.rglob("*.py"))
+    ]
+    for path in sorted(PORT.rglob("*.ipynb")):
+        notebook = nbformat.read(path, as_version=4)
+        out += [
+            (f"{path}[{i}]", cell.source)
+            for i, cell in enumerate(notebook.cells)
+            if cell.cell_type == "code"
+        ]
+    return out
 
 
 def _imports() -> dict[str, set[str]]:
     """`{module: {name, ...}}` -- every `from cottax... import ...` in the port."""
     surface: dict[str, set[str]] = {}
-    for path in sorted(PORT.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+    for where, source in _sources():
+        for node in ast.walk(ast.parse(source, filename=where)):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if module.split(".")[0] == "cottax":
@@ -81,4 +135,19 @@ def test_the_private_reaches_into_cottax_are_the_declared_ones():
         f"new private cottax name(s) {sorted(used - set(PRIVATE))}, gone "
         f"{sorted(set(PRIVATE) - used)} -- each is a reach into cottax's inside and an "
         f"upstream export to ask for; add it to `PRIVATE` with what it is for"
+    )
+
+
+def test_the_port_is_written_over_the_interface_and_nothing_else():
+    """Every cottax module the port imports from is one of `ALLOWED`."""
+    outside = {
+        module: sorted(names)
+        for module, names in _imports().items()
+        if not _allowed(module)
+    }
+    assert not outside, (
+        f"the port reaches past `cottax.interfaces` into {len(outside)} module(s): "
+        + "; ".join(f"{m} ({', '.join(n)})" for m, n in sorted(outside.items()))
+        + " -- either the interface lacks the name, which is a request upstream, or "
+        "this is something a study should not be doing"
     )

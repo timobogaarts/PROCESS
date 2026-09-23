@@ -24,20 +24,22 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
-from cottax.pytree.graph import Graph
+from cottax.execution.drivers.kinds import Converged, Steps
+from cottax.interfaces import (
+    Assign,
+    Function,
+    Graph,
+    Implemented,
+    RunnableGraph,
+    Schedule,
+)
 from cottax.interfaces.pytree_namespace_module import area, resolve
-from cottax.pytree.names import PathMap
-from cottax.pytree.nodes import ImplementedFunction
-from cottax.pytree.problem import Converged, Optimise, Steps
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import NodePath, VarPath
+from cottax.interfaces.statements import Optimise
+from cottax.pytree.path import NodePath, PathMap, VarPath
 from jax.tree_util import GetAttrKey
 
 from functional_process.configurations import kinds
-from functional_process.cottax.architectures import beliefs, ouu, session
+from functional_process.cottax.architectures import beliefs, mdf, ouu, session
 from functional_process.cottax.architectures.drivers import (
     BOXED_CONVERGED,
     BoxedSlsqpDriver,
@@ -558,15 +560,12 @@ class _Quadratic:
 
 
 def _toy_schedule(driver) -> tuple[Schedule, dict]:
-    node = ImplementedFunction(
-        reads=(_var(toy.x), _var(toy.y)),
-        owns=(_var(toy.f), _var(toy.g)),
-        fn=_Quadratic(),
+    node = Implemented(
+        Function((_var(toy.x), _var(toy.y)), (_var(toy.f), _var(toy.g))),
+        _Quadratic(),
     )
     problem = Optimise(
-        objective=_var(toy.f),
-        unknowns=(_var(toy.x), _var(toy.y)),
-        inequalities=(_var(toy.g),),
+        _var(toy.f), (_var(toy.x), _var(toy.y)), inequalities=(_var(toy.g),)
     )
     place = NodePath((GetAttrKey("Opt"),))
     graph = Graph.of({NodePath((GetAttrKey("Toy"),)): node, place: problem})
@@ -585,26 +584,20 @@ def test_other_verdicts_lists_every_other_reporting_driver():
         n_inequality=1,
         bounds=((_var(toy.x), -10.0, 10.0), (_var(toy.y), -10.0, 10.0)),
     )
-    node = ImplementedFunction(
-        reads=(_var(toy.x), _var(toy.y)),
-        owns=(_var(toy.f), _var(toy.g)),
-        fn=_Quadratic(),
+    node = Implemented(
+        Function((_var(toy.x), _var(toy.y)), (_var(toy.f), _var(toy.g))),
+        _Quadratic(),
     )
     problem = Optimise(
-        objective=_var(toy.f),
-        unknowns=(_var(toy.x), _var(toy.y)),
-        inequalities=(_var(toy.g),),
+        _var(toy.f), (_var(toy.x), _var(toy.y)), inequalities=(_var(toy.g),)
     )
     other = area("other")
-    node2 = ImplementedFunction(
-        reads=(_var(other.x), _var(other.y)),
-        owns=(_var(other.f), _var(other.g)),
-        fn=_Quadratic(),
+    node2 = Implemented(
+        Function((_var(other.x), _var(other.y)), (_var(other.f), _var(other.g))),
+        _Quadratic(),
     )
     problem2 = Optimise(
-        objective=_var(other.f),
-        unknowns=(_var(other.x), _var(other.y)),
-        inequalities=(_var(other.g),),
+        _var(other.f), (_var(other.x), _var(other.y)), inequalities=(_var(other.g),)
     )
     driver2 = BoxedSlsqpDriver(
         n_inequality=1,
@@ -620,12 +613,14 @@ def test_other_verdicts_lists_every_other_reporting_driver():
     driven = Assign(place2, driver2).apply(Assign(place, driver).apply(graph))
     schedule = Schedule(RunnableGraph(driven))
     assert {s.problem for s in ouu.driven_problems(schedule)} == {place, place2}
-    assert ouu.other_verdicts(schedule, place) == (Converged.name_for(place2),)
-    assert ouu.other_verdicts(schedule, place2) == (Converged.name_for(place),)
-    assert set(ouu.other_verdicts(schedule, NodePath((GetAttrKey("None"),)))) == {
-        Converged.name_for(place),
-        Converged.name_for(place2),
+    converged = {
+        p: mdf.report_place(driven[p], Converged) for p in (place, place2)
     }
+    assert ouu.other_verdicts(schedule, place) == (converged[place2],)
+    assert ouu.other_verdicts(schedule, place2) == (converged[place],)
+    assert set(ouu.other_verdicts(schedule, NodePath((GetAttrKey("None"),)))) == set(
+        converged.values()
+    )
 
 
 def test_boxed_slsqp_driver_on_a_toy_converges_through_re_centring():
@@ -645,10 +640,10 @@ def test_boxed_slsqp_driver_on_a_toy_converges_through_re_centring():
     out = dict(schedule.run(PathMap(env)))
     x, y = float(out[_var(toy.x)]), float(out[_var(toy.y)])
     assert (x, y) == pytest.approx((0.5, 1.5), abs=1e-5)
-    place = NodePath((GetAttrKey("Opt"),))
-    assert bool(out[Converged.name_for(place)])
-    assert int(out[Status.name_for(place)]) == BOXED_CONVERGED
-    assert int(out[Steps.name_for(place)]) == sum(e["nit"] for e in entries)
+    node = schedule.executable.graph[NodePath((GetAttrKey("Opt"),))]
+    assert bool(mdf.verdict(out, Converged, node))
+    assert int(mdf.verdict(out, Status, node)) == BOXED_CONVERGED
+    assert int(mdf.verdict(out, Steps, node)) == sum(e["nit"] for e in entries)
     assert len(entries) >= 3
     assert entries[0]["on_move_limit"]
     assert not entries[-1]["on_move_limit"]

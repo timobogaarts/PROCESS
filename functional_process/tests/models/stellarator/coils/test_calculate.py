@@ -25,27 +25,13 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from functional_process.cottax.queries import declared
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Driver, Schedule
+from cottax.execution.driver import Driver
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import Assign, RunnableGraph, Schedule, is_root_find
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.problem import RootFind, Start, is_root_find, shape_of
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
-from cottax.pytree.names import PathMap
 
-from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
-from functional_process.tests._harness.process_reference import data_reference
-from functional_process.tests._harness.sample_store import FROM_FILE
-from functional_process.cottax.paths import (
-    build,
-    constraints,
-    stellarator,
-    stellarator_config,
-    tfcoil,
-)
 from functional_process.cottax.models.stellarator.coils.calculate import (
     Bi2212WindingPackIntersectInputs,
     CrocoRebcoWindingPackIntersectInputs,
@@ -83,6 +69,17 @@ from functional_process.cottax.models.stellarator.coils.coils import (
     Intersect,
     intersect_residual,
 )
+from functional_process.cottax.paths import (
+    build,
+    constraints,
+    stellarator,
+    stellarator_config,
+    tfcoil,
+)
+from functional_process.cottax.queries import declared
+from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
+from functional_process.tests._harness.process_reference import data_reference
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.stellarator.coils import calculate as process_calculate
 from process.models.stellarator.preset_config import load_stellarator_config
@@ -263,7 +260,9 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     and `Build`'s formula is the wrong one to keep (see `build.py`'s
     `calculate_build`/`Build` docstrings and this node's own).
     """
-    from functional_process.cottax.models.stellarator.coils.calculate import ZTfInsideHalf
+    from functional_process.cottax.models.stellarator.coils.calculate import (
+        ZTfInsideHalf,
+    )
 
     node = ZTfInsideHalf()
     graph = to_graph(node)
@@ -986,20 +985,15 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
 
 
 class _GenericBisectionRootFind(Driver):
-    """Test-only `AbstractDriver` answering `RootFind` generically, via
-    `ConditionMap.__call__` (`conditions(x) -> residual`) rather than
-    `IntersectBisectionNewtonPolish`'s deliberate shortcut of reaching into
-    `conditions.context` for `coils.py`'s own tabulated curve arrays directly.
+    """Test-only `Driver` answering a root find generically, through the gap a
+    `ConditionMap` call hands back and nothing else.
 
-    That shortcut stops working once `WindingPackIntersectInputs` (the node producing
-    those curves) is itself *inside* the driven block rather than external to it --
-    exactly what happens now that `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp` and
-    `WindingPackIntersectInputs` reads it: `wp_width_r`/`lhs`/`rhs` are no longer part of
-    `conditions.context` (`Drive.context` is "what the body reads from outside the
-    block" -- with `pre` now *inside* the block, its own outputs are internal, not
-    external). `conditions.context`'s own docstring already flags this as a deliberate,
-    non-forced choice ("nothing stops a different concrete driver from being fully
-    generic and calling `conditions(x)` instead") -- this class is that generic driver,
+    `IntersectBisectionNewtonPolish` takes the tabulated curves as **driver data**
+    (`CurveX`/`CurveLhs`/`CurveRhs`), which a caller supplies or a `Rename` points at a
+    producer -- and a producer inside the driven block is refused, which is exactly the
+    case here: `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp` and
+    `WindingPackIntersectInputs` reads it, so the node computing `wp_width_r`/`lhs`/`rhs`
+    is *inside* the block. This class is the generic driver that needs none of them,
     proving the merged 4-node block (`WindingPackIntersectInputs` -> `Intersect` ->
     `WindingPackTotalSizePost`, cycling back through `.tfcoil.j_tf_wp`) is drivable at
     all, not just structurally admissible.
@@ -1009,9 +1003,8 @@ class _GenericBisectionRootFind(Driver):
     an unconstrained `optx.Newton` from `x0=1.0` converges to a spurious root at ~0.096,
     well below the sampled curve's own domain floor) -- so this driver still needs a
     bracket, supplied by the caller (same information `intersect`'s own `lo`/`hi` uses),
-    rather than discovering the domain itself the way the narrower
-    `IntersectBisectionNewtonPolish` can by reaching into `conditions.context` for the
-    tabulated `wp_width_r` array's own min/max.
+    rather than reading the tabulated `wp_width_r` array's own min/max the way the
+    narrower `IntersectBisectionNewtonPolish` does.
     """
 
     accepts = staticmethod(is_root_find)
@@ -1022,7 +1015,7 @@ class _GenericBisectionRootFind(Driver):
         start = data.get(Start)
         x0 = start[0] if start is not None else 0.5 * (self.lower + self.upper)
         bracketed = optx.root_find(
-            lambda x, _: conditions(x)[0],
+            lambda x, _: conditions(x)[1][0],  # (objectives, gaps) -> the one gap
             optx.Bisection(rtol=0.0, atol=1e-10, flip="detect"),
             x0,
             options={"lower": self.lower, "upper": self.upper},

@@ -14,22 +14,28 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import TypeAlias
 
 import networkx as nx
-from cottax.core import body_of, is_problem
-from cottax.pytree.problem import undriven
-from cottax.pytree.executable import ExecutableGraph
-from cottax.pytree.graph import Graph
-from cottax.pytree.names import is_minted, unminted
-from cottax.pytree.problem import ConditionalNode, Driven, Eq, shape_of
-from cottax.pytree.spec import NodePath, VarPath
-from cottax.visualization.sequencing import _draws_feedback, entries, interiors
-from cottax.visualization.xdsm import (
+from cottax.interfaces import (
+    Eq,
+    ExecutableGraph,
+    Graph,
+    body_of,
+    is_bare_condition,
+    is_driven,
+    is_problem,
+    shape_of,
+)
+from cottax.pytree.mint import is_minted, unminted
+from cottax.pytree.path import NodePath, VarPath
+from cottax.visualization import (
     PROBLEM_TYPE_TEXT,
     Formatter,
+    HtmlDoc,
     NoFormat,
-    _xesc,
+    draws_feedback,
     problems_at,
+    xesc,
 )
-from cottax.visualization.xdsm_html import HtmlDoc
+from cottax.visualization.sequencing import entries, interiors
 from jax.tree_util import DictKey, GetAttrKey
 
 type Group = tuple[str, ...]
@@ -37,9 +43,10 @@ type Group = tuple[str, ...]
 UNGROUPED: Group = ()
 
 CONDITIONS: Group = ("conditions",)
-"""The group the optimiser's condition nodes are drawn in -- `.Constraint<n>` and
-`.Objective`, top-level names `sand.constraint_nodes` / `objective_nodes` mint with no
-subsystem of their own. They are what the optimiser reads; a reader looks for them."""
+"""The group the optimiser's condition nodes are drawn in: the requirements stated beside
+the constraints (`Require<id>`), and the `Constraint<n>` / `Objective` nodes a graph
+assembled before the relational port still carries -- top-level names with no subsystem
+of their own. They are what the optimiser reads; a reader looks for them."""
 
 OPTIMISER: Group = ("optimiser",)
 """The group the outer problem is drawn in: `.Opt`, `.RootFind`, `^problem.sand`."""
@@ -54,11 +61,14 @@ def _synthetic(path: NodePath) -> "Group | None":
     """`CONDITIONS` / `OPTIMISER` for the names those groups collect, else `None`."""
     keys = _tree_keys(path)
     if is_minted(path):
-        return OPTIMISER if unminted(path).spelling in (".sand",) else None
+        # By the keys, not by the spelling: a name is `.sand` or `['sand']` depending on
+        # which surface minted it and `Path.spelling` writes those differently, so
+        # comparing the written form would miss one of them silently.
+        return OPTIMISER if keys == ("sand",) else None
     if len(keys) != 1:
         return None
     leaf = keys[0]
-    if leaf.startswith("Constraint") or leaf.startswith("Objective"):
+    if leaf.startswith(("Require", "Constraint", "Objective")):
         return CONDITIONS
     if leaf in ("Opt", "RootFind"):
         return OPTIMISER
@@ -339,13 +349,13 @@ def _run_order(graph: Graph) -> Iterator[NodePath]:
             )
         yield from head
         # The body -- the block minus its problems -- in run order wherever the order it
-        # arrived in would draw a read from a later member (cottax's old `sequenced`
-        # rule, kept here since `sequence` always re-derives the order): stored order
-        # where it draws no feedback, the body's SCC order where it does.
+        # arrived in would draw a read from a later member (cottax's own rule in
+        # `sequencing.sequence`, applied here because the order is this file's):
+        # stored order where it draws no feedback, the body's SCC order where it does.
         rest = [name for name in block if name not in head]
         body = body_of(entry.subgraph)
         order = [name for name in rest if name in body.definitions]
-        if order and _draws_feedback(order, body):
+        if order and draws_feedback(order, body):
             rest = [name for name in rest if name not in body.definitions]
             rest.extend(body.graph.components_order)
         yield from rest
@@ -518,27 +528,30 @@ UNDRIVEN = "undriven"
 
 def problem_kind(node) -> str | None:
     """The kind a problem row is marked with: `None` for a node with a body, else
-    `cottax.pytree.problem.shape_of`'s slug -- except `combined`.
+    `cottax.relational.shape_of`'s slug -- except `combined`.
 
-    **`combined` is read off structure, and the reading is a heuristic.** `Combine`
-    leaves no mark on the node it builds: the join is `Condition.__add__`, which
-    concatenates the two statements' relations, and the result is a `Condition` like any
-    other. What *does* survive is the concatenation: the `Optimise(...)` constructor
-    writes every equality into **one** `Eq` relation against zero (and every inequality
-    into one `Le`), so an objective sitting over **two or more** `Eq` relations against
-    zero can only have been written by hand or by a join -- and in this port it is the
-    join, SAND's `^problem.sand`, every inner fixed point residualised and folded under
-    the file's optimiser. A fixed point over several relations is *not* called combined:
-    a join of pairings is still a fixed point, which is what `is_fixed_point` says of it.
+    **`combined` is read off structure, and the reading is a heuristic.** `Combine` and
+    `Absorb` leave no mark on the node they build: the join is
+    `RelationalCondition.__add__`, which concatenates the two statements' relations, and
+    the result is a statement like any other. What survives is *which* relations ended up
+    under the objective. A requirement absorbed into the optimiser is `c op 0` -- a
+    condition that vanishes -- and every architecture absorbs those, so counting them says
+    nothing. A **pairing**, `u = g` with the optimiser's own unknown on the left, is a
+    consistency statement that was folded in rather than nested: IDF's and SAND's
+    `Global` coupling, and nothing MDF does. That is what this marks.
+
+    A fixed point over several relations is *not* called combined: a join of pairings is
+    still a fixed point, which is what `is_fixed_point` says of it.
     """
-    if not isinstance(node, ConditionalNode):
+    if not (is_problem(node) or is_bare_condition(node)):
         return None
     kind = shape_of(node)
-    problem = undriven(node)
-    residual_relations = sum(
-        1 for r in problem.relations if r.op is Eq and r.against_zero
+    statement = node.statement if is_driven(node) else node
+    absorbed_pairing = any(
+        r.op is Eq and r.rhs is not None and r.lhs in statement.unknowns
+        for r in statement.relations
     )
-    if kind == "optimise" and residual_relations > 1:
+    if kind == "optimise" and absorbed_pairing:
         return COMBINED
     return kind
 
@@ -546,9 +559,9 @@ def problem_kind(node) -> str | None:
 def driver_name(node) -> str | None:
     """Which algorithm answers a problem: the driver's class name, `UNDRIVEN` for a
     problem none has been `Assign`ed to yet, `None` for a node that is not a problem."""
-    if not isinstance(node, ConditionalNode):
+    if not (is_problem(node) or is_bare_condition(node)):
         return None
-    return type(node.driver).__name__ if isinstance(node, Driven) else UNDRIVEN
+    return type(node.driver).__name__ if is_driven(node) else UNDRIVEN
 
 
 @dataclasses.dataclass(frozen=True)
@@ -814,7 +827,7 @@ def _matrix_struct(
     # in the matrix. Reading a node's inputs off its incoming cells would therefore
     # describe the picture rather than the node -- and a diagonal hover is the one place
     # a reader is asking about the node itself. `reads`/`owns` are `NodeDefinition`'s own
-    # ports (`cottax/spec.py`), the same two lists `xdsm_struct` ships as
+    # ports (`cottax/core/definition.py`), the same two lists `xdsm_struct` ships as
     # `reads`/`writes`, so the two diagrams answer this question from one source.
     def _ports(vars_: Sequence[VarPath]) -> tuple[list[str], int]:
         seen = list(dict.fromkeys(vars_))
@@ -839,7 +852,7 @@ def _matrix_struct(
             "colour": hue[name].colour,
             "base": hue[name].base,
             "overlay": hue[name].overlay,
-            "problem": isinstance(graph[name], ConditionalNode),
+            "problem": is_problem(graph[name]) or is_bare_condition(graph[name]),
             "minted": is_minted(name),
             "reads": reads,
             "nr": n_reads,
@@ -1370,10 +1383,12 @@ function show(e, html) {
 }
 /* Everything between the two markers below is *pure*: it reads `D` and `esc` and touches
    no DOM, no event and no layout. That is what makes the wording testable without a
-   browser -- `functional_process/tests/test_dsm_tooltips.py` slices this block out of a
-   rendered page by those markers, evaluates it beside the page's own `D`, and asserts on
-   the literal string. Keep it that way: anything here that reached for `tip` or an event
-   would take the tooltip's text back out of reach of the only check there is on it. */
+   browser: a test slices this block out of a rendered page by those markers, evaluates
+   it beside the page's own `D`, and asserts on the literal string. (The test that did
+   -- `functional_process/tests/test_dsm_tooltips.py` -- went with the visualization
+   tests on 2026-09-18, `f3015ede`; the markers are kept because that is the only way
+   this wording is ever checkable.) Keep it that way: anything here that reached for
+   `tip` or an event would put the tooltip's text out of reach again. */
 /* TOOLTIP-TEXT-BEGIN */
 /* A capped list of names as its own indented block, with the tail counted rather than
    drawn -- the one idiom every list in this tooltip uses (a node's ports, a cell's
@@ -1516,7 +1531,7 @@ def render_grouped_dsm_html(
     # happened to spell `__TITLE__` would otherwise have the title substituted into the
     # middle of the graph. `</` is broken up for the same reason one level down -- a name
     # holding `</script>` would end the script tag early.
-    page = _PAGE.replace("__TITLE__", _xesc(title)).replace(
+    page = _PAGE.replace("__TITLE__", xesc(title)).replace(
         "__DATA__", json.dumps(struct).replace("</", "<\\/")
     )
     doc = HtmlDoc("<!doctype html>\n" + page)

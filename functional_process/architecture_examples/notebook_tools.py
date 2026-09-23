@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 import time
@@ -24,7 +25,22 @@ REPO = Path(__file__).resolve().parents[2]
 """The `PROCESS/` checkout: what the notebooks `chdir` to."""
 
 JAXGRAPH_SRC = REPO.parent.parent / "jaxgraph" / "src"
-"""The editable cottax checkout beside this repo, if there is one."""
+"""The fallback cottax checkout beside this repo, used only when this interpreter
+imports no `cottax` of its own."""
+
+
+def cottax_src() -> Path | None:
+    """Where the kernel should look for `cottax`: the copy **this** interpreter
+    imports, if it imports one, and otherwise `JAXGRAPH_SRC`.
+
+    A worktree of cottax put on `PYTHONPATH` is what a re-port is measured against, and
+    a hardcoded sibling path would silently run the notebooks against a different
+    checkout than the caller's.
+    """
+    spec = importlib.util.find_spec("cottax")
+    if spec is not None and spec.origin is not None:
+        return Path(spec.origin).resolve().parents[1]
+    return JAXGRAPH_SRC if JAXGRAPH_SRC.is_dir() else None
 
 DEFAULT_TIMEOUT = 1800
 """Seconds one cell may take: a cold assembly compiles an MDA and solves twice."""
@@ -61,12 +77,13 @@ def _output_from(msg) -> nbformat.NotebookNode | None:
 
 
 def _kernel_env() -> dict:
-    """The kernel's environment: this repo on the path, the sibling cottax checkout ahead
-    of any installed copy, jax on the CPU."""
+    """The kernel's environment: this repo on the path, whichever `cottax` this
+    interpreter imports ahead of any installed copy (`cottax_src`), jax on the CPU."""
     env = dict(os.environ)
     entries = [str(REPO)]
-    if JAXGRAPH_SRC.is_dir():
-        entries.insert(0, str(JAXGRAPH_SRC))
+    source = cottax_src()
+    if source is not None and source.is_dir():
+        entries.insert(0, str(source))
     existing = env.get("PYTHONPATH")
     env["PYTHONPATH"] = os.pathsep.join(entries + ([existing] if existing else []))
     env.setdefault("JAX_PLATFORMS", "cpu")

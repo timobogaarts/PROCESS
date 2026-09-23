@@ -1,8 +1,9 @@
-"""Generic `AbstractDriver`s for `cottax.pytree.problem.FixedPoint` and
-`cottax.pytree.problem.Optimise`, local to this port.
+"""Generic `cottax.execution.driver.Driver`s for this port's fixed points, root finds
+and optimisations.
 """
 
 import dataclasses
+import operator
 import warnings
 
 import equinox as eqx
@@ -10,19 +11,21 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
-from cottax.execution.drivers import PicardDriver as CottaxPicardDriver
-from cottax.execution.schedule import ConditionMap, Driver
-from cottax.pytree.problem import (
-    Converged,
-    DriverReport,
-    Start,
-    Steps,
+from cottax.execution.driver import Driver
+from cottax.execution.drivers.kinds import Converged, Start, Steps
+from cottax.interfaces import (
+    ConditionMap,
+    Le,
     is_fixed_point,
     is_optimise,
     is_root_find,
+    is_square,
 )
-from cottax.pytree.problem.condition import Inequality, Objective
-from cottax.pytree.spec import VarPath
+from cottax.interfaces import (
+    PicardDriver as CottaxPicardDriver,
+)
+from cottax.pytree.mint import Minted
+from cottax.pytree.path import VarPath
 from jax.flatten_util import ravel_pytree
 
 from functional_process.cottax.architectures.host_cache import bind
@@ -41,12 +44,55 @@ def design_scale(flat_start):
     return scale
 
 
-def condition_sizes(conditions: ConditionMap, start) -> tuple[int, ...]:
-    """How many flat entries each condition contributes, in `conditions` order --
-    `1` for a scalar, the size for an array. Traced (`jax.eval_shape`), never run.
+def condition_places(conditions: ConditionMap) -> tuple[VarPath, ...]:
+    """One place per stacked entry, in `host_cache.flat_answer` order: the objectives,
+    then the side each relation names -- its left, or its right where the left is zero.
+    What a diagnostic writes a row's name from.
     """
-    shapes = jax.eval_shape(lambda s: conditions(*s), tuple(start))
-    return tuple(int(np.prod(sh.shape, dtype=int)) for sh in shapes)
+    return conditions.objectives + tuple(
+        lhs if lhs is not None else rhs for lhs, rhs, _op in conditions.relations
+    )
+
+
+def gap_order(symbols) -> list[int]:
+    """The gaps' indices with the equalities first, declaration order kept inside each.
+
+    A statement writes its relations as it means them and `ConditionMap.symbols` says
+    what each gap is held to; the SQP drivers here partition by *position*, so the
+    permutation is taken once and the rows are read through it.
+    """
+    return sorted(range(len(symbols)), key=lambda i: 1 if symbols[i] is Le else 0)
+
+
+def condition_sizes(conditions: ConditionMap, start) -> tuple[int, ...]:
+    """How many flat entries each stacked condition contributes, in
+    `condition_places` order -- `1` for a scalar, the size for an array. Traced
+    (`jax.eval_shape`), never run.
+    """
+    objectives, gaps = jax.eval_shape(lambda s: conditions(*s), tuple(start))
+    return tuple(
+        int(np.prod(sh.shape, dtype=int)) for sh in (*objectives, *gaps)
+    )
+
+
+def flat_gaps(conditions: ConditionMap, unknowns) -> jnp.ndarray:
+    """The relations' gaps at `unknowns`, ravelled into one vector -- what a root find
+    drives to zero. A gap is `lhs - rhs`, a side of `None` being zero.
+    """
+    _objectives, gaps = conditions(*unknowns)
+    flat, _ = ravel_pytree(gaps)
+    return flat
+
+
+def next_iterate(conditions: ConditionMap, unknowns) -> tuple:
+    """`u - gap` per unknown: `u = g(u)`'s next value, since that relation's gap is
+    `u - g(u)`. One gap per unknown, in the same order, which is what a fixed point is.
+    """
+    _objectives, gaps = conditions(*unknowns)
+    return tuple(
+        jax.tree.map(operator.sub, u, gap)
+        for u, gap in zip(unknowns, gaps, strict=True)
+    )
 
 
 def entry_names(names, sizes) -> list[str]:
@@ -57,47 +103,37 @@ def entry_names(names, sizes) -> list[str]:
     return out
 
 
-def by_role(
+def by_symbol(
     conditions: ConditionMap, name: str, n_equality: int, n_inequality: int
-) -> ConditionMap:
-    """`conditions` with its conditions in the order the SQP drivers here partition
-    them by position: `(objective, *equalities, *inequalities)`, `roles` permuted
-    alongside.
+):
+    """`conditions` with its relations reordered so the stacked vector is
+    `(objective, *equalities, *inequalities)` -- the split the SQP drivers here make by
+    position.
 
-    Since cottax `bc1130a` a condition map's conditions arrive **as the statement wrote
-    them** and `ConditionMap.roles` says what each is, parallel -- "a driver splits by
-    role, never by position". Before that the seam itself promised this order. A SAND
-    problem, `Combine`d from residualised fixed points and the optimiser, writes its
-    conditions interleaved, so a count-based split there would quietly read an
-    inequality as an equality. The counts the driver was told are checked against the
-    roles, which is the check the old length test stood in for.
+    A statement writes its relations in whatever order it was built in (a SAND problem,
+    `Absorb`ed from requirements and cut fixed points, interleaves them), and
+    `ConditionMap.symbols` is what says which is which. The counts the driver was told
+    are checked against the symbols, so a mis-declared split is a refusal and not a
+    silently mis-read row.
     """
-    roles = conditions.roles
-    if len(roles) != len(conditions.conditions):
-        raise ValueError(
-            f"{name}: `ConditionMap.roles` ({len(roles)}) is not parallel to its "
-            f"conditions ({len(conditions.conditions)})"
-        )
-    rank = {Objective: 0, Inequality: 2}       # every other role is an equality
-    order = sorted(range(len(roles)), key=lambda i: rank.get(roles[i], 1))
+    symbols = conditions.symbols
     counted = (
-        sum(1 for r in roles if r is Objective),
-        sum(1 for r in roles if rank.get(r, 1) == 1),
-        sum(1 for r in roles if r is Inequality),
+        len(conditions.objectives),
+        sum(1 for op in symbols if op is not Le),
+        sum(1 for op in symbols if op is Le),
     )
     if counted != (1, n_equality, n_inequality):
         raise ValueError(
             f"{name} was told {n_equality} equalities and {n_inequality} inequalities "
-            f"with one objective, but the block's roles count "
+            f"with one objective, but the block states "
             f"{counted[0]} objective(s), {counted[1]} equalities and {counted[2]} "
-            f"inequalities over {', '.join(written(conditions.conditions))}"
+            f"inequalities over {', '.join(written(condition_places(conditions)))}"
         )
-    if order == list(range(len(roles))):
+    order = gap_order(symbols)
+    if order == list(range(len(symbols))):
         return conditions
     return dataclasses.replace(
-        conditions,
-        conditions=tuple(conditions.conditions[i] for i in order),
-        roles=tuple(roles[i] for i in order),
+        conditions, relations=tuple(conditions.relations[i] for i in order)
     )
 
 
@@ -125,16 +161,16 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel, sizes=
         else np.ones_like(flat_start)
     )
 
+    places = condition_places(conditions)
     by_name = {var: float(factor) for var, factor in driver.condition_scale}
-    stray = set(by_name) - set(conditions.conditions)
+    stray = set(by_name) - set(places)
     if stray:
         raise ValueError(
             f"condition_scale names {written(tuple(stray))}, which this block does not "
-            f"read as a condition (it reads {written(conditions.conditions)})"
+            f"read as a condition (it reads {written(places)})"
         )
     condition_scale = np.repeat(
-        np.array([by_name.get(c, 1.0) for c in conditions.conditions], dtype=float),
-        sizes,
+        np.array([by_name.get(c, 1.0) for c in places], dtype=float), sizes
     )
 
     # **Bound once here, not per call.** `host_cache.bind` partitions and flattens the
@@ -280,7 +316,7 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap, sizes=None) -
 def _names_for(conditions: ConditionMap, values, sizes=None) -> list[str]:
     """A spelling per flat entry of `values` -- the conditions' own names when every
     condition is a scalar, else spread over each one's entries by `sizes`."""
-    names = [c.spelling for c in conditions.conditions]
+    names = [c.spelling for c in condition_places(conditions)]
     if sizes is None:
         if len(values) == len(names):
             return names
@@ -386,10 +422,9 @@ def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int, size
     )
 
 
-class Status(DriverReport):
-    """The integer code the driver's own solver library stopped with."""
-
-    label = "status"
+Status = Minted("status")
+"""How a driver names the integer code its own solver library stopped with:
+`^status.<the problem's first unknown>`."""
 
 
 VMCON_CONVERGED = 0
@@ -540,7 +575,7 @@ class SlsqpDriver(Driver):
         """Values for the block's unknowns, then `steps`, `converged` and `status`."""
         from scipy.optimize import minimize
 
-        conditions = by_role(
+        conditions = by_symbol(
             conditions, "SlsqpDriver", self.n_equality, self.n_inequality
         )
         start = start_from(data, "SlsqpDriver", conditions)
@@ -807,11 +842,16 @@ class BoxedSlsqpDriver(Driver):
         """Values for the block's unknowns, then `steps`, `converged` and `status`."""
         from scipy.optimize import minimize  # noqa: PLC0415
 
-        as_written = conditions.conditions
-        conditions = by_role(
+        n_objectives = len(conditions.objectives)
+        # The rows an externally supplied `jacobian` gives back are in the block's own
+        # order; `by_symbol` reorders the gaps, so the same permutation is applied to
+        # the rows under the objectives.
+        rows = list(range(n_objectives)) + [
+            n_objectives + i for i in gap_order(conditions.symbols)
+        ]
+        conditions = by_symbol(
             conditions, "BoxedSlsqpDriver", self.n_equality, self.n_inequality
         )
-        order = [as_written.index(c) for c in conditions.conditions]
         start = start_from(data, "BoxedSlsqpDriver", conditions)
         _flat, unravel = ravel_pytree(start)
         sizes = condition_sizes(conditions, start)
@@ -840,14 +880,15 @@ class BoxedSlsqpDriver(Driver):
                 # hit, and its own rows are what the Jacobian is.
                 def evaluate(x_scaled):
                     flat = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-                    raw, _ = ravel_pytree(live(*_unravel(flat)))
+                    objectives, gaps = live(*_unravel(flat))
+                    raw, _ = ravel_pytree((*objectives, *gaps))
                     return np.asarray(raw, dtype=float) * cond_scale
 
                 def jacobian(x_scaled):
                     raw = np.asarray(
                         own_jacobian(np.asarray(x_scaled, dtype=float) / scale),
                         dtype=float,
-                    )[order]
+                    )[rows]
                     return raw * cond_scale[:, None] / scale[None, :]
 
             cache: dict = {}
@@ -1070,7 +1111,7 @@ class SeededNewtonDriver(Driver):
     block's own **context** when the one supplied in `env` is unusable.
     """
 
-    accepts = staticmethod(is_root_find)
+    accepts = staticmethod(is_square)
     requires = (Start,)
 
     rtol: float = 1e-4
@@ -1091,8 +1132,7 @@ class SeededNewtonDriver(Driver):
         flat_guess, unravel = ravel_pytree(start)
 
         def residual(flat, args=None):
-            out, _ = ravel_pytree(conditions(*unravel(flat)))
-            return out
+            return flat_gaps(conditions, unravel(flat))
 
         solution = optx.root_find(
             residual, optx.Newton(rtol=self.rtol, atol=self.atol), flat_guess
@@ -1137,7 +1177,7 @@ def condition_scale(conditions: ConditionMap, start):
         for u, x in zip(conditions.unknowns, start, strict=True)
     }
     scales = []
-    for c in conditions.conditions:
+    for c in condition_places(conditions):
         tail = c.spelling.split(".", 1)[1] if "." in c.spelling else c.spelling
         x = tails.get(tail)
         scales.append(
@@ -1241,8 +1281,7 @@ class SafeguardedNewtonDriver(SeededNewtonDriver):
         broyden = self.jacobian == "broyden"
 
         def residual(u):
-            out, _ = ravel_pytree(conditions(*unravel(u * scale)))
-            return out
+            return flat_gaps(conditions, unravel(u * scale))
 
         def norm(r):
             return jnp.max(jnp.abs(r / rscale))
@@ -1483,8 +1522,7 @@ class BracketedRootDriver(Driver):
         pair = self.bracket_for(conditions.unknowns[0])
 
         def residual(u):
-            out, _ = ravel_pytree(conditions(*unravel(jnp.reshape(u * scale, (1,)))))
-            return out[0]
+            return flat_gaps(conditions, unravel(jnp.reshape(u * scale, (1,))))[0]
 
         def value_and_slope(f, u):
             return jax.jvp(f, (u,), (jnp.ones_like(u),))
@@ -1627,7 +1665,7 @@ class BracketedRootDriver(Driver):
 
 
 class PicardDriver(CottaxPicardDriver):
-    """`cottax.execution.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
+    """`cottax.interfaces.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
     and therefore an **implicit adjoint**.
     """
 
@@ -1671,7 +1709,7 @@ class PicardDriver(CottaxPicardDriver):
         flat_guess, unravel = ravel_pytree(start)
 
         def iterate(flat, args):
-            nxt, _ = ravel_pytree(conditions(*unravel(flat)))
+            nxt, _ = ravel_pytree(next_iterate(conditions, unravel(flat)))
             return nxt
 
         solver = optx.FixedPointIteration(rtol=self.rtol, atol=self.atol)
@@ -1696,7 +1734,7 @@ class SweepDriver(Driver):
     requires = (Start,)
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        return tuple(conditions(*data[Start]))
+        return next_iterate(conditions, data[Start])
 
 
 class VmconDriver(Driver):
@@ -1746,7 +1784,7 @@ class VmconDriver(Driver):
         """
         # In `(objective, *equalities, *inequalities)` order, by role: everything
         # below partitions by position, and the counts are checked against the roles.
-        conditions = by_role(
+        conditions = by_symbol(
             conditions, "VmconDriver", self.n_equality, self.n_inequality
         )
         start = start_from(data, "VmconDriver", conditions)
@@ -1763,13 +1801,12 @@ class VmconDriver(Driver):
         # about the driver's own fields, and this class's contract is that such a
         # refusal is an ordinary Python error rather than one surfacing from inside a
         # `jax.pure_callback`. The duplicate check costs a set difference.
-        stray = {var for var, _factor in self.condition_scale} - set(
-            conditions.conditions
-        )
+        places = condition_places(conditions)
+        stray = {var for var, _factor in self.condition_scale} - set(places)
         if stray:
             raise ValueError(
                 f"condition_scale names {written(tuple(stray))}, which this block does "
-                f"not read as a condition (it reads {written(conditions.conditions)})"
+                f"not read as a condition (it reads {written(places)})"
             )
         epsfcn = self.epsfcn
         callback = self.callback

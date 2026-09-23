@@ -5,36 +5,36 @@ Every step is cottax ops on the previous graph. Counts are measured
 
 | # | step | ops | nodes | inputs | problems |
 |---|---|---|---|---|---|
-| 0 | the declared machine | `indat.graph_for(machine)` | 154 | 305 | 4 |
-| 1 | minus unbacked nodes | `Delete(.vacuum.duct_diameter_root_find)` | 152 | 300 | 3 |
-| 2 | the MDA | `FixedPointCut` x2 + `Assign(drivers)` | 154 | 300 | 5 |
-| 3 | + constraints, objective | `Insert(icc x14)` + `Insert(Optimise)` | 170 | 305 | 6 |
-| 4 | + `c2` closed by the density | `Insert(RootFind)` + `Nest` | 170 | 312 | 6 |
-| 5 | + the winding pack lifted | `Undrive`+`Unnest`+`Undetermine`+`Delete`+`Insert` | 171 | 313 | 5 |
-| 6 | + the operator's problem | `Insert(Optimise)` + `nested_inside` | 172 | | |
+| 0 | the declared machine | `indat.graph_for(machine)` | 150 | 302 | 1 |
+| 1 | minus unbacked nodes | nothing to delete | 150 | 302 | 1 |
+| 2 | the MDA | `mda.SCHEME` (`FixedPointCut` x2) + `Assign(drivers)` | 152 | 305 | 3 |
+| 3 | + constraints, objective | `Insert(icc x14 + objf)` | 167 | 315 | 3 |
+| 4 | + `c2` closed by the density | `Insert(Requirement)` + `Determine` + `Nest` | 168 | 314 | 4 |
+| 5 | + the winding pack lifted | `Undrive`+`Unnest`+`Undetermine`+`Replace` | 168 | 315 | 3 |
+| 6 | + the operator's problem | `Insert(Optimise)` + `nested_inside` | 169 | | |
 
-Step 2 applies only **2** of `mda.CUTS`' nine: the other seven cycles do not exist in
-this stellarator's graph. The problems it leaves are the four the models declare
-themselves (`proton_rate_density.cycle`, `f_ster_div_single`,
-`profiles.ion_vol_avg_temperature`, `power.delta_eta_step`) plus
-`stellarator.coils.intersect` -- the winding-pack sizing rule, which step 5 takes apart.
+Step 2 is `GaussSeidelMinimal`: it opens two of this graph's three cycles with three cut
+variables and closes each with one `^mda` fixed point. The third is closed by the one
+statement the models declare themselves, `stellarator.coils.intersect` -- the
+winding-pack sizing rule, which step 5 takes apart.
 
-Step 4 adds no node but seven boundary inputs: the closing mints the root find's ports.
-Step 5 *removes* a problem (the coil stops solving for its own width) and adds one node
-(the inserted signed residual, `^cond.lift.stellarator.wp_width_r_min`).
+Step 4 adds one node, the requirement `c2 = 0`, and `Determine`s it by the density,
+which therefore leaves the boundary. Step 5 *removes* a problem (the coil stops solving
+for its own width): the requirement is relaxed in place to the inequality on the safe
+side, so no node is inserted and the unknown becomes a design variable.
 
 Step 6 is this file. The `Optimise` owns exactly two unknowns -- `T_e` and the helium
 fraction -- and carries only the **six** conditions the operator can move. The other
-seven (c82, c83, c32, c34, c35, c65 and the lifted pack rule) are constants once the
+six (c82, c83, c32, c34, c35, c65) are constants once the
 build is fixed, and cottax refuses them outright: *"reads ... as a condition, but
 nothing in its cycle produces it, so no unknown of the problem can move it -- a constant
 is not a condition"*. That refusal is how the six/seven split was found rather than
 assumed, and it matches the measured spans (c67 11.2, c8 7.7, c18 3.6, c62 2.7, c24 2.4,
-c17 1.5; the other seven exactly 0.0000).
+c17 1.5; the other six exactly 0.0000).
 
 ## Appendix: the field split, measured and rejected
 
-`b_plasma_toroidal_on_axis` reaches 122 of 154 nodes -- the plasma *and* the whole magnet
+`b_plasma_toroidal_on_axis` reaches most of the graph -- the plasma *and* the whole magnet
 chain -- so lowering it re-sizes the magnet. The magnet-sizing cone is 9 nodes and the
 field enters it through exactly one reader, so separating the built field from the
 operated one is two ops:
@@ -54,17 +54,16 @@ the maximum field in every world and operability is unchanged (0.4102 -> 0.4102)
 that cap it appears to gain 47 %, which is a 4.70 T magnet being run at 6.08 T.
 """
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
 from common import OUT, deterministic_values
-from cottax.answerable import AnswerableGraph
-from cottax.pytree.names import PathMap
-from cottax.pytree.plan import Insert, Plan
-from cottax.pytree.problem import Optimise
+from cottax.interfaces import ExecutableGraph, Insert, Optimise, PathMap, Plan
+
+from functional_process.configurations import kinds
 from functional_process.cottax.architectures import closing, lift, ouu, session
 from functional_process.cottax.architectures.mda import assign_drivers, default_drivers
 from functional_process.cottax.queries import nested_inside
-from functional_process.configurations import kinds
 from functional_process.cottax.visualization.grouping import (
     Drawn,
     dependency_group_sequence,
@@ -77,7 +76,7 @@ from functional_process.cottax.visualization.render_xdsm import SPELLING
 
 
 def draw(drawn: Drawn, outdir, name: str, title: str) -> list[str]:
-    """Both orderings of one answerable graph as interactive DSM pages; the two file
+    """Both orderings of one executable graph as interactive DSM pages; the two file
     names. (Was `paper_tests/dsms.py`'s, the one piece of it the UQ still needs.)
     """
     graph = graph_of(drawn)
@@ -135,19 +134,14 @@ def render():
     print(f"movable by the operator ({len(movable)}):", [c.spelling.rsplit('.',1)[-1] for c in movable])
     print(f"constant given the build ({len(fixed_conds)}):", [c.rsplit('.',1)[-1] for c in fixed_conds], flush=True)
 
-    node = Optimise(
-        objective=built.report["objective"],
-        unknowns=operating,
-        equalities=(),
-        inequalities=movable,
-    )
+    node = Optimise(built.report["objective"], operating, (), movable)
     graph = (Plan(built.problem.graph) + Insert(PathMap(((closing.OPTIMISE, node),)))).graph
     graph = nested_inside(graph, closing.OPTIMISE)
     drivers = default_drivers(graph)
     for cond, place in built.places.items():
         drivers[place] = closing.with_bounds(closing.bracketed(), built.pairings[cond],
                                              built.session.reference.bounds)
-    drawn = AnswerableGraph(assign_drivers(graph, drivers))
+    drawn = ExecutableGraph(assign_drivers(graph, drivers))
 
     out = OUT / "dsm" / "stellarator_helias"
     out.mkdir(parents=True, exist_ok=True)

@@ -7,7 +7,7 @@ from PROCESS), with one *arm* per architecture:
 | arm    | recipe                                    | solved by                |
 |--------|-------------------------------------------|--------------------------|
 | `MDA`  | `mda.cut_graph` + `mda.default_drivers`   | the cut graph with the condition nodes, once |
-| `MDF`  | `sand.optimise_graph` + `MDF()`           | `evaluate.run_schedule`  |
+| `MDF`  | `sand.problem_graph` + `MDF()`            | `evaluate.run_schedule`  |
 | `IDF`  | `idf.idf_graph` (`IDF()`)                 | `evaluate.run_schedule`  |
 | `SAND` | `sand.assemble` (`SAND()`)                | `evaluate.run_schedule`  |
 
@@ -35,9 +35,8 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+from cottax.interfaces import Le, Plan
 from cottax.mdao_architectures import MDF
-from cottax.pytree.plan import Plan
-from cottax.pytree.problem import Driven
 from jax.flatten_util import ravel_pytree
 
 from functional_process import configurations
@@ -45,6 +44,7 @@ from functional_process.cottax.architectures import idf, mdf, sand
 from functional_process.cottax.architectures.drivers import (
     VMCON_NON_FINITE,
     Status,
+    condition_places,
     non_finite_summary,
 )
 from functional_process.cottax.architectures.evaluate import (
@@ -134,24 +134,28 @@ def _why_no_step(drive, context, seeded):
     condition_map = drive.condition_map(context)
 
     def stacked(*x):
-        return jnp.stack([jnp.asarray(v) for v in condition_map(*x)])
+        objectives, gaps = condition_map(*x)
+        return jnp.stack([jnp.asarray(v) for v in (*objectives, *gaps)])
 
     values = np.asarray(stacked(*unknowns), dtype=float)
     rows = np.asarray(jax.jacfwd(stacked)(*unknowns), dtype=float).reshape(
         len(values), -1
     )
-    node = drive.subgraph[drive.problem]
-    definition = node.problem if isinstance(node, Driven) else node
-    n_equality = len(definition.equalities)
+    n_objectives = len(condition_map.objectives)
+    symbols = condition_map.symbols
     stuck = []
-    for index, (condition, value, row) in enumerate(
-        zip(drive.conditions, values, rows, strict=True)
+    for index, (place, value, row) in enumerate(
+        zip(condition_places(condition_map), values, rows, strict=True)
     ):
-        if index == 0:
+        if index < n_objectives:
             continue  # the objective: never a feasibility question
-        away = abs(value) > 1e-8 if index <= n_equality else value > 1e-8
+        away = (
+            value > 1e-8
+            if symbols[index - n_objectives] is Le
+            else abs(value) > 1e-8
+        )
         if away and not np.any(row != 0.0):  # noqa: RUF069
-            stuck.append((condition.spelling, float(value)))
+            stuck.append((place.spelling, float(value)))
     return stuck
 
 
@@ -269,7 +273,7 @@ def solve_root_find(build: MdfBuild, cold) -> dict:
         min_ie=min(inequalities) if inequalities else None,
         status="converged" if converged else "not-converged",
         seconds=seconds,
-        note="" if converged else f"root find: {mdf.verdict(out, mdf.Status)}",
+        note="" if converged else f"root find: {built.verdict(out, Status)}",
         x=tuple(float(np.asarray(v)) for v in x),
     )
     return result
@@ -332,7 +336,7 @@ def build_mdf_block(reference, machine_graph, switch_values, optimiser=None, sch
     driven, env = mda_env(
         reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
     )
-    with_problem, _optimiser, report = sand.optimise_graph(
+    with_problem, _optimiser, report = sand.problem_graph(
         driven,
         reference.ixc,
         reference.icc,
@@ -404,7 +408,7 @@ def solve_block(build: BlockBuild, reference, machine_graph, cold) -> dict:
 
     # The driver refuses a non-finite problem and reports `VMCON_NON_FINITE` through
     # its own `Status` port -- read as data out of the env, never caught.
-    reported = mdf.verdict(out, Status, solve_drive.problem)
+    reported = mdf.verdict(out, Status, solve_drive)
     if reported is not None and int(np.asarray(reported)) == VMCON_NON_FINITE:
         flat_probe, probe_unravel = ravel_pytree(
             tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)

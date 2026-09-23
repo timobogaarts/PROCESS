@@ -3033,9 +3033,9 @@ def problem_from_indat(input_file):
 
 def objective_selection(i_figure_merit):
     """Which figure of merit the run states, and in which direction --
-    `sand.ObjectiveSelection`, resolved here and nowhere else.
+    `models.objectives.ObjectiveSelection`, resolved here and nowhere else.
     """
-    from functional_process.cottax.architectures.sand import (
+    from functional_process.cottax.models.objectives import (
         ObjectiveSelection,  # noqa: PLC0415
     )
     from functional_process.models import objectives  # noqa: PLC0415
@@ -3440,7 +3440,7 @@ SWITCH_VALUE_DEFAULTS = {
     "istell": 0,  # `stellarator_variables.py:46`
     "itart": 0,  # `physics_variables.py:994`
 }
-"""`sand.SWITCH_PARAMETER_NAMES` -> PROCESS's own `DataStructure` default."""
+"""`models.constraints.SWITCH_PARAMETER_NAMES` -> PROCESS's own `DataStructure` default."""
 
 
 def switch_values_from_indat(input_file):

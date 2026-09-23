@@ -25,38 +25,23 @@ import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax import (
-    Feasibility,
+from cottax.execution.driver import Driver
+from cottax.interfaces import (
+    Assign,
+    Eq,
     Graph,
-    ImplementedFunction,
-    RootFind,
+    Implemented,
+    RunnableGraph,
+    Schedule,
     Start,
+    body_of,
+    is_feasibility,
+    is_root_find,
 )
-from cottax.pytree.nodes import implemented as runnable
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Driver, Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
-from cottax.pytree.problem import is_feasibility, is_root_find
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import NodePath
-from cottax.pytree.nodes import Implemented
-from cottax.pytree.names import PathMap
+from cottax.pytree.path import NodePath, PathMap
 from jax.tree_util import DictKey
 
-from functional_process.tests._harness import (
-    Sample,
-    Tier1Contract,
-    Tier2Contract,
-    fuzz_samples,
-    legacy_sample,
-)
-from functional_process.tests._harness import path as vpath
-from functional_process.tests._harness.process_reference import (
-    data_reference,
-    process_reference,
-)
-from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.vacuum.vacuum import (
     XMULT,
     DuctDiameterRootFind,
@@ -77,6 +62,19 @@ from functional_process.cottax.models.vacuum.vacuum import (
     pumping_speed_floor_residual,
     solve_duct_diameter,
 )
+from functional_process.tests._harness import (
+    Sample,
+    Tier1Contract,
+    Tier2Contract,
+    fuzz_samples,
+    legacy_sample,
+)
+from functional_process.tests._harness import path as vpath
+from functional_process.tests._harness.process_reference import (
+    data_reference,
+    process_reference,
+)
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core import constants
 from process.core.model import DataStructure
 from process.models.vacuum import Vacuum, VacuumVessel
@@ -217,7 +215,7 @@ class _NewtonRootFindDriver(Driver):
         d0 = jnp.asarray(start[0]) if start is not None else jnp.asarray(1.0)
 
         def residual_fn(d):
-            (r,) = conditions(d)
+            _objectives, (r,) = conditions(d)
             return r
 
         def cond(carry):
@@ -388,8 +386,8 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     joined = DuctFeasibility + root_find_problem
     assert is_feasibility(joined)
     assert joined.unknowns == DuctFeasibility.unknowns + root_find_problem.unknowns
-    assert joined.equalities == root_find_problem.reads
-    assert joined.inequalities == DuctFeasibility.inequalities
+    assert joined.relations == DuctFeasibility.relations + root_find_problem.relations
+    assert joined.conditions == DuctFeasibility.conditions + root_find_problem.conditions
 
 
 class _MeritFunctionFeasibilityDriver(Driver):
@@ -418,8 +416,14 @@ class _MeritFunctionFeasibilityDriver(Driver):
         )
 
         def merit(x, _):
-            equality, fits, floor = conditions(x[0], x[1])
-            return jnp.stack([equality, jax.nn.relu(fits), jax.nn.relu(floor)])
+            # An equality's gap must vanish; an inequality's only counts where it is
+            # positive. Which is which is `conditions.symbols`, parallel to the gaps,
+            # so the reduction does not depend on the order the join wrote them in.
+            _objectives, gaps = conditions(x[0], x[1])
+            return jnp.stack([
+                jnp.asarray(gap) if op is Eq else jax.nn.relu(jnp.asarray(gap))
+                for gap, op in zip(gaps, conditions.symbols, strict=True)
+            ])
 
         solution = optx.least_squares(
             merit,
@@ -464,7 +468,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     root_find_problem = graph[DuctDiameterRootFind().problem_name]
     joined = DuctFeasibility + root_find_problem
 
-    body = runnable(graph)  # every plain node, problem nodes dropped
+    body = body_of(graph)  # every plain node, problem nodes dropped
     merged = Graph.of(PathMap({**dict(body.definitions), name: joined}))
 
     schedule = Schedule(

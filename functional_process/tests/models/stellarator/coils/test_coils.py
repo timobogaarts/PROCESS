@@ -5,26 +5,16 @@ from types import MappingProxyType
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from functional_process.cottax.queries import declared
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import Assign, RunnableGraph, Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.problem import RootFind, Start, driver_vars, shape_of
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
-from cottax.pytree.names import PathMap
 
-from functional_process.tests._harness import (
-    Sample,
-    Tier1Contract,
-    Tier2Contract,
-    legacy_sample,
-)
-from functional_process.tests._harness.sample_store import FROM_FILE
-from functional_process.cottax.paths import stellarator
 from functional_process.cottax.models.stellarator.coils.coils import (
+    CurveLhs,
+    CurveRhs,
+    CurveX,
     Intersect,
     IntersectBisectionNewtonPolish,
     bmax_from_awp,
@@ -40,6 +30,15 @@ from functional_process.cottax.models.stellarator.coils.coils import (
     jcrit_from_material_rebco,
     jcrit_from_material_wst_nb3sn,
 )
+from functional_process.cottax.paths import stellarator
+from functional_process.cottax.queries import declared
+from functional_process.tests._harness import (
+    Sample,
+    Tier1Contract,
+    Tier2Contract,
+    legacy_sample,
+)
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models import superconductors as _process_superconductors
 from process.models.stellarator.coils.coils import (
@@ -521,7 +520,14 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     graph = Assign(node.problem_name, IntersectBisectionNewtonPolish()).apply(
         to_graph(node)
     )
-    (guess_path,) = driver_vars(graph[node.problem_name], Start)
+    driven = graph[node.problem_name]
+    slot = lambda kind: driven.data[driven.driver.requires.index(kind)][0]
+    guess_path = slot(Start)
+    curve_x_port, curve_lhs_port, curve_rhs_port = (
+        slot(CurveX),
+        slot(CurveLhs),
+        slot(CurveRhs),
+    )
     schedule = Schedule(RunnableGraph(graph))
     wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
     lhs_path = resolve(stellarator.lhs, VarPath)
@@ -543,6 +549,12 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             # apples-to-apples check of "same algorithm, driven instead of eager", not a
             # claim that any starting guess reaches the same root.
             guess_path: jnp.asarray(kwargs["xin"]),
+            # The curves again, at the driver's own data ports: what an algorithm reads
+            # for itself is an ordinary read at a derived name, never the block's
+            # context. In a real graph a `Rename` points each at its producer.
+            curve_x_port: jnp.asarray(kwargs["x1"]),
+            curve_lhs_port: jnp.asarray(kwargs["y1"]),
+            curve_rhs_port: jnp.asarray(kwargs["y2"]),
         }
         out = schedule.run(PathMap(env))
         want = intersect(

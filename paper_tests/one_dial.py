@@ -59,20 +59,26 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
-from cottax.core.executable import BareCondition  # noqa: E402
-from cottax.core.violation import violations  # noqa: E402
-from cottax.execution import RunnableGraph  # noqa: E402
-from cottax.execution.schedule import Schedule  # noqa: E402
-from cottax.pytree.executable import ExecutableGraph  # noqa: E402
-from cottax.pytree.names import MintKey, PathMap, prefix_path  # noqa: E402
-from cottax.pytree.nodes import ImplementedFunction  # noqa: E402
-from cottax.pytree.plan import Insert  # noqa: E402
-from cottax.pytree.plan import (
+from cottax.interfaces import (  # noqa: E402
+    Cut,
+    ExecutableGraph,
+    Function,
+    Implemented,
+    Insert,
+    Minted,
+    MintKey,
+    NodePath,
+    PathMap,
+    RunnableGraph,
+    Schedule,
+    VarPath,
+    prefix_path,
+    violations,
+)
+from cottax.interfaces import (  # noqa: E402
     Plan as Ops,
 )
-from cottax.pytree.problem import RootFind  # noqa: E402
-from cottax.pytree.rewrites import Cut  # noqa: E402
-from cottax.pytree.spec import NodePath, VarPath  # noqa: E402
+from cottax.interfaces.statements import Requirement  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -157,7 +163,7 @@ count breaks only when the build is frozen."""
 
 HELD = 0.0
 """A condition of this port is a normalised residual, satisfied at `<= 0` -- the same
-number for an equality and an inequality (`sand.constraint_nodes`). A closed equality
+number for an equality and an inequality (`sand.condition_nodes`). A closed equality
 sits at `0` by construction."""
 
 SLACK = 1e-9
@@ -204,6 +210,8 @@ class Plan:
 # were written and measured. Nothing else of that module is needed here.
 
 BUILT = MintKey("built")
+BUILT_MINT = Minted("built")
+"""The same namespace as a `Naming`, which is what an op that fabricates a name takes."""
 """The namespace a frozen build output's copy is minted in: `.vacuum.n_vac_pumps_high`
 -> `^built.vacuum.n_vac_pumps_high`."""
 COND = MintKey("cond")
@@ -258,14 +266,13 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
     place = NodePath((*CHECK.segments, GetAttrKey(var.spelling.split(".")[-1])))
     plan = (
         Ops(graph)
-        + Cut(var, readers, BUILT)
+        + Cut(var, readers, BUILT_MINT)
         + Insert(
             PathMap((
                 (
                     place,
-                    ImplementedFunction(
-                        (var, built_of(var)),
-                        (condition,),
+                    Implemented(
+                        Function((var, built_of(var)), (condition,)),
                         Capacity(1.0 if check == "above" else -1.0),
                     ),
                 ),
@@ -287,8 +294,9 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
 
 def refusal(graph, condition: VarPath) -> str:
     """What the graph says when `condition` still has to hold and nothing is left to
-    move it: a problem holding it against no unknown, and cottax's own `BareCondition`
-    quoted verbatim. The trial graph is thrown away -- this is a question, not an op.
+    move it: a problem holding it against no unknown, and the case cottax reports of
+    that node quoted verbatim -- the one violation naming it, since the node is the
+    trial insertion. The trial graph is thrown away -- this is a question, not an op.
 
     Raises
     ------
@@ -296,11 +304,11 @@ def refusal(graph, condition: VarPath) -> str:
         If the graph does not refuse, which would mean something can still move it.
     """
     place = closing.place_for(condition)
-    trial = (Ops(graph) + Insert(PathMap(((place, RootFind((condition,), ())),)))).graph
+    trial = (Ops(graph) + Insert(PathMap(((place, Requirement(condition)),)))).graph
     return REFUSAL + next(
         v.message
         for v in violations(ExecutableGraph, trial)
-        if isinstance(v, BareCondition) and v.node == place
+        if getattr(v, "node", None) == place
     )
 
 
@@ -414,7 +422,8 @@ def make_density_procedure(plan: Plan) -> Plan:
     at the operating temperature the plasma sits at whatever density balances its own
     heating.
 
-    One `Insert(RootFind((c2,), (nd_plasma_electrons_vol_avg,)))`, nested on its cycle.
+    One requirement `c2 = 0` `Determine`d by `nd_plasma_electrons_vol_avg`, nested on
+    its cycle.
     Records the cycle size -- the price of this choice against the others.
     """
     built = closing.close(open_session(plan.machine), {BALANCE: DENSITY})
@@ -427,7 +436,7 @@ def make_density_procedure(plan: Plan) -> Plan:
                 "temperature it sits at whatever density balances its losses"
             ),
             ops=(
-                f"Insert(RootFind(({BALANCE},), ({DENSITY},))) at .Close.c2",
+                f"Determine(Requirement({BALANCE}), ({DENSITY},)) at .Close.c2",
                 "nested_inside(.Close.c2)",
             ),
             nodes=len(built.graph.nodes),
@@ -447,7 +456,7 @@ def make_heating_procedure(plan: Plan) -> Plan:
     """Step 2, driven machines. The power balance is closed by the auxiliary heating
     power: worse confinement simply means turning the heating up.
 
-    One `Insert(RootFind((c2,), (p_hcd_primary_extra_heat_mw,)))`. The absorbing
+    One requirement `c2 = 0` `Determine`d by `p_hcd_primary_extra_heat_mw`. The absorbing
     variable is a plain input here, not an iteration variable -- PROCESS never treats
     the heating as an unknown, which is exactly why this question is awkward to ask of
     it.
@@ -471,7 +480,7 @@ def make_heating_procedure(plan: Plan) -> Plan:
                 "turning the heating up, which is what an operator would do"
             ),
             ops=(
-                f"Insert(RootFind(({BALANCE},), ({HEATING},))) at .Close.c2",
+                f"Determine(Requirement({BALANCE}), ({HEATING},)) at .Close.c2",
                 "nested_inside(.Close.c2)",
             ),
             nodes=len(built.graph.nodes),

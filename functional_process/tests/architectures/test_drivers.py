@@ -9,29 +9,21 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
-from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
-from cottax.pytree.names import PathMap
-from cottax.pytree.problem import Start, driver_vars
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import VarPath
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import Assign, Eq, RunnableGraph, Schedule
+from cottax.interfaces.pytree_namespace_module import (
+    FixedPointFunction,
+    From,
+    OutputInto,
+    area,
+    resolve,
+    to_graph,
+)
+from cottax.pytree.path import PathMap, VarPath
 
 from functional_process.cottax.architectures.drivers import (
     PicardDriver,
     _refuse_inert_objective,
-)
-from functional_process.cottax.models.power.thermal_cryo import (
-    DeltaEtaStepSummedSolidCcfe,
-)
-from functional_process.cottax.paths import (
-    current_drive,
-    fwbs,
-    heat_transport,
-    physics,
-    power,
-    primary_pumping,
 )
 from functional_process.cottax.queries import declared
 
@@ -50,6 +42,9 @@ class _Contraction:
     positionally and reads `.unknowns` in its missing-`Start` error message, so a
     plain callable with that much is enough to test the iteration in isolation from
     any real graph.
+
+    A call gives `(objectives, gaps)`, and the gap of `u = g(u)` is `u - g(u)` -- which
+    is what the driver turns back into the next iterate.
     """
 
     unknowns = (vpath(toy.u),)
@@ -57,7 +52,7 @@ class _Contraction:
     def __call__(self, u):
         # Fixed point at u = 6.0 (u = 0.5u + 3 => u = 6), |derivative| = 0.5 < 1, so
         # Picard converges geometrically from any start.
-        return (0.5 * u + 3.0,)
+        return (), (u - (0.5 * u + 3.0),)
 
 
 def test_picard_driver_converges_on_a_contraction_mapping():
@@ -91,77 +86,55 @@ def test_picard_driver_requires_a_start():
         driver(_Contraction(), {})
 
 
-def test_picard_driver_drives_a_real_fixed_point_function_node():
-    """`DeltaEtaStep`'s self-loop is genuine but numerically inert on every arm
-    (`d(delta_eta_next)/d(delta_eta) == 0`,
-    `test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta` in
-    `test_thermal_cryo.py` pins this): PROCESS recomputes `.power.delta_eta` from
-    fields that never depend on its own entering value, so the fixed point does not
-    depend on the starting guess and Picard reaches it in exactly one step. Ground
-    truth is one direct call to `step`, not a hardcoded number, since the point of
-    this regime is that any entering value gives the same answer.
+class Relax(FixedPointFunction):
+    """`u = 0.5u + k`, declared through the surface a model is declared through.
 
-    Was `CryoQNucStep` (`inuclear = FRANCES_FOX`, superconducting TF coil) until that
-    node's static `i_tf_sup`/`inuclear` kwargs were withdrawn along with every other
-    switch-carrying static field (`_audit/switch_kwarg_survey.md`) -- `CryoQNucStep`
-    was unregistered scaffolding to begin with (`CryoQNuc` is the real, registered
-    replacement, and it is a plain node with no self-loop at all), so this test moves
-    to `DeltaEtaStep`, which has the same numerically-inert-self-loop shape and *is*
-    a real, registered node. Any of its eight arms would do; `SummedSolidCcfe` is
-    arbitrary.
+    **Not a registered model node, and that is a fact about the port**: no
+    `FixedPointFunction` in `functional_process/cottax/models/` reads its own output any
+    more (`CplifeAvailSt`'s four arms recompute `.costs.cplife` from scratch, and
+    `df050df3` made `DeltaEtaStep` -- which this test used to drive -- an ordinary
+    `ExplicitFunction`, its entering `.power.delta_eta` being PROCESS's incoming field
+    value rather than a previous iterate). A fixed point with no cycle is not
+    executable, so the end-to-end check needs a declaration that genuinely closes its
+    own loop; the port's real ones are minted by `FixedPointCut` on a configuration's
+    cycles, which is the architecture tests' subject and not a driver unit's.
     """
-    node = DeltaEtaStepSummedSolidCcfe()
-    reads = {
-        "p_fw_coolant_pump_mw": (heat_transport, 12.0),
-        "p_blkt_coolant_pump_mw": (heat_transport, 30.0),
-        "p_fw_blkt_coolant_pump_mw": (primary_pumping, 45.0),
-        "p_fw_nuclear_heat_total_mw": (fwbs, 80.0),
-        "p_fw_rad_total_mw": (fwbs, 120.0),
-        "p_blkt_nuclear_heat_total_mw": (fwbs, 600.0),
-        "p_blkt_breeder_pump_mw": (heat_transport, 3.0),
-        "p_beam_orbit_loss_mw": (current_drive, 2.0),
-        "p_fw_alpha_mw": (physics, 15.0),
-        "p_beam_shine_through_mw": (current_drive, 1.0),
-        "p_cp_shield_nuclear_heat_mw": (fwbs, 5.0),
-        "p_shld_nuclear_heat_mw": (fwbs, 20.0),
-        "p_shld_coolant_pump_mw": (heat_transport, 8.0),
-        "p_plasma_separatrix_mw": (physics, 120.0),
-        "p_div_nuclear_heat_total_mw": (fwbs, 10.0),
-        "p_div_rad_total_mw": (fwbs, 15.0),
-        "p_div_coolant_pump_mw": (heat_transport, 6.0),
-        "i_shld_primary_heat": (heat_transport, 1.0),
-    }
-    kwargs = {name: value for name, (_area, value) in reads.items()}
-    expected = node.step(
-        delta_eta=0.0,  # arbitrary -- ignored in this regime
-        **kwargs,
-    )
 
+    u = OutputInto(toy)
+
+    def step(self, u=From(toy), k=From(toy)):
+        return 0.5 * u + k
+
+
+def test_picard_driver_drives_a_fixed_point_node_end_to_end():
+    """The driver through everything the port actually runs: `to_graph`, `Assign`,
+    `RunnableGraph`, `Schedule`, `Drive`, the `ConditionMap`. `u = 0.5u + 3` has the
+    exact fixed point `u = 6`, so the answer is hand-computable and the test is about
+    the wiring, not about a model.
+    """
+    node = Relax()
     graph = to_graph(node)
-    # `Assign` attaches the driver *and* mints the ports that driver's own `requires`
+    # `Assign` attaches the driver *and* derives the places that driver's own `requires`
     # names -- one `^guess.<place>` per unknown here. The starting guess is supplied at
     # `^guess.*` rather than at the unknown's own name; writing the latter would be
     # seeding the answer. `mda.driven_graph` does exactly this to every problem in the
     # real graph.
     (problem,) = declared(graph)
-    graph = Assign(problem, PicardDriver()).apply(graph)
-    # Built through `schedule_for` rather than by constructing a `Drive` directly: the
+    graph = Assign(problem, PicardDriver(rtol=1e-12, atol=1e-14)).apply(graph)
+    # Built through the schedule rather than by constructing a `Drive` directly: the
     # schedule is what the port actually runs, and it assembles the `Drive` itself, so
     # this test does not restate `Drive`'s constructor signature.
     schedule = Schedule(RunnableGraph(graph))
     # The guess port is read off the problem rather than spelled out, the same way
     # `mda.starts_for` does it: the node is the authority on where its start is read.
-    (guess,) = driver_vars(graph[problem], Start)
-    env = {guess: jnp.asarray(0.05)}
-    env.update({
-        vpath(getattr(area, name)): jnp.asarray(value)
-        for name, (area, value) in reads.items()
-    })
+    driven = graph[problem]
+    (guess,) = driven.data[driven.driver.requires.index(Start)]
 
-    out = schedule.run(PathMap(env))
+    out = schedule.run(
+        PathMap({guess: jnp.asarray(0.0), vpath(toy.k): jnp.asarray(3.0)})
+    )
 
-    got = out[vpath(power.delta_eta)]
-    assert float(got) == pytest.approx(float(expected), abs=1e-6)
+    assert float(out[vpath(toy.u)]) == pytest.approx(6.0, abs=1e-6)
 
 
 # ---------------------------------------------------------------- design scaling
@@ -220,17 +193,18 @@ def test_scaling_leaves_a_workable_problem_when_a_coordinate_is_unscalable():
 
 class _Rows:
     """A stand-in for `ConditionMap` carrying only what `_refuse_inert_objective`
-    reads: the condition names (objective first) and the unknowns.
+    reads through `condition_places`: the objective, the relations and the unknowns.
     """
 
-    def __init__(self, conditions, unknowns):
-        self.conditions = tuple(conditions)
+    def __init__(self, objective, conditions, unknowns):
+        self.objectives = (objective,) if objective is not None else ()
+        self.relations = tuple((c, None, Eq) for c in conditions)
         self.unknowns = tuple(unknowns)
 
 
 def _rows():
     return _Rows(
-        (vpath(toy.objf), vpath(toy.c1), vpath(toy.c2)), (vpath(toy.u), vpath(toy.v))
+        vpath(toy.objf), (vpath(toy.c1), vpath(toy.c2)), (vpath(toy.u), vpath(toy.v))
     )
 
 
@@ -265,4 +239,4 @@ def test_other_zero_rows_are_named_and_not_refused_on():
 
 def test_an_empty_jacobian_is_not_refused():
     """A problem with no conditions is a different defect and has its own report."""
-    _refuse_inert_objective(np.zeros((0, 0)), _Rows((), ()))
+    _refuse_inert_objective(np.zeros((0, 0)), _Rows(None, (), ()))

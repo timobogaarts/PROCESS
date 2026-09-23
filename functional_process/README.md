@@ -4,8 +4,20 @@ A pure-functional, cottax-shaped port of PROCESS's models. `process/` is never
 modified; everything here is new JAX code written from it, validated against it.
 
 Read `../CLAUDE.md` first for the `process_port` env (the one interpreter where
-`process` and `cottax` import together) and the cottax vocabulary. `x64` must be on
-before any array exists -- every entry point here does that itself.
+`process` and `cottax` import together). `x64` must be on before any array exists --
+every entry point here does that itself.
+
+**The cottax surface.** Everything here is written over `cottax.interfaces` (how a
+model, a statement and a run are written -- the declaration modules, and the `ops` /
+`runtime` / `queries` facades re-exported from the package root) and
+`cottax.mdao_architectures` (the recipes). Three things sit below those by nature and
+are imported by their own names: a **driver** (`cottax.execution.driver` and the namings
+in `cottax.execution.drivers.kinds`), a **name** (`cottax.pytree.path`,
+`cottax.pytree.mint`) and a **picture** (`cottax.visualization`,
+`cottax.visualization.sequencing`). `tests/test_cottax_surface.py` asserts that list
+over the port's own imports -- every `.py` here and under `paper_tests/`, and every code
+cell of every notebook -- and keeps `PRIVATE` empty: a name the interface lacks is a
+request upstream, not a reach past it.
 
 ## Layout
 
@@ -53,9 +65,10 @@ functional_process/
     test_architectures.py every architecture on every configuration, cold, against
     reference_architectures.txt   this pin
     test_configurations.py  every configuration is still its input file, converted
-    test_cottax_surface.py  every cottax name the port imports, read off its own
-                          imports and asked of cottax at once -- a re-port starts
-                          from the whole diff, not one ImportError
+    test_cottax_surface.py  every cottax name the port imports -- modules, paper_tests
+                          and notebook cells -- read off its own imports and asked of
+                          cottax at once: a re-port starts from the whole diff, not
+                          one ImportError
     examples/             the notebooks run and their RESULT has not moved
     _harness/             the unit-case contracts (tiers, sampling, tolerances, FD)
     conftest.py           --fp-fuzz, --fp-gradients, --fp-write-pin
@@ -109,8 +122,8 @@ driver per problem:
 |---|---|---|
 | MDA | `FixedPointCut` per loop-carried variable, `Nest` the models' own solves, Picard/Newton on each | `architectures.mda.cut_graph`, `architectures.recipes` |
 | MDF | the cut graph plus the constraint and objective nodes and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
-| IDF | as MDF, then `Residualise` and `Combine` the cut copies into the optimiser; the models' own solves stay nested | `architectures.idf.idf_graph` |
-| SAND | `Residualise` every fixed point, `Combine` every problem into one | `architectures.sand.assemble` |
+| IDF | as MDF, then `Absorb` the scheme's consistency statements into the optimiser; the models' own solves are nested in it | `architectures.idf.idf_graph` |
+| SAND | `Absorb` every problem on the optimiser's cycle into it | `architectures.sand.assemble` |
 | closed MDA | `Insert` a `RootFind` per (equality, closing variable) inside the MDA -- nested, or flattened with the problems on its cycle into one square problem -- so the analysis answers the equality itself | `architectures.closing.close` |
 | two-stage OUU | the closed MDA (`ouu.CLOSURES`: `bracketed` by default -- the density's root find alone, the Picards nested, converging from any start -- or `flattened`) split by `reach` from the belief and operating leaves (`architectures.stages`: first stage hoisted, recourse batched over a Sobol' draw of `configurations.kinds.BELIEFS`), one node owning the CVaR statistics, an `Optimise` over the build variables under a boxed SLSQP | `architectures.ouu.two_stage`, `outer`, `solve` |
 | lifted sizing choice | `Undrive`, `Undetermine` and `Delete` a model's own root find, so its unknown is a design variable, and `Insert` one node stating its residual as an inequality on the safe side -- the winding pack: `wp_width_r_min` outer, `j_tf_wp <= f j_c` (PROCESS icc 33 / ixc 140) a chance constraint | `architectures.lift.lift`, `lift_winding_pack`; `ouu.two_stage(lifts=...)` |

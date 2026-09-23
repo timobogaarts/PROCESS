@@ -48,9 +48,9 @@ import dataclasses
 import enum
 from typing import TYPE_CHECKING
 
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import Graph, RunnableGraph, Schedule
+from cottax.pytree.mint import namespace_of
 
 from functional_process.configurations.kinds import (
     BELIEFS,
@@ -60,20 +60,17 @@ from functional_process.configurations.kinds import (
     Kind,
 )
 from functional_process.cottax.architectures.evaluate import inputs_only, run_schedule
-from cottax.pytree.names import is_minted
-from cottax.pytree.problem import Start
 
 
 def is_start(v) -> bool:
-    """A `Start` datum: minted in the namespace `Assign` puts a solver's start in."""
-    return is_minted(v) and v.segments[0] == Start.mint_key
+    """A `Start` datum: minted in the namespace a driver's start naming opens."""
+    return namespace_of(v) == Start.ns
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from cottax.pytree.graph import Graph
-    from cottax.pytree.spec import NodePath, VarPath
+    from cottax.pytree.path import NodePath, VarPath
 
 # ------------------------------------------------------------------ the leaves
 

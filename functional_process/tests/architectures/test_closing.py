@@ -113,9 +113,9 @@ def test_flattened_one_has_the_shape_the_plan_states(live):
     report = built.report
     assert report["closing"] == kinds.PAIRINGS["one"]
     assert report["flattened"] is True
-    # One combined problem: the density plus the two cut copies of its cycle.
+    # One combined problem, at the requirement's own name -- `Absorb` keeps it.
     (place,) = report["closing_problems"]
-    assert place == "^problem.Close.c2"
+    assert place == ".Close.c2"
     unknowns = report["closing_problems"][place]
     assert len(unknowns) == 3
     assert unknowns[0] == ".physics.nd_plasma_electrons_vol_avg"
@@ -157,4 +157,6 @@ def test_nested_blocking_states_the_optimise_around_the_closure(live):
     built = closing.close(live, kinds.PAIRINGS["one"])
     lines = closing.describe(closing.nested_blocking(built))
     assert "optimise .Opt" in lines[0]
-    assert any("root-find ^problem.Close.c2" in line for line in lines[1:])
+    # A root find that absorbed the cycle's fixed points states both kinds of
+    # relation, so its shape is the general one they have in common.
+    assert any("feasibility .Close.c2" in line for line in lines[1:])

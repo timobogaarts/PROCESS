@@ -60,15 +60,15 @@ def two_opt():
     return _run("two_opt_driver")
 
 
-def test_gauss_seidel_mda_reaches_the_hand_cut_fixed_point(mda):
+def test_gauss_seidel_mda_reaches_the_same_fixed_point(mda):
     assert mda["compared"] > 500          # every scalar both MDAs produce
     assert mda["worst_relative_difference"] < 1e-5
     # Every Picard-driven block reported its steps, each within the budget.
     assert len(mda["steps"]) >= 2
     assert all(1 <= n <= 256 for n in mda["steps"].values())
-    # The three recipes and the hand cut all ran, and Jacobi needs at least as many
-    # sweeps as Gauss-Seidel in the same order.
-    assert set(mda["recipes"]) == {"hand (mda.CUTS)", "jacobi", "gauss_seidel", "gauss_seidel_minimal"}
+    # The three schemes all ran, and Jacobi needs at least as many sweeps as
+    # Gauss-Seidel in the same order.
+    assert set(mda["recipes"]) == {"jacobi", "gauss_seidel", "gauss_seidel_minimal"}
     assert mda["recipes"]["jacobi"]["total"] >= mda["recipes"]["gauss_seidel"]["total"]
 
 
@@ -83,7 +83,7 @@ def test_sand_converges_to_the_reference_optimum(sand):
     assert sand["status"] == 0, sand       # VMCON's own convergence test
     assert sand["max_eq"] < 1e-5
     assert sand["objf"] == pytest.approx(REFERENCE_COE, rel=1e-6)
-    # Eight design variables plus the lifted unknowns of every folded solve.
+    # Eight design variables plus the unknowns of every absorbed solve.
     assert sand["unknowns"] > 8
     assert sand["conditions"] > 15
 
@@ -94,7 +94,7 @@ def test_idf_converges_to_the_same_optimum(idf, sand):
     assert idf["objf"] == pytest.approx(sand["objf"], rel=1e-6)
     # Only the coupling is lifted: fewer unknowns than SAND, more than the design.
     assert 8 < idf["unknowns"] < sand["unknowns"]
-    # The models' own solves are nested inside the optimiser, not folded into it.
+    # The models' own solves are nested inside the optimiser, not absorbed into it.
     assert len(idf["nested"]) >= 1
     for i, x in idf["design"].items():
         assert x == pytest.approx(sand["design"][i], rel=1e-4), i
@@ -102,7 +102,7 @@ def test_idf_converges_to_the_same_optimum(idf, sand):
 
 def test_two_sequential_optimisers_converge_above_the_joint_optimum(two_opt):
     assert two_opt["sand"]["status"] == "converged"
-    assert set(two_opt["iterations"]) == {"sand_magnet", "sand_plasma"}
+    assert set(two_opt["iterations"]) == {"OptMagnet", "OptPlasma"}
     assert all(n > 0 for n in two_opt["iterations"].values())
     # Feasible but not optimal: the decoupling costs a few percent of COE.
     assert two_opt["sand"]["coe"] == pytest.approx(REFERENCE_COE, rel=1e-6)

@@ -28,10 +28,13 @@ from jax.flatten_util import ravel_pytree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from cottax.execution.schedule import Schedule  # noqa: E402
-from cottax.pytree.names import PathMap  # noqa: E402
+from cottax.interfaces import PathMap, Schedule  # noqa: E402
 
-from functional_process.cottax.architectures.evaluate import ground_truth, mda_env, seed_block  # noqa: E402
+from functional_process.cottax.architectures.evaluate import (  # noqa: E402
+    ground_truth,
+    mda_env,
+    seed_block,
+)
 from functional_process.cottax.architectures.mda import seed_starts  # noqa: E402
 
 BATCHES = (1, 16, 256, 4096)

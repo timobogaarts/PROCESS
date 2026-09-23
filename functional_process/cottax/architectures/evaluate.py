@@ -23,13 +23,17 @@ import pathlib
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Drive, Schedule
-from cottax.pytree.names import PathMap, unminted
-from cottax.pytree.plan import Delete
-from cottax.pytree.problem import is_fixed_point
-from cottax.execution.crossings import get_at
+from cottax.interfaces import (
+    Delete,
+    Drive,
+    RunnableGraph,
+    Schedule,
+    get_at,
+    is_fixed_point,
+)
+from cottax.mdao_architectures import GaussSeidel
+from cottax.pytree.mint import unminted
+from cottax.pytree.path import PathMap
 
 from functional_process.cottax.architectures.drivers import SweepDriver
 from functional_process.cottax.architectures.mda import (
@@ -40,7 +44,6 @@ from functional_process.cottax.architectures.mda import (
     given_start,
     guess_sources,
 )
-from cottax.mdao_architectures import GaussSeidel
 from functional_process.cottax.input.indat import STATED_VALUES, graph_for
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -380,7 +383,7 @@ def _eager_group(steps):
 
     def run(env):
         for step in steps:
-            env = step._run(env)
+            env = step(env)
         return env
 
     return run
@@ -393,7 +396,7 @@ def _jitted_group(steps):
     def jitted(values):
         env = dict(values)
         for step in steps:
-            env = step._run(env)
+            env = step(env)
         return PathMap(env)
 
     def run(env):

@@ -84,12 +84,12 @@ def test_the_driven_machine_refuses_only_when_the_build_is_frozen(driven):
     assert one_dial.REFUSAL in driven.steps[3].note
 
 
-def test_the_density_closure_is_one_insert(ignited):
-    """Step 2, ignited: one `RootFind` inserted and nested, and the density given up."""
+def test_the_density_closure_is_one_determine(ignited):
+    """Step 2, ignited: one requirement `Determine`d and nested, the density given up."""
     step = ignited.steps[2]
     assert step.ops == (
-        "Insert(RootFind((^cond.constraints.c2,), (.physics.nd_plasma_electrons_vol_avg,)))"
-        " at .Close.c2",
+        "Determine(Requirement(^cond.constraints.c2), "
+        "(.physics.nd_plasma_electrons_vol_avg,)) at .Close.c2",
         "nested_inside(.Close.c2)",
     )
     assert ignited.graph.report["closing"] == {
@@ -97,12 +97,12 @@ def test_the_density_closure_is_one_insert(ignited):
     }
 
 
-def test_the_heating_closure_is_one_insert_over_a_plain_input(driven):
+def test_the_heating_closure_is_one_determine_over_a_plain_input(driven):
     """Step 2, driven: the same one operation, over a variable PROCESS never iterates."""
     step = driven.steps[2]
     assert step.ops == (
-        "Insert(RootFind((^cond.constraints.c2,), "
-        "(.current_drive.p_hcd_primary_extra_heat_mw,))) at .Close.c2",
+        "Determine(Requirement(^cond.constraints.c2), "
+        "(.current_drive.p_hcd_primary_extra_heat_mw,)) at .Close.c2",
         "nested_inside(.Close.c2)",
     )
     assert one_dial.HEATING not in one_dial.read_the_input_file(driven.machine).chosen

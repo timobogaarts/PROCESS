@@ -24,7 +24,7 @@ from functional_process.cottax.architectures.drivers import _nothing_is_tracing
 
 class _Block(eqx.Module):
     """A `ConditionMap`-shaped callable: array leaves, non-array leaves, and a `__call__`
-    that takes the unknowns positionally and returns one value per condition.
+    that takes the unknowns positionally and gives back `(objectives, gaps)`.
     """
 
     weight: jax.Array
@@ -32,7 +32,7 @@ class _Block(eqx.Module):
     label: str
 
     def __call__(self, u):
-        return (self.weight * u + self.offset, u - 1.0)
+        return ((self.weight * u + self.offset,), (u - 1.0,))
 
 
 def _block(weight=2.0, offset=3.0, label="block"):

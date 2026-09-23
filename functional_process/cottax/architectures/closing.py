@@ -4,17 +4,18 @@ inequalities and the design variables that remain.
 
 MDF hands every condition to the optimiser, which owns every design variable, so the
 `Optimise` closes one cycle over most of the machine. An equality need not be closed
-that way. `RootFind(conditions=(cond,), unknowns=(var,))` inserted into the graph
-closes a cycle of its own, and the size of that cycle depends on the variable chosen:
+that way. A requirement `cond = 0` `Determine`d by one variable closes a cycle of its
+own, and the size of that cycle depends on the variable chosen:
 the power balance (`^cond.constraints.c2`) closed by `hfact` is three nodes, since
 `hfact` enters the confinement time and nothing else; closed by the density it is 27,
 and by `rmajor` 24. Which variable closes which equality is the caller's choice
 (`configurations.kinds.PAIRINGS`); this module is the recipe that applies it:
 
     raw -> cut -> constraint and objective nodes (`mdf.mdf_graph`)
-        -> `Insert` a `RootFind` per pairing, at `.Close.<cond>`
-        -> every declared problem on its cycle `Residualise`d and `Combine`d into it
-           (`flattened`; `flatten=False` keeps them nested inside it, Picard-driven)
+        -> `Insert` a `Requirement(cond, Eq)` at `.Close.<cond>` and `Determine` it by
+           the variable that closes it -- a root find over one unknown
+        -> every declared statement on its cycle `Absorb`ed into it, which keeps its
+           name (`flattened`; `flatten=False` nests them inside it, Picard-driven)
         -> `queries.nested_inside(each root find)`
         -> drivers: `mda.default_drivers`, and `SafeguardedNewtonDriver` on each root
            find (capped, backtracked, Broyden-updated) -- or, nested and one unknown,
@@ -30,23 +31,23 @@ the outer optimiser sees the objective and the inequalities only.
 import dataclasses
 
 import numpy as np
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
-from cottax.pytree.graph import Graph
-from cottax.pytree.names import PathMap
-from cottax.pytree.plan import Insert, Plan
-from cottax.pytree.problem import (
-    ConditionalNode,
-    Converged,
-    Optimise,
-    RootFind,
-    Steps,
+from cottax.execution.drivers.kinds import Converged, Steps
+from cottax.interfaces import (
+    Absorb,
+    Determine,
+    Eq,
+    ExecutableGraph,
+    Graph,
+    Insert,
+    Plan,
+    RunnableGraph,
+    Schedule,
+    is_bare_condition,
+    is_problem,
     shape_of,
-    unknowns_of,
 )
-from cottax.pytree.rewrites import Combine, Residualise
-from cottax.pytree.spec import NodePath, VarPath
+from cottax.interfaces.statements import Optimise, Requirement
+from cottax.pytree.path import NodePath, PathMap, VarPath
 from cottax.visualization.sequencing import Solve, entries, problem_types, walk
 from jax.tree_util import GetAttrKey
 
@@ -62,8 +63,8 @@ from functional_process.cottax.architectures.evaluate import (
     without_excluded,
 )
 from functional_process.cottax.architectures.mda import (
-    assign_drivers,
     SCHEME,
+    assign_drivers,
     cut_graph,
     default_drivers,
     guess_sources,
@@ -78,7 +79,7 @@ NEWTON_TOL = 1e-10
 MDF's own `max|eq|`."""
 
 PLACE = NodePath((GetAttrKey("Close"),))
-"""Where a `RootFind` closing an equality binds: `.Close.c2`, `.Close.c16`."""
+"""Where a requirement closing an equality binds: `.Close.c2`, `.Close.c16`."""
 
 
 def place_for(cond: VarPath) -> NodePath:
@@ -139,22 +140,34 @@ def with_bounds(driver, var: VarPath, bounds) -> object:
 # ---------------------------------------------------------------- the ops
 
 
-def cycle_of(graph: Graph, cond: VarPath, var: VarPath) -> tuple[NodePath, ...]:
-    """The component `RootFind((cond,), (var,))` creates when inserted at
-    `place_for(cond)`: the root find and every node its iteration would re-run.
+def closed_at(graph: Graph, cond: VarPath, var: VarPath) -> Graph:
+    """`graph` with `cond` asserted at `place_for(cond)` and determined by `var`: a
+    requirement, and the `Determine` that makes it a root find over one unknown.
+
+    `Eq` even where `cond` is one of the file's inequalities -- naming one here is an
+    operating choice, *run exactly at the limit*, and the normalised residual every
+    constraint node owns is the same scalar either way.
     """
     place = place_for(cond)
-    with_problem = (
-        Plan(graph) + Insert(PathMap(((place, RootFind((cond,), (var,))),)))
+    return (
+        Plan(graph)
+        + Insert(PathMap(((place, Requirement(cond, Eq)),)))
+        + Determine(place, (var,))
     ).graph
-    return next(c for c in with_problem.graph.components if place in c)
+
+
+def cycle_of(graph: Graph, cond: VarPath, var: VarPath) -> tuple[NodePath, ...]:
+    """The component closing `cond` by `var` creates: the root find and every node its
+    iteration would re-run.
+    """
+    place = place_for(cond)
+    return next(c for c in closed_at(graph, cond, var).graph.components if place in c)
 
 
 def flattened(graph: Graph, place: NodePath) -> tuple[Graph, NodePath]:
-    """Every declared problem on `place`'s cycle folded into it: each `Residualise`d
-    (its `u = g(u)` becomes `g(u) - u = 0`) and all of them `Combine`d with the root
-    find into one square problem over `(var, the cut copies)`. Returns the graph and
-    the combined problem's path (`^problem.Close.c2`).
+    """Every declared statement on `place`'s cycle folded into it -- `Absorb`, so the
+    root find keeps its name and binding -- giving one square problem over `(var, the
+    cut copies)`. Returns the graph and that problem's path, which is `place`.
 
     The alternative to `nested_inside`: nested, every evaluation of the root find's
     residual re-converges each Picard inside it, and the Newton's derivative goes
@@ -163,17 +176,14 @@ def flattened(graph: Graph, place: NodePath) -> tuple[Graph, NodePath]:
     depends on the driver -- see `SafeguardedNewtonDriver`.
     """
     component = next(c for c in graph.graph.components if place in c)
-    inner = [
-        n for n in component if n != place and isinstance(graph[n], ConditionalNode)
-    ]
+    inner = tuple(
+        n
+        for n in component
+        if n != place and (is_problem(graph[n]) or is_bare_condition(graph[n]))
+    )
     if not inner:
         return graph, place
-    plan = Plan(graph)
-    for n in inner:
-        if any(not r.against_zero for r in graph[n].relations):
-            plan += Residualise(n)  # a root find is already against zero
-    combine = Combine(place, (place, *inner))
-    return (plan + combine).graph, combine.problem
+    return (Plan(graph) + Absorb(place, inner)).graph, place
 
 
 # ---------------------------------------------------------------- the closed graph
@@ -217,7 +227,7 @@ class Closed:
 
     def unknowns(self, cond: VarPath) -> tuple[VarPath, ...]:
         """The unknowns of the problem answering `cond`, the closing variable first."""
-        return tuple(unknowns_of(self.graph[self.places[cond]]))
+        return tuple(self.graph[self.places[cond]].unknowns)
 
     def start_port(self, var: VarPath) -> VarPath:
         """The `^guess.*` port a closing problem starts `var` from.
@@ -236,8 +246,8 @@ class Closed:
         """`{condition: (steps, converged, residual, unknown)}` out of a run's env."""
         return {
             cond: (
-                int(np.asarray(out[Steps.name_for(place)])),
-                bool(np.asarray(out[Converged.name_for(place)])),
+                int(np.asarray(mdf.verdict(out, Steps, self.graph[place]))),
+                bool(np.asarray(mdf.verdict(out, Converged, self.graph[place]))),
                 float(np.asarray(out[cond])),
                 float(np.asarray(out[self.pairings[cond]])),
             )
@@ -278,8 +288,8 @@ def close(
     `p_hcd_primary_extra_heat_mw`, an input PROCESS holds at 75 MW); default
     `kinds.PAIRINGS["one"]`.
 
-    Naming an inequality drives its residual to exactly zero with the same `RootFind`
-    machinery an equality gets -- legitimate because `sand.constraint_nodes` gives
+    Naming an inequality drives its residual to exactly zero with the same root-find
+    machinery an equality gets -- legitimate because `sand.condition_nodes` gives
     every active constraint, equality or inequality, the same one scalar
     (`^cond.constraints.c<n>`, the normalised residual, index 1 of `(residual,
     normalised_residual, value, bound)`), so the zero a closing root find drives it to
@@ -342,11 +352,8 @@ def close(
     remaining = tuple(c for c in inequalities if c not in chosen)
     places: dict = {}
     for cond, var in chosen.items():
-        place = place_for(cond)
-        places[cond] = place
-        graph = (
-            Plan(graph) + Insert(PathMap(((place, RootFind((cond,), (var,))),)))
-        ).graph
+        places[cond] = place_for(cond)
+        graph = closed_at(graph, cond, var)
     components = {
         cond: next(c for c in graph.graph.components if p in c)
         for cond, p in places.items()
@@ -403,7 +410,7 @@ def close(
         closed_inequalities=tuple(c.spelling for c in closed_inequalities),
         closing={c.spelling: v.spelling for c, v in chosen.items()},
         closing_problems={
-            p.spelling: tuple(u.spelling for u in unknowns_of(assigned[p]))
+            p.spelling: tuple(u.spelling for u in assigned[p].unknowns)
             for p in dict.fromkeys(places.values())
         },
         closing_bounds={
@@ -448,7 +455,7 @@ def seed(built: Closed, data, design_values=None, closing_values=None) -> dict:
 
     `mdf.seed` alone grounds a cut copy's start from `data`, where PROCESS's cold
     value of a fusion rate is `0.0`: a Picard evaluates the map from there and
-    converges, but a Newton over the residualised copy has its scale set by that
+    converges, but a Newton over the absorbed copy has its scale set by that
     start and cannot. IDF and SAND seed their copies the same way
     (`session.solve_block`: design variables from the file, coupling copies from an
     MDA at that design).
@@ -513,11 +520,14 @@ def nested_blocking(built: Closed, driver=None) -> ExecutableGraph:
     graph = built.problem.graph  # undriven: `Assign` refuses a problem already driven
     report = built.report
     node = Optimise(
-        objective=report["objective"],
-        unknowns=built.design,
-        equalities=(),
+        report["objective"],
+        built.design,
         inequalities=tuple(report["inequalities"]),
     )
+    # A lift leaves its inequality as a `Relation` rather than a node (`lift.lift`),
+    # so the ones this problem carries are stated here, where the optimiser is.
+    if lifted := tuple(report.get("lift_relations", ())):
+        node = dataclasses.replace(node, relations=node.relations + lifted)
     with_problem = (Plan(graph) + Insert(PathMap(((OPTIMISE, node),)))).graph
     with_problem = nested_inside(with_problem, OPTIMISE)
     drivers = default_drivers(with_problem)
@@ -558,6 +568,7 @@ __all__ = [
     "SafeguardedNewtonDriver",
     "bracketed",
     "close",
+    "closed_at",
     "condition_scale",
     "copies_from_mda",
     "cycle_of",
