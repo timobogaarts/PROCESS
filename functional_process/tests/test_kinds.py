@@ -2,10 +2,16 @@
 
 The counts are `decision_kinds.md`'s headline with the one 2026-09-17 move applied
 (`f_j_tf_wp_critical_max`, belief -> build): 147 / 76 / 16 / 62 / 13 / 10 becomes
-146 / 77 / 16 / 62 / 13 / 10, boundary 324. The cross-references are the invariants the
-two-stage architecture relies on: every sizing choice is a claimed build output, every
-sampled leaf is a boundary input, the design variables sort 4 / 3 / 1, and the settled
-pairing closes the power balance by the density.
+146 / 77 / 16 / 62 / 13 / 10, boundary 324. NUMERICS has since moved twice more, neither
+re-pinned at the time: `48cc2c14` ("a solver start is numerics by kind") took it
+62 -> 56 by reclassifying entries the outer-driven MDF path's removal made numerics
+elsewhere; `df050df3` ("an incoming field value is an input, not a fixed point") then
+added two new boundary inputs as `Kind.NUMERICS`
+(`.physics.temp_plasma_ion_vol_avg_kev_in`, `.power.delta_eta_in`), 56 -> 58. Net
+62 -> 58, boundary 324 -> 320, every other kind unchanged. The cross-references are the
+invariants the two-stage architecture relies on: every sizing choice is a claimed build
+output, every sampled leaf is a boundary input, the design variables sort 4 / 3 / 1, and
+the settled pairing closes the power balance by the density.
 """
 
 from __future__ import annotations
@@ -37,7 +43,7 @@ COUNTS = {
     Kind.BELIEF: 146,
     Kind.BUILD: 77,
     Kind.OPERATING: 16,
-    Kind.NUMERICS: 62,
+    Kind.NUMERICS: 58,
     Kind.DERIVED: 13,
     Kind.LIMIT: 10,
 }
@@ -45,9 +51,9 @@ COUNTS = {
 
 
 def test_counts_per_kind():
-    """The headline counts, after the reclassification; boundary 324."""
+    """The headline counts, after the reclassification; boundary 320."""
     assert Counter(KINDS.values()) == COUNTS
-    assert len(KINDS) == 324
+    assert len(KINDS) == 320
 
 
 def test_the_one_reclassified_row():
@@ -138,10 +144,10 @@ def test_build_leaves_are_build():
 def test_pairings():
     """`one` closes c2 by the density; the historic pairing by `hfact`, a belief."""
     density = ".physics.nd_plasma_electrons_vol_avg"
-    assert PAIRINGS["one"] == {"^cond.constraints.c2": density}
-    assert PAIRINGS["two"]["^cond.constraints.c2"] == density
-    assert PAIRINGS["te"] == {"^cond.constraints.c2": density, C16: TE}
+    assert PAIRINGS["one"] == {".constraints.c2": density}
+    assert PAIRINGS["two"][".constraints.c2"] == density
+    assert PAIRINGS["te"] == {".constraints.c2": density, C16: TE}
     assert KINDS[density] is Kind.OPERATING
     assert KINDS[TE] is Kind.OPERATING
-    assert HISTORIC_PAIRING["^cond.constraints.c2"] == ".physics.hfact"
+    assert HISTORIC_PAIRING[".constraints.c2"] == ".physics.hfact"
     assert KINDS[".physics.hfact"] is Kind.BELIEF

@@ -6,6 +6,7 @@ import sys
 from functools import partial
 from pathlib import Path
 
+from cottax.interfaces import ExecutableGraph
 from cottax.interfaces.pytree_namespace_module import xDSMFormatterFlat
 from cottax.visualization import render_xdsm_html
 
@@ -60,8 +61,6 @@ _SPLIT_FILE = re.compile(r"_[A-Z](?:_.*)?$")
 
 def grouped(depth: int | None = None, input_file: str | None = None):
     """Write `dsm_provenance.html`/`dsm_scc.html`: § 11's comparison, drawn."""
-    from cottax import ExecutableGraph
-
     from functional_process.cottax.architectures.mda import driven_graph
     from functional_process.cottax.visualization.grouping import (
         dependency_group_sequence,
@@ -230,7 +229,6 @@ def cold_reference(input_file=None):
 
 def sand():
     """Write `xdsm_sand.html` for the assembled SAND graph."""
-    from cottax import ExecutableGraph
 
     from functional_process.cottax.architectures.evaluate import mda_env  # noqa: PLC0415
     from functional_process.cottax.architectures.sand import assemble  # noqa: PLC0415
@@ -238,12 +236,16 @@ def sand():
     reference = cold_reference()
     driven, env = mda_env(reference)
     combined, report = assemble(reference, driven, env)
+    # `residualised` went with `Residualise`: the relational language folds a
+    # consistency statement into the optimiser as the pairing it was written as, so
+    # there is no residual node to count. What `assemble` still reports is read by
+    # name, so a key the architectures drop next costs a missing line and not a
+    # traceback in a renderer.
     print(
         f"SAND graph: {len(combined.nodes)} nodes | "
-        f"degenerate fixed points dropped: {len(report['degenerate'])} | "
-        f"residualised: {len(report['residualised'])}"
+        f"degenerate fixed points dropped: {len(report.get('degenerate', ()))}"
     )
-    if report["omitted"]:
+    if report.get("omitted"):
         print(f"  CONSTRAINTS OMITTED: {report['omitted']}")
 
     # The graph's own components (what `Blocking.scc` was, and what a drawing reads

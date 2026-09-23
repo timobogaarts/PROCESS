@@ -71,7 +71,7 @@ from functional_process.cottax.models.tfcoil.superconducting import DxTfSideCase
 from functional_process.cottax.models.tokamak.namespace import Tokamak
 from functional_process.cottax.models.total_process import TokamakProcess
 from functional_process.cottax.models.vacuum.namespace import Vacuum
-from functional_process.cottax.models.vacuum.vacuum import DuctDiameterRootFind, VacuumOld, VacuumVesselDShapedDoubleNull
+from functional_process.cottax.models.vacuum.vacuum import VacuumOld, VacuumVesselDShapedDoubleNull
 from functional_process.vocabulary.enums import PFConductorModel
 
 machine = TokamakProcess(
@@ -383,7 +383,6 @@ machine = TokamakProcess(
     ),
     vacuum=Vacuum(
         vacuum_old=VacuumOld(),
-        duct_diameter_root_find=DuctDiameterRootFind(),
     ),
     availability=Availability(
         electric_production=PlantElectricProductionSingleCoolant(),

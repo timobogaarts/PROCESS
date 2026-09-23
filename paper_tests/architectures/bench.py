@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import os
 import platform
 import subprocess
@@ -32,7 +33,7 @@ from cottax.mdao_architectures import GaussSeidel, GaussSeidelMinimal, Jacobi  #
 
 from functional_process import configurations  # noqa: E402
 from functional_process.cottax.architectures import session  # noqa: E402
-from functional_process.cottax.architectures.drivers import SlsqpDriver  # noqa: E402
+from functional_process.cottax.architectures.drivers import SlsqpDriver, VmconDriver  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -49,9 +50,19 @@ SCHEMES = {
     "jacobi": Jacobi(),                # every coupling
 }
 
+PROCESS_EPSFCN = 1.0e-3
+"""PROCESS's own relative finite-difference perturbation (`data.numerics.epsfcn`,
+`configurations/defaults.py`), the step `Evaluators.fcnvmc2` differentiates with."""
+
 OPTIMISERS = {
     "vmcon": None,                     # the port's VMCON (pyvmcon), the session's default
     "slsqp": SlsqpDriver,              # scipy's SLSQP, exact jacobians
+    # The same driver on the same block, differentiated the way PROCESS differentiates:
+    # `x * (1 +/- epsfcn)` per coordinate, `2n` evaluations per iteration. The only
+    # difference from the `vmcon` row is where the derivative comes from, so the two
+    # together separate "a declared architecture" from "an autodiff-visible one".
+    "vmcon-fd": functools.partial(VmconDriver, epsfcn=PROCESS_EPSFCN),
+    "slsqp-fd": functools.partial(SlsqpDriver, epsfcn=PROCESS_EPSFCN),
 }
 
 TOLERANCE = 1.0e-8
@@ -59,12 +70,17 @@ TOLERANCE = 1.0e-8
 port): the same number on both sides."""
 
 
-def arguments(description: str, *, optimiser: bool = True, batches: bool = False) -> argparse.Namespace:
+def arguments(description: str, *, optimiser: bool = True, batches: bool = False,
+              epsfcn: bool = False) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=description)
     p.add_argument("--configurations", nargs="*", default=list(NAMES), metavar="NAME")
     p.add_argument("--scheme", choices=sorted(SCHEMES), default="minimal")
     if optimiser:
         p.add_argument("--optimiser", choices=sorted(OPTIMISERS), default="vmcon")
+    if epsfcn:
+        p.add_argument("--epsfcn", nargs="?", type=float, const=PROCESS_EPSFCN, default=None,
+                       metavar="STEP", help="also measure PROCESS's finite-difference "
+                       f"Jacobian at this relative step (bare flag: {PROCESS_EPSFCN:g})")
     if batches:
         p.add_argument("--batches", nargs="*", type=int, default=[1, 16, 256, 4096], metavar="N")
         p.add_argument("--chunk", type=int, default=4096, help="designs per vmap; larger batches are lax.map'ed over chunks")

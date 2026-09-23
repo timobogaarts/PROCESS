@@ -17,11 +17,8 @@ about the profile objects. If a ported function secretly needed something else o
 
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import VarPath
 
-from functional_process.tests._harness import Tier1Contract
-from functional_process.tests._harness.sample_store import FROM_FILE
-from functional_process.cottax.paths import divertor, physics
 from functional_process.cottax.models.physics.plasma_profiles import (
     PedestalProfileValues,
     calculate_ion_vol_avg_temperature,
@@ -31,6 +28,9 @@ from functional_process.cottax.models.physics.plasma_profiles import (
     calculate_profile_factors,
     lmode_profile_reset,
 )
+from functional_process.cottax.paths import divertor, physics
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.models.physics.plasma_profiles import PlasmaProfile

@@ -1,13 +1,11 @@
 """The graph queries this codebase spells its own way."""
 
-from cottax.core import problems
-from cottax.pytree.graph import Graph
-from cottax.pytree.names import NodePath
-from cottax.pytree.plan import Nest, Plan
+from cottax.interfaces import Graph, Nest, Plan, problems
+from cottax.pytree.path import NodePath
 
 
 def declared(graph: Graph) -> tuple[NodePath, ...]:
-    """The problems of a graph -- `cottax.core.problems`, over the graph's definitions."""
+    """The problems of a graph -- `cottax.interfaces.problems`, over its definitions."""
     return problems(graph.definitions)
 
 
@@ -15,7 +13,8 @@ def nested_inside(graph: Graph, outer: NodePath) -> Graph:
     """`graph` with every other outermost problem on `outer`'s cycle answered inside its
     iteration -- one `Nest` per problem, which is all cottax's old `NestInside` was.
     Every problem already nested somewhere is left where it is, so the innermost pairs
-    are stated first and this is called for the level above."""
+    are stated first and this is called for the level above.
+    """
     component = next(c for c in graph.graph.components if outer in c)
     plan = Plan(graph)
     for name in graph.subgraph(component).outermost_problems:

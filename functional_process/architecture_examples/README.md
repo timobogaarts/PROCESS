@@ -5,27 +5,31 @@ builds it as a short list of operations on the graph of PROCESS's models (printe
 the recipe is visible), shows the run order it produces as a DSM, and runs it on the
 Helias stellarator (`tests/regression/input_files/stellarator_helias.IN.DAT`). They are
 written for a PROCESS user; the cottax terms they use are the ones the cottax examples
-introduce (graph, node, cut, fixed point, problem, driver, nest, combine).
+introduce (graph, node, cut, fixed point, requirement, problem, driver, nest, absorb).
+
+MDF, IDF and SAND share the first two steps -- cut the feedback loops with a scheme,
+state the file's problem -- and differ only in the last, which is one operation:
 
 | folder | architecture | the recipe |
 |---|---|---|
-| [`mda_gauss_seidel/`](mda_gauss_seidel/mda_gauss_seidel.ipynb) | the analysis alone, converged Gauss-Seidel style as PROCESS's idempotence loop does | cut the feedback loops (`recipes.gauss_seidel`), nest the models' own solves, iterate |
-| [`mdf/`](mdf/mdf.ipynb) | MDF, PROCESS's own architecture | cut, insert the optimisation problem, nest everything inside it |
-| [`idf/`](idf/idf.ipynb) | IDF | cut, insert, residualise and combine the coupling copies, nest the models' own solves |
-| [`sand/`](sand/sand.ipynb) | SAND | cut, insert, residualise and combine every problem |
-| [`two_opt_driver/`](two_opt_driver/two_opt_driver.ipynb) | two optimisers in sequence | cut, insert two problems, residualise, combine per loop; the graph decides whether the split is legal |
+| [`mda_gauss_seidel/`](mda_gauss_seidel/mda_gauss_seidel.ipynb) | the analysis alone, converged Gauss-Seidel style as PROCESS's idempotence loop does | cut the feedback loops (`GaussSeidel`), iterate; the three schemes compared |
+| [`mdf/`](mdf/mdf.ipynb) | MDF, PROCESS's own architecture | cut, state, `MDF()`: every problem nested inside the optimiser |
+| [`idf/`](idf/idf.ipynb) | IDF | cut, state, `IDF()`: the coupling absorbed into the optimiser, the models' own solves nested in it |
+| [`sand/`](sand/sand.ipynb) | SAND | cut, state, `SAND()`: every problem on the optimiser's cycle absorbed into it |
+| [`two_opt_driver/`](two_opt_driver/two_opt_driver.ipynb) | two optimisers in sequence | cut, state two problems, absorb per loop; the graph decides whether the split is legal |
 
-The notebooks call the library (`mda.cut_ops`, `recipes`, `sand.optimise_graph`,
-`sand.assemble`, `mdf.assemble`, `idf.idf_graph`, `sand.sand_schedule`, `evaluate`'s
-seeding) and check that the spelled-out recipe builds the same graph the library does.
+The notebooks call the library (`mda.SCHEME` and `mda.cut_graph`,
+`sand.constraint_declarations` / `objective_entry` / `problem_graph`, `sand.assemble`,
+`idf.idf_graph`, `sand.sand_schedule`, `evaluate`'s seeding) and check that the
+spelled-out recipe builds the same graph the library does.
 `session.open_session(path)` is the one-line form of each.
 
 ## Running them
 
 The env has to import `process`, `cottax` and `functional_process` together
-(`../../CLAUDE.md`, "The environment"). The notebooks put the repo and, if it is a
-sibling of the repo's parent, `jaxgraph/src` on `sys.path` themselves and print which
-`cottax` answered. Open them in Jupyter or VS
+(`../../CLAUDE.md`, "The environment"). A notebook uses whichever `cottax` already
+imports and falls back to the sibling `jaxgraph/src` only when none does; it prints
+which one answered, and `notebook_tools` hands the kernel the same one. Open them in Jupyter or VS
 Code, or run headlessly:
 
 ```bash

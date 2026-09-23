@@ -18,16 +18,9 @@ regression in its output would show up as a value mismatch downstream.
 import functools
 
 import pytest
+from cottax.interfaces import Implemented, is_fixed_point
 from cottax.interfaces.pytree_namespace_module import Output, to_graph
-from cottax.pytree.problem import FixedPoint, is_fixed_point
-from cottax.pytree.nodes import Implemented, ImplementedFunction
 
-from functional_process.tests._harness import Tier1Contract
-from functional_process.tests._harness.process_reference import (
-    data_reference,
-    process_reference,
-)
-from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.models.availability.availability import (
     Avail2NeutronFluenceSphericalTokamak,
     AvailDisplacementsPerAtom,
@@ -59,6 +52,12 @@ from functional_process.cottax.models.availability.availability import (
     calculate_ward_taylor_availability,
 )
 from functional_process.cottax.paths import costs
+from functional_process.tests._harness import Tier1Contract
+from functional_process.tests._harness.process_reference import (
+    data_reference,
+    process_reference,
+)
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.models.availability import Availability
 

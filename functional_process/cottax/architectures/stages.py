@@ -33,10 +33,13 @@ both ends are kept and re-checks that both are on one cycle, so the subgraphs ca
 the whole graph's nesting and drivers unchanged.
 
 The counts this file measures are in `tests/architectures/test_stages.py`; the
-handoff's table (`~/jaxgraph`, `plans/handoff_2026-09-17.md`) was measured on the
-graph *with* `.vacuum.duct_diameter_root_find` (156 nodes) and before `kinds.py` added
-the two section-4 lifetimes to `CLAIMED_BUILD_OUTPUTS`, which is why the test states
-both graphs.
+handoff's table (`~/jaxgraph`, `plans/handoff_2026-09-17.md`) was measured before
+`kinds.py` added the two section-4 lifetimes to `CLAIMED_BUILD_OUTPUTS`, which is why
+the test checks two claim sets against the same graph. (It was also measured with
+`.vacuum.duct_diameter_root_find` still in the graph; `4147b6bc` unregistered that
+island -- nothing produced what it read or read what it produced -- so the graph the
+test builds today no longer carries it, and the two claim sets are checked on one
+graph, not two.)
 """
 
 from __future__ import annotations
@@ -45,9 +48,9 @@ import dataclasses
 import enum
 from typing import TYPE_CHECKING
 
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
+from cottax.execution.drivers.kinds import Start
+from cottax.interfaces import Graph, RunnableGraph, Schedule
+from cottax.pytree.mint import namespace_of
 
 from functional_process.configurations.kinds import (
     BELIEFS,
@@ -57,20 +60,17 @@ from functional_process.configurations.kinds import (
     Kind,
 )
 from functional_process.cottax.architectures.evaluate import inputs_only, run_schedule
-from cottax.pytree.names import is_minted
-from cottax.pytree.problem import Start
 
 
 def is_start(v) -> bool:
-    """A `Start` datum: minted in the namespace `Assign` puts a solver's start in."""
-    return is_minted(v) and v.segments[0] == Start.mint_key
+    """A `Start` datum: minted in the namespace a driver's start naming opens."""
+    return namespace_of(v) == Start.ns
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from cottax.pytree.graph import Graph
-    from cottax.pytree.spec import NodePath, VarPath
+    from cottax.pytree.path import NodePath, VarPath
 
 # ------------------------------------------------------------------ the leaves
 

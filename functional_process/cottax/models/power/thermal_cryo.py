@@ -409,8 +409,8 @@ class ComponentThermalPowersMechDualOther(ComponentThermalPowers):
     fn = calculate_component_thermal_powers_owned_mech_dual_other
 
 
-class DeltaEtaStep(FixedPointFunction):
-    """The `.power.delta_eta` self-loop, cut. Bodiless family base: eight
+class DeltaEtaStep(ExplicitFunction):
+    """`.power.delta_eta`, computed from the heat flows. Bodiless family base: eight
     occupants below cover `PumpingPowerModelTypes` (binary here: pump powers
     summed or passed through) x `BlanketDualCoolantModel` (binary here --
     coarser than `ComponentThermalPowers`'s three-way use of the same switch,
@@ -419,16 +419,26 @@ class DeltaEtaStep(FixedPointFunction):
     `calculate_delta_eta` uses). `_audit/switch_kwarg_survey.md`'s exemption for
     this node is withdrawn, the same as `ComponentThermalPowers`'s.
 
-    `step` is written once here, exactly as before, and dispatches to
-    `self._compute` -- each arm below overrides only that (`WrapsFunction` cannot
-    help a `FixedPointFunction`'s `step`, since it only ever synthesises
-    `__call__`; `AvailSt`/`_compute` in `models/availability/availability.py` is
-    the precedent for this shape).
+    `__call__` is written once here and dispatches to `self._compute` -- each arm
+    below overrides only that (`WrapsFunction` cannot help, since it synthesises a
+    `__call__` of its own; `AvailSt`/`_compute` in
+    `models/availability/availability.py` is the precedent for this shape).
+
+    **No longer a `FixedPointFunction`.** The entering `.power.delta_eta` is PROCESS's
+    incoming field value, not a previous iterate of this node, so it is read as the
+    free place `.power.delta_eta_in` (`evaluate.KNOWN_MINT_VALUES` resolves it back to
+    the same field) and the node owns `.power.delta_eta` outright. The self-loop, its
+    minted `^cond.power.delta_eta`, its cut and its driver are all gone. The read
+    itself stays, as it always did, because PROCESS's routine really does read the
+    field -- and it remains numerically inert
+    (`test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta`), which is what made
+    the loop a formality rather than an iteration: `g` does not depend on `u`, so the
+    first evaluation was always the answer.
     """
 
     delta_eta = OutputInto(power)
 
-    def step(
+    def __call__(
         self,
         p_fw_coolant_pump_mw=From(heat_transport),
         p_blkt_coolant_pump_mw=From(heat_transport),
@@ -448,7 +458,7 @@ class DeltaEtaStep(FixedPointFunction):
         p_div_rad_total_mw=From(fwbs),
         p_div_coolant_pump_mw=From(heat_transport),
         i_shld_primary_heat=From(heat_transport),
-        delta_eta=From(power),
+        delta_eta_in=From(power),
     ):
         return self._compute(
             p_fw_coolant_pump_mw,
@@ -469,7 +479,7 @@ class DeltaEtaStep(FixedPointFunction):
             p_div_rad_total_mw,
             p_div_coolant_pump_mw,
             i_shld_primary_heat,
-            delta_eta,
+            delta_eta_in,
         )
 
 

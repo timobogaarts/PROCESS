@@ -4,13 +4,13 @@ import jax  # noqa: F401
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
+    Feasibility,
     From,
     ImplicitFunction,
     OutputInto,
     resolve,
 )
-from cottax.pytree.problem import Feasibility
-from cottax.pytree.spec import VarPath
+from cottax.pytree.path import VarPath
 
 from functional_process.cottax.paths import (
     blanket,

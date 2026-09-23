@@ -19,11 +19,15 @@ import time
 import jax
 import numpy as np
 import pytest
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Schedule
-from cottax.pytree.names import prefix_path
-from cottax.pytree.problem import Le, is_root_find
+from cottax.interfaces import (
+    ExecutableGraph,
+    Le,
+    RunnableGraph,
+    Schedule,
+    is_root_find,
+)
+from cottax.interfaces import violations as executable_violations
+from cottax.pytree.mint import prefix_path
 
 from functional_process.configurations import load
 from functional_process.configurations.kinds import BUILD_LEAVES, KINDS, Kind
@@ -105,8 +109,11 @@ def primed(closed, live):
 
 @pytest.fixture(scope="module")
 def lifted(closed):
-    """`lift_winding_pack` on the driven closed graph: `(graph, condition, report)`."""
-    return lift_winding_pack(closed.graph)
+    """`lift_winding_pack` on the driven closed graph, the relaxed requirement dropped
+    (`keep=False`): the optimiser of a closed problem is outside this graph, so nothing
+    in it could absorb one. `(graph, condition, report)`.
+    """
+    return lift_winding_pack(closed.graph, keep=False)
 
 
 @pytest.fixture(scope="module")
@@ -127,8 +134,9 @@ def lifted_run(lifted, primed):
 
 
 def test_lift_takes_the_root_find_apart(closed, lifted):
-    """The intersect problem is gone, its unknown is a boundary input, the inequality's
-    node and the current-density node are there, and the report says which ops.
+    """The intersect problem is gone, its unknown is a boundary input, the
+    current-density node is there and the inequality is a relation between its two
+    outputs -- nothing computes a signed residual.
     """
     before = closed.graph
     graph, condition, report = lifted
@@ -141,33 +149,28 @@ def test_lift_takes_the_root_find_apart(closed, lifted):
     assert problem not in graph.nodes
     assert WP_WIDTH_R_MIN in graph.graph.boundary_inputs
     assert WP_WIDTH_R_MIN not in graph.graph.owners
-    assert len(graph.nodes) == len(before.nodes) + 1  # - problem + lift + density
-    node = lift.place_for(WP_WIDTH_R_MIN)
-    assert node in graph.nodes
-    assert tuple(graph[node].owns) == (condition,)
-    residual = prefix_path(WP_WIDTH_R_MIN, lift.COND)
-    assert residual.spelling == "^cond.stellarator.wp_width_r_min"
-    assert tuple(graph[node].reads) == (residual, J_TF_SC_WP_MAX)
-    assert condition.spelling == "^cond.lift.stellarator.wp_width_r_min"
-    assert graph.graph.owners[condition] == node
+    assert len(graph.nodes) == len(before.nodes)  # - problem + density
+    assert condition == J_TF_SC_WP
     assert tuple(graph[CURRENT_DENSITY].owns) == (J_TF_SC_WP, J_TF_SC_WP_MAX)
     assert WP_WIDTH_R_MIN in graph[CURRENT_DENSITY].reads
+    assert graph.graph.owners[condition] == CURRENT_DENSITY
     # The residual's producer still runs -- the lift keeps it, as a cut keeps its.
+    residual = prefix_path(WP_WIDTH_R_MIN, lift.COND)
+    assert residual.spelling == "^cond.stellarator.wp_width_r_min"
     assert graph.graph.owners[residual] == before.graph.owners[residual]
-    # The report: cottax's ops, in order, and the one node composed by hand.
+    # The report: cottax's ops, in order, and nothing composed by hand.
     assert report["ops"] == (
         f"undrive({INTERSECT})",
         f"undetermine({INTERSECT})",
         f"delete({INTERSECT})",
-        "insert(.Lift.wp_width_r_min)",
     )
     assert report["driver"] == "SeededNewtonDriver"
     assert report["unnested"] == ()
     assert (report["safe"], report["sign"]) == ("above", -1.0)
-    assert report["scale"] == J_TF_SC_WP_MAX.spelling
+    assert report["kept"] is False
     assert report["relation"].op is Le
-    assert report["relation"].lhs == (condition,)
-    assert report["relation"].against_zero
+    assert report["relation"].lhs == J_TF_SC_WP
+    assert report["relation"].rhs == J_TF_SC_WP_MAX
     assert report["icc"] == 33
     assert report["design"] == {
         "unknown": WP_WIDTH_R_MIN.spelling,
@@ -182,6 +185,27 @@ def test_lift_takes_the_root_find_apart(closed, lifted):
     assert not graph.within
 
 
+def test_the_kept_requirement_is_the_inequality_and_nothing_answers_it(closed):
+    """`keep=True` leaves the relaxed requirement where the root find was: an
+    inequality between the two current densities, determining nothing -- so the graph
+    is drawn and rewritten but not executable until an architecture absorbs it.
+    """
+    graph, _condition, report = lift_winding_pack(closed.graph, keep=True)
+    assert report["kept"] is True
+    assert report["node"] == INTERSECT
+    place = next(n for n in graph.nodes if n.spelling == INTERSECT)
+    node = graph[place]
+    assert node.unknowns == ()
+    assert node.relations == (report["relation"],)
+    # Every case the proof reports, as data rather than as the first refusal: the one
+    # thing wrong with this graph is the requirement nothing answers.
+    cases = list(executable_violations(ExecutableGraph, graph))
+    assert [type(c).__name__ for c in cases] == ["BareCondition"]
+    assert cases[0].node == place
+    with pytest.raises(ValueError, match="against nothing"):
+        ExecutableGraph(graph)
+
+
 def test_lift_refuses_what_it_cannot_take_apart(closed, lifted):
     """A second lift finds no problem; a fixed point, a wrong unknown and a wrong
     `safe` are refused where the lift begins.
@@ -190,8 +214,14 @@ def test_lift_refuses_what_it_cannot_take_apart(closed, lifted):
     with pytest.raises(KeyError, match="not a problem"):
         lift_winding_pack(lifted[0])
     problem = next(p for p in declared(graph) if p.spelling == INTERSECT)
+    # A genuine fixed point: the one `closing.close` makes by cutting the
+    # `f_ster_div_single` cycle. Was `^problem.power.delta_eta_step`, until that node
+    # stopped declaring a problem at all -- its "self-loop" read PROCESS's incoming
+    # field rather than its own earlier output, and it now reads `.power.delta_eta_in`
+    # (see `DeltaEtaStep`). Every fixed point in this port is cut-made now, so a cut
+    # one is what this test has to take.
     fixed_point = next(
-        p for p in declared(graph) if p.spelling == "^problem.power.delta_eta_step"
+        p for p in declared(graph) if p.spelling == "^mda.fwbs.f_ster_div_single"
     )
     with pytest.raises(ValueError, match="one of"):
         lift.lift(graph, problem, unknown=WP_WIDTH_R_MIN, safe="wide")
@@ -218,23 +248,25 @@ def test_lifted_inequality_is_active_at_the_root_and_a_wider_pack_satisfies(
     5 % wider it is satisfied (negative), 5 % narrower violated (positive). That is
     `safe="above"`: the residual `f j_c - j` is positive on the wide side.
     """
-    _graph, condition, _report = lifted
+    _graph, _condition, report = lifted
     schedule, at_root, out = lifted_run
-    g0 = float(np.asarray(out[condition]))
-    assert abs(g0) < 1e-8, g0
-    # The condition is PROCESS's icc 33 normalised residual, `j / (f j_c) - 1`, with
-    # the two current densities read off the coil's curves at the chosen width.
+    gap = lambda env: float(
+        np.asarray(env[report["relation"].lhs]) - np.asarray(env[report["relation"].rhs])
+    )
+    # The statement is PROCESS's icc 33 itself, `j <= f j_c`, between the two current
+    # densities read off the coil's curves at the chosen width.
     j, j_max = float(np.asarray(out[J_TF_SC_WP])), float(np.asarray(out[J_TF_SC_WP_MAX]))
     assert j_max > 0
     assert j > 0
-    assert g0 == pytest.approx(j / j_max - 1.0, abs=1e-12)
+    g0 = gap(out)
+    assert abs(g0) < 1e-8 * j_max, g0
     root = float(np.asarray(at_root[WP_WIDTH_R_MIN]))
     assert 0.1 < root < 2.0
     moved = {}
     for factor in (1.05, 0.95):
         env = dict(at_root)
         env[WP_WIDTH_R_MIN] = at_root[WP_WIDTH_R_MIN] * factor
-        moved[factor] = float(np.asarray(run_schedule(schedule, env)[condition]))
+        moved[factor] = gap(run_schedule(schedule, env)) / j_max
     assert moved[1.05] < -1e-3, moved
     assert moved[0.95] > 1e-3, moved
     # And the lifted unknown reaches the coil: the pack thickness *is* the width.
@@ -257,7 +289,7 @@ def test_every_other_output_is_the_unlifted_ones(closed, primed, lifted_run):
     differing = [
         v.spelling
         for v in shared
-        if not v.spelling.startswith(("^driver_out.", "^guess."))
+        if not v.spelling.startswith(("^steps.", "^converged.", "^status.", "^guess."))
         and not _same(reference[v], out[v])
     ]
     assert not differing, differing[:20]
@@ -269,9 +301,9 @@ def test_every_other_output_is_the_unlifted_ones(closed, primed, lifted_run):
 
 @pytest.fixture(scope="module")
 def runnable():
-    """The driven MDA graph `test_stages.py` measures (154 nodes), and it lifted."""
+    """The driven MDA graph `test_stages.py` measures (152 nodes), and it lifted."""
     graph = mda.driven_graph(without_excluded(graph_for(load(NAME).machine)))
-    return graph, lift_winding_pack(graph)[0]
+    return graph, lift_winding_pack(graph, keep=False)[0]
 
 
 def _rows(graph, table):
@@ -299,7 +331,7 @@ def _rows(graph, table):
         ("all", (25, 15), (37, 6)),
         ("sampled", (34, 15), (34, 14)),
         ("sampled-insulation", (34, 15), (46, 10)),
-        ("build", (58, 6), (59, 6)),
+        ("build", (58, 6), (58, 6)),
     ],
 )
 def test_stage_split_before_and_after_the_lift(runnable, label, before, after):
@@ -313,7 +345,7 @@ def test_stage_split_before_and_after_the_lift(runnable, label, before, after):
     """
     plain, lifted_graph = runnable
     table = {**KINDS, WP_WIDTH_R_MIN.spelling: Kind.BUILD}
-    assert (len(plain.nodes), len(lifted_graph.nodes)) == (154, 155)
+    assert (len(plain.nodes), len(lifted_graph.nodes)) == (152, 152)
     stage_before = split(plain, _rows(plain, KINDS)[label])
     stage_after = split(lifted_graph, _rows(lifted_graph, table)[label])
     hits_before, _ = violations(plain, stage_before)
@@ -324,7 +356,9 @@ def test_stage_split_before_and_after_the_lift(runnable, label, before, after):
     )
     assert WP_WIDTH_R_MIN.spelling not in {v.place for v in hits_after}
     assert WP_WIDTH_R_MIN in stage_after.leaves.build
-    node = lift.place_for(WP_WIDTH_R_MIN)
+    # The lift computes no condition of its own: what the inequality is a function of
+    # is the current-density node, so that is what has a stage.
+    node = CURRENT_DENSITY
     if label == "all":
         assert stage_after.stage[node] is Stage.RECOURSE
         assert stage_after.responsible(node) == (".tfcoil.tftmp",)
@@ -360,7 +394,8 @@ def test_two_stage_assembles_with_the_pack_lifted(model, primed, lifted):
     lifted inequality), and the coil first stage on the build table.
     """
     _env, out = primed
-    _graph, condition, _report = lifted
+    _graph, condition, report = lifted
+    gap = ouu.Gap.of(report["relation"])
     assert len(model.design) == 7
     assert model.design[-1] == WP_WIDTH_R_MIN
     assert model.ixc == (2, 3, 4, 56, 59, 109, 140)
@@ -370,24 +405,29 @@ def test_two_stage_assembles_with_the_pack_lifted(model, primed, lifted):
     assert np.all(model.lower < model.x0)
     assert np.all(model.x0 < model.upper)
     assert model.n_g == 13
-    assert model.constraints[-1] == condition
+    # The lift leaves a relation, not a place: the column is the gap between the two
+    # current densities, which is what the statement holds at `<= 0`.
+    assert model.constraints[-1] == gap
     assert len(model.columns) == 4 + 13 + 2 + 1  # the bracketed closure: one unknown
     assert model.layout["c_u"] == (19, 20)
     assert model.closed.report["lifts"][condition.spelling]["design"]["ixc"] == 140
-    assert set(model.closed.report["inequalities"]) == set(model.constraints)
+    assert model.closed.report["lift_relations"] == (report["relation"],)
+    assert set(model.closed.report["inequalities"]) == set(model.constraints) - {gap}
     assert model.closed.problem.n_inequality == 13
     assert model.closed.design == model.closed.problem.design
     assert INTERSECT not in {p.spelling for p in declared(model.closed.graph)}
     assert INTERSECT not in {p.spelling for p in declared(model.closed.problem.graph)}
     # At the nominal the lifted inequality is active, in the un-batched run too.
-    assert abs(float(np.asarray(model.nominal_out[condition]))) < 1e-8
-    # The split on the build table: one node more first stage (the density node
-    # and the lift's for the problem), the coil group and the lifted inequality
-    # first stage -- a constraint the same in every sample until a coil row is
-    # sampled (`held=ECONOMIC` makes `f_j_tf_wp_critical_max` reach it).
+    assert abs(float(np.asarray(gap.at(model.nominal_out)))) < 1e-8 * float(
+        np.asarray(model.nominal_out[J_TF_SC_WP_MAX])
+    )
+    # The split on the build table: the current-density node first stage in place of
+    # the root find, so the coil group and the lifted inequality are the same in every
+    # sample until a coil row is sampled (`held=ECONOMIC` makes
+    # `f_j_tf_wp_critical_max` reach it).
     counts = {s.value: c.nodes for s, c in model.stages.counts.items()}
-    assert counts == {"first": 67, "second": 104, "recourse": 0}
-    assert model.stages.stage[lift.place_for(WP_WIDTH_R_MIN)] is Stage.FIRST
+    assert counts == {"first": 66, "second": 102, "recourse": 0}
+    assert model.stages.stage[CURRENT_DENSITY] is Stage.FIRST
     owned = stages.owned_by_spelling(model.closed.graph)
     for place in COIL:
         assert model.stages.stage[owned[place][1]] is Stage.FIRST

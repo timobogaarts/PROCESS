@@ -28,14 +28,22 @@ import openmdao.api as om
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from cottax.pytree.problem import ConditionalNode, is_fixed_point, is_root_find  # noqa: E402
+from cottax.interfaces import (  # noqa: E402
+    ConditionalNode,
+    is_fixed_point,
+    is_root_find,
+)
 
 from functional_process.cottax.architectures import mdf, sand  # noqa: E402
-from functional_process.cottax.architectures.evaluate import ground_truth, mda_env, without_excluded  # noqa: E402
+from functional_process.cottax.architectures.evaluate import (  # noqa: E402
+    ground_truth,
+    mda_env,
+    without_excluded,
+)
 
 
 def name(path) -> str:
-    """A spelling OpenMDAO accepts: `^cond.constraints.c5` -> `cond__constraints__c5`."""
+    """A spelling OpenMDAO accepts: `.constraints.c5` -> `constraints__c5`."""
     return re.sub(r"[^0-9a-zA-Z_]+", "_", path.spelling.lstrip("^.")).replace("_", "__", 0) or "root"
 
 

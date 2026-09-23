@@ -116,7 +116,7 @@ def process_reference(name: str = "stellarator_helias", use_cache: bool = True) 
             ".physics.nd_plasma_electrons_vol_avg": float(
                 data.physics.nd_plasma_electrons_vol_avg
             ),
-            "^cond.numerics.objf": float(data.costs.coe) / 100.0,
+            ".numerics.objf": float(data.costs.coe) / 100.0,
         },
         "seconds": seconds,
     }

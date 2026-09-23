@@ -1,5 +1,19 @@
-"""The `Optimise` layer: PROCESS's own optimisation problem, assembled onto the graph
-and solved as **SAND** (Simultaneous ANalysis and Design).
+"""The optimisation problem this port states, and its **SAND** assembly (Simultaneous
+ANalysis and Design).
+
+The problem is two kinds of node, both stated the way the models are:
+
+- one **constraint** declaration per active `icc` (`models/constraints.py`): a body
+  owning `.constraints.c<id>` at `Constraint<id>`, and beside it -- as part of
+  the same declaration -- the requirement that holds it against zero,
+  `^require.Constraint<id>`, `c = 0` for the first `n_equality` and `c <= 0` for the
+  rest. That is what makes a constraint a constraint, and it is declared where the
+  constraint is computed;
+- one **objective** node owning `.numerics.objf`, and `Optimise(objf, design)` at
+  `Opt`, with no constraints of its own.
+
+An architecture (`SAND()`, `MDF()`, `IDF()`) absorbs every requirement the design
+reaches and places the statements on the optimiser's cycle by level.
 """
 
 import dataclasses
@@ -10,29 +24,41 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Drive, Schedule
-from cottax.pytree.graph import Graph
-from cottax.pytree.names import MintKey, PathMap, prefix_path
-from cottax.pytree.nodes import ImplementedFunction
-from cottax.pytree.plan import Delete, Insert, Plan
-from cottax.pytree.problem import (
-    Driven,
-    Optimise,
-    conditions_of,
+from cottax.interfaces import (
+    Call,
+    Delete,
+    Drive,
+    Eq,
+    Insert,
+    Le,
+    Plan,
+    RunnableGraph,
+    Schedule,
+    bare_conditions,
     is_fixed_point,
     is_optimise,
 )
-from cottax.mdao_architectures import SAND, Global, Mda
-from cottax.pytree.rewrites import Assign
-from cottax.pytree.spec import NodePath, VarPath
+from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.interfaces.statements import Optimise
+from cottax.mdao_architectures import SAND, Mda
+from cottax.pytree.mint import unminted
+from cottax.pytree.path import NodePath, PathMap, VarPath
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
 from functional_process.cottax.architectures.mda import (
     assign_drivers,
     default_drivers,
+    relation_counts,
 )
+from functional_process.cottax.models.constraints import (
+    SWITCH_PARAMETER_NAMES,
+    condition_place,
+    constraint_declaration,
+    constraint_place,
+    requirement_place,
+)
+from functional_process.cottax.models.objectives import objective_node, objective_place
 from functional_process.cottax.queries import declared
 from functional_process.models import constraints as ported_constraints
 from functional_process.models import objectives as ported_objectives
@@ -41,50 +67,9 @@ from functional_process.vocabulary import (
     ITERATION_VARIABLES,
     FiguresOfMerit,
 )
-from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
-METRIC = MintKey("metric")
-"""The namespace a figure of merit is minted into **before** its direction is applied.
-"""
-
-COND = MintKey("cond")
-"""The namespace constraint/objective values are minted into -- the same one
-`Compare`/`Residualise` open.
-"""
-
-REFERENCE_SWITCH_VALUES = {
-    "i_rad_loss": 1,  # `.physics.i_rad_loss`
-    # `.physics.i_plasma_ignited`, `stellarator_helias.IN.DAT:126`
-    "i_plasma_ignited": 1,
-    "i_beta_component": 0,  # `.physics.i_beta_component`
-    "istell": 6,  # `.stellarator.istell`, `stellarator_helias.IN.DAT:137`
-}
-"""Static switch arguments of the reference run's active constraints, and their values.
-"""
-
-
-SWITCH_PARAMETER_NAMES = (
-    "bkt_life_csf",
-    "i_beta_component",
-    "i_cp_lifetime",
-    "i_density_limit",
-    "i_plant_availability",
-    "i_plasma_ignited",
-    "i_q95_fixed",
-    "i_rad_loss",
-    "i_tf_bucking",
-    "i_tf_inside_cs",
-    "i_tf_sup",
-    "ibkt_life",
-    "ireactor",
-    "istell",
-    "itart",
-)
-"""Every parameter name that is a **switch** anywhere in the ported constraint/objective
-surface -- the union of the `static_argnames` the `Tier1Contract`s in
-`functional_process/tests/cottax/core/solver/test_constraints.py` and
-`test_objectives.py` declare.
-"""
+OPT = NodePath((GetAttrKey("Opt"),))
+"""Where the run's `Optimise` binds."""
 
 
 def switch_values_for(data, icc, i_figure_merit):
@@ -96,7 +81,7 @@ def switch_values_for(data, icc, i_figure_merit):
     for cid in icc:
         fn = getattr(ported_constraints, f"constraint_{cid}", None)
         if fn is None:
-            # `constraint_nodes` raises on this, with the message that names the id;
+            # `constraint_declaration` raises on this, with the message naming the id;
             # a second, earlier copy of the refusal here would just shadow it.
             continue
         needed |= set(inspect.signature(fn).parameters) & set(SWITCH_PARAMETER_NAMES)
@@ -147,338 +132,87 @@ def design_bounds(ixc):
     )
 
 
-NON_INPUT_FIELDS = {
-    "available_radial_space": "build",
-    "b_cs_peak_flat_top_end": "pf_coil",
-    "b_cs_peak_pulse_start": "pf_coil",
-    "b_plasma_total": "physics",
-    "b_tf_inboard_peak_with_ripple": "tfcoil",
-    "beta_beam": "physics",
-    "beta_fast_alpha": "physics",
-    "beta_poloidal_eps": "physics",
-    "beta_poloidal_vol_avg": "physics",
-    "beta_thermal_vol_avg": "physics",
-    "beta_toroidal_vol_avg": "physics",
-    "big_q_plasma": "current_drive",
-    "bktcycles": "costs",
-    "c_tf_total": "tfcoil",
-    "cdirt": "costs",
-    "coe": "costs",
-    "concost": "costs",
-    "coppera_m2": "rebco",
-    "cplife": "costs",
-    "dr_fw_outboard": "build",
-    "dx_tf_inboard_out_toroidal": "tfcoil",
-    "eps": "physics",
-    "eta_cd_norm_hcd_primary": "current_drive",
-    "f_p_beam_shine_through": "current_drive",
-    "f_p_plasma_separatrix_rad": "physics",
-    "f_pden_alpha_electron_mw": "physics",
-    "f_pden_alpha_ions_mw": "physics",
-    "f_t_alpha_energy_confinement": "physics",
-    "flu_tf_neutron_fast_peak": "fwbs",
-    "fzmin": "reinke",
-    "j_cs_critical_flat_top_end": "pf_coil",
-    "j_cs_critical_pulse_start": "pf_coil",
-    "j_cs_pulse_start": "pf_coil",
-    "j_tf_wp": "tfcoil",
-    "j_tf_wp_critical": "tfcoil",
-    "j_tf_wp_quench_heat_max": "tfcoil",
-    "life_blkt_fpy": "fwbs",
-    "life_div_fpy": "costs",
-    "n_beam_decay_lengths_core": "current_drive",
-    "n_charge_plasma_effective_vol_avg": "physics",
-    "n_cycle": "cs_fatigue",
-    "n_iter_vacuum_pumps": "vacuum",
-    "nd_beam_ions": "physics",
-    "nd_beam_ions_out": "physics",
-    "nd_plasma_electron_line": "physics",
-    "nd_plasma_electron_on_axis": "physics",
-    "nd_plasma_electrons_max": "physics",
-    "nd_plasma_ions_total_vol_avg": "physics",
-    "p_cp_resistive_mw": "tfcoil",
-    "p_cryo_plant_electric_mw": "heat_transport",
-    "p_div_bt_q_aspect_rmajor_mw": "physics",
-    "p_fusion_total_mw": "physics",
-    "p_hcd_injected_electrons_mw": "current_drive",
-    "p_hcd_injected_ions_mw": "current_drive",
-    "p_hcd_injected_total_mw": "current_drive",
-    "p_l_h_threshold_mw": "physics",
-    "p_plant_electric_net_mw": "heat_transport",
-    "p_plasma_heating_total_mw": "physics",
-    "p_plasma_separatrix_mw": "physics",
-    "p_plasma_separatrix_rmajor_mw": "physics",
-    "p_tf_leg_resistive_mw": "tfcoil",
-    "pden_alpha_total_mw": "physics",
-    "pden_electron_transport_loss_mw": "physics",
-    "pden_ion_electron_equilibration_mw": "physics",
-    "pden_ion_transport_loss_mw": "physics",
-    "pden_non_alpha_charged_mw": "physics",
-    "pden_plasma_core_rad_mw": "physics",
-    "pden_plasma_ohmic_mw": "physics",
-    "pden_plasma_rad_mw": "physics",
-    "peakpoloidalpower": "pf_power",
-    "pflux_fw_neutron_mw": "physics",
-    "pflux_fw_rad_max_mw": "constraints",
-    "plasma_current": "physics",
-    "powerht_constraint": "stellarator",
-    "powerscaling_constraint": "stellarator",
-    "psolradmw": "physics",
-    "ptfnucpm3": "fwbs",
-    "q95_min": "physics",
-    "radius_beam_tangency": "current_drive",
-    "radius_beam_tangency_max": "current_drive",
-    "rbld": "build",
-    "required_radial_space": "build",
-    "rminor": "physics",
-    "sig_tf_case": "tfcoil",
-    "sig_tf_cs_bucked": "tfcoil",
-    "sig_tf_wp": "tfcoil",
-    "srcktpm": "pf_power",
-    "str_wp": "tfcoil",
-    "stress_shear_cs_peak": "pf_coil",
-    "t_current_ramp_up_min": "constraints",
-    "t_plant_pulse_total": "times",
-    "tcpav2": "tfcoil",
-    "temp_cp_peak": "tfcoil",
-    "temp_croco_quench": "tfcoil",
-    "temp_cs_superconductor_margin": "pf_coil",
-    "temp_fw_peak": "fwbs",
-    "temp_plasma_electron_density_weighted_kev": "physics",
-    "temp_plasma_ion_density_weighted_kev": "physics",
-    "temp_tf_superconductor_margin": "tfcoil",
-    "tfcmw": "tfcoil",
-    "toroidalgap": "tfcoil",
-    "v_tf_coil_dump_quench_kv": "tfcoil",
-    "vol_plasma": "physics",
-    "vs_cs_pf_total_pulse": "pf_coil",
-    "vs_cs_pf_total_ramp": "pf_coil",
-    "vs_plasma_ramp_required": "physics",
-    "vs_plasma_total_required": "physics",
-    "vv_stress_quench": "superconducting_tfcoil",
-}
-"""`field name -> DataStructure area` for every name the ported constraint/objective
-layer can ask for that is **not** a declared PROCESS input.
-"""
+# ---------------------------------------------------------------- stating the problem
 
 
-class _Resolver:
-    """`parameter name -> VarPath`, graph first, PROCESS's declared inputs second."""
+def constraint_declarations(graph, icc, n_equality, switch_values=None, omit=()):
+    """`({Constraint<id>: declaration}, equalities, inequalities, omitted)` for the
+    active constraints -- each declaration a body and the requirement beside it, the
+    first `n_equality` of `icc` held by `Eq` and the rest by `Le`.
 
-    def __init__(self, graph: Graph):
-        self.by_name = {}
-        for var in graph.graph.variables:
-            keys = var.segments
-            if len(keys) == 2 and all(isinstance(k, GetAttrKey) for k in keys):
-                self.by_name.setdefault(keys[-1].name, set()).add(var)
-
-    def __call__(self, name: str) -> VarPath:
-        hits = self.by_name.get(name)
-        if hits and len(hits) == 1:
-            return next(iter(hits))
-        if hits:
-            raise ValueError(
-                f"{name!r} names {len(hits)} variables in the graph "
-                f"({sorted(v.spelling for v in hits)}) -- resolution is by unique "
-                f"name, so this one has to be given explicitly"
-            )
-        area = NON_INPUT_FIELDS.get(name)
-        if area is None:
-            declaration = INPUT_VARIABLES.get(name)
-            # `ixc`/`icc` carry `module=None`: they are the problem statement, not a
-            # field, so they are no more resolvable than an undeclared name.
-            area = None if declaration is None else declaration.module
-        if area is not None:
-            return VarPath((GetAttrKey(area), GetAttrKey(name)))
-        raise ValueError(
-            f"{name!r} resolves to nothing, and the two halves of that are different "
-            f"failures. (1) No node in this graph owns or reads it -- it is not part of "
-            f"*this* machine's dataflow, and the same name may well be produced on "
-            f"another device configuration, so check the machine before the spelling. "
-            f"(2) It is not a declared PROCESS input either "
-            f"(`vocabulary/input_variables.py`, PROCESS's own `INPUT_VARIABLES`), so it "
-            f"cannot be a constraint bound read off the boundary -- which leaves a "
-            f"typo, or a quantity an unported model computes, in which case it "
-            f"belongs in "
-            f"`NON_INPUT_FIELDS` with its `DataStructure` area."
-        )
-
-
-def _bind(fn, resolve, switch_values):
-    """`(switch pairs, read names, inputs)` for one ported constraint/objective
-    function.
+    Raises
+    ------
+    ValueError
+        If a constraint is active but cannot be assembled against this graph.
     """
-    parameters = list(inspect.signature(fn).parameters)
-    static = tuple((p, switch_values[p]) for p in parameters if p in switch_values)
-    read = [p for p in parameters if p not in switch_values]
-    return static, read, tuple(resolve(p) for p in read)
-
-
-def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
-    """One `ImplementedFunction` per active constraint, plus the equality/inequality
-    split.
-    """
-    switch_values = REFERENCE_SWITCH_VALUES if switch_values is None else switch_values
-    resolve = _Resolver(graph)
-    nodes, equalities, inequalities, omitted = {}, [], [], {}
+    variables = graph.graph.variables
+    declarations, equalities, inequalities, omitted = {}, [], [], {}
     for position, cid in enumerate(icc):
         if cid in omit:
             omitted[cid] = "omitted by the caller"
             continue
-        fn = getattr(ported_constraints, f"constraint_{cid}", None)
-        if fn is None:
-            raise ValueError(
-                f"constraint {cid} is active in this run but `core/solver/"
-                f"constraints.py` has no `constraint_{cid}`"
-            )
+        holds = Eq if position < n_equality else Le
         try:
-            static, read, inputs = _bind(fn, resolve, switch_values)
+            declarations[constraint_place(cid)] = constraint_declaration(
+                variables, cid, holds, switch_values
+            )
         except ValueError as e:
             raise ValueError(
-                f"constraint {cid} cannot be assembled: {e}. An `Optimise` missing one "
-                f"of PROCESS's active constraints solves a different problem -- pass "
-                f"`omit={{{cid}}}` to leave it out on purpose and have it reported"
+                f"{e} Pass `omit={{{cid}}}` to leave it out on purpose and have it "
+                f"reported"
             ) from e
-        condition = prefix_path(
-            VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}"))), COND
+        (equalities if position < n_equality else inequalities).append(
+            condition_place(cid)
         )
-        nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = ImplementedFunction(
-            reads=inputs,
-            owns=(condition,),
-            # index 1 of `(residual, normalised_residual, value, bound)` -- see the
-            # module docstring.
-            fn=_NormalisedResidual(fn, tuple(read), static),
-        )
-        (equalities if position < n_equality else inequalities).append(condition)
-    return nodes, tuple(equalities), tuple(inequalities), omitted
+    return declarations, tuple(equalities), tuple(inequalities), omitted
 
 
-class _NormalisedResidual(eqx.Module):
-    """`fn(*args, **switches) -> normalised_residual`, as a module and not a closure."""
+def condition_nodes(graph, icc, n_equality, switch_values=None, omit=()):
+    """The constraint **bodies** alone, plus the equality/inequality split -- what an
+    arm that answers its conditions outside the graph takes.
 
-    fn: object
-    names: tuple
-    switches: tuple = ()
-    """`((parameter, value), ...)`, the switch arguments frozen at assembly."""
-
-    def __call__(self, *args):
-        arguments = dict(zip(self.names, args, strict=True))
-        arguments.update(self.switches)
-        return self.fn(**arguments)[1]
-
-
-class _Metric(eqx.Module):
-    """`objective_metric(*args, **switches)`, unsigned."""
-
-    fn: object
-    names: tuple = ()
-    switches: tuple = ()
-
-    def __call__(self, *args):
-        if not self.switches:
-            return self.fn(*args)
-        arguments = dict(zip(self.names, args, strict=True))
-        arguments.update(self.switches)
-        return self.fn(**arguments)
-
-
-class _Negate(eqx.Module):
-    """`-x`."""
-
-    def __call__(self, metric):
-        return -metric
-
-
-class ObjectiveSelection(eqx.Module):
-    """Which figure of merit this run states, and in which direction -- resolved once,
-    at the input-parsing boundary, and never re-derived at assembly.
+    A declaration is a body and a requirement; this is the first of the two, so the
+    graph carries the computations and nothing is held of them.
     """
-
-    metric: object
-    """The ported `objective_metric_<id>`, already selected."""
-
-    maximise: bool = eqx.field(static=True)
-    """`i_figure_merit < 0` in PROCESS's spelling (`objectives.py:54,105` applies
-    `np.sign` outside the branch).
-    """
-
-
-def objective_nodes(graph, selection, switch_values=None, label=""):
-    """The node(s) computing this run's figure of merit, and the `VarPath` `Optimise`
-    minimises. `label` suffixes the node names and the objective's own name
-    (`Objective<label>`, `^cond.numerics.objf<label>`), for a graph that states more
-    than one objective -- two sequential optimisers, say.
-    """
-    switch_values = REFERENCE_SWITCH_VALUES if switch_values is None else switch_values
-    resolve = _Resolver(graph)
-    static, read, inputs = _bind(selection.metric, resolve, switch_values)
-    objf = VarPath((GetAttrKey("numerics"), GetAttrKey(f"objf{label}")))
-    objective = prefix_path(objf, COND)
-    metric = prefix_path(objf, METRIC) if selection.maximise else objective
-    nodes = {
-        NodePath((GetAttrKey(f"Objective{label}"),)): ImplementedFunction(
-            reads=inputs,
-            owns=(metric,),
-            fn=_Metric(selection.metric, tuple(read), static),
-        )
-    }
-    if selection.maximise:
-        nodes[NodePath((GetAttrKey(f"ObjectiveNegated{label}"),))] = ImplementedFunction(
-            reads=(metric,),
-            owns=(objective,),
-            fn=_Negate(),
-        )
-    return nodes, objective
-
-
-def optimise_graph(
-    graph,
-    ixc,
-    icc,
-    n_equality,
-    i_figure_merit,
-    driver=None,
-    switch_values=None,
-    omit=(),
-):
-    """`graph` with the constraint nodes, the objective node and one `Optimise`
-    inserted.
-    """
-    design = tuple(iteration_variable_path(i) for i in ixc)
-    nodes, equalities, inequalities, omitted = constraint_nodes(
+    declarations, equalities, inequalities, omitted = constraint_declarations(
         graph, icc, n_equality, switch_values, omit
     )
+    nodes = {
+        name: declaration.node_definitions[0]
+        for name, declaration in declarations.items()
+    }
+    return nodes, equalities, inequalities, omitted
+
+
+def objective_entry(graph, i_figure_merit, switch_values=None):
+    """`({Objective: definition}, .numerics.objf)` for this run's figure of merit,
+    or `({}, None)` where the run states none.
+    """
+    if i_figure_merit is None:
+        return {}, None
     from functional_process.cottax.input.indat import (
         objective_selection,  # noqa: PLC0415
     )
 
-    objective_built, objective = objective_nodes(
-        graph, objective_selection(i_figure_merit), switch_values
+    name, definition = objective_node(
+        graph.graph.variables, objective_selection(i_figure_merit), switch_values
     )
-    nodes.update(objective_built)
-    problem_name = NodePath((GetAttrKey("Opt"),))
-    nodes[problem_name] = Optimise(
-        objective=objective,
-        unknowns=tuple(v for v in design),
-        equalities=tuple(c for c in equalities),
-        inequalities=tuple(c for c in inequalities),
+    return {name: definition}, objective_place()
+
+
+def condition_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
+    """`graph` with one node per active constraint and, where `i_figure_merit` says so,
+    one for the figure of merit. No requirement and no `Optimise`: what the conditions
+    are, without what is asked of them.
+    """
+    nodes, equalities, inequalities, omitted = condition_nodes(
+        graph, icc, n_equality, switch_values, omit
     )
-    inserted = (Plan(graph) + Insert(PathMap(nodes.items()))).graph
-    # **No driver is attached here by default, and that is the ordering the new API
-    # forces.** `Combine` refuses to join two problems that carry an algorithm -- *"one
-    # discards the algorithm answering each, `Undrive` first"* -- and this graph's whole
-    # purpose is to join every `FixedPoint` into one `Optimise`. So SAND builds on
-    # `mda.cut_graph` (structure, no drivers), joins, and assigns afterwards. A `driver`
-    # may still be passed for a caller that wants one attached immediately; it carries
-    # the caller's data (`bounds`, `condition_scale`, `callback`), none of which has a
-    # home on `Optimise` and never did.
-    if driver is not None:
-        inserted = Assign(problem_name, driver).apply(inserted)
+    objective_nodes, objective = objective_entry(graph, i_figure_merit, switch_values)
+    nodes.update(objective_nodes)
     return (
-        inserted,
-        problem_name,
+        (Plan(graph) + Insert(PathMap(nodes.items()))).graph,
         {
-            "design": design,
             "equalities": equalities,
             "inequalities": inequalities,
             "objective": objective,
@@ -487,9 +221,108 @@ def optimise_graph(
     )
 
 
+def unanswered_requirements(graph, optimiser=OPT):
+    """The requirements `optimiser`'s design does not reach, in binding order.
+
+    An architecture absorbs the ones it does reach; one it does not is a constraint on
+    something the design cannot move, and `ExecutableGraph` refuses it. Found here so
+    an assembly can drop it deliberately and report it.
+    """
+    reached = set(graph.graph.reach(graph[optimiser].unknowns))
+    owners = graph.graph.owners
+    return tuple(
+        r
+        for r in bare_conditions(graph.definitions)
+        if not all(owners.get(c) in reached for c in graph[r].conditions)
+    )
+
+
+def problem_graph(
+    graph,
+    ixc,
+    icc,
+    n_equality,
+    i_figure_merit,
+    switch_values=None,
+    omit=(),
+):
+    """`(graph, Opt, report)`: one declaration per active constraint -- its body and
+    the requirement beside it -- the objective node, and `Optimise(objf, design)`.
+
+    One `to_graph` over the declarations, not two `Insert`s: a constraint's requirement
+    is part of the declaration that computes it, so nothing states it separately and
+    the graph's nesting is kept.
+
+    A requirement the design does not reach is **dropped** here and reported under
+    `report["external"]`: no architecture can absorb it and the proof refuses it. An
+    *equality* among them would change what feasible means, so that is refused instead.
+
+    The rest are left standing: an architecture (`MDF()` / `IDF()` / `SAND()`) absorbs
+    every requirement the design reaches as its own first op and reads the levels off
+    the graph that leaves, so nothing here has to absorb them first to put a statement
+    the design reaches only through a constraint on the optimiser's cycle.
+    `report["required"]` names the ones it will take.
+
+    Raises
+    ------
+    ValueError
+        If an equality constraint reads nothing the design reaches, or the graph
+        already held a requirement this assembly did not state.
+    """
+    declarations, equalities, inequalities, omitted = constraint_declarations(
+        graph, icc, n_equality, switch_values, omit
+    )
+    objective_nodes, objective = objective_entry(graph, i_figure_merit, switch_values)
+    report = {
+        "equalities": equalities,
+        "inequalities": inequalities,
+        "objective": objective,
+        "omitted": omitted,
+    }
+    design = tuple(iteration_variable_path(i) for i in ixc)
+    stated = to_graph(
+        graph,
+        {**declarations, **objective_nodes, OPT: Optimise(objective, design)},
+    )
+
+    mine = {requirement_place(cid): cid for cid in icc if cid not in omit}
+    unanswered = unanswered_requirements(stated)
+    if stray := [r for r in unanswered if r not in mine]:
+        raise ValueError(
+            f"{[r.spelling for r in stray]} hold(s) against something the design does "
+            f"not reach, and this assembly did not state them -- absorb them into an "
+            f"optimiser of their own, or drop them before stating this problem"
+        )
+    external = {mine[r]: r for r in unanswered}
+    if equalities := [cid for cid in icc[:n_equality] if cid in external]:
+        raise ValueError(
+            f"equality constraint(s) {equalities} read nothing the design reaches -- "
+            f"omitting an equality changes what 'feasible' means, so this assembly is "
+            f"refused rather than reduced"
+        )
+    if external:
+        stated = Delete(tuple(external.values())).apply(stated)
+        gone = {condition_place(cid) for cid in external}
+        report["inequalities"] = tuple(
+            c for c in report["inequalities"] if c not in gone
+        )
+        for cid in external:
+            report["omitted"][cid] = (
+                "reads nothing the design reaches -- constant over it, so no unknown "
+                "of the optimiser can move it"
+            )
+    report["design"] = design
+    report["external"] = external
+    report["required"] = bare_conditions(stated.definitions)
+    return stated, OPT, report
+
+
+# ---------------------------------------------------------------- degenerate blocks
+
+
 @dataclasses.dataclass(frozen=True)
 class FixedPointResidual:
-    """One `FixedPoint`'s residual Jacobian `d(g(u) - u)/du` at a point -- or the reason
+    """One fixed point's residual Jacobian `d(g(u) - u)/du` at a point -- or the reason
     it could not be formed.
     """
 
@@ -518,38 +351,30 @@ class FixedPointResidual:
     @property
     def degenerate(self) -> bool:
         """`True` only when the residual is *identically* zero here -- the strongest
-        form of rank deficiency, and the only one `sand_schedule` can act on by dropping
+        form of rank deficiency, and the only one `assemble` can act on by dropping
         the problem.
         """
         return self.jacobian is not None and bool(np.allclose(self.jacobian, 0.0))
 
 
 def fixed_point_residuals(graph, env, problems=None):
-    """`d(g(u) - u)/du` for every `FixedPoint` in `graph`, differentiated at `env`."""
-    from cottax.execution.schedule import _run_acyclic
-
+    """`d(g(u) - u)/du` for every fixed point in `graph`, differentiated at `env`."""
     if problems is None:
         problems = tuple(n for n in declared(graph) if is_fixed_point(graph[n]))
     residuals = []
     for problem in problems:
         definition = graph[problem]
-        # `conditions_of`, not `.reads`: a problem that has been through `Initialise`
-        # also reads its `Start` port(s), and those are driver data, not conditions.
-        # Including them put a `^guess.*` in `step`'s output stack, where `env` has no
-        # value for it -- a `KeyError` the bare `except` below then swallowed, so every
-        # fixed point silently reported "not degenerate" and the two identity ones
-        # (`eta_turbine_step`, `cplife_avail`, both since deleted by the switch
-        # conversion) reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
-        # singular equality block.
-        owns, reads = definition.owns, conditions_of(definition)
+        # `conditions`, not `.reads`: a driven statement also reads its `Start` places,
+        # and those are driver data, not conditions.
+        owns, reads = definition.unknowns, definition.conditions
         producers = {r: graph.graph.owners[r] for r in reads if r in graph.graph.owners}
         inside = graph.graph.ancestors(set(producers.values()))
-        body = graph.subgraph([n for n in inside if n not in declared(graph)])
+        body = Call(graph.subgraph([n for n in inside if n not in declared(graph)]))
 
         def residual(flat, _body=body, _owns=owns, _reads=reads, _unravel=None):
             values = dict(env)
             values.update(zip(_owns, _unravel(flat), strict=True))
-            out = _run_acyclic(_body, values)
+            out = _body(values)
             return jnp.concatenate([jnp.ravel(jnp.asarray(out[r])) for r in _reads])
 
         try:
@@ -557,10 +382,9 @@ def fixed_point_residuals(graph, env, problems=None):
             # `np.array`, not `np.asarray`: a JAX array converts to a **read-only** view,
             # and the identity subtraction below is in place.
             jacobian = np.array(
-                # Jitted: eagerly this is six `jacfwd`s over `_run_acyclic` bodies, one
-                # XLA compile per `jnp` primitive -- 45.9 s / 1035 compiles against
-                # 4.0 s / 6 (`_audit/next_steps.md` §24.11). `env` is a closure, not an
-                # argument, so no `VarPath` is flattened and no antichain question arises.
+                # Jitted: eagerly this is six `jacfwd`s over acyclic bodies, one XLA
+                # compile per `jnp` primitive. `env` is a closure, not an argument, so
+                # no `VarPath` is flattened and no antichain question arises.
                 eqx.filter_jit(
                     jax.jacfwd(functools.partial(residual, _unravel=unravel))
                 )(start),
@@ -571,17 +395,17 @@ def fixed_point_residuals(graph, env, problems=None):
             residuals.append(FixedPointResidual(problem, None, reason))
             continue
         if jacobian.shape[0] != jacobian.shape[1]:
-            # A `FixedPoint`'s conditions are `g(u)`, one per unknown and of the same
+            # A fixed point's conditions are `g(u)`, one per unknown and of the same
             # shape, so this is square by construction -- and if it ever is not, the
-            # identity below would be nonsense and the residual is not the thing this
-            # function claims to measure. Recorded as the block's own reason rather than
-            # raised, because one malformed block must not stop the other measurements.
+            # identity below would be nonsense. Recorded as the block's own reason
+            # rather than raised, because one malformed block must not stop the other
+            # measurements.
             residuals.append(
                 FixedPointResidual(
                     problem,
                     None,
                     f"ValueError: residual is {jacobian.shape}, not square -- "
-                    f"`conditions_of` and `owns` do not correspond element for element",
+                    f"`conditions` and `unknowns` do not correspond element for element",
                 )
             )
             continue
@@ -591,7 +415,7 @@ def fixed_point_residuals(graph, env, problems=None):
 
 
 def degenerate_fixed_points(graph, env, problems=None):
-    """`FixedPoint` problems whose residual `g(u) - u` is *structurally* zero here."""
+    """Fixed points whose residual `g(u) - u` is *structurally* zero here."""
     measured = fixed_point_residuals(graph, env, problems)
     undetectable = [r for r in measured if r.undetectable is not None]
     if undetectable:
@@ -617,66 +441,49 @@ def array_valued_problems(graph, env, problems=None):
         for problem in problems
         if any(
             unknown in env and jnp.ndim(jnp.asarray(env[unknown])) > 0
-            for unknown in graph[problem].owns
+            for unknown in graph[problem].unknowns
         )
     )
 
 
+# ---------------------------------------------------------------- the architecture
+
+
 def sand_graph(graph, keep=()):
-    """`graph` with every statement on the optimiser's cycle (bar `keep`) residualised
-    where it has two sides and folded into the optimiser, which keeps its name:
-    `cottax.mdao_architectures.SAND`. Returns the graph and what was residualised.
-    A statement the design does not reach stays a solve of its own.
+    """`graph` with every statement on the optimiser's cycle (bar `keep`, left nested)
+    folded into the optimiser, which keeps its name:
+    `cottax.mdao_architectures.SAND`. A statement the design does not reach stays a
+    solve of its own.
     """
-    architecture = SAND(levels=PathMap({p: Mda for p in keep}))
-    absorbed = architecture.placed(graph)[Global]
-    residualised = tuple(
-        p for p in absorbed if any(not r.against_zero for r in graph[p].relations)
-    )
-    return (Plan(graph) + architecture).graph, residualised
-
-
-def constraints_outside_block(graph):
-    """Active constraints whose node falls **outside** the combined problem's own SCC
-    block -- `{constraint id: NodePath}` -- which today's evaluation seam cannot carry.
-    """
-    # The `Optimise`'s own block: the graph's own component holding it, asked of the
-    # graph and not of an `ExecutableGraph`, which refuses a block declaring two
-    # problems -- exactly the shape `sand_graph(keep=...)` leaves behind -- and this
-    # question, *which constraints are outside the optimiser's block*, has the same
-    # answer either way.
-    optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
-    problem_block = next(
-        frozenset(nodes) for nodes in graph.graph.components if optimise in nodes
-    )
-    outside = {}
-    for name in graph.nodes:
-        leaf = name.segments[-1].name
-        if leaf.startswith("Constraint") and name not in problem_block:
-            outside[int(leaf.removeprefix("Constraint"))] = name
-    return outside
+    return (Plan(graph) + SAND(levels=PathMap({p: Mda for p in keep}))).graph
 
 
 def residual_condition_scales(drive, env, floor=1e-12):
-    """`((condition, factor), ...)` for exactly the SAND residual conditions, ready for
-    `VmconDriver.condition_scale`.
+    """`((condition, factor), ...)` for exactly the coupling conditions of a folded
+    problem, ready for `VmconDriver.condition_scale`.
     """
-    from cottax.pytree.names import unminted
 
     def place(path):
         while (stripped := unminted(path)) != path:
             path = stripped
         return path
 
+    statement = drive.statement
+    # Keyed the way a driver reads a condition_scale: one place per stacked entry, the
+    # objectives and then the side each relation names -- its left, or its right where
+    # the left is zero (`drivers.condition_places`).
+    stacked = statement.objectives + tuple(
+        r.lhs if r.lhs is not None else r.rhs for r in statement.relations
+    )
     unknowns = {place(v): v for v in drive.unknowns}
     scales = []
-    for condition in drive.conditions:
-        if condition.spelling.startswith(("^cond.constraints.", "^cond.numerics.")):
+    for condition in stacked:
+        if condition.spelling.startswith((".constraints.c", ".numerics.objf")):
             continue
         unknown = unknowns.get(place(condition))
         if unknown is None or unknown not in env:
             continue
-        # The largest element for an array-valued unknown (a recipe cut copies whole
+        # The largest element for an array-valued unknown (a scheme cut copies whole
         # profiles); the scale is one factor per condition, so one number per unknown.
         magnitude = float(np.max(np.abs(np.asarray(env[unknown], dtype=float))))
         usable = np.isfinite(magnitude) and magnitude > floor
@@ -686,7 +493,7 @@ def residual_condition_scales(drive, env, floor=1e-12):
 
 def sand_schedule(
     graph,
-    problem_name,
+    problem_name=None,
     driver=None,
     bounds=(),
     callback=None,
@@ -696,7 +503,7 @@ def sand_schedule(
     inner_drivers=None,
     optimiser=None,
 ):
-    """A `Schedule` for `graph`'s single `^problem.sand`, answered by `driver`."""
+    """A `Schedule` for `graph`'s single optimise statement, answered by `driver`."""
     optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
     drivers = default_drivers(
         graph,
@@ -709,47 +516,39 @@ def sand_schedule(
     if driver is not None:
         drivers[optimise] = driver
     drivers.update(inner_drivers or {})
-    # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
+    # Drivers go into the graph (`Assign`), and the schedule reads them from there.
     assigned = assign_drivers(graph, drivers)
-    # Nesting is an op on the *graph* now, not a call on the blocking: which statement's
-    # iteration answers which is recorded in `Graph.within`, and `ExecutableGraph`
-    # reads it.
+    # Nesting is an op on the *graph*: which statement's iteration answers which is
+    # recorded in `Graph.within`, and `ExecutableGraph` reads it.
     if nest:
         from functional_process.cottax.queries import nested_inside  # noqa: PLC0415
+
         assigned = nested_inside(assigned, optimise)
     return Schedule(RunnableGraph(assigned))
-
-
-def _definition(drive):
-    """The problem a `Drive` answers. `Driven` forwards `inputs`/`outputs` and nothing
-    else -- the problem-specific properties are reached through `.problem`: *"a driven
-    node **has** a problem, it is not one"*.
-    """
-    node = drive.subgraph[drive.problem]
-    return node.problem if isinstance(node, Driven) else node
 
 
 def sand_shape(schedule: Schedule) -> dict:
     """The one `Drive`'s size, for reporting: how much of the graph is actually inside
     the solved block and how much still runs as ordinary `Call` steps.
     """
-    # The `Drive` whose problem is the `Optimise`, not the first one: a problem outside
-    # the optimiser's cycle (IDF leaves the disciplines' own solves where they are) is
-    # its own top-level `Drive`, and may be scheduled before it.
-    drive, definition = next(
-        (step, definition)
+    # The `Drive` whose problem is the optimise statement, not the first one: a problem
+    # outside the optimiser's cycle (IDF leaves the disciplines' own solves where they
+    # are) is its own top-level `Drive`, and may be scheduled before it.
+    drive = next(
+        step
         for step in schedule.steps
         if isinstance(step, Drive)
-        if is_optimise(definition := _definition(step))
+        if is_optimise(step.statement)
     )
+    n_equality, n_inequality = relation_counts(drive.statement)
     return {
         "drive_nodes": len(drive.nodes),
         "unknowns": len(drive.unknowns),
         "conditions": len(drive.conditions),
         "context": len(drive.context),
-        "design": len(definition.unknowns),
-        "equalities": len(definition.equalities),
-        "inequalities": len(definition.inequalities),
+        "design": len(drive.statement.unknowns),
+        "equalities": n_equality,
+        "inequalities": n_inequality,
         "schedule_steps": len(schedule.steps),
         "drive": drive,
     }
@@ -763,67 +562,63 @@ def assemble(
     `drop_arrays`: delete every fixed point over a non-scalar unknown, leaving its copy
     frozen at the seed -- what every reference SAND row was measured with. `False`
     folds them into the optimiser like any other (both SQP drivers ravel their
-    unknowns), which a recipe cut needs: a Jacobi cut copies whole profiles.
+    unknowns), which a scheme's cuts need: a Jacobi cut copies whole profiles.
 
     Raises
     ------
     ValueError
-        If an equality constraint reads nothing the SAND block produces.
+        If an equality constraint reads nothing the design reaches.
     """
     keep = frozenset(keep)
     degenerate = tuple(p for p in degenerate_fixed_points(driven, env) if p not in keep)
-    array_valued = tuple(
-        p
-        for p in array_valued_problems(
-            driven, env, tuple(p for p in declared(driven) if p not in set(degenerate))
+    array_valued = (
+        tuple(
+            p
+            for p in array_valued_problems(
+                driven,
+                env,
+                tuple(p for p in declared(driven) if p not in set(degenerate)),
+            )
+            if p not in keep
         )
-        if p not in keep
-    ) if drop_arrays else ()
+        if drop_arrays
+        else ()
+    )
     dropped = tuple(degenerate) + tuple(array_valued)
     graph = Delete(dropped).apply(driven) if dropped else driven
-
-    def build(omit_now):
-        with_problem, _name, report = optimise_graph(
-            graph,
-            reference.ixc,
-            reference.icc,
-            reference.n_equality,
-            reference.i_figure_merit,
-            switch_values=switch_values,
-            omit=omit_now,
-        )
-        combined, residualised = sand_graph(with_problem, keep=keep)
-        return combined, residualised, report
-
-    combined, residualised, report = build(omit)
-    # Second pass, only when the first left a constraint outside the problem's own
-    # block (`sand.constraints_outside_block` -- a constraint that reads nothing the
-    # block produces). Such a `^cond.*` never reaches the condition map, so those
-    # constraints are re-assembled as explicit omissions and reported under
-    # `report["external"]`; an equality among them would change the problem's very
-    # feasibility and is refused instead of omitted. Empty on the stellarator, so its
-    # single-pass path is bit-for-bit what it always was.
-    external = constraints_outside_block(combined)
-    if external:
-        equalities = [
-            cid for cid in reference.icc[: reference.n_equality] if cid in external
-        ]
-        if equalities:
-            raise ValueError(
-                f"equality constraint(s) {equalities} read nothing the SAND block "
-                f"produces -- omitting an equality changes what 'feasible' means, so "
-                f"this assembly is refused rather than reduced. The missing-producer "
-                f"audit names what each read needs."
-            )
-        combined, residualised, report = build(tuple(omit) + tuple(external))
-        for cid in external:
-            report["omitted"][cid] = (
-                "reads nothing the SAND block produces (every input is a boundary "
-                "value or upstream of every unknown) -- constant over the design, "
-                "outside the drive, unreachable by its condition map"
-            )
-    report["external"] = external
+    with_problem, _name, report = problem_graph(
+        graph,
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        switch_values=switch_values,
+        omit=omit,
+    )
     report["degenerate"] = degenerate
     report["array_valued"] = array_valued
-    report["residualised"] = residualised
-    return combined, report
+    return sand_graph(with_problem, keep=keep), report
+
+
+__all__ = [
+    "OPT",
+    "FixedPointResidual",
+    "array_valued_problems",
+    "assemble",
+    "condition_graph",
+    "condition_nodes",
+    "constraint_declarations",
+    "degenerate_fixed_points",
+    "design_bounds",
+    "fixed_point_residuals",
+    "iteration_variable_path",
+    "objective_entry",
+    "problem_graph",
+    "requirement_place",
+    "residual_condition_scales",
+    "sand_graph",
+    "sand_schedule",
+    "sand_shape",
+    "switch_values_for",
+    "unanswered_requirements",
+]

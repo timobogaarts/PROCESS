@@ -1,20 +1,27 @@
 """`architectures.stages` on `stellarator_helias`'s driven MDA graph.
 
-Two graphs: the runnable one (`evaluate.without_excluded`, 154 nodes -- what the hoist
-runs) and the one the handoff's stage check measured (`.vacuum.duct_diameter_root_find`
-still in, 156 nodes). The three rows of the handoff's table
-(`~/jaxgraph`, `plans/handoff_2026-09-17.md`):
+One graph now (152 nodes), not two. `df050df3` removed three declared
+`FixedPointFunction` nodes, and `4147b6bc` unregistered the unconsumed
+`.vacuum.duct_diameter_root_find` island -- nothing produced what it read or read
+what it produced -- which emptied `evaluate.EXCLUDED_NODE_NAMES` and made
+`without_excluded` a no-op. So the two fixtures below build byte-identical graphs;
+what still distinguishes the two parametrized tests that use them is the **claim
+set** `violations` is checked against, not the graph: `tabled` checks `TABLED_CLAIMS`
+(sections 1a-1d of `output_kinds.md`, the claims the handoff's stage check had); `full`
+checks the whole of `CLAIMED_BUILD_OUTPUTS`, including the two section-4 lifetimes
+`kinds.py` added after the handoff's check. The three rows of the handoff's table
+(`~/jaxgraph`, `plans/handoff_2026-09-17.md`), against `tabled`'s claim set:
 
 | set     | leaves   | first-stage nodes | claimed-build violations |
 |---------|----------|-------------------|--------------------------|
-| all     | 146 + 16 | 27 / 156          | 13                       |
-| sampled | 26 + 2   | 36 / 156          | 13                       |
-| build   | 22 + 2   | 60 / 156          | 4                        |
+| all     | 146 + 16 | 25 / 152          | 13                       |
+| sampled | 26 + 2   | 34 / 152          | 13                       |
+| build   | 22 + 2   | 58 / 152          | 4                        |
 
-reproduce exactly on the 156-node graph with the claims the check then had (sections
-1a-1d, before `kinds.py` added the two section-4 lifetimes). On the runnable graph the
-two deleted nodes were both first stage (27 -> 25, 36 -> 34, 60 -> 58) and the two
-lifetimes are two more violations in every row, both `Decision.RECOURSE`.
+(The handoff's own numbers -- 27/156, 36/156, 60/156 -- were measured on a since-shrunk
+graph; the two deleted nodes were both first stage, hence 27 -> 25, 36 -> 34, 60 -> 58.)
+Against the full claim set, each row picks up two more violations -- the two
+section-4 lifetimes, both `Decision.RECOURSE`.
 
 The assertion that matters is the `build` row's four accepted violations.
 """
@@ -77,14 +84,14 @@ def configuration():
 
 
 @pytest.fixture(scope="module")
-def runnable(configuration):
-    """The driven MDA graph the port runs: 154 nodes."""
+def full(configuration):
+    """The driven MDA graph, checked against the full claim set: 152 nodes."""
     return mda.driven_graph(without_excluded(graph_for(configuration.machine)))
 
 
 @pytest.fixture(scope="module")
-def as_measured(configuration):
-    """The driven MDA graph the handoff's stage check measured: 156 nodes."""
+def tabled(configuration):
+    """The same driven MDA graph, checked against `TABLED_CLAIMS`: 152 nodes."""
     return mda.driven_graph(graph_for(configuration.machine))
 
 
@@ -99,9 +106,9 @@ def rows(graph):
     }
 
 
-def test_leaves_are_the_handoffs(runnable):
+def test_leaves_are_the_handoffs(full):
     """The three leaf sets have the handoff's sizes."""
-    sets = rows(runnable)
+    sets = rows(full)
     assert (len(sets["all"].belief), len(sets["all"].operating)) == (146, 16)
     assert (len(sets["sampled"].belief), len(sets["sampled"].operating)) == (26, 2)
     assert (len(sets["build"].belief), len(sets["build"].operating)) == (22, 2)
@@ -113,13 +120,13 @@ def test_leaves_are_the_handoffs(runnable):
 
 @pytest.mark.parametrize(
     ("label", "first", "n_violations"),
-    [("all", 27, 13), ("sampled", 36, 13), ("build", 60, 4)],
+    [("all", 25, 13), ("sampled", 34, 13), ("build", 58, 4)],
 )
-def test_handoff_table_reproduces(as_measured, label, first, n_violations):
+def test_handoff_table_reproduces(tabled, label, first, n_violations):
     """The handoff's row, on the graph and with the claims it was measured with."""
-    assert len(as_measured.nodes) == 156
-    stages = split(as_measured, rows(as_measured)[label])
-    hits, _clean = violations(as_measured, stages, TABLED_CLAIMS)
+    assert len(tabled.nodes) == 152
+    stages = split(tabled, rows(tabled)[label])
+    hits, _clean = violations(tabled, stages, TABLED_CLAIMS)
     assert (len(stages.first), len(hits)) == (first, n_violations), report(
         stages, hits, label
     )
@@ -129,22 +136,22 @@ def test_handoff_table_reproduces(as_measured, label, first, n_violations):
     ("label", "first", "n_violations"),
     [("all", 25, 15), ("sampled", 34, 15), ("build", 58, 6)],
 )
-def test_runnable_graph_rows(runnable, label, first, n_violations):
-    """The same rows on the runnable graph: two first-stage nodes fewer, two
-    section-4 lifetimes more.
+def test_full_claims_rows(full, label, first, n_violations):
+    """The same rows, same graph, against the full claim set: two more violations
+    per row -- the two section-4 lifetimes.
     """
-    assert len(runnable.nodes) == 154
-    stages = split(runnable, rows(runnable)[label])
-    assert stages.n_nodes == 154
-    assert sum(c.nodes for c in stages.counts.values()) == 154
-    hits, clean = violations(runnable, stages)
+    assert len(full.nodes) == 152
+    stages = split(full, rows(full)[label])
+    assert stages.n_nodes == 152
+    assert sum(c.nodes for c in stages.counts.values()) == 152
+    hits, clean = violations(full, stages)
     assert (len(stages.first), len(hits)) == (first, n_violations), report(
         stages, hits, label
     )
     assert len(hits) + len(clean) == len([
         s
         for s in CLAIMED_BUILD_OUTPUTS
-        if s in {v.spelling for v in runnable.graph.owners}
+        if s in {v.spelling for v in full.graph.owners}
     ])
     # Sorted by how many leaves are responsible, most first.
     assert [v.n_responsible for v in hits] == sorted(
@@ -152,14 +159,14 @@ def test_runnable_graph_rows(runnable, label, first, n_violations):
     )
 
 
-def test_build_row_leaves_exactly_the_accepted_violations(runnable):
+def test_build_row_leaves_exactly_the_accepted_violations(full):
     """With `BUILD_LEAVES` at nominal, the four accepted outputs are what still varies
     -- plus the two lifetimes `SIZING_CHOICES` reclassifies as recourse.
     """
-    stages = split(runnable, rows(runnable)["build"])
-    hits, clean = violations(runnable, stages, TABLED_CLAIMS)
+    stages = split(full, rows(full)["build"])
+    hits, clean = violations(full, stages, TABLED_CLAIMS)
     assert tuple(sorted(v.place for v in hits)) == ACCEPTED
-    hits_all, _ = violations(runnable, stages)
+    hits_all, _ = violations(full, stages)
     assert tuple(sorted(v.place for v in hits_all)) == tuple(
         sorted(ACCEPTED + LIFETIMES)
     )
@@ -182,12 +189,12 @@ def test_build_row_leaves_exactly_the_accepted_violations(runnable):
         assert v.stage in {Stage.SECOND, Stage.RECOURSE}
 
 
-def test_build_leaves_are_what_reaches_the_coil(runnable):
+def test_build_leaves_are_what_reaches_the_coil(full):
     """The handoff's finding: among the sampled rows, the coil group is reached by
     exactly `f_j_tf_wp_critical_max` and `dx_tf_wp_insulation`.
     """
-    stages = split(runnable, rows(runnable)["sampled"])
-    hits, _ = violations(runnable, stages)
+    stages = split(full, rows(full)["sampled"])
+    hits, _ = violations(full, stages)
     by_place = {v.place: v for v in hits}
     assert by_place[".tfcoil.j_tf_wp"].responsible == (
         ".constraints.f_j_tf_wp_critical_max",
@@ -198,19 +205,19 @@ def test_build_leaves_are_what_reaches_the_coil(runnable):
     )
 
 
-def test_no_block_straddles_the_boundary(runnable):
+def test_no_block_straddles_the_boundary(full):
     """A component lands whole in one stage, and the nesting survives the split."""
-    stages = split(runnable, rows(runnable)["build"])
-    for component in runnable.graph.components:
+    stages = split(full, rows(full)["build"])
+    for component in full.graph.components:
         assert len({stages.stage[n] for n in component}) == 1
-    first = first_stage_graph(runnable, stages)
-    recourse = recourse_graph(runnable, stages)
-    assert set(first.nodes) | set(recourse.nodes) == set(runnable.nodes)
+    first = first_stage_graph(full, stages)
+    recourse = recourse_graph(full, stages)
+    assert set(first.nodes) | set(recourse.nodes) == set(full.nodes)
     assert not set(first.nodes) & set(recourse.nodes)
-    assert len(first.within) + len(recourse.within) == len(runnable.within)
+    assert len(first.within) + len(recourse.within) == len(full.within)
     # The first stage reads no varying leaf; the recourse reads the first stage.
     assert not set(first.graph.boundary_inputs) & set(stages.leaves.varying)
-    crossing = hoisted_inputs(runnable, stages)
+    crossing = hoisted_inputs(full, stages)
     assert crossing
     assert set(crossing) <= set(first.graph.owned_variables)
     assert set(crossing) <= set(recourse.graph.boundary_inputs)

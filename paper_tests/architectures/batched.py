@@ -28,10 +28,14 @@ from jax.flatten_util import ravel_pytree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from cottax.execution.schedule import Schedule  # noqa: E402
-from cottax.pytree.names import PathMap  # noqa: E402
+from cottax.execution.driver import Gaps  # noqa: E402
+from cottax.interfaces import PathMap, Schedule  # noqa: E402
 
-from functional_process.cottax.architectures.evaluate import ground_truth, mda_env, seed_block  # noqa: E402
+from functional_process.cottax.architectures.evaluate import (  # noqa: E402
+    ground_truth,
+    mda_env,
+    seed_block,
+)
 from functional_process.cottax.architectures.mda import seed_starts  # noqa: E402
 
 BATCHES = (1, 16, 256, 4096)
@@ -58,7 +62,9 @@ def block_of(live, arm, build, args):
         except (AttributeError, KeyError):
             return jnp.asarray(0.0)
 
-    cm = drive.condition_map(PathMap({v: value(v) for v in drive.context}))
+    # As **gaps**, the way the arm's own driver reads the block: the seam hands both
+    # sides of every relation and `Gaps` is the level that subtracts.
+    cm = Gaps(drive.condition_map(PathMap({v: value(v) for v in drive.context})))
     x, unravel = ravel_pytree(tuple(jnp.asarray(seeded[u]) for u in drive.unknowns))
 
     def f(flat):

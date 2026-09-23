@@ -12,13 +12,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from cottax.core import problems  # noqa: E402
-from cottax.execution import RunnableGraph  # noqa: E402
-from cottax.execution.schedule import Schedule  # noqa: E402
+from cottax.interfaces import (  # noqa: E402
+    RunnableGraph,
+    Schedule,
+    is_optimise,
+    problems,
+)
 from cottax.mdao_architectures import coupled  # noqa: E402
-from cottax.pytree.problem import Equality, Inequality, Objective, condition_roles, is_optimise  # noqa: E402
 
-from functional_process.cottax.architectures.evaluate import without_excluded  # noqa: E402
+from functional_process.cottax.architectures.evaluate import (
+    without_excluded,  # noqa: E402
+)
+from functional_process.cottax.architectures.mda import relation_counts  # noqa: E402
 from functional_process.cottax.visualization.grouping import (  # noqa: E402
     render_grouped_dsm_html,
     structure_order,
@@ -51,18 +56,18 @@ def cuts_of(live, args) -> int:
 
 def top_of(graph) -> dict:
     """What the one outermost statement holds -- the optimiser, or an evaluation's
-    root find: its unknowns and its conditions by role. Zeros where there is no single
-    top (the MDA: every solve stands on its own)."""
+    root find: its unknowns, its objectives and its relations split by symbol. Zeros
+    where there is no single top (the MDA: every solve stands on its own)."""
     top = [n for n in graph.outermost_problems if is_optimise(graph[n])] or list(graph.outermost_problems)
     if len(top) != 1:
         return {"unknowns": 0, "objectives": 0, "equalities": 0, "inequalities": 0}
     node = graph[top[0]]
-    roles = condition_roles(node)
+    n_equality, n_inequality = relation_counts(node)
     return {
         "unknowns": len(node.unknowns),
-        "objectives": sum(r is Objective for r in roles),
-        "equalities": sum(r is Equality for r in roles),
-        "inequalities": sum(r is Inequality for r in roles),
+        "objectives": len(node.objectives),
+        "equalities": n_equality,
+        "inequalities": n_inequality,
     }
 
 

@@ -10,6 +10,8 @@ timed on one CPU, and PROCESS itself on the same files at the same tolerance.
 | `structure.py` | `structure_<scheme>.csv`, `dsm/<machine>_<arm>.html` | nodes, cycles, cut variables, the optimiser's unknowns and conditions, nesting, steps; the DSM of every arm |
 | `iteration.py` | `iteration_<scheme>.csv` | one evaluation and one Jacobian of the optimiser's problem, warm, and their compile time; the MDA alone for the `MDA` row |
 | `solve.py` | `solve_<scheme>_<optimiser>.csv` | the full solve cold and warm, iterations, status, objective, residuals |
+| `iteration.py --epsfcn` | `iteration_<scheme>_fd/` | the same Jacobian by PROCESS's central difference instead: its cost (`2n` evaluations) and how far it lands from `jacfwd`'s |
+| `ulp.py` | `ulp/` | the solve's stability under last-bit perturbation of its start: every design variable moved `k` ulp, each optimiser (autodiff and finite-difference) and each arm rerun, `--native` PROCESS too |
 | `native.py` | `native/` | PROCESS: one pass, its idempotence loop, its finite-difference gradient, the full VMCON run at `epsvmc = TOLERANCE` |
 | `batched.py` | `batched_<scheme>_<platform>/` | the optimiser's problem over N designs at once (`vmap`, `lax.map`ped over chunks past `--chunk`), per design, CPU or GPU |
 | `om_mdf.py` | `openmdao_mdf/` | the same models under OpenMDAO as MDF: a jitted component per model with sparse coloured partials, NLBGS, DirectSolver, SLSQP |
@@ -28,10 +30,18 @@ $PY paper_tests/architectures/solve.py --optimiser slsqp --configurations helias
 $PY paper_tests/architectures/table.py
 ```
 
+`--optimiser vmcon-fd` (and `slsqp-fd`) is the same SQP on the same block with
+`jax.jacfwd` replaced by PROCESS's own central difference, `x * (1 +/- epsfcn)` at
+`bench.PROCESS_EPSFCN = 1e-3` (`VmconDriver.epsfcn`, `SlsqpDriver.epsfcn`, one
+`drivers.finite_difference_jacobian`) -- the architecture held fixed and only the
+derivative changed, so the pair separates "a declared architecture" from "an
+autodiff-visible one". `iteration.py --epsfcn` is the same swap at the level of one
+Jacobian.
+
 `JAX_ENABLE_X64=1` is not optional: PROCESS is float64 and the Picards diverge in
 float32 (the port's own tests get it from a `conftest` side effect). `--scheme` picks
 how the cycles are cut (`minimal`, `binding`, `jacobi`); `--optimiser` the driver on
-the optimiser (`vmcon`, `slsqp`). Every csv starts with a comment naming the commits
+the optimiser (`vmcon`, `vmcon-fd`, `slsqp`, `slsqp-fd`). Every csv starts with a comment naming the commits
 and the machine it was made on.
 
 Two machines (`large_tokamak_eval`, `spherical_tokamak_eval`) state a root find, not

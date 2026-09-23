@@ -23,13 +23,17 @@ import pathlib
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.pytree.executable import ExecutableGraph
-from cottax.execution import RunnableGraph
-from cottax.execution.schedule import Drive, Schedule
-from cottax.pytree.names import PathMap, unminted
-from cottax.pytree.plan import Delete
-from cottax.pytree.problem import is_fixed_point
-from cottax.execution.crossings import get_at
+from cottax.interfaces import (
+    Delete,
+    Drive,
+    RunnableGraph,
+    Schedule,
+    get_at,
+    is_fixed_point,
+)
+from cottax.mdao_architectures import GaussSeidel
+from cottax.pytree.mint import unminted
+from cottax.pytree.path import PathMap
 
 from functional_process.cottax.architectures.drivers import SweepDriver
 from functional_process.cottax.architectures.mda import (
@@ -40,7 +44,6 @@ from functional_process.cottax.architectures.mda import (
     given_start,
     guess_sources,
 )
-from cottax.mdao_architectures import GaussSeidel
 from functional_process.cottax.input.indat import STATED_VALUES, graph_for
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -57,9 +60,18 @@ def resolve(name: str) -> pathlib.Path:
 
 # ------------------------------------------------------------------ the graph
 
-EXCLUDED_NODE_NAMES = ("duct_diameter_root_find",)
-"""`.vacuum.duct_diameter_root_find`: no real `DataStructure` field backs any of its
-`VarPath`s, so it is dropped from every graph before assembly.
+EXCLUDED_NODE_NAMES: tuple[str, ...] = ()
+"""Nodes to drop from a graph before assembly -- **empty, and worth keeping empty.**
+
+Its one entry was `.vacuum.duct_diameter_root_find`, an island `vacuum/namespace.py`
+registered on purpose: no real `DataStructure` field backs any of its `VarPath`s and no
+other node read what it produced, so every architecture deleted it again here before
+solving anything. That made the declared graph and the graph that ran differ by one
+solve, for a reason no graph operation accounts for -- a name matched in a tuple. The
+island is unregistered now, so nothing needs deleting.
+
+A node that has to be removed before a graph can be assembled is a statement about the
+model, not about the harness. Unregister it where it is declared, and this stays empty.
 """
 
 
@@ -76,6 +88,24 @@ def without_excluded(graph):
 # ----------------------------------------------------------- ground truth
 
 KNOWN_MINT_VALUES = {
+    # --- the three incoming-value places that replaced three self-loops ---
+    #
+    # `IonVolAvgTemperature`, `DrTfPlasmaCaseFromInput` and `DeltaEtaStep` each used to
+    # read the field they own, which made each of them a `FixedPointFunction` with a
+    # cut, a minted `^cond.` copy and a driver. None of the three ever read a previous
+    # iterate: the value is PROCESS's *incoming* field -- the IN.DAT value for the
+    # first two ("use the input directly" is what `f_temp_plasma_ion_electron <= 0`
+    # means, and the second clamps the input against a geometric floor), and an inert
+    # read for the third. Each now reads a free `..._in` place instead, and each
+    # resolves here to the very field it used to read, which is why no value moves.
+    #
+    # Nothing new is asked of PROCESS: these are identities, not inversions, and no
+    # IN.DAT name, `INPUT_VARIABLES` entry or `DataStructure` field is added.
+    ".physics.temp_plasma_ion_vol_avg_kev_in": (
+        lambda d: d.physics.temp_plasma_ion_vol_avg_kev
+    ),
+    ".tfcoil.dr_tf_plasma_case_in": (lambda d: d.tfcoil.dr_tf_plasma_case),
+    ".power.delta_eta_in": (lambda d: d.power.delta_eta),
     # `.stellarator.coilcurrent` -- a local in `st_coil` (`process/models/stellarator/
     # coils/calculate.py:46,378`), never stored, but exactly recoverable from two real
     # fields: `calculate.py:276` writes `data.tfcoil.c_tf_total = data.tfcoil.n_tf_coils
@@ -353,7 +383,7 @@ def _eager_group(steps):
 
     def run(env):
         for step in steps:
-            env = step._run(env)
+            env = step(env)
         return env
 
     return run
@@ -366,7 +396,7 @@ def _jitted_group(steps):
     def jitted(values):
         env = dict(values)
         for step in steps:
-            env = step._run(env)
+            env = step(env)
         return PathMap(env)
 
     def run(env):

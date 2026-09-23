@@ -102,3 +102,10 @@ paper_tests/out/*.log
 # OpenMDAO report directories written beside the driver
 om_mdf_out/
 <stdin>_out/
+
+# the tokamak study's per-draw JSONs (flextok_ does not match flex_*)
+paper_tests/out/flextok_*.json
+!paper_tests/out/flextok_*_summary.json
+# the condensed arrays of the sampled studies: regenerable with --figures from a rerun
+paper_tests/out/flex_he_*.npz
+paper_tests/out/flextok_*.npz
