@@ -87,7 +87,7 @@ applied:
 1. **make `hfact` a given** -- it leaves `chosen`. On `stellarator_helias` `hfact` is
    `ixc = 10`, active and converged to 1.056 *inside* its bound, so giving it away is
    what over-determines the problem and the graph refuses:
-   `.Close.c2 holds (^cond.constraints.c2,) against nothing: it has no unknowns, so no
+   `.Close.c2 holds (.constraints.c2,) against nothing: it has no unknowns, so no
    driver can move it -- Determine it by a variable on its cycle, or drop it`. On
    `low_aspect_ratio_DEMO` `hfact` is fixed in the file at 1.1 and was never an `ixc`,
    so **this step is honestly a no-op** and says so; nothing refuses yet.

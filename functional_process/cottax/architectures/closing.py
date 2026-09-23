@@ -6,7 +6,7 @@ MDF hands every condition to the optimiser, which owns every design variable, so
 `Optimise` closes one cycle over most of the machine. An equality need not be closed
 that way. A requirement `cond = 0` `Determine`d by one variable closes a cycle of its
 own, and the size of that cycle depends on the variable chosen:
-the power balance (`^cond.constraints.c2`) closed by `hfact` is three nodes, since
+the power balance (`.constraints.c2`) closed by `hfact` is three nodes, since
 `hfact` enters the confinement time and nothing else; closed by the density it is 27,
 and by `rmajor` 24. Which variable closes which equality is the caller's choice
 (`configurations.kinds.PAIRINGS`); this module is the recipe that applies it:
@@ -291,7 +291,7 @@ def close(
     Naming an inequality drives its residual to exactly zero with the same root-find
     machinery an equality gets -- legitimate because `sand.condition_nodes` gives
     every active constraint, equality or inequality, the same one scalar
-    (`^cond.constraints.c<n>`, the normalised residual, index 1 of `(residual,
+    (`.constraints.c<n>`, the normalised residual, index 1 of `(residual,
     normalised_residual, value, bound)`), so the zero a closing root find drives it to
     is the same point where the original `<=` relation would sit tight -- an operating
     choice (run exactly at the limit) stated as a structural one. Once named this way

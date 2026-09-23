@@ -21,6 +21,7 @@ from cottax.interfaces import (
     is_driven,
 )
 from cottax.interfaces.statements import RootFind
+from cottax.mdao_architectures import MDF
 from cottax.pytree.path import NodePath, PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
 from jax.flatten_util import ravel_pytree
@@ -311,8 +312,9 @@ def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCH
     )
     # `problem_graph` leaves the requirements standing for an architecture to absorb,
     # and this route states the nesting itself instead of taking one -- so it does the
-    # absorb an architecture would do first, or the proof refuses them.
-    required = report["required"]
+    # absorb an architecture would do first, or the proof refuses them. **Which** ones
+    # it takes is `MDF`'s own answer (`requirements_of`), not a set re-derived here.
+    required = MDF(optimiser=problem_name).requirements_of(with_problem)
     absorbed = (
         Absorb(problem_name, required).apply(with_problem) if required else with_problem
     )

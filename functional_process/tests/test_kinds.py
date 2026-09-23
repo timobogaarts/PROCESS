@@ -144,10 +144,10 @@ def test_build_leaves_are_build():
 def test_pairings():
     """`one` closes c2 by the density; the historic pairing by `hfact`, a belief."""
     density = ".physics.nd_plasma_electrons_vol_avg"
-    assert PAIRINGS["one"] == {"^cond.constraints.c2": density}
-    assert PAIRINGS["two"]["^cond.constraints.c2"] == density
-    assert PAIRINGS["te"] == {"^cond.constraints.c2": density, C16: TE}
+    assert PAIRINGS["one"] == {".constraints.c2": density}
+    assert PAIRINGS["two"][".constraints.c2"] == density
+    assert PAIRINGS["te"] == {".constraints.c2": density, C16: TE}
     assert KINDS[density] is Kind.OPERATING
     assert KINDS[TE] is Kind.OPERATING
-    assert HISTORIC_PAIRING["^cond.constraints.c2"] == ".physics.hfact"
+    assert HISTORIC_PAIRING[".constraints.c2"] == ".physics.hfact"
     assert KINDS[".physics.hfact"] is Kind.BELIEF

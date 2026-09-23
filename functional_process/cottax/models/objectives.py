@@ -2,18 +2,16 @@
 
 The metric is a ported function in `functional_process.models.objectives`, declared here
 the way a constraint is: reads resolved against the graph the run holds, switches frozen
-at assembly. The node owns `^cond.numerics.objf`, and a **maximised** merit is negated
+at assembly. The node owns `.numerics.objf`, and a **maximised** merit is negated
 in the body -- PROCESS's own `np.sign(i_figure_merit)`, applied where the value is
 computed rather than by a second node standing for no computation.
 """
 
 import equinox as eqx
 from cottax.interfaces import Function, Implemented
-from cottax.pytree.mint import prefix_path
 from cottax.pytree.path import GetAttrKey, NodePath, VarPath
 
 from functional_process.cottax.models.constraints import (
-    COND,
     REFERENCE_SWITCH_VALUES,
     Resolver,
     bind,
@@ -50,16 +48,14 @@ class Metric(eqx.Module):
 
 
 def objective_place(label: str = "") -> VarPath:
-    """Where this run's figure of merit is computed: `^cond.numerics.objf<label>`."""
-    return prefix_path(
-        VarPath((GetAttrKey("numerics"), GetAttrKey(f"objf{label}"))), COND
-    )
+    """Where this run's figure of merit is computed: `.numerics.objf<label>`."""
+    return VarPath((GetAttrKey("numerics"), GetAttrKey(f"objf{label}")))
 
 
 def objective_node(graph_variables, selection, switches=None, label: str = ""):
     """`(name, definition)` for this run's figure of merit over a graph's variables.
 
-    The node is bound at `Objective<label>` and owns `^cond.numerics.objf<label>`.
+    The node is bound at `Objective<label>` and owns `.numerics.objf<label>`.
     `label` suffixes both, for a graph stating more than one objective -- two sequential
     optimisers, say.
     """

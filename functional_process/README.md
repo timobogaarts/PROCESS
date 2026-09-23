@@ -116,12 +116,21 @@ and applies `init.py`'s derivation rules; `native.reference_of` adds the problem
 
 The models are nodes; `input.indat.graph_for(machine)` is their graph, with PROCESS's own
 cycles in it. An architecture is a short list of cottax ops on that graph, then a
-driver per problem:
+driver per problem.
+
+Each active constraint is **one declaration** (`cottax/models/constraints.py`, cottax's
+`ConstraintFunction`): a body owning `.constraints.c<id>` at `.Constraint<id>`, and
+beside it the requirement that holds it against zero, `^require.Constraint<id>` -- `= 0`
+for the first `n_equality` of the file's `icc`, `<= 0` for the rest. The requirement is
+the declaration's own, so a constraint is stated where it is computed and an
+architecture absorbs it into the optimiser its conditions reach. The figure of merit is
+an ordinary node owning `.numerics.objf`. Neither carries a mint: a model's output is a
+place in the port's own namespace, and `^` is for what a rewrite fabricates.
 
 | | ops | in |
 |---|---|---|
 | MDA | `FixedPointCut` per loop-carried variable, `Nest` the models' own solves, Picard/Newton on each | `architectures.mda.cut_graph`, `architectures.recipes` |
-| MDF | the cut graph plus the constraint and objective nodes and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
+| MDF | the cut graph plus the constraint declarations, the objective node and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
 | IDF | as MDF, then `Absorb` the scheme's consistency statements into the optimiser; the models' own solves are nested in it | `architectures.idf.idf_graph` |
 | SAND | `Absorb` every problem on the optimiser's cycle into it | `architectures.sand.assemble` |
 | closed MDA | `Insert` a `RootFind` per (equality, closing variable) inside the MDA -- nested, or flattened with the problems on its cycle into one square problem -- so the analysis answers the equality itself | `architectures.closing.close` |

@@ -65,7 +65,7 @@ def test_exactly_one_step_draws_the_refusal(which, request):
     assert len(drew) == 1
     quoted = plan.steps[drew[0]].note
     assert "against nothing: it has no unknowns" in quoted
-    assert "^cond.constraints.c2" in quoted
+    assert ".constraints.c2" in quoted
     assert "REFUSED" in one_dial.report(plan)
 
 
@@ -88,7 +88,7 @@ def test_the_density_closure_is_one_determine(ignited):
     """Step 2, ignited: one requirement `Determine`d and nested, the density given up."""
     step = ignited.steps[2]
     assert step.ops == (
-        "Determine(Requirement(^cond.constraints.c2), "
+        "Determine(Requirement(.constraints.c2), "
         "(.physics.nd_plasma_electrons_vol_avg,)) at .Close.c2",
         "nested_inside(.Close.c2)",
     )
@@ -101,7 +101,7 @@ def test_the_heating_closure_is_one_determine_over_a_plain_input(driven):
     """Step 2, driven: the same one operation, over a variable PROCESS never iterates."""
     step = driven.steps[2]
     assert step.ops == (
-        "Determine(Requirement(^cond.constraints.c2), "
+        "Determine(Requirement(.constraints.c2), "
         "(.current_drive.p_hcd_primary_extra_heat_mw,)) at .Close.c2",
         "nested_inside(.Close.c2)",
     )
@@ -130,7 +130,7 @@ def test_the_ignited_nominal_point_is_process_s_own_density(ignited):
     assert row[one_dial.DENSITY] == pytest.approx(
         process_reference("stellarator_helias")["x"][one_dial.DENSITY], rel=1e-6
     )
-    assert abs(row["conditions"]["^cond.constraints.c24"]) < 1e-2  # on its beta limit
+    assert abs(row["conditions"][".constraints.c24"]) < 1e-2  # on its beta limit
 
 
 def test_the_driven_nominal_point_is_process_s_own_heating_power(driven):

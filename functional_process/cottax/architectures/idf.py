@@ -9,7 +9,8 @@ the design variables and one copy per cut, and every discipline is feasible at e
 iterate -- which is what the name says.
 
 The recipe, in cottax's ops: `mda.cut_graph` (the scheme), `sand.problem_graph` (the
-constraint, requirement and objective nodes, and the `Optimise`), then
+constraint declarations -- each a body and the requirement beside it -- the objective
+node and the `Optimise`), then
 `cottax.mdao_architectures.IDF` -- absorb the `^mda` statements, nest the models' own
 inside the optimiser. `sand.sand_schedule` then assigns the drivers, exactly as for
 SAND.
@@ -17,7 +18,7 @@ SAND.
 
 from __future__ import annotations
 
-from cottax.interfaces import Absorb, Plan
+from cottax.interfaces import Plan
 from cottax.mdao_architectures import IDF, Global
 
 from functional_process.cottax.architectures.evaluate import without_excluded
@@ -49,12 +50,9 @@ def idf_graph(
         omit=omit,
     )
     architecture = IDF(optimiser=optimiser)
-    # `placed` reads the optimiser's cycle, and a statement the design reaches only
-    # through a requirement is on that cycle only once the requirements are absorbed --
-    # which is the architecture's own first op. So the report asks after it.
-    required = architecture.requirements_of(with_problem)
-    absorbed = (
-        Absorb(optimiser, required).apply(with_problem) if required else with_problem
-    )
-    report["coupling"] = architecture.placed(absorbed)[Global]
+    # `resolved` is `placed` read off the graph the architecture's own first op leaves
+    # -- a statement the design reaches only through a requirement is on the
+    # optimiser's cycle once the requirements are absorbed and not before. The
+    # architecture answers that itself, so the report does not repeat the op here.
+    report["coupling"] = architecture.resolved(with_problem)[Global]
     return (Plan(with_problem) + architecture).graph, optimiser, report

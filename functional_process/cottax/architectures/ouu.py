@@ -210,7 +210,7 @@ def cvar_path(constraint) -> VarPath:
 
 
 def label_of(constraint) -> str:
-    """`c24` for `^cond.constraints.c24`; `f_nd_alpha_thermal_electron_lower` for a
+    """`c24` for `.constraints.c24`; `f_nd_alpha_thermal_electron_lower` for a
     `RecourseBound`; `j_tf_sc_wp` for a `Gap`.
     """
     if isinstance(constraint, RecourseBound):
@@ -578,7 +578,7 @@ def two_stage(
     `alpha` -- beside the file's own.
 
     `extra_columns`: spellings of the closed graph's variables (an output such as
-    `.physics.p_fusion_total_mw` or `^cond.constraints.c2`, an input too) the caller
+    `.physics.p_fusion_total_mw` or `.constraints.c2`, an input too) the caller
     wants per sample beside the measures' own columns: appended last, after the
     closing unknowns and the other drivers' verdicts, at `layout["c_extra"]`, named
     in `layout["extra"]`; `measures` ignores them, `per_sample` and `summarise`

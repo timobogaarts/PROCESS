@@ -43,7 +43,7 @@ from functional_process.cottax.architectures.evaluate import (  # noqa: E402
 
 
 def name(path) -> str:
-    """A spelling OpenMDAO accepts: `^cond.constraints.c5` -> `cond__constraints__c5`."""
+    """A spelling OpenMDAO accepts: `.constraints.c5` -> `constraints__c5`."""
     return re.sub(r"[^0-9a-zA-Z_]+", "_", path.spelling.lstrip("^.")).replace("_", "__", 0) or "root"
 
 

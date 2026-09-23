@@ -97,6 +97,25 @@ own imports -- every `.py` under `functional_process/` and `paper_tests/`, and e
 notebook code cell -- with `PRIVATE` empty: a name the interface lacks is a request
 upstream, not a reach past it.
 
+**A constraint is declared where it is computed.** Each active `icc` is one
+`interfaces.pytree_namespace_module.ConstraintFunction`
+(`cottax/models/constraints.py`): a body owning `.constraints.c<id>` at
+`.Constraint<id>`, and beside it -- part of the same declaration -- the requirement
+that holds it against zero, `^require.Constraint<id>`, `holds = Eq` for the first
+`n_equality` and `Le` for the rest. `sand.problem_graph` is one `to_graph(graph, ...)`
+over those declarations, the objective node and the bare `Optimise`, and an
+architecture absorbs the requirements the design reaches; `sand.condition_nodes` is the
+bodies alone, for the arm that drives its optimiser from outside the graph. The reads
+are resolved against the graph, so the declaration class is synthesised per
+`(constraint, reads, switches)` and cached -- a graph is a jit cache key, so the same
+problem must assemble to the same class.
+
+**A model's output carries no mint.** A constraint's value is `.constraints.c<id>` and
+the figure of merit `.numerics.objf`, both in the port's own namespace beside the
+limits PROCESS already keeps there. `^cond` said the value was fabricated where it is
+computed; what cottax opens a namespace for is what a *rewrite* mints (`^hat`, `^mda`,
+`^guess`, `^require`).
+
 So the drift tables this file used to carry are gone (they are in the history, up to the
 `relational` re-port): a rename inside `core`, `relational`, `execution` or `pytree.graph`
 no longer reaches the port, and one on the interface surfaces as the whole list at once

@@ -11,8 +11,8 @@ themselves) -> `mda.cut_graph` under `mda.SCHEME` (248 nodes: three cycles opene
 `^mda.*` fixed points -- the winding-pack toroidal width, the fuel / total ion densities,
 the CS flux swing with the burn time -- 222 components) -> `mdf.mdf_graph` (the 26 `icc`
 condition nodes and the objective inserted: **275 nodes, 412 boundary inputs**). The
-`Optimise` PROCESS solves owns the 20 `ixc` places and reads `^cond.numerics.objf` and
-`^cond.constraints.c<n>` for the 26 `icc`, 3 of them equalities. Values are the cold
+`Optimise` PROCESS solves owns the 20 `ixc` places and reads `.numerics.objf` and
+`.constraints.c<n>` for the 26 `icc`, 3 of them equalities. Values are the cold
 `DataStructure`; converged values are PROCESS's own (`common.process_reference`, VMCON, 8
 iterations, `objf = 1.6 = 0.2 x 8 m`).
 

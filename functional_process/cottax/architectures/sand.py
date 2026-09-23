@@ -1,13 +1,15 @@
 """The optimisation problem this port states, and its **SAND** assembly (Simultaneous
 ANalysis and Design).
 
-The problem is three kinds of node, all stated the way the models are:
+The problem is two kinds of node, both stated the way the models are:
 
-- one **constraint** node per active `icc`, owning `^cond.constraints.c<id>`
-  (`models/constraints.py`);
-- one **requirement** beside each, bound at `Require<id>` -- `c = 0` for the first
-  `n_equality`, `c <= 0` for the rest. That is what makes a constraint a constraint;
-- one **objective** node owning `^cond.numerics.objf`, and `Optimise(objf, design)` at
+- one **constraint** declaration per active `icc` (`models/constraints.py`): a body
+  owning `.constraints.c<id>` at `Constraint<id>`, and beside it -- as part of
+  the same declaration -- the requirement that holds it against zero,
+  `^require.Constraint<id>`, `c = 0` for the first `n_equality` and `c <= 0` for the
+  rest. That is what makes a constraint a constraint, and it is declared where the
+  constraint is computed;
+- one **objective** node owning `.numerics.objf`, and `Optimise(objf, design)` at
   `Opt`, with no constraints of its own.
 
 An architecture (`SAND()`, `MDF()`, `IDF()`) absorbs every requirement the design
@@ -36,7 +38,8 @@ from cottax.interfaces import (
     is_fixed_point,
     is_optimise,
 )
-from cottax.interfaces.statements import Optimise, Requirement
+from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.interfaces.statements import Optimise
 from cottax.mdao_architectures import SAND, Mda
 from cottax.pytree.mint import unminted
 from cottax.pytree.path import NodePath, PathMap, VarPath
@@ -51,7 +54,9 @@ from functional_process.cottax.architectures.mda import (
 from functional_process.cottax.models.constraints import (
     SWITCH_PARAMETER_NAMES,
     condition_place,
-    constraint_node,
+    constraint_declaration,
+    constraint_place,
+    requirement_place,
 )
 from functional_process.cottax.models.objectives import objective_node, objective_place
 from functional_process.cottax.queries import declared
@@ -67,11 +72,6 @@ OPT = NodePath((GetAttrKey("Opt"),))
 """Where the run's `Optimise` binds."""
 
 
-def requirement_place(cid: int) -> NodePath:
-    """Where constraint `cid`'s requirement binds: `Require<id>`."""
-    return NodePath((GetAttrKey(f"Require{cid}"),))
-
-
 def switch_values_for(data, icc, i_figure_merit):
     """Static switch arguments for one run, read off its **initialised** `DataStructure`
     -- `init_process`'s answer to the file plus PROCESS's own defaults, so no default is
@@ -81,7 +81,7 @@ def switch_values_for(data, icc, i_figure_merit):
     for cid in icc:
         fn = getattr(ported_constraints, f"constraint_{cid}", None)
         if fn is None:
-            # `constraint_node` raises on this, with the message that names the id;
+            # `constraint_declaration` raises on this, with the message naming the id;
             # a second, earlier copy of the refusal here would just shadow it.
             continue
         needed |= set(inspect.signature(fn).parameters) & set(SWITCH_PARAMETER_NAMES)
@@ -135,8 +135,10 @@ def design_bounds(ixc):
 # ---------------------------------------------------------------- stating the problem
 
 
-def condition_nodes(graph, icc, n_equality, switch_values=None, omit=()):
-    """One constraint node per active constraint, plus the equality/inequality split.
+def constraint_declarations(graph, icc, n_equality, switch_values=None, omit=()):
+    """`({Constraint<id>: declaration}, equalities, inequalities, omitted)` for the
+    active constraints -- each declaration a body and the requirement beside it, the
+    first `n_equality` of `icc` held by `Eq` and the rest by `Le`.
 
     Raises
     ------
@@ -144,23 +146,58 @@ def condition_nodes(graph, icc, n_equality, switch_values=None, omit=()):
         If a constraint is active but cannot be assembled against this graph.
     """
     variables = graph.graph.variables
-    nodes, equalities, inequalities, omitted = {}, [], [], {}
+    declarations, equalities, inequalities, omitted = {}, [], [], {}
     for position, cid in enumerate(icc):
         if cid in omit:
             omitted[cid] = "omitted by the caller"
             continue
+        holds = Eq if position < n_equality else Le
         try:
-            name, definition = constraint_node(variables, cid, switch_values)
+            declarations[constraint_place(cid)] = constraint_declaration(
+                variables, cid, holds, switch_values
+            )
         except ValueError as e:
             raise ValueError(
                 f"{e} Pass `omit={{{cid}}}` to leave it out on purpose and have it "
                 f"reported"
             ) from e
-        nodes[name] = definition
         (equalities if position < n_equality else inequalities).append(
             condition_place(cid)
         )
-    return nodes, tuple(equalities), tuple(inequalities), omitted
+    return declarations, tuple(equalities), tuple(inequalities), omitted
+
+
+def condition_nodes(graph, icc, n_equality, switch_values=None, omit=()):
+    """The constraint **bodies** alone, plus the equality/inequality split -- what an
+    arm that answers its conditions outside the graph takes.
+
+    A declaration is a body and a requirement; this is the first of the two, so the
+    graph carries the computations and nothing is held of them.
+    """
+    declarations, equalities, inequalities, omitted = constraint_declarations(
+        graph, icc, n_equality, switch_values, omit
+    )
+    nodes = {
+        name: declaration.node_definitions[0]
+        for name, declaration in declarations.items()
+    }
+    return nodes, equalities, inequalities, omitted
+
+
+def objective_entry(graph, i_figure_merit, switch_values=None):
+    """`({Objective: definition}, .numerics.objf)` for this run's figure of merit,
+    or `({}, None)` where the run states none.
+    """
+    if i_figure_merit is None:
+        return {}, None
+    from functional_process.cottax.input.indat import (
+        objective_selection,  # noqa: PLC0415
+    )
+
+    name, definition = objective_node(
+        graph.graph.variables, objective_selection(i_figure_merit), switch_values
+    )
+    return {name: definition}, objective_place()
 
 
 def condition_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
@@ -171,19 +208,8 @@ def condition_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, 
     nodes, equalities, inequalities, omitted = condition_nodes(
         graph, icc, n_equality, switch_values, omit
     )
-    objective = None
-    if i_figure_merit is not None:
-        from functional_process.cottax.input.indat import (
-            objective_selection,  # noqa: PLC0415
-        )
-
-        name, definition = objective_node(
-            graph.graph.variables,
-            objective_selection(i_figure_merit),
-            switch_values,
-        )
-        nodes[name] = definition
-        objective = objective_place()
+    objective_nodes, objective = objective_entry(graph, i_figure_merit, switch_values)
+    nodes.update(objective_nodes)
     return (
         (Plan(graph) + Insert(PathMap(nodes.items()))).graph,
         {
@@ -193,19 +219,6 @@ def condition_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, 
             "omitted": omitted,
         },
     )
-
-
-def requirement_nodes(icc, n_equality, omit=()):
-    """`{Require<id>: Requirement(^cond.constraints.c<id>, Eq or Le)}` -- what makes
-    each active constraint a constraint. The first `n_equality` of `icc` are equalities.
-    """
-    return {
-        requirement_place(cid): Requirement(
-            condition_place(cid), Eq if position < n_equality else Le
-        )
-        for position, cid in enumerate(icc)
-        if cid not in omit
-    }
 
 
 def unanswered_requirements(graph, optimiser=OPT):
@@ -233,8 +246,12 @@ def problem_graph(
     switch_values=None,
     omit=(),
 ):
-    """`(graph, Opt, report)`: the condition nodes, one requirement beside each, and
-    `Optimise(objf, design)`.
+    """`(graph, Opt, report)`: one declaration per active constraint -- its body and
+    the requirement beside it -- the objective node, and `Optimise(objf, design)`.
+
+    One `to_graph` over the declarations, not two `Insert`s: a constraint's requirement
+    is part of the declaration that computes it, so nothing states it separately and
+    the graph's nesting is kept.
 
     A requirement the design does not reach is **dropped** here and reported under
     `report["external"]`: no architecture can absorb it and the proof refuses it. An
@@ -252,13 +269,21 @@ def problem_graph(
         If an equality constraint reads nothing the design reaches, or the graph
         already held a requirement this assembly did not state.
     """
-    with_conditions, report = condition_graph(
-        graph, icc, n_equality, i_figure_merit, switch_values, omit
+    declarations, equalities, inequalities, omitted = constraint_declarations(
+        graph, icc, n_equality, switch_values, omit
     )
+    objective_nodes, objective = objective_entry(graph, i_figure_merit, switch_values)
+    report = {
+        "equalities": equalities,
+        "inequalities": inequalities,
+        "objective": objective,
+        "omitted": omitted,
+    }
     design = tuple(iteration_variable_path(i) for i in ixc)
-    nodes = requirement_nodes(icc, n_equality, omit)
-    nodes[OPT] = Optimise(report["objective"], design)
-    stated = (Plan(with_conditions) + Insert(PathMap(nodes.items()))).graph
+    stated = to_graph(
+        graph,
+        {**declarations, **objective_nodes, OPT: Optimise(objective, design)},
+    )
 
     mine = {requirement_place(cid): cid for cid in icc if cid not in omit}
     unanswered = unanswered_requirements(stated)
@@ -453,7 +478,7 @@ def residual_condition_scales(drive, env, floor=1e-12):
     unknowns = {place(v): v for v in drive.unknowns}
     scales = []
     for condition in stacked:
-        if condition.spelling.startswith(("^cond.constraints.", "^cond.numerics.")):
+        if condition.spelling.startswith((".constraints.c", ".numerics.objf")):
             continue
         unknown = unknowns.get(place(condition))
         if unknown is None or unknown not in env:
@@ -582,12 +607,13 @@ __all__ = [
     "assemble",
     "condition_graph",
     "condition_nodes",
+    "constraint_declarations",
     "degenerate_fixed_points",
     "design_bounds",
     "fixed_point_residuals",
     "iteration_variable_path",
+    "objective_entry",
     "problem_graph",
-    "requirement_nodes",
     "requirement_place",
     "residual_condition_scales",
     "sand_graph",

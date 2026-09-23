@@ -24,7 +24,7 @@ from cottax.interfaces import (
     is_problem,
     shape_of,
 )
-from cottax.pytree.mint import is_minted, unminted
+from cottax.pytree.mint import is_minted, namespace_of, unminted
 from cottax.pytree.path import NodePath, VarPath
 from cottax.visualization import (
     PROBLEM_TYPE_TEXT,
@@ -43,10 +43,10 @@ type Group = tuple[str, ...]
 UNGROUPED: Group = ()
 
 CONDITIONS: Group = ("conditions",)
-"""The group the optimiser's condition nodes are drawn in: the requirements stated beside
-the constraints (`Require<id>`), and the `Constraint<n>` / `Objective` nodes a graph
-assembled before the relational port still carries -- top-level names with no subsystem
-of their own. They are what the optimiser reads; a reader looks for them."""
+"""The group the optimiser's condition nodes are drawn in: the `Constraint<n>` /
+`Objective` nodes and the requirement each constraint declares beside itself
+(`^require.Constraint<n>`) -- top-level names with no subsystem of their own. They are
+what the optimiser reads; a reader looks for them."""
 
 OPTIMISER: Group = ("optimiser",)
 """The group the outer problem is drawn in: `.Opt`, `.RootFind`, `^problem.sand`."""
@@ -63,7 +63,11 @@ def _synthetic(path: NodePath) -> "Group | None":
     if is_minted(path):
         # By the keys, not by the spelling: a name is `.sand` or `['sand']` depending on
         # which surface minted it and `Path.spelling` writes those differently, so
-        # comparing the written form would miss one of them silently.
+        # comparing the written form would miss one of them silently. A requirement is
+        # asked by its **namespace**, since it is named after the constraint it is
+        # declared beside and its keys say nothing.
+        if namespace_of(path) == "require":
+            return CONDITIONS
         return OPTIMISER if keys == ("sand",) else None
     if len(keys) != 1:
         return None

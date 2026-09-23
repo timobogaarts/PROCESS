@@ -3,26 +3,41 @@
 One `constraint_<id>` in `functional_process.models.constraints` is a ported function
 like any other; this module is the thin cottax layer over it -- the reads resolved
 against the graph the run actually holds, the switch arguments frozen at assembly, and
-the node owning `^cond.constraints.c<id>`, element 1 of the function's
+the node owning `.constraints.c<id>`, element 1 of the function's
 `(residual, normalised_residual, value, bound)` tuple.
 
-What makes one of these a *constraint* is not here: it is a `Requirement` stated beside
-it, which an architecture absorbs into the optimiser or `Determine` closes over a
-variable.
+**A constraint's value is a model's output**, so it lives in the port's own namespace
+and not in one cottax opened: `.constraints.c<id>`, beside the limits PROCESS already
+keeps in that area. `^cond` was a mint over a place nothing else claimed, which said
+the value was fabricated when it is computed.
+
+**A constraint is declared where it is computed.** The node is a cottax
+`ConstraintFunction`, the declaration form for a body whose outputs are *held* against
+zero: `holds = Eq` for an equality, `Le` for an inequality, and the requirement that
+says so is the declaration's own, bound beside it at `^require.Constraint<id>`. Nothing
+states it a second time; an architecture absorbs it into the optimiser its conditions
+reach, or `Determine` closes it over a variable.
 """
 
+import functools
 import inspect
 
-import equinox as eqx
-from cottax.interfaces import Function, Implemented
-from cottax.pytree.mint import MintKey, prefix_path
-from cottax.pytree.path import GetAttrKey, NodePath, VarPath
+from cottax.interfaces import Le, Minted
+from cottax.interfaces.pytree_namespace_module import (
+    Area,
+    ConstraintFunction,
+    FromExactly,
+    Output,
+)
+from cottax.pytree.path import DictKey, GetAttrKey, NodePath, SequenceKey, VarPath
 
 from functional_process.models import constraints as ported_constraints
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
-COND = MintKey("cond")
-"""The namespace a condition value is minted into: `^cond.constraints.c<id>`."""
+REQUIREMENT = Minted("require")
+"""How the requirement beside a constraint is named: `.Constraint5` ->
+`^require.Constraint5`. `ConstraintFunction`'s own default, written down here because
+`requirement_place` spells the same name without building the declaration."""
 
 
 REFERENCE_SWITCH_VALUES = {
@@ -243,36 +258,106 @@ def bind(fn, resolve, switches):
     return static, read, tuple(resolve(p) for p in read)
 
 
-class NormalisedResidual(eqx.Module):
-    """`fn(*args, **switches) -> normalised_residual`, as a module and not a closure.
-
-    A module so it compares by value: a graph is a jit cache key, and a body rebuilt per
-    assembly must equal the last one.
-    """
-
-    fn: object
-    names: tuple
-    switches: tuple = ()
-    """`((parameter, value), ...)`, the switch arguments frozen at assembly."""
-
-    def __call__(self, *args):
-        """Index 1 of `(residual, normalised_residual, value, bound)`."""
-        arguments = dict(zip(self.names, args, strict=True))
-        arguments.update(self.switches)
-        return self.fn(**arguments)[1]
-
-
 def condition_place(cid: int) -> VarPath:
-    """Where constraint `cid`'s value is computed: `^cond.constraints.c<id>`."""
-    return prefix_path(
-        VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}"))), COND
+    """Where constraint `cid`'s value is computed: `.constraints.c<id>`."""
+    return VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}")))
+
+
+def constraint_place(cid: int) -> NodePath:
+    """Where constraint `cid`'s body binds: `Constraint<id>`."""
+    return NodePath((GetAttrKey(f"Constraint{cid}"),))
+
+
+def requirement_place(cid: int) -> NodePath:
+    """Where constraint `cid`'s requirement binds: `^require.Constraint<id>` -- the
+    declaration's own name for it, spelled without building the declaration.
+    """
+    return REQUIREMENT(constraint_place(cid))
+
+
+def _where(place):
+    """`place` as something `FromExactly` and `Output` take: the area it sits in, then
+    the one key that reaches it.
+
+    A declaration names a place by the access path that reaches it, and these are
+    places resolved against a graph -- so the path is walked back into the recording
+    the two calls expect.
+
+    Raises
+    ------
+    ValueError
+        If `place` is the root, or ends in a key kind no declaration can spell.
+    """
+    keys = place.segments
+    if not keys:
+        raise ValueError(f"{place!r} names the root itself, not a place inside it")
+    area, last = Area(keys[:-1]), keys[-1]
+    if isinstance(last, GetAttrKey):
+        return getattr(area, last.name)
+    if isinstance(last, SequenceKey):
+        return area[last.idx]
+    if isinstance(last, DictKey):
+        return area[last.key]
+    raise ValueError(f"{place!r} ends in {last!r}, which no declaration can spell")
+
+
+@functools.cache
+def _constraint_class(cid: int, holds, read_names: tuple, reads: tuple, switches: tuple):
+    """The `ConstraintFunction` class for one constraint, its reads and its switches.
+
+    Cached on exactly what it is made of, because the class **is** the body: a
+    declaration compares by its type and its fields, and a graph is a jit cache key, so
+    assembling the same problem twice must give the same class back.
+
+    The `__call__` is synthesised the way `cottax.wraps.WrapsFunction` synthesises one
+    -- a signature whose parameter defaults are the reads -- since a constraint's reads
+    are resolved against the graph and cannot be written in a class body.
+    """
+    fn = getattr(ported_constraints, f"constraint_{cid}")
+    static = dict(switches)
+
+    def call(self, *args, **kwargs):
+        bound = inspect.signature(type(self).__call__).bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        arguments = {k: v for k, v in bound.arguments.items() if k != "self"}
+        arguments.update(static)
+        return fn(**arguments)[1]
+
+    call.__signature__ = inspect.Signature([
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        *(
+            inspect.Parameter(
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=FromExactly(_where(place)),
+            )
+            for name, place in zip(read_names, reads, strict=True)
+        ),
+    ])
+    call.__name__ = "__call__"
+    call.__doc__ = (
+        f"`{fn.__module__}.{fn.__name__}`'s normalised residual -- element 1 of "
+        f"`(residual, normalised_residual, value, bound)`, ports declared above."
+    )
+    return type(
+        f"Constraint{cid}",
+        (ConstraintFunction,),
+        {
+            "__module__": __name__,
+            "__doc__": f"PROCESS constraint {cid}, held by `{holds.__name__}`.",
+            "holds": holds,
+            "__call__": call,
+            condition_place(cid).leaf.name: Output(_where(condition_place(cid))),
+        },
     )
 
 
-def constraint_node(graph_variables, cid: int, switches=None):
-    """`(name, definition)` for PROCESS constraint `cid` over a graph's variables.
+def constraint_declaration(graph_variables, cid: int, holds=Le, switches=None):
+    """The declaration of PROCESS constraint `cid` over a graph's variables.
 
-    The node is bound at `Constraint<id>` and owns `^cond.constraints.c<id>`.
+    A `ConstraintFunction`: the body owns `.constraints.c<id>` at
+    `Constraint<id>`, and the requirement holding it against zero by `holds` is bound
+    beside it at `^require.Constraint<id>`.
 
     Raises
     ------
@@ -294,10 +379,6 @@ def constraint_node(graph_variables, cid: int, switches=None):
             f"PROCESS's active constraints solves a different problem -- leave it out "
             f"on purpose and have it reported, or give the name a place"
         ) from e
-    return (
-        NodePath((GetAttrKey(f"Constraint{cid}"),)),
-        Implemented(
-            Function(reads, (condition_place(cid),)),
-            NormalisedResidual(fn, tuple(read), static),
-        ),
+    return _constraint_class(cid, holds, tuple(read), reads, static)(
+        mint_requirement=REQUIREMENT
     )

@@ -14,7 +14,7 @@ interprets a tag. The architecture that reads it decides what a kind means.
 Every table here was extracted from `paper_tests/decision_kinds.md`,
 `paper_tests/output_kinds.md`, `paper_tests/uq.py` and `paper_tests/ouu.py`, then the
 2026-09-17 decisions applied; each name below says which. Spellings are the port's
-(`.area.field`, `^stated.area.field`, `^guess.area.field`, `^cond.constraints.c<n>`),
+(`.area.field`, `^stated.area.field`, `^guess.area.field`, `.constraints.c<n>`),
 exactly as the tables write them.
 """
 
@@ -656,19 +656,19 @@ and `n_vac_pumps_high` / `dia_vv_vacuum_ducts` / `n_primary_heat_exchangers`
 (cost-only)."""
 
 
-C16 = "^cond.constraints.c16"
+C16 = ".constraints.c16"
 """The net electric power condition: an equality in the file, a plant requirement."""
 TE = ".physics.temp_plasma_electron_vol_avg_kev"
 """The one operating knob with no equation to close once c2 and c16 are taken."""
 
 PAIRINGS: dict[str, dict[str, str]] = {
-    "one": {"^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg"},
+    "one": {".constraints.c2": ".physics.nd_plasma_electrons_vol_avg"},
     "two": {
-        "^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
-        "^cond.constraints.c16": ".physics.f_nd_alpha_thermal_electron",
+        ".constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
+        ".constraints.c16": ".physics.f_nd_alpha_thermal_electron",
     },
     "te": {
-        "^cond.constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
+        ".constraints.c2": ".physics.nd_plasma_electrons_vol_avg",
         C16: TE,
     },
 }
@@ -680,8 +680,8 @@ deterministic design, so c16 is a chance constraint instead, and the temperature
 the alpha fraction are shared operating set-points."""
 
 HISTORIC_PAIRING: dict[str, str] = {
-    "^cond.constraints.c2": ".physics.hfact",
-    "^cond.constraints.c16": ".physics.f_nd_alpha_thermal_electron",
+    ".constraints.c2": ".physics.hfact",
+    ".constraints.c16": ".physics.f_nd_alpha_thermal_electron",
 }
 """The first session's choice (`close_conditions.PAIRINGS`): the power balance closed
 by `hfact`, the smallest cycle (three nodes), and c16 by the alpha fraction.

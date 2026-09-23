@@ -19,7 +19,7 @@ state the file's problem -- and differ only in the last, which is one operation:
 | [`two_opt_driver/`](two_opt_driver/two_opt_driver.ipynb) | two optimisers in sequence | cut, state two problems, absorb per loop; the graph decides whether the split is legal |
 
 The notebooks call the library (`mda.SCHEME` and `mda.cut_graph`,
-`sand.condition_nodes` / `requirement_nodes` / `problem_graph`, `sand.assemble`,
+`sand.constraint_declarations` / `objective_entry` / `problem_graph`, `sand.assemble`,
 `idf.idf_graph`, `sand.sand_schedule`, `evaluate`'s seeding) and check that the
 spelled-out recipe builds the same graph the library does.
 `session.open_session(path)` is the one-line form of each.

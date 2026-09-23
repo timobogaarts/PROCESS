@@ -60,6 +60,7 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.interfaces import (  # noqa: E402
+    BareCondition,
     Cut,
     ExecutableGraph,
     Function,
@@ -101,7 +102,7 @@ from paper_tests.common import OUT, process_reference  # noqa: E402
 
 DIAL = ".physics.hfact"
 """The quantity that stops being ours to choose."""
-BALANCE = "^cond.constraints.c2"
+BALANCE = ".constraints.c2"
 """The power balance: the equation `hfact` was closing."""
 DENSITY = ".physics.nd_plasma_electrons_vol_avg"
 """What absorbs it on an ignited machine."""
@@ -295,8 +296,9 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
 def refusal(graph, condition: VarPath) -> str:
     """What the graph says when `condition` still has to hold and nothing is left to
     move it: a problem holding it against no unknown, and the case cottax reports of
-    that node quoted verbatim -- the one violation naming it, since the node is the
-    trial insertion. The trial graph is thrown away -- this is a question, not an op.
+    that node quoted verbatim -- the `BareCondition` naming it, matched **by kind**,
+    since the node is the trial insertion. The trial graph is thrown away -- this is a
+    question, not an op.
 
     Raises
     ------
@@ -308,7 +310,7 @@ def refusal(graph, condition: VarPath) -> str:
     return REFUSAL + next(
         v.message
         for v in violations(ExecutableGraph, trial)
-        if getattr(v, "node", None) == place
+        if isinstance(v, BareCondition) and v.node == place
     )
 
 

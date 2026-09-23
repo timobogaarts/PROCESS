@@ -111,7 +111,7 @@ def test_assembly_has_the_shape_the_handoff_states(model):
     assert model.dropped == ()
     assert model.n_g == 12
     assert model.m == 8  # ceil(0.25 * 32)
-    assert model.unknowns[0].spelling == kinds.PAIRINGS["one"]["^cond.constraints.c2"]
+    assert model.unknowns[0].spelling == kinds.PAIRINGS["one"][".constraints.c2"]
     # The default closure: the root find over the density alone, nested.
     assert model.closure == "bracketed"
     assert model.closed.flat is False
@@ -173,7 +173,7 @@ def test_extra_columns_are_carried_through_and_ignored_by_the_measures(live):
     """
     asked = (
         ".physics.p_fusion_total_mw",
-        "^cond.constraints.c2",
+        ".constraints.c2",
         ".stellarator.wp_width_r_min",  # first stage: read as a constant per sample
         ".physics.hfact",  # an input, sampled: the belief's own value
     )
