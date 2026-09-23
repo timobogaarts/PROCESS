@@ -1,7 +1,14 @@
-% table.py, 2026-09-21, PC-Timo (x86_64), PROCESS 63dd1b69, cottax 6488a1c
-\begin{tabular}{lrrrrrrrr}
-machine & components & \multicolumn{2}{c}{OpenMDAO: MDA / Jacobian (ms)} & SLSQP it & (s) & \multicolumn{2}{c}{port: eval / Jacobian (ms)} & SLSQP it (s) \\ \hline
-helias & 167 & 39.3 & 53.2 & 2617 (failed) & 964 & 0.918 & 1.84 & 27 (0.884) \\
-helias-5b & 157 & 136 & 75.6 & 5 & 4.38 & 0.649 & 1.02 & 5 (0.785) \\
-ST & 262 & 60 & 96.7 & 11 & 8.61 & 1.05 & 3.38 & 10 (1.31) \\
+% table.py, 2026-09-23, PC-Timo (x86_64), PROCESS ecd519a1, cottax 078fb9f
+\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}
+\begin{tabular}{l@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}r@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rrr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rrr}
+\toprule
+\rule{0pt}{2.4ex} & & \multicolumn{3}{c}{evaluation (ms)} & \multicolumn{3}{c}{Jacobian (ms)} \\
+machine & models & port & OpenMDAO & PROCESS & port & OpenMDAO & PROCESS \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{stellarator\_helias} & 118 & 0.24 & 20 & 48 & 0.50 & 72 & 1200 \\
+\texttt{helias\_5b} & 70 & 0.23 & 12 & 40 & 0.29 & 36 & 380 \\
+\texttt{large\_tokamak\_nof} & 173 & 0.40 & 28 & 25 & 1.8 & 170 & 1700 \\
+\texttt{low\_aspect\_ratio\_DEMO} & 176 & 1.1 & 30 & 27 & 4.6 & 190 & 1800 \\
+\texttt{st\_regression} & 152 & 0.35 & 24 & 24 & 1.1 & 110 & 1200 \\
+\bottomrule
 \end{tabular}

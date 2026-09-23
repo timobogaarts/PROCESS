@@ -1,3 +1,3 @@
-# om_mdf.py, 2026-09-21, PC-Timo (x86_64), PROCESS 3a1db1c2, cottax 6488a1c
-configuration,arm,components,design,sweeps,setup_s,cold_model_s,model_ms,totals_ms,iterations,status,driver_s,objf,max_eq,min_ie,zeroed_partials,dense_components,zeroed_sinks
-st_regression,MDF (OpenMDAO),262,14,6,77.04509420999966,16.442658726002264,59.99015700217569,96.72540099563776,11,converged,8.614618819003226,-16.588576683164522,7.614797681299024e-12,-1.8298584869569368e-10,0,5,1
+# om_mdf.py, 2026-09-23, tcn781.local.snellius.surf.nl (x86_64), PROCESS ecd519a1, cottax 078fb9f
+configuration,arm,components,groups,design,sweeps,block_sweeps,warm_sweeps,setup_s,cold_model_s,model_ms,restart_model_ms,totals_ms,iterations,evaluations,status,driver_s,objf,max_eq,min_ie,zeroed_partials,dense_components,zeroed_sinks
+st_regression,MDF (OpenMDAO),152,2,14,4,fixed:2|fixed:2,2,61.1482406440191,7.980184424901381,23.861876921728253,25.957207893952727,112.30402393266559,10,11,converged,2.0432756289374083,-16.588576682857205,6.920242157093526e-12,-1.5953260934509217e-10,0,3,0

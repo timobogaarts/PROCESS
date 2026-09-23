@@ -1,42 +1,44 @@
-% table.py, 2026-09-21, PC-Timo (x86_64), PROCESS 63dd1b69, cottax 6488a1c
-\begin{tabular}{llrrrrrrrrrrr}
-machine & arm & $n$ / $m$ & nodes & eval (ms) & in-program ($\mu$s) & jac (ms) & VMCON it & cold (s) & warm (s) & SLSQP it & warm (s) & $f^*$ \\ \hline
-helias & MDA & 0 / 0 & 154 & 5.96 & -- & -- & -- & -- & -- & -- & -- & 1.3352 \\
- & MDF & 8 / 14 & 123 & 0.918 & 261 & 1.84 & 40 & 15 & 1.48 & 27 & 0.884 & 1.21844 \\
- & IDF & 11 / 17 & 123 & 0.84 & 285 & 2.03 & 47 & 13.1 & 1.27 & 17 & 0.631 & 1.21844 \\
- & SAND & 13 / 19 & 122 & 0.823 & 269 & 1.67 & 27 & 11.3 & 1.25 & 26 & 0.521 & 1.21844 \\
- & PROCESS & 8 / 14 & -- & 27.5 / 47.4 & -- & 1.23e+03 & 82 & -- & 162 & -- & -- & 1.21492 \\
-\hline
-helias-5b & MDA & 0 / 0 & 154 & 5.56 & -- & -- & -- & -- & -- & -- & -- & 0.758351 \\
- & MDF & 3 / 4 & 74 & 0.649 & 240 & 1.02 & 4 & 11.3 & 0.941 & 5 & 0.785 & 0.764242 \\
- & IDF & 6 / 7 & 74 & 0.698 & 222 & 1.1 & 4 & 13.1 & 0.891 & 5 & 0.699 & 0.764242 \\
- & SAND & 7 / 8 & 74 & 0.743 & 210 & 1.16 & 4 & 7.49 & 0.817 & 5 & 1.09 & 0.764242 \\
- & PROCESS & 3 / 4 & -- & 19 / 38.9 & -- & 399 & 4 & -- & 3.58 & -- & -- & 0.763518 \\
-\hline
-tokamak & MDA & 0 / 0 & 248 & 9.83 & -- & -- & -- & -- & -- & -- & -- & 1.6 \\
- & MDF & 20 / 26 & 179 & 1.34 & 592 & 4.9 & 7 & 44.9 & 1.46 & 8 & 1.8 & 1.6 \\
- & IDF & 25 / 31 & 179 & 1.35 & 577 & 5.38 & 9 & 41 & 1.32 & 10 & 1.15 & 1.6 \\
- & SAND & 27 / 33 & 179 & 1.3 & 554 & 5.46 & 8 & 43.9 & 1.2 & 10 & 1.06 & 1.6 \\
- & PROCESS & 20 / 26 & -- & 12.8 / 25 & -- & 1.41e+03 & 8 & -- & 20.8 & -- & -- & 1.6 \\
-\hline
-tokamak (eval) & MDA & 0 / 0 & 250 & 10.1 & -- & -- & -- & -- & -- & -- & -- & -- \\
- & MDF & 2 / 25 & 35 & 0.638 & 211 & 0.978 & 3 & 17.3 & 0.0702 & 3 & 0.0692 & -- \\
- & PROCESS & 2 / 25 & -- & 8.5 / 18.1 & -- & 139 & -- & -- & 1.07 & -- & -- & -- \\
-\hline
-LAR demo & MDA & 0 / 0 & 248 & 10.1 & -- & -- & -- & -- & -- & -- & -- & -0.519869 \\
- & MDF & 19 / 25 & 183 & 2.01 & 1.18e+03 & 7.11 & 11 & 49.3 & 1.69 & 12 & 1.85 & -0.406313 \\
- & IDF & 24 / 30 & 183 & 1.94 & 1.09e+03 & 7.94 & 20 & 41.2 & 1.55 & 22 & 1.84 & -0.406313 \\
- & SAND & 26 / 32 & 183 & 2.04 & 1.11e+03 & 7.66 & 19 & 37.4 & 1.45 & 22 & 1.23 & -0.406313 \\
- & PROCESS & 19 / 25 & -- & 9.19 / 18.2 & -- & 1.28e+03 & 16 & -- & 48.7 & -- & -- & -0.406296 \\
-\hline
-ST (eval) & MDA & 0 / 0 & 243 & 9.18 & -- & -- & -- & -- & -- & -- & -- & -- \\
- & MDF & 3 / 18 & 39 & 0.466 & 209 & 1.04 & 2 & 13.9 & 0.0653 & 2 & 0.0715 & -- \\
- & PROCESS & 3 / 18 & -- & 10 / 20.1 & -- & 201 & -- & -- & 1.03 & -- & -- & -- \\
-\hline
-ST & MDA & 0 / 0 & 244 & 9.83 & -- & -- & -- & -- & -- & -- & -- & -41.6686 \\
- & MDF & 14 / 18 & 157 & 1.05 & 516 & 3.38 & 10 & 30.8 & 1.16 & 10 & 1.31 & -16.5886 \\
- & IDF & 17 / 21 & 157 & 1.14 & 432 & 3.39 & 25 & 30.4 & 1.21 & 87 & 1.34 & -16.5886 \\
- & SAND & 18 / 22 & 157 & 1.23 & 499 & 3.4 & 37 (stopped) & 27.6 & 1.61 & 90 & 2.31 & -16.8332 \\
- & PROCESS & 14 / 18 & -- & 8.89 / 17.6 & -- & 860 & 10 & -- & 19.6 & -- & -- & -16.5886 \\
-\hline
+% table.py, 2026-09-23, PC-Timo (x86_64), PROCESS ecd519a1, cottax 078fb9f
+\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}
+\begin{tabular}{l@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}rrrr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rrrrrr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}r}
+\toprule
+\rule{0pt}{2.4ex}Optimization arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & VMCON it & SLSQP it & eval (ms) & jac (ms) & VMCON (ms) & model & SLSQP (ms) & model & $f^*$ \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{stellarator\_helias} & & & & & & & & & & & & & \\
+MDF & 8 & 2 & 12 & 122 & \checkmark\ 40 & \checkmark\ 27 & 0.24 & 0.50 & 480 & 99 & 100 & 55 & 1.218 \\
+IDF & 11 & 5 & 12 & 120 & \checkmark\ 47 & \checkmark\ 17 & 0.24 & 0.53 & 570 & 110 & 70 & 31 & 1.218 \\
+SAND & 12 & 6 & 12 & 119 & \checkmark\ 23 & \checkmark\ 17 & 0.25 & 0.55 & 300 & 56 & 72 & 31 & 1.218 \\
+PROCESS & 8 & 2 & 12 & -- & \checkmark\ 82 & -- & 48 & 1200 & 190000 & 190000 & -- & -- & 1.215 \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{helias\_5b} & & & & & & & & & & & & & \\
+MDF & 3 & 2 & 2 & 73 & \checkmark\ 4 & \checkmark\ 5 & 0.23 & 0.29 & 73 & 6.9 & 40 & 5.8 & 0.7642 \\
+IDF & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 5 & 0.22 & 0.41 & 73 & 7.2 & 42 & 6.2 & 0.7642 \\
+SAND & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 5 & 0.22 & 0.41 & 73 & 7.8 & 40 & 7.0 & 0.7642 \\
+PROCESS & 3 & 2 & 2 & -- & \checkmark\ 4 & -- & 40 & 380 & 3600 & 3200 & -- & -- & 0.7635 \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{large\_tokamak\_nof} & & & & & & & & & & & & & \\
+MDF & 20 & 3 & 23 & 178 & \checkmark\ 8 & \checkmark\ 8 & 0.40 & 1.8 & 180 & 48 & 78 & 30 & 1.600 \\
+SAND & 26 & 9 & 23 & 174 & \checkmark\ 9 & \checkmark\ 10 & 0.38 & 2.2 & 210 & 68 & 97 & 48 & 1.600 \\
+PROCESS & 20 & 3 & 23 & -- & \checkmark\ 8 & -- & 25 & 1700 & 28000 & 27000 & -- & -- & 1.600 \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{low\_aspect\_ratio\_DEMO} & & & & & & & & & & & & & \\
+MDF & 19 & 4 & 21 & 180 & \checkmark\ 11 & \checkmark\ 12 & 1.1 & 4.6 & 290 & 130 & 140 & 84 & -0.4063 \\
+SAND & 24 & 9 & 21 & 177 & \checkmark\ 19 & \checkmark\ 22 & 1.1 & 4.7 & 480 & 230 & 230 & 180 & -0.4063 \\
+PROCESS & 19 & 4 & 21 & -- & \checkmark\ 16 & -- & 27 & 1800 & 54000 & 53000 & -- & -- & -0.4063 \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{st\_regression} & & & & & & & & & & & & & \\
+MDF & 14 & 3 & 15 & 155 & \checkmark\ 10 & \checkmark\ 11 & 0.35 & 1.1 & 180 & 41 & 75 & 29 & -16.59 \\
+SAND & 17 & 6 & 15 & 153 & \checkmark\ 25 & \checkmark\ 82 & 0.32 & 1.2 & 420 & 130 & 400 & 340 & -16.59 \\
+PROCESS & 14 & 3 & 15 & -- & \checkmark\ 10 & -- & 24 & 1200 & 25000 & 25000 & -- & -- & -16.59 \\[0.3ex]
+\midrule\midrule
+\rule{0pt}{2.4ex}Evaluation arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & Newton it & Powell it & eval (ms) & jac (ms) & Newton (ms) & model & Powell (ms) & \multicolumn{1}{r@{\hspace{8.2pt}}}{model} & \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{large\_tokamak\_eval} & & & & & & & & & & & & \multicolumn{1}{r@{\hspace{8.2pt}}}{} & \\
+MDF & 2 & 2 & 23 & 34 & \checkmark\ 3 & -- & 0.17 & 0.20 & 51 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
+PROCESS & 2 & 2 & 23 & -- & -- & \checkmark\ 10 & 27 & 210 & -- & -- & 890 & \multicolumn{1}{r@{\hspace{8.2pt}}}{370} & \\[0.3ex]
+\midrule
+\rule{0pt}{2.4ex}\texttt{spherical\_tokamak\_eval} & & & & & & & & & & & & \multicolumn{1}{r@{\hspace{8.2pt}}}{} & \\
+MDF & 3 & 3 & 15 & 38 & \checkmark\ 2 & -- & 0.17 & 0.25 & 50 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
+PROCESS & 3 & 3 & 15 & -- & -- & \checkmark\ 10 & 26 & 280 & -- & -- & 890 & \multicolumn{1}{r@{\hspace{8.2pt}}}{350} & \\[0.3ex]
+\bottomrule
 \end{tabular}

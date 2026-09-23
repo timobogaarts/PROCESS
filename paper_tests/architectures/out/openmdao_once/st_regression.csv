@@ -1,0 +1,3 @@
+# om_mdf.py, 2026-09-23, tcn781.local.snellius.surf.nl (x86_64), PROCESS ecd519a1, cottax 078fb9f
+configuration,arm,components,groups,setup_s,cold_pass_s,pass_ms
+st_regression,one pass (OpenMDAO),152,2,61.345754879992455,7.85730247804895,23.867525858804584

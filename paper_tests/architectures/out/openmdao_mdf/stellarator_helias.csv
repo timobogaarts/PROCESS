@@ -1,3 +1,3 @@
-# om_mdf.py, 2026-09-21, PC-Timo (x86_64), PROCESS 3a1db1c2, cottax 6488a1c
-configuration,arm,components,design,sweeps,setup_s,cold_model_s,model_ms,totals_ms,iterations,status,driver_s,objf,max_eq,min_ie,zeroed_partials,dense_components,zeroed_sinks
-stellarator_helias,MDF (OpenMDAO),167,8,5,30.65737161200377,7.839050627000688,39.300381002249196,53.22643100225832,2617,failed,963.8867042780039,1.226720652645677,1.2404989435665925e-06,1.6741674713216526e-10,7,1,1
+# om_mdf.py, 2026-09-23, tcn792.local.snellius.surf.nl (x86_64), PROCESS ecd519a1, cottax 078fb9f
+configuration,arm,components,groups,design,sweeps,block_sweeps,warm_sweeps,setup_s,cold_model_s,model_ms,restart_model_ms,totals_ms,iterations,evaluations,status,driver_s,objf,max_eq,min_ie,zeroed_partials,dense_components,zeroed_sinks
+stellarator_helias,MDF (OpenMDAO),118,3,8,4,root:0|fixed:2|fixed:2,2,31.971601349068806,5.944754354888573,19.8305519297719,22.245931206271052,71.56374794431031,26,40,converged,3.4128349309321493,1.2184414302684063,4.439009160250862e-10,-1.675068195261531e-09,0,0,0
