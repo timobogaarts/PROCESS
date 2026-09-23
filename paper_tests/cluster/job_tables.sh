@@ -39,16 +39,22 @@ export JAX_PLATFORMS=cpu JAX_ENABLE_X64=1
 # were: OpenBLAS's reduction order depends on the thread count, and the SQPs see the
 # last bits (ulp.py).
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-LOG="paper_tests/cluster/logs/tables_${NAME}.log"
+LOG="paper_tests/cluster/logs/tables_${NAME}${SCRIPTS:+_rerun}.log"
 mkdir -p paper_tests/cluster/logs
 
 {
     echo "job ${SLURM_JOB_ID:-none} on $(hostname): $(lscpu | sed -n 's/^Model name: *//p'), $(nproc) cores"
     echo "cottax $COMMIT_COTTAX ($COTTAX_SRC), PROCESS $COMMIT_PROCESS"
     python -c "import cottax, jax; print('cottax', cottax.__file__, 'jax', jax.__version__)"
-    for script in "structure.py --scheme $SCHEME" "iteration.py --scheme $SCHEME" \
-                  "solve.py --scheme $SCHEME --optimiser vmcon" "solve.py --scheme $SCHEME --optimiser slsqp" \
-                  "native.py"; do
+    # SCRIPTS reruns a subset, e.g. SCRIPTS="solve.py --scheme minimal --optimiser vmcon".
+    if [ -n "${SCRIPTS:-}" ]; then
+        mapfile -t RUN <<< "$SCRIPTS"
+    else
+        RUN=("structure.py --scheme $SCHEME" "iteration.py --scheme $SCHEME"
+             "solve.py --scheme $SCHEME --optimiser vmcon" "solve.py --scheme $SCHEME --optimiser slsqp"
+             "native.py")
+    fi
+    for script in "${RUN[@]}"; do
         echo "== $(date '+%F %T') $script $NAME"
         python -u paper_tests/architectures/$script --configurations "$NAME"
         echo "== $(date '+%F %T') exit $?"

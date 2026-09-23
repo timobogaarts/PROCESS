@@ -71,7 +71,7 @@ port): the same number on both sides."""
 
 
 def arguments(description: str, *, optimiser: bool = True, batches: bool = False,
-              epsfcn: bool = False) -> argparse.Namespace:
+              epsfcn: bool = False, paper: bool = False) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=description)
     p.add_argument("--configurations", nargs="*", default=list(NAMES), metavar="NAME")
     p.add_argument("--scheme", choices=sorted(SCHEMES), default="minimal")
@@ -84,6 +84,8 @@ def arguments(description: str, *, optimiser: bool = True, batches: bool = False
     if batches:
         p.add_argument("--batches", nargs="*", type=int, default=[1, 16, 256, 4096], metavar="N")
         p.add_argument("--chunk", type=int, default=4096, help="designs per vmap; larger batches are lax.map'ed over chunks")
+    if paper:
+        p.add_argument("--paper", action="store_true", help="also write the paper's copy of each table")
     p.add_argument("--repeats", type=int, default=5, help="warm repeats to take the median of")
     return p.parse_args()
 

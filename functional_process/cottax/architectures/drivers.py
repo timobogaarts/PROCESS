@@ -1788,6 +1788,14 @@ class VmconDriver(GapDriver):
     max_iter: int = 100
     tolerance: float = 1.0e-8
     """`pyvmcon`'s `epsilon`. PROCESS's own is `data.numerics.epsvmc`."""
+    inequality_tolerance: float | None = 1.0e-8
+    """PROCESS's extra stopping condition (`numerics.force_vmcon_inequality_satisfication`,
+    on by default, at `force_vmcon_inequality_tolerance`): no convergence until every
+    inequality holds to within this, as `solver.py` passes `pyvmcon` its
+    `additional_convergence`. `pyvmcon`'s own test weighs each constraint by its
+    multiplier, so without this it can stop with an inequality violated by far more
+    than `tolerance`. `None` drops the condition.
+    """
     callback: object = None
     """`f(iteration, result, x, convergence_parameter) -> None`, in the driver's own
     *unscaled* coordinates, or `None`.
@@ -1842,6 +1850,7 @@ class VmconDriver(GapDriver):
         n_inequality = entry_count(sizes, 1 + self.n_equality, self.n_inequality)
         max_iter, tolerance = self.max_iter, self.tolerance
         qsp_solver, initial_b = self.qsp_solver, self.initial_b
+        inequality_tolerance = self.inequality_tolerance
 
         def host(live, flat_start):
             """One VMCON solve, on the host, on concrete NumPy."""
@@ -1960,6 +1969,14 @@ class VmconDriver(GapDriver):
                         else np.identity(len(flat_start)) * initial_b
                     ),
                     callback=wrapped,
+                    additional_convergence=(
+                        None
+                        if inequality_tolerance is None
+                        # `solver.py`'s `_ineq_cons_satisfied`: `ie >= 0` is satisfied.
+                        else lambda result, *_: bool(
+                            np.all(result.ie >= -inequality_tolerance)
+                        )
+                    ),
                 )
             except VMCONConvergenceException as e:
                 # `solver.py:262-272`'s own pattern: keep the best point, report the

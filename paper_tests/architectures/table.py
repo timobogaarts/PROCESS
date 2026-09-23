@@ -1,7 +1,7 @@
 """The paper's table from the four csvs: one row per machine and optimising arm,
 PROCESS's own run beside them.
 
-    $PY paper_tests/architectures/table.py [--scheme minimal]
+    $PY paper_tests/architectures/table.py [--scheme minimal] [--paper]
 
 Writes `out/table.tex` (a booktabs `tabular` for `\\input`) and prints it. Columns:
 
@@ -31,6 +31,10 @@ SHORT = {"stellarator_helias": "helias", "helias_5b": "helias-5b", "large_tokama
          "large_tokamak_eval": "tokamak (eval)", "low_aspect_ratio_DEMO": "LAR demo",
          "spherical_tokamak_eval": "ST (eval)", "st_regression": "ST"}
 
+
+PAPER = Path.home() / "graph_paper" / "listings" / "process_cases"
+"""Where `--paper` puts the two tabulars the paper `\\input`s."""
+PAPER_NAMES = {"table.tex": "architectures_table.tex", "table_batched.tex": "architectures_batched.tex"}
 
 IDF_IS_SAND = {"large_tokamak_nof", "low_aspect_ratio_DEMO", "st_regression"}
 """Machines whose IDF and SAND assemble to the same problem (same unknowns, nodes and
@@ -88,7 +92,7 @@ def marked(row):
 
 
 def main():
-    args = bench.arguments(__doc__, optimiser=False)
+    args = bench.arguments(__doc__, optimiser=False, paper=True)
     structure = by(bench.read(f"structure_{args.scheme}"), "configuration", "arm")
     iteration = by(bench.read(f"iteration_{args.scheme}"), "configuration", "arm")
     solves = {opt: by(bench.read(f"solve_{args.scheme}_{opt}"), "configuration", "arm") for opt in bench.OPTIMISERS}
@@ -136,7 +140,7 @@ def main():
             ]) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
-    (bench.OUT / "table.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    write_table("table.tex", text, args)
     print(text)
     batched(args)
     scaling(args)
@@ -202,46 +206,66 @@ def openmdao(args):
     print(text)
 
 
+BATCHED_COLUMNS = (("cpu", None), ("cpu", 4096), ("gpu", 4096), ("gpu", 262144))
+"""The batched table's column pairs: the CPU one design at a time (in-program, from
+`iteration.py`: the N = 1 reference with no dispatch in it), then per design at a
+batch the CPU and the GPU both take, then at the largest batch the GPU takes."""
+
+
 def batched(args):
-    """`out/table_batched.tex`: the block over N designs, per design -- the CPU at
-    N = 1 and at its largest batch, the GPU at 4096 and at the largest batch it took."""
-    cpu = bench.read(f"batched_{args.scheme}_cpu")
-    gpu = bench.read(f"batched_{args.scheme}_gpu")
-    if not cpu and not gpu:
+    """`out/table_batched.tex`: the block per design, evaluation and Jacobian, in us --
+    the serial CPU reference beside the batches `BATCHED_COLUMNS` names."""
+    rows = {p: bench.read(f"batched_{args.scheme}_{p}") for p in ("cpu", "gpu")}
+    iteration = by(bench.read(f"iteration_{args.scheme}"), "configuration", "arm")
+    structure = by(bench.read(f"structure_{args.scheme}"), "configuration", "arm")
+    if not rows["cpu"] and not rows["gpu"]:
         return
 
-    def at(rows, name, arm, n=None):
-        mine = [r for r in rows if r["configuration"] == name and r["arm"] == arm]
-        if not mine:
-            return None
+    def at(platform, name, arm, n):
+        return next((r for r in rows[platform]
+                     if r["configuration"] == name and r["arm"] == arm and int(r["N"]) == n), None)
+
+    def pair(platform, name, arm, n):
         if n is None:
-            return max(mine, key=lambda r: int(r["N"]))
-        return next((r for r in mine if int(r["N"]) == n), None)
+            it = iteration.get((name, arm))
+            return [fixed(it["serial_us"]), fixed(it.get("serial_jacobian_us"))] if it else ["--", "--"]
+        r = at(platform, name, arm, n)
+        return [fixed(r["evaluate_us_per_design"]), fixed(r["jacobian_us_per_design"])] if r else ["--", "--"]
 
-    def cell(r):
-        return "--" if r is None else f"{num(r['evaluate_us_per_design'])} / {num(r['jacobian_us_per_design'])}"
-
+    # Short, so a pair of number columns is not stretched under its header: the batch
+    # as a power of two, the serial reference as "serial".
+    head = ["CPU, serial" if n is None else f"{platform.upper()}, $2^{{{n.bit_length() - 1}}}$"
+            for platform, n in BATCHED_COLUMNS]
+    k = len(BATCHED_COLUMNS)
     lines = [
-        r"\begin{tabular}{llrrrrrr}",
-        r"machine & arm & $n$ & CPU $N{=}1$ & CPU $N{=}4096$ & GPU $N{=}4096$ & GPU largest & $N$ \\ \hline",
-        r"& & & \multicolumn{4}{c}{$\mu$s per design, evaluation / Jacobian} & \\",
+        r"\begin{tabular}{llr" + "rr" * k + "}",
+        r"\toprule",
+        " & & & " + " & ".join(rf"\multicolumn{{2}}{{c}}{{{h}}}" for h in head) + r" \\",
+        " ".join(rf"\cmidrule(lr){{{4 + 2 * i}-{5 + 2 * i}}}" for i in range(k)),
+        r"machine & arm & $n$ & " + " & ".join(["eval", "jac"] * k) + r" \\",
     ]
     for name in bench.NAMES:
-        arms = [a for a in ("MDF", "IDF", "SAND") if shown(name, a) and (at(cpu, name, a) or at(gpu, name, a))]
+        arms = [a for a in ("MDF", "IDF", "SAND") if shown(name, a) and (name, a) in structure]
+        if not arms:
+            continue
+        lines.append(r"\midrule")
         for i, arm in enumerate(arms):
-            top = at(gpu, name, arm)
-            lines.append(" & ".join([
-                SHORT.get(name, name) if i == 0 else "", arm,
-                (at(cpu, name, arm) or at(gpu, name, arm))["unknowns"],
-                cell(at(cpu, name, arm, 1)), cell(at(cpu, name, arm, 4096)),
-                cell(at(gpu, name, arm, 4096)), cell(top), top["N"] if top else "--",
-            ]) + r" \\")
-        if arms:
-            lines.append(r"\hline")
-    lines.append(r"\end{tabular}")
+            cells = [c for platform, n in BATCHED_COLUMNS for c in pair(platform, name, arm, n)]
+            lines.append(" & ".join([SHORT.get(name, name) if i == 0 else "", arm,
+                                     structure[(name, arm)]["unknowns"], *cells]) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
-    (bench.OUT / "table_batched.tex").write_text(bench.provenance("table.py").replace("#", "%") + "\n" + text)
+    write_table("table_batched.tex", text, args)
     print(text)
+
+
+def write_table(filename, text, args):
+    """`out/<filename>`, and with `--paper` the paper's copy (`PAPER`, which main.tex
+    `\\input`s), each under the provenance of the rows it was made from."""
+    stamped = bench.provenance("table.py").replace("#", "%") + "\n" + text
+    (bench.OUT / filename).write_text(stamped)
+    if getattr(args, "paper", False):
+        (PAPER / PAPER_NAMES[filename]).write_text(stamped)
 
 
 if __name__ == "__main__":
