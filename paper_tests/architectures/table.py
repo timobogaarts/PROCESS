@@ -5,8 +5,10 @@ PROCESS's own run beside them.
 
 Writes `out/table.tex` (a booktabs `tabular` for `\\input`) and prints it. Columns:
 
-    machine | arm | n | equalities | inequalities | block nodes | eval ms | jac ms
-            | VMCON: iterations, warm s | SLSQP: iterations, warm s | objective
+    arm | n, equalities, inequalities, block nodes | VMCON it, SLSQP it
+        | eval ms, jac ms, VMCON warm s, SLSQP warm s | objective
+
+under one row per machine naming it,
 
 `eval` and `jac` are in-program (`serial_us`, `serial_jacobian_us`: no dispatch in
 them). PROCESS's row per machine: its idempotence loop under `eval` (what it pays per
@@ -30,6 +32,14 @@ import bench  # noqa: E402
 SHORT = {"stellarator_helias": "helias", "helias_5b": "helias-5b", "large_tokamak_nof": "tokamak",
          "large_tokamak_eval": "tokamak (eval)", "low_aspect_ratio_DEMO": "LAR demo",
          "spherical_tokamak_eval": "ST (eval)", "st_regression": "ST"}
+"""Short names for the side tables (scaling, OpenMDAO) that the paper does not print."""
+
+
+def machine_row(name, columns):
+    """The machine's own name -- the configuration's, as the paper's figures print it --
+    as a row spanning the table, over its arms: no machine column, however long the
+    name."""
+    return rf"\multicolumn{{{columns}}}{{l}}{{\rule{{0pt}}{{2.4ex}}\texttt{{{name.replace('_', chr(92) + '_')}}}}} \\"
 
 
 PAPER = Path.home() / "graph_paper" / "listings" / "process_cases"
@@ -98,29 +108,32 @@ def main():
     solves = {opt: by(bench.read(f"solve_{args.scheme}_{opt}"), "configuration", "arm") for opt in bench.OPTIMISERS}
     native = by(bench.read("native"), "configuration")
 
+    # Four groups, ruled apart: the problem (sizes), the iterations each driver took,
+    # the times, the answer. `booktabs` rules and `|` do not meet cleanly, so the
+    # separator is a hairline with its own padding, and the rules lose their gaps.
+    bar = r"@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}"
     lines = [
-        r"\begin{tabular}{llrrrrrrrrrrr}",
+        r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
+        r"\begin{tabular}{l" + bar + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
         r"\toprule",
-        r"machine & arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & eval (ms) & jac (ms)"
-        r" & VMCON it & VMCON (s) & SLSQP it & SLSQP (s) & $f^*$ \\",
+        r"\rule{0pt}{2.4ex}arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes"
+        r" & VMCON it & SLSQP it & eval (ms) & jac (ms) & VMCON (s) & SLSQP (s) & $f^*$ \\[0.3ex]",
     ]
     for name in bench.NAMES:
         arms = [a for a in bench.ARMS if shown(name, a) and (name, a) in structure]
         if not arms:
             continue
-        lines.append(r"\midrule")
-        for i, arm in enumerate(arms):
+        lines += [r"\midrule", machine_row(name, 12)]
+        for arm in arms:
             st, it = structure[(name, arm)], iteration[(name, arm)]
             v, s = solves["vmcon"].get((name, arm)), solves["slsqp"].get((name, arm))
             lines.append(" & ".join([
-                SHORT.get(name, name) if i == 0 else "",
                 arm,
-                st["unknowns"], st["equalities"], st["inequalities"],
-                it["block_nodes"],
+                st["unknowns"], st["equalities"], st["inequalities"], it["block_nodes"],
+                marked(v), marked(s),
                 fixed(1e-3 * float(it["serial_us"])),
                 fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-                marked(v), fixed(v["warm_s"]) if v else "--",
-                marked(s), fixed(s["warm_s"]) if s else "--",
+                fixed(v["warm_s"]) if v else "--", fixed(s["warm_s"]) if s else "--",
                 fixed((v or s or {}).get("objf"), 4),
             ]) + r" \\")
         p = native.get((name,))
@@ -128,16 +141,13 @@ def main():
             mdf = structure[(name, "MDF")]
             solved = int(p["iterations"]) > 0
             lines.append(" & ".join([
-                "", "PROCESS",
-                p["design"], mdf["equalities"], mdf["inequalities"],
-                "--",
-                fixed(p["loop_ms"]),
-                fixed(p["gradient_ms"]),
-                f"\\checkmark\\ {p['iterations']}" if solved else "--",
-                fixed(p["solve_s"]),
-                "--", "--",
+                "PROCESS",
+                p["design"], mdf["equalities"], mdf["inequalities"], "--",
+                f"\\checkmark\\ {p['iterations']}" if solved else "--", "--",
+                fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
+                fixed(p["solve_s"]), "--",
                 fixed(p["objf"], 4) if solved else "--",
-            ]) + r" \\")
+            ]) + r" \\[0.3ex]")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     write_table("table.tex", text, args)
@@ -206,17 +216,17 @@ def openmdao(args):
     print(text)
 
 
-BATCHED_COLUMNS = (("cpu", None), ("cpu", 4096), ("gpu", 4096), ("gpu", 262144))
-"""The batched table's column pairs: the CPU one design at a time (in-program, from
-`iteration.py`: the N = 1 reference with no dispatch in it), then per design at a
-batch the CPU and the GPU both take, then at the largest batch the GPU takes."""
+BATCHED_N = {"cpu": (1, 256, 4096, 16384), "gpu": (1, 256, 4096, 16384, 65536, 262144)}
+"""The batches the batched table prints, per platform, as their actual N: wall time of
+one call over the whole batch, so a flat row is designs for free and a row growing
+with N is a saturated device."""
 
 
 def batched(args):
-    """`out/table_batched.tex`: the block per design, evaluation and Jacobian, in us --
-    the serial CPU reference beside the batches `BATCHED_COLUMNS` names."""
+    """`out/table_batched.tex`: wall time (ms) of one evaluation and one Jacobian of the
+    arm's block over N designs at once, CPU and GPU, at the batches `BATCHED_N` names --
+    one row per quantity, so the eye reads the scaling along the row."""
     rows = {p: bench.read(f"batched_{args.scheme}_{p}") for p in ("cpu", "gpu")}
-    iteration = by(bench.read(f"iteration_{args.scheme}"), "configuration", "arm")
     structure = by(bench.read(f"structure_{args.scheme}"), "configuration", "arm")
     if not rows["cpu"] and not rows["gpu"]:
         return
@@ -225,34 +235,27 @@ def batched(args):
         return next((r for r in rows[platform]
                      if r["configuration"] == name and r["arm"] == arm and int(r["N"]) == n), None)
 
-    def pair(platform, name, arm, n):
-        if n is None:
-            it = iteration.get((name, arm))
-            return [fixed(it["serial_us"]), fixed(it.get("serial_jacobian_us"))] if it else ["--", "--"]
-        r = at(platform, name, arm, n)
-        return [fixed(r["evaluate_us_per_design"]), fixed(r["jacobian_us_per_design"])] if r else ["--", "--"]
-
-    # Short, so a pair of number columns is not stretched under its header: the batch
-    # as a power of two, the serial reference as "serial".
-    head = ["CPU, serial" if n is None else f"{platform.upper()}, $2^{{{n.bit_length() - 1}}}$"
-            for platform, n in BATCHED_COLUMNS]
-    k = len(BATCHED_COLUMNS)
+    columns = [(p, n) for p in ("cpu", "gpu") for n in BATCHED_N[p]]
+    k_cpu, k_gpu = len(BATCHED_N["cpu"]), len(BATCHED_N["gpu"])
     lines = [
-        r"\begin{tabular}{llr" + "rr" * k + "}",
+        r"\begin{tabular}{ll" + "r" * len(columns) + "}",
         r"\toprule",
-        " & & & " + " & ".join(rf"\multicolumn{{2}}{{c}}{{{h}}}" for h in head) + r" \\",
-        " ".join(rf"\cmidrule(lr){{{4 + 2 * i}-{5 + 2 * i}}}" for i in range(k)),
-        r"machine & arm & $n$ & " + " & ".join(["eval", "jac"] * k) + r" \\",
+        rf" & & \multicolumn{{{k_cpu}}}{{c}}{{CPU, $N$}} & \multicolumn{{{k_gpu}}}{{c}}{{GPU, $N$}} \\",
+        rf"\cmidrule(lr){{3-{2 + k_cpu}}} \cmidrule(lr){{{3 + k_cpu}-{2 + k_cpu + k_gpu}}}",
+        r"arm & & " + " & ".join(str(n) for _, n in columns) + r" \\",
     ]
     for name in bench.NAMES:
         arms = [a for a in ("MDF", "IDF", "SAND") if shown(name, a) and (name, a) in structure]
         if not arms:
             continue
-        lines.append(r"\midrule")
-        for i, arm in enumerate(arms):
-            cells = [c for platform, n in BATCHED_COLUMNS for c in pair(platform, name, arm, n)]
-            lines.append(" & ".join([SHORT.get(name, name) if i == 0 else "", arm,
-                                     structure[(name, arm)]["unknowns"], *cells]) + r" \\")
+        lines += [r"\midrule", machine_row(name, 2 + len(columns))]
+        for arm in arms:
+            for j, (label, key) in enumerate((("eval", "evaluate_ms"), ("jac", "jacobian_ms"))):
+                cells = []
+                for platform, n in columns:
+                    r = at(platform, name, arm, n)
+                    cells.append(fixed(r[key]) if r else "--")
+                lines.append(" & ".join([arm if j == 0 else "", label, *cells]) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     write_table("table_batched.tex", text, args)

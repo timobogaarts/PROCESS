@@ -84,7 +84,7 @@ def greedy_colouring(pattern: np.ndarray) -> np.ndarray:
 
 
 class Model(om.ExplicitComponent):
-    """One `ImplementedFunction`: `compute` is its body, jitted; its partials are
+    """One `Implemented` function: `compute` is its body, jitted; its partials are
     **sparse and coloured** -- the sparsity pattern found once from the body's dense
     Jacobian at two nearby points, the columns coloured, one forward tangent per colour
     -- which is what OpenMDAO's own jax component does, and what a user of it would
@@ -109,7 +109,7 @@ class Model(om.ExplicitComponent):
             self.add_input(name(v), val=np.asarray(values[v], dtype=float))
         for v in d.owns:
             self.add_output(name(v), val=0.0 if name(v) in UNREAD else np.asarray(values[v], dtype=float))
-        fn, n_out = d.fn, len(d.owns)
+        fn, n_out = d.implementation, len(d.owns)
         sizes = [int(np.size(values[d.reads[j]])) for j in self._real]
         splits = np.cumsum(sizes)[:-1]
         out_sizes = [int(np.size(values[o])) for o in d.owns]
@@ -290,7 +290,7 @@ def values_of(live, graph, report):
                     out = np.asarray(0.0)
                 else:
                     d = graph[owner]
-                    produced = d.fn(*(jnp.asarray(value(r)) for r in d.reads))
+                    produced = d.implementation(*(jnp.asarray(value(r)) for r in d.reads))
                     produced = tuple(produced) if len(d.owns) > 1 else (produced,)
                     for o, p in zip(d.owns, produced, strict=True):
                         memo[o] = np.asarray(p)

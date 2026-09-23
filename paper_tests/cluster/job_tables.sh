@@ -39,7 +39,8 @@ export JAX_PLATFORMS=cpu JAX_ENABLE_X64=1
 # were: OpenBLAS's reduction order depends on the thread count, and the SQPs see the
 # last bits (ulp.py).
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-LOG="paper_tests/cluster/logs/tables_${NAME}${SCRIPTS:+_rerun}.log"
+TAG="${SCRIPTS:+_$(echo "$SCRIPTS" | head -1 | cut -d" " -f1 | sed "s/\.py//")}"
+LOG="paper_tests/cluster/logs/tables_${NAME}${TAG}.log"
 mkdir -p paper_tests/cluster/logs
 
 {
@@ -57,6 +58,7 @@ mkdir -p paper_tests/cluster/logs
     for script in "${RUN[@]}"; do
         echo "== $(date '+%F %T') $script $NAME"
         python -u paper_tests/architectures/$script --configurations "$NAME"
-        echo "== $(date '+%F %T') exit $?"
+        rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
+        echo "== $(date '+%F %T') exit $rc"
     done
 } > "$LOG" 2>&1

@@ -51,5 +51,6 @@ mkdir -p paper_tests/cluster/logs
     # shellcheck disable=SC2086
     python -u paper_tests/architectures/batched.py --scheme "$SCHEME" --configurations "$NAME" \
         --batches $BATCHES --chunk "$CHUNK"
-    echo "== $(date '+%F %T') exit $?"
+    rc=$?   # before the echo: inside it, $? would be the $(date ...)'s
+    echo "== $(date '+%F %T') exit $rc"
 } > "$LOG" 2>&1
