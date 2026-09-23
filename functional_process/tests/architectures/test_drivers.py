@@ -38,21 +38,25 @@ def vpath(where):
 
 
 class _Contraction:
-    """A minimal stand-in for `ConditionMap`: `PicardDriver` only ever calls it
-    positionally and reads `.unknowns` in its missing-`Start` error message, so a
-    plain callable with that much is enough to test the iteration in isolation from
-    any real graph.
+    """A minimal stand-in for `ConditionMap`: `PicardDriver` is an `IterateDriver`, so
+    cottax wraps this in a `NextValues` and the driver only ever calls *that*
+    positionally; `.symbols` and `.unknowns` are what the level and the missing-`Start`
+    message read, so a plain callable with that much is enough to test the iteration in
+    isolation from any real graph.
 
-    A call gives `(objectives, gaps)`, and the gap of `u = g(u)` is `u - g(u)` -- which
-    is what the driver turns back into the next iterate.
+    A call gives `(objectives, sides)` -- the statement as stated, `u = 0.5u + 3` as
+    the pair -- and the reading takes the right side as the next iterate. Nothing here
+    subtracts.
     """
 
     unknowns = (vpath(toy.u),)
+    symbols = (Eq,)
+    objectives = ()
 
     def __call__(self, u):
         # Fixed point at u = 6.0 (u = 0.5u + 3 => u = 6), |derivative| = 0.5 < 1, so
         # Picard converges geometrically from any start.
-        return (), (u - (0.5 * u + 3.0),)
+        return (), ((u, 0.5 * u + 3.0),)
 
 
 def test_picard_driver_converges_on_a_contraction_mapping():
@@ -191,14 +195,22 @@ def test_scaling_leaves_a_workable_problem_when_a_coordinate_is_unscalable():
 # ================================================ the inert-objective refusal (§26)
 
 
+class _Stated:
+    """The statement under a reading -- where `condition_places` finds the sides."""
+
+    def __init__(self, relations):
+        self.relations = relations
+
+
 class _Rows:
-    """A stand-in for `ConditionMap` carrying only what `_refuse_inert_objective`
-    reads through `condition_places`: the objective, the relations and the unknowns.
+    """A stand-in for a `Gaps` carrying only what `_refuse_inert_objective` reads
+    through `condition_places`: the objective, the statement's relations and the
+    unknowns.
     """
 
     def __init__(self, objective, conditions, unknowns):
         self.objectives = (objective,) if objective is not None else ()
-        self.relations = tuple((c, None, Eq) for c in conditions)
+        self.conditions = _Stated(tuple((c, None, Eq) for c in conditions))
         self.unknowns = tuple(unknowns)
 
 

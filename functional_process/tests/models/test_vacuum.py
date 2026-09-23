@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.execution.driver import Driver
+from cottax.execution.driver import GapDriver
 from cottax.interfaces import (
     Assign,
     Eq,
@@ -192,8 +192,8 @@ class TestSolveDuctDiameter(Tier2Contract):
     samples = FROM_FILE
 
 
-class _NewtonRootFindDriver(Driver):
-    """Test-only `AbstractDriver` for `RootFind`, wrapping the exact algorithm
+class _NewtonRootFindDriver(GapDriver):
+    """Test-only `GapDriver` for `RootFind`, wrapping the exact algorithm
     `solve_duct_diameter` already uses: `jax.grad`-based Newton inside a
     `jax.lax.while_loop`, same default `max_iter=100`/`tol=1e-10`, same single fixed
     `d = 1.0` start when no guess is supplied.
@@ -210,12 +210,12 @@ class _NewtonRootFindDriver(Driver):
     max_iter: int = 100
     tol: float = 1e-10
 
-    def __call__(self, conditions, data):
+    def solve(self, gaps, data):
         start = data.get(Start)
         d0 = jnp.asarray(start[0]) if start is not None else jnp.asarray(1.0)
 
         def residual_fn(d):
-            _objectives, (r,) = conditions(d)
+            _objectives, (r,) = gaps(d)
             return r
 
         def cond(carry):
@@ -390,8 +390,8 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     assert joined.conditions == DuctFeasibility.conditions + root_find_problem.conditions
 
 
-class _MeritFunctionFeasibilityDriver(Driver):
-    """Test-only `AbstractDriver` answering `Feasibility` by the reduction its own
+class _MeritFunctionFeasibilityDriver(GapDriver):
+    """Test-only `GapDriver` answering `Feasibility` by the reduction its own
     docstring names as the standard move: stack the equality residual with `relu` of
     the two inequality residuals, and drive the resulting 3-vector to zero as an
     ordinary least-squares problem (`optx.LevenbergMarquardt`) over the 2 unknowns
@@ -407,7 +407,7 @@ class _MeritFunctionFeasibilityDriver(Driver):
 
     accepts = staticmethod(is_feasibility)
 
-    def __call__(self, conditions, data):
+    def solve(self, gaps, data):
         start = data.get(Start)
         x0 = (
             jnp.asarray(start, dtype=float)
@@ -417,12 +417,12 @@ class _MeritFunctionFeasibilityDriver(Driver):
 
         def merit(x, _):
             # An equality's gap must vanish; an inequality's only counts where it is
-            # positive. Which is which is `conditions.symbols`, parallel to the gaps,
-            # so the reduction does not depend on the order the join wrote them in.
-            _objectives, gaps = conditions(x[0], x[1])
+            # positive. Which is which is `gaps.symbols`, parallel to the gaps, so the
+            # reduction does not depend on the order the join wrote them in.
+            _objectives, at = gaps(x[0], x[1])
             return jnp.stack([
                 jnp.asarray(gap) if op is Eq else jax.nn.relu(jnp.asarray(gap))
-                for gap, op in zip(gaps, conditions.symbols, strict=True)
+                for gap, op in zip(at, gaps.symbols, strict=True)
             ])
 
         solution = optx.least_squares(

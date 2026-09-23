@@ -15,7 +15,7 @@ from cottax.interfaces import (
     is_fixed_point,
     is_optimise,
     is_problem,
-    is_square,
+    is_equalities,
 )
 from cottax.mdao_architectures import GaussSeidelMinimal
 from cottax.pytree.mint import unminted
@@ -254,7 +254,7 @@ def default_drivers(
             )
         elif is_fixed_point(definition):
             drivers[problem] = PicardDriver()
-        elif is_square(definition):
+        elif is_equalities(definition):
             drivers[problem] = SeededNewtonDriver(seed=_root_find_seed)
         else:
             raise TypeError(

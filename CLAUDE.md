@@ -97,6 +97,19 @@ own imports -- every `.py` under `functional_process/` and `paper_tests/`, and e
 notebook code cell -- with `PRIVATE` empty: a name the interface lacks is a request
 upstream, not a reach past it.
 
+**A driver is a final of one of cottax's two readings, and reads no side itself.** The
+seam hands the two sides of every relation (`(value(lhs), value(rhs))`, `None` for a
+side not written) and subtracts nothing, so the reading is what a driver opts into: a
+`GapDriver` is handed a `Gaps` and implements `solve(gaps, data)`, where `gaps(*x)` is
+the objectives and one gap (`lhs - rhs`) per relation -- the SQPs and the Newtons; an
+`IterateDriver` is handed a `NextValues` and implements `iterate(next_values, data)`,
+where a step is the right side of each relation as stated -- `PicardDriver`,
+`SweepDriver`. A driver that inverts the gaps sets `square = True` and cottax counts
+them against the unknowns once per solve (`NotSquare`); `is_square` is `is_equalities`,
+which counts nothing, since a place names one value of any shape. `host_cache.bind`
+takes the `Gaps`, as cottax's own `_host_cache` does, and `drivers.condition_places`
+reads the relations off the `ConditionMap` under the reading.
+
 **A constraint is declared where it is computed.** Each active `icc` is one
 `interfaces.pytree_namespace_module.ConstraintFunction`
 (`cottax/models/constraints.py`): a body owning `.constraints.c<id>` at

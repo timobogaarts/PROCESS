@@ -35,6 +35,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+from cottax.execution.driver import Gaps
 from cottax.interfaces import Le, Plan
 from cottax.mdao_architectures import MDF
 from jax.flatten_util import ravel_pytree
@@ -129,9 +130,13 @@ def _status(trace, tolerance, cap):
 
 
 def _why_no_step(drive, context, seeded):
-    """The conditions that make a first QP infeasible: **violated and constant**."""
+    """The conditions that make a first QP infeasible: **violated and constant**.
+
+    Read as **gaps**, the way the SQP answering this block reads them: the seam hands
+    the two sides of each relation, and `Gaps` is the level that subtracts.
+    """
     unknowns = [jnp.asarray(seeded[u]) for u in drive.unknowns]
-    condition_map = drive.condition_map(context)
+    condition_map = Gaps(drive.condition_map(context))
 
     def stacked(*x):
         objectives, gaps = condition_map(*x)
@@ -414,7 +419,7 @@ def solve_block(build: BlockBuild, reference, machine_graph, cold) -> dict:
             tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
         )
         summary = non_finite_summary(
-            solve_drive.condition_map(context), probe_unravel, flat_probe
+            Gaps(solve_drive.condition_map(context)), probe_unravel, flat_probe
         )
         result.update(
             status="non-finite",

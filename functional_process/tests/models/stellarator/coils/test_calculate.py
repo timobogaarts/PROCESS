@@ -25,7 +25,7 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.execution.driver import Driver
+from cottax.execution.driver import GapDriver
 from cottax.execution.drivers.kinds import Start
 from cottax.interfaces import Assign, RunnableGraph, Schedule, is_root_find
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
@@ -984,9 +984,9 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
         }, material
 
 
-class _GenericBisectionRootFind(Driver):
-    """Test-only `Driver` answering a root find generically, through the gap a
-    `ConditionMap` call hands back and nothing else.
+class _GenericBisectionRootFind(GapDriver):
+    """Test-only `GapDriver` answering a root find generically, through the gap the
+    reading hands back and nothing else.
 
     `IntersectBisectionNewtonPolish` takes the tabulated curves as **driver data**
     (`CurveX`/`CurveLhs`/`CurveRhs`), which a caller supplies or a `Rename` points at a
@@ -1011,11 +1011,11 @@ class _GenericBisectionRootFind(Driver):
     lower: float
     upper: float
 
-    def __call__(self, conditions, data):
+    def solve(self, gaps, data):
         start = data.get(Start)
         x0 = start[0] if start is not None else 0.5 * (self.lower + self.upper)
         bracketed = optx.root_find(
-            lambda x, _: conditions(x)[1][0],  # (objectives, gaps) -> the one gap
+            lambda x, _: gaps(x)[1][0],  # (objectives, gaps) -> the one gap
             optx.Bisection(rtol=0.0, atol=1e-10, flip="detect"),
             x0,
             options={"lower": self.lower, "upper": self.upper},

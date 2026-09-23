@@ -7,10 +7,10 @@ import time
 
 import jax.numpy as jnp
 import numpy as np
+from cottax.execution.driver import Gaps
 from cottax.execution.drivers.kinds import Converged, Start, Steps
 from cottax.interfaces import (
-    Absorb,
-    ConditionMap,
+    Combine,
     Drive,
     ExecutableGraph,
     Graph,
@@ -30,6 +30,7 @@ from jax.tree_util import GetAttrKey
 from functional_process.cottax.architectures import sand
 from functional_process.cottax.architectures.drivers import (
     SeededNewtonDriver,
+    flat_gaps,
     # `Status` was written here, for `MdfNewtonDriver`, and moved to `drivers` when
     # `VmconDriver` and `SlsqpDriver` started reporting one too: a port naming belongs
     # beside the drivers that write it, not beside the one assembly that first read it.
@@ -253,21 +254,20 @@ class MdfNewtonDriver(SeededNewtonDriver):
         """`(Steps, Converged, Status)` -- what `__call__` returns after the design."""
         return (Steps, Converged, Status)
 
-    def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """The root of `conditions` started from `data[Start]`, then the verdict."""
+    def solve(self, gaps: Gaps, data) -> tuple:
+        """The root of `gaps` started from `data[Start]`, then the verdict."""
         import optimistix as optx  # noqa: PLC0415 -- only this arm needs it
 
         start = data.get(Start)
         if start is None:
             raise ValueError(
                 f"MdfNewtonDriver needs a starting value for every design variable "
-                f"({', '.join(v.spelling for v in conditions.unknowns)})"
+                f"({', '.join(v.spelling for v in gaps.unknowns)})"
             )
         flat_guess, unravel = ravel_pytree(start)
 
         def residual(flat, args=None):
-            out, _ = ravel_pytree(conditions(*unravel(flat)))
-            return out
+            return flat_gaps(gaps, unravel(flat))
 
         solution = optx.root_find(
             residual,
@@ -316,7 +316,9 @@ def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCH
     # it takes is `MDF`'s own answer (`requirements_of`), not a set re-derived here.
     required = MDF(optimiser=problem_name).requirements_of(with_problem)
     absorbed = (
-        Absorb(problem_name, required).apply(with_problem) if required else with_problem
+        Combine(problem_name, (problem_name, *required)).apply(with_problem)
+        if required
+        else with_problem
     )
     nested = nested_inside(absorbed, problem_name)
     return ExecutableGraph(nested), problem_name, report

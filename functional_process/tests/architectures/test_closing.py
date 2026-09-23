@@ -113,7 +113,7 @@ def test_flattened_one_has_the_shape_the_plan_states(live):
     report = built.report
     assert report["closing"] == kinds.PAIRINGS["one"]
     assert report["flattened"] is True
-    # One combined problem, at the requirement's own name -- `Absorb` keeps it.
+    # One combined problem, at the requirement's own name -- `Combine` keeps it.
     (place,) = report["closing_problems"]
     assert place == ".Close.c2"
     unknowns = report["closing_problems"][place]

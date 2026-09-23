@@ -1,11 +1,16 @@
-"""Compiled, cached calls into a `ConditionMap` from a **host-side** solver loop."""
+"""Compiled, cached calls into a block's `Gaps` from a **host-side** solver loop.
+
+What `bind` takes is the driver's *reading* of the statement (`GapDriver`'s `Gaps`),
+not the `ConditionMap` under it: the gaps come from the level, so nothing here
+subtracts.
+"""
 
 import functools
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.interfaces import ConditionMap
+from cottax.execution.driver import Gaps
 
 # **There is no memo here any more** (`_audit/optimise_design.md` §37). `_BOUND` was a
 # list of compiled blocks scanned with `==`, and it existed because `bind` built its
@@ -44,7 +49,7 @@ def _flat_key(tree):
     return (treedef, mask, frozen), arrays
 
 
-def bind(conditions: ConditionMap, unravel):
+def bind(conditions: Gaps, unravel):
     """`(values, jacobian, values_and_jacobian)` for this block, each taking only
     `flat_x`.
     """
@@ -74,8 +79,8 @@ def flat_values(values) -> jnp.ndarray:
 
 
 def flat_answer(answer) -> jnp.ndarray:
-    """`flat_values` of what a `ConditionMap` call gives back: the objectives, then one
-    gap per relation. The stacked order every host-side solver here partitions by.
+    """`flat_values` of what a `Gaps` call gives back: the objectives, then one gap per
+    relation. The stacked order every host-side solver here partitions by.
     """
     objectives, gaps = answer
     return flat_values((*objectives, *gaps))
@@ -123,24 +128,24 @@ def _timed(fn, structure, leaves):
     return call
 
 
-def flat_conditions(conditions: ConditionMap, flat_x, unravel):
+def flat_conditions(conditions: Gaps, flat_x, unravel):
     """`_flat_conditions`, the eager entry point."""
     return _flat_conditions(conditions, flat_x, unravel)
 
 
 @eqx.filter_jit
-def _flat_conditions(conditions: ConditionMap, flat_x, unravel):
+def _flat_conditions(conditions: Gaps, flat_x, unravel):
     """The block's conditions, stacked, at one flat design vector."""
     return flat_answer(conditions(*unravel(flat_x)))
 
 
-def flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
+def flat_condition_jacobian(conditions: Gaps, flat_x, unravel):
     """`_flat_condition_jacobian`, the eager entry point."""
     return _flat_condition_jacobian(conditions, flat_x, unravel)
 
 
 @eqx.filter_jit
-def _flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
+def _flat_condition_jacobian(conditions: Gaps, flat_x, unravel):
     """`d(conditions)/d(flat_x)` by forward-mode AD -- `flat_conditions`' Jacobian."""
     return jax.jacfwd(
         lambda flat: flat_answer(conditions(*unravel(flat)))

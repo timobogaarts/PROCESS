@@ -23,8 +23,9 @@ from functional_process.cottax.architectures.drivers import _nothing_is_tracing
 
 
 class _Block(eqx.Module):
-    """A `ConditionMap`-shaped callable: array leaves, non-array leaves, and a `__call__`
-    that takes the unknowns positionally and gives back `(objectives, gaps)`.
+    """A `Gaps`-shaped callable: array leaves, non-array leaves, and a `__call__`
+    that takes the unknowns positionally and gives back `(objectives, gaps)` -- what
+    `bind` is handed, which is the *reading* of a statement and never the statement.
     """
 
     weight: jax.Array

@@ -118,6 +118,17 @@ The models are nodes; `input.indat.graph_for(machine)` is their graph, with PROC
 cycles in it. An architecture is a short list of cottax ops on that graph, then a
 driver per problem.
 
+**Every driver here sits on one of cottax's two readings of a statement.** The seam
+(`Conditions`) hands the two *sides* of each relation and subtracts nothing, so a driver
+says which reading it wants by which level it is a final of: a `GapDriver` gets a `Gaps`
+and `solve(gaps, data)`, where `gaps(*x)` is the objectives and one gap (`lhs - rhs`)
+per relation -- the SQPs (`VmconDriver`, `SlsqpDriver`, `BoxedSlsqpDriver`) and the Newtons
+(`SeededNewtonDriver`, `SafeguardedNewtonDriver`, `BracketedRootDriver`); an
+`IterateDriver` gets a `NextValues` and `iterate(next_values, data)`, where a step *is*
+the right side of each relation -- `PicardDriver` and `SweepDriver`. A Newton that
+inverts the gaps sets `square = True`, and cottax counts the gaps against the unknowns
+once per solve. Nothing in the port subtracts a side for itself.
+
 Each active constraint is **one declaration** (`cottax/models/constraints.py`, cottax's
 `ConstraintFunction`): a body owning `.constraints.c<id>` at `.Constraint<id>`, and
 beside it the requirement that holds it against zero, `^require.Constraint<id>` -- `= 0`
@@ -131,8 +142,8 @@ place in the port's own namespace, and `^` is for what a rewrite fabricates.
 |---|---|---|
 | MDA | `FixedPointCut` per loop-carried variable, `Nest` the models' own solves, Picard/Newton on each | `architectures.mda.cut_graph`, `architectures.recipes` |
 | MDF | the cut graph plus the constraint declarations, the objective node and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
-| IDF | as MDF, then `Absorb` the scheme's consistency statements into the optimiser; the models' own solves are nested in it | `architectures.idf.idf_graph` |
-| SAND | `Absorb` every problem on the optimiser's cycle into it | `architectures.sand.assemble` |
+| IDF | as MDF, then `Combine` the scheme's consistency statements into the optimiser; the models' own solves are nested in it | `architectures.idf.idf_graph` |
+| SAND | `Combine` every problem on the optimiser's cycle into it | `architectures.sand.assemble` |
 | closed MDA | `Insert` a `RootFind` per (equality, closing variable) inside the MDA -- nested, or flattened with the problems on its cycle into one square problem -- so the analysis answers the equality itself | `architectures.closing.close` |
 | two-stage OUU | the closed MDA (`ouu.CLOSURES`: `bracketed` by default -- the density's root find alone, the Picards nested, converging from any start -- or `flattened`) split by `reach` from the belief and operating leaves (`architectures.stages`: first stage hoisted, recourse batched over a Sobol' draw of `configurations.kinds.BELIEFS`), one node owning the CVaR statistics, an `Optimise` over the build variables under a boxed SLSQP | `architectures.ouu.two_stage`, `outer`, `solve` |
 | lifted sizing choice | `Undrive`, `Undetermine` and `Delete` a model's own root find, so its unknown is a design variable, and `Insert` one node stating its residual as an inequality on the safe side -- the winding pack: `wp_width_r_min` outer, `j_tf_wp <= f j_c` (PROCESS icc 33 / ixc 140) a chance constraint | `architectures.lift.lift`, `lift_winding_pack`; `ouu.two_stage(lifts=...)` |

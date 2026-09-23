@@ -534,8 +534,8 @@ def problem_kind(node) -> str | None:
     """The kind a problem row is marked with: `None` for a node with a body, else
     `cottax.relational.shape_of`'s slug -- except `combined`.
 
-    **`combined` is read off structure, and the reading is a heuristic.** `Combine` and
-    `Absorb` leave no mark on the node they build: the join is
+    **`combined` is read off structure, and the reading is a heuristic.** `Combine`
+    leaves no mark on the node it builds: the join is
     `RelationalCondition.__add__`, which concatenates the two statements' relations, and
     the result is a statement like any other. What survives is *which* relations ended up
     under the objective. A requirement absorbed into the optimiser is `c op 0` -- a

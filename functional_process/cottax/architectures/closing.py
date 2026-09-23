@@ -14,7 +14,7 @@ and by `rmajor` 24. Which variable closes which equality is the caller's choice
     raw -> cut -> constraint and objective nodes (`mdf.mdf_graph`)
         -> `Insert` a `Requirement(cond, Eq)` at `.Close.<cond>` and `Determine` it by
            the variable that closes it -- a root find over one unknown
-        -> every declared statement on its cycle `Absorb`ed into it, which keeps its
+        -> every declared statement on its cycle `Combine`d into it, which keeps its
            name (`flattened`; `flatten=False` nests them inside it, Picard-driven)
         -> `queries.nested_inside(each root find)`
         -> drivers: `mda.default_drivers`, and `SafeguardedNewtonDriver` on each root
@@ -33,7 +33,7 @@ import dataclasses
 import numpy as np
 from cottax.execution.drivers.kinds import Converged, Steps
 from cottax.interfaces import (
-    Absorb,
+    Combine,
     Determine,
     Eq,
     ExecutableGraph,
@@ -165,9 +165,10 @@ def cycle_of(graph: Graph, cond: VarPath, var: VarPath) -> tuple[NodePath, ...]:
 
 
 def flattened(graph: Graph, place: NodePath) -> tuple[Graph, NodePath]:
-    """Every declared statement on `place`'s cycle folded into it -- `Absorb`, so the
-    root find keeps its name and binding -- giving one square problem over `(var, the
-    cut copies)`. Returns the graph and that problem's path, which is `place`.
+    """Every declared statement on `place`'s cycle folded into it -- `Combine` with
+    `place` among the operands, so the root find keeps its name and binding -- giving
+    one square problem over `(var, the cut copies)`. Returns the graph and that
+    problem's path, which is `place`.
 
     The alternative to `nested_inside`: nested, every evaluation of the root find's
     residual re-converges each Picard inside it, and the Newton's derivative goes
@@ -183,7 +184,7 @@ def flattened(graph: Graph, place: NodePath) -> tuple[Graph, NodePath]:
     )
     if not inner:
         return graph, place
-    return (Plan(graph) + Absorb(place, inner)).graph, place
+    return (Plan(graph) + Combine(place, (place, *inner))).graph, place
 
 
 # ---------------------------------------------------------------- the closed graph

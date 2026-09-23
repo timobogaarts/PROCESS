@@ -27,6 +27,7 @@ from jax.flatten_util import ravel_pytree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
+from cottax.execution.driver import Gaps  # noqa: E402
 from cottax.interfaces import PathMap, Schedule  # noqa: E402
 
 from functional_process.cottax.architectures.evaluate import (  # noqa: E402
@@ -102,7 +103,7 @@ def optimiser_row(live, arm, build, args) -> dict:
     seeded.update(seed_starts(schedule, stage))
     context = PathMap({v: context_value(v, stage, seeded, cold) for v in drive.context})
     x, unravel = ravel_pytree(tuple(jnp.asarray(seeded[u]) for u in drive.unknowns))
-    cm = drive.condition_map(context)
+    cm = Gaps(drive.condition_map(context))
     values, jacobian, _ = bind(cm, unravel)
     _, compile_values = bench.timed(values, x)
     _, compile_jacobian = bench.timed(jacobian, x)
