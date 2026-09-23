@@ -35,12 +35,16 @@ SHORT = {"stellarator_helias": "helias", "helias_5b": "helias-5b", "large_tokama
 """Short names for the side tables (scaling, OpenMDAO) that the paper does not print."""
 
 
-def machine_row(name, columns):
+def machine_row(name, columns, last_rule=True):
     """The machine's own name -- the configuration's, as the paper's figures print it --
     in the first column, over its arms: that column is as wide as the longest name, and
     the rules between the groups run through the row unbroken."""
     cell = rf"\rule{{0pt}}{{2.4ex}}\texttt{{{name.replace('_', chr(92) + '_')}}}"
-    return cell + " &" * (columns - 1) + r" \\"
+    if last_rule:
+        return cell + " &" * (columns - 1) + r" \\"
+    # No rule before the last column (a root find has no objective): the column before
+    # it takes plain space of the rule's width instead, as `main`'s `no_answer` does.
+    return cell + " &" * (columns - 2) + r" \multicolumn{1}{r@{\hspace{8.2pt}}}{} & \\"
 
 
 PAPER = Path.home() / "graph_paper" / "listings" / "process_cases"
@@ -94,6 +98,11 @@ def fixed(v, digits=2):
     return f"{x:.{decimals}f}"
 
 
+def ms(seconds):
+    """A time in seconds, printed in ms beside the eval and jac columns."""
+    return fixed(1e3 * float(seconds))
+
+
 def marked(row):
     """The iteration count behind a tick (converged) or a cross (anything else)."""
     if row is None or row["status"] == "evaluated":
@@ -116,10 +125,17 @@ def main():
     # The first rule, between the names and the numbers, heavier than the three
     # between the number groups.
     first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
-    def header(iterations, times):
-        return (r"\rule{0pt}{2.4ex}arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes"
+    def header(arm, iterations, times, answer=True):
+        last = rf"{times[1]} (ms) & $f^*$" if answer else no_answer(f"{times[1]} (ms)")
+        return (rf"\rule{{0pt}}{{2.4ex}}{arm} arm & $n$ & $m_\mathrm{{eq}}$ & $m_\mathrm{{ineq}}$ & nodes"
                 rf" & {iterations[0]} it & {iterations[1]} & eval (ms) & jac (ms)"
-                rf" & {times[0]} (s) & {times[1]} (s) & $f^*$ \\[0.3ex]")
+                rf" & {times[0]} (ms) & {last} \\[0.3ex]")
+
+    def no_answer(cell):
+        """The last time column where there is no objective: the rule before `f^*` is
+        that column's right edge, so it is replaced by plain space of the same width
+        (4 + 0.2 + 4 pt) and the empty `f^*` cell stands unruled."""
+        return rf"\multicolumn{{1}}{{r@{{\hspace{{8.2pt}}}}}}{{{cell}}} &"
 
     def root_find(name):
         return structure[(name, "MDF")].get("problem") == "root-find"
@@ -128,7 +144,7 @@ def main():
         r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
         r"\begin{tabular}{l" + first + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
         r"\toprule",
-        header(("VMCON", "SLSQP it"), ("VMCON", "SLSQP")),
+        header("Optimization", ("VMCON", "SLSQP it"), ("VMCON", "SLSQP")),
     ]
     for name in [n for n in bench.NAMES if (n, "MDF") in structure and not root_find(n)]:
         lines += [r"\midrule", machine_row(name, 12)]
@@ -141,7 +157,7 @@ def main():
                 marked(v), marked(s),
                 fixed(1e-3 * float(it["serial_us"])),
                 fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-                fixed(v["warm_s"]) if v else "--", fixed(s["warm_s"]) if s else "--",
+                ms(v["warm_s"]) if v else "--", ms(s["warm_s"]) if s else "--",
                 fixed((v or s or {}).get("objf"), 4),
             ]) + r" \\")
         p = native.get((name,))
@@ -152,20 +168,21 @@ def main():
                 p["design"], mdf["equalities"], mdf["inequalities"], "--",
                 f"\\checkmark\\ {p['iterations']}", "--",
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
-                fixed(p["solve_s"]), "--",
+                ms(p["solve_s"]), "--",
                 fixed(p["objf"], 4),
             ]) + r" \\[0.3ex]")
 
     # The root finds (`i_process_run_mode = -2`) under their own header: neither side
     # runs an optimiser. The port's MDF states the root find in the graph and a Newton
     # (optimistix) answers it, whichever optimiser the session holds; PROCESS hands it
-    # to `fsolve`, MINPACK's hybrid Powell, which counts function evaluations -- its
-    # difference Jacobian's columns included -- not iterations.
+    # to `fsolve`, MINPACK's hybrid Powell. Its column is headed "it" like the others,
+    # but what it holds is function evaluations -- its difference Jacobian's columns
+    # included -- since MINPACK reports no iterations: the caption has to say so.
     roots = [n for n in bench.NAMES if (n, "MDF") in structure and root_find(n)]
     if roots:
-        lines += [r"\midrule\midrule", header(("Newton", "Powell ev"), ("Newton", "Powell"))]
+        lines += [r"\midrule\midrule", header("Evaluation", ("Newton", "Powell it"), ("Newton", "Powell"), answer=False)]
     for name in roots:
-        lines += [r"\midrule", machine_row(name, 12)]
+        lines += [r"\midrule", machine_row(name, 12, last_rule=False)]
         st, it = structure[(name, "MDF")], iteration[(name, "MDF")]
         v = solves["vmcon"].get((name, "MDF"))
         lines.append(" & ".join([
@@ -174,8 +191,8 @@ def main():
             marked(v), "--",
             fixed(1e-3 * float(it["serial_us"])),
             fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-            fixed(v["warm_s"]) if v else "--", "--", "--",
-        ]) + r" \\")
+            ms(v["warm_s"]) if v else "--",
+        ]) + " & " + no_answer("--") + r" \\")
         p = native.get((name,))
         if p is not None:
             evaluations = p.get("fsolve_evaluations")
@@ -185,8 +202,8 @@ def main():
                 p["design"], st["equalities"], st["inequalities"], "--",
                 "--", f"\\checkmark\\ {evaluations}" if solved else (evaluations or "--"),
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
-                "--", fixed(p["solve_s"]), "--",
-            ]) + r" \\[0.3ex]")
+                "--",
+            ]) + " & " + no_answer(ms(p["solve_s"])) + r" \\[0.3ex]")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     write_table("table.tex", text, args)
