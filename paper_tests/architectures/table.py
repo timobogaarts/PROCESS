@@ -126,11 +126,16 @@ def main():
     # The first rule, between the names and the numbers, heavier than the three
     # between the number groups.
     first = r"@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}"
+    # The times group: the model's own cost (eval, jac, in-program), then each driver's
+    # warm solve beside its **own** time -- the solve minus the seconds inside the model
+    # calls it made (`solve.py`'s `model_s`): the optimiser's loop, VMCON's QP, the
+    # preparation of the start. PROCESS's own time needs its model calls counted the same
+    # way (`native.py`'s `model_s`); until a row has them it prints `--`.
     def header(arm, iterations, times, answer=True):
-        last = rf"{times[1]} (ms) & $f^*$" if answer else no_answer(f"{times[1]} (ms)")
+        last = "own & $f^*$" if answer else no_answer("own")
         return (rf"\rule{{0pt}}{{2.4ex}}{arm} arm & $n$ & $m_\mathrm{{eq}}$ & $m_\mathrm{{ineq}}$ & nodes"
                 rf" & {iterations[0]} it & {iterations[1]} & eval (ms) & jac (ms)"
-                rf" & {times[0]} (ms) & {last} \\[0.3ex]")
+                rf" & {times[0]} (ms) & own & {times[1]} (ms) & {last} \\[0.3ex]")
 
     def no_answer(cell):
         """The last time column where there is no objective: the rule before `f^*` is
@@ -138,17 +143,24 @@ def main():
         (4 + 0.2 + 4 pt) and the empty `f^*` cell stands unruled."""
         return rf"\multicolumn{{1}}{{r@{{\hspace{{8.2pt}}}}}}{{{cell}}} &"
 
+    def own(row, total="warm_s"):
+        """A solve's time outside its model calls, in ms; `--` where they were not counted."""
+        if not row or row.get("model_s") in (None, ""):
+            return "--"
+        return ms(float(row[total]) - float(row["model_s"]))
+
     def root_find(name):
         return structure[(name, "MDF")].get("problem") == "root-find"
 
+    columns = 14
     lines = [
         r"\setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}",
-        r"\begin{tabular}{l" + first + "rrrr" + bar + "rr" + bar + "rrrr" + bar + "r}",
+        r"\begin{tabular}{l" + first + "rrrr" + bar + "rr" + bar + "rrrrrr" + bar + "r}",
         r"\toprule",
         header("Optimization", ("VMCON", "SLSQP it"), ("VMCON", "SLSQP")),
     ]
     for name in [n for n in bench.NAMES if (n, "MDF") in structure and not root_find(n)]:
-        lines += [r"\midrule", machine_row(name, 12)]
+        lines += [r"\midrule", machine_row(name, columns)]
         for arm in [a for a in bench.ARMS if shown(name, a) and (name, a) in structure]:
             st, it = structure[(name, arm)], iteration[(name, arm)]
             v, s = solves["vmcon"].get((name, arm)), solves["slsqp"].get((name, arm))
@@ -158,7 +170,8 @@ def main():
                 marked(v), marked(s),
                 fixed(1e-3 * float(it["serial_us"])),
                 fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-                ms(v["warm_s"]) if v else "--", ms(s["warm_s"]) if s else "--",
+                ms(v["warm_s"]) if v else "--", own(v),
+                ms(s["warm_s"]) if s else "--", own(s),
                 fixed((v or s or {}).get("objf"), 4),
             ]) + r" \\")
         p = native.get((name,))
@@ -169,7 +182,7 @@ def main():
                 p["design"], mdf["equalities"], mdf["inequalities"], "--",
                 f"\\checkmark\\ {p['iterations']}", "--",
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
-                ms(p["solve_s"]), "--",
+                ms(p["solve_s"]), own(p, total="solve_s"), "--", "--",
                 fixed(p["objf"], 4),
             ]) + r" \\[0.3ex]")
 
@@ -178,12 +191,14 @@ def main():
     # (optimistix) answers it, whichever optimiser the session holds; PROCESS hands it
     # to `fsolve`, MINPACK's hybrid Powell. Its column is headed "it" like the others,
     # but what it holds is function evaluations -- its difference Jacobian's columns
-    # included -- since MINPACK reports no iterations: the caption has to say so.
+    # included -- since MINPACK reports no iterations: the caption has to say so. The
+    # Newton runs inside the compiled schedule, so it has no host-side model calls to
+    # subtract: no "own" time there.
     roots = [n for n in bench.NAMES if (n, "MDF") in structure and root_find(n)]
     if roots:
         lines += [r"\midrule\midrule", header("Evaluation", ("Newton", "Powell it"), ("Newton", "Powell"), answer=False)]
     for name in roots:
-        lines += [r"\midrule", machine_row(name, 12, last_rule=False)]
+        lines += [r"\midrule", machine_row(name, columns, last_rule=False)]
         st, it = structure[(name, "MDF")], iteration[(name, "MDF")]
         v = solves["vmcon"].get((name, "MDF"))
         lines.append(" & ".join([
@@ -192,7 +207,7 @@ def main():
             marked(v), "--",
             fixed(1e-3 * float(it["serial_us"])),
             fixed(1e-3 * float(it.get("serial_jacobian_us", "nan"))),
-            ms(v["warm_s"]) if v else "--",
+            ms(v["warm_s"]) if v else "--", "--", "--",
         ]) + " & " + no_answer("--") + r" \\")
         p = native.get((name,))
         if p is not None:
@@ -203,8 +218,8 @@ def main():
                 p["design"], st["equalities"], st["inequalities"], "--",
                 "--", f"\\checkmark\\ {evaluations}" if solved else (evaluations or "--"),
                 fixed(p["loop_ms"]), fixed(p["gradient_ms"]),
-                "--",
-            ]) + " & " + no_answer(ms(p["solve_s"])) + r" \\[0.3ex]")
+                "--", "--", ms(p["solve_s"]),
+            ]) + " & " + no_answer(own(p, total="solve_s")) + r" \\[0.3ex]")
     lines += [r"\bottomrule", r"\end{tabular}"]
     text = "\n".join(lines) + "\n"
     write_table("table.tex", text, args)

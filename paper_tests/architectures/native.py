@@ -16,6 +16,7 @@ PROCESS writes its output files next to the input, so each run gets a scratch co
 from __future__ import annotations
 
 import shutil
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -88,10 +89,32 @@ def solve_row(name: str) -> dict:
         return counted(self, x)
 
     FSolve.evaluate_eq_cons = counting
+
+    # PROCESS's model calls during the run, counted and timed as `solve.py` does the
+    # port's: `fcnvmc1` is one evaluation (objective and constraints -- its idempotence
+    # loop), `fcnvmc2` the finite-difference gradient (`2n` passes). What is left of the
+    # run is VMCON's own time. `fcnvmc2` calls the models itself, not `fcnvmc1`, so
+    # nothing is counted twice; `FSolve` reaches the models through `fcnvmc1` too.
+    model = {"evaluations": 0, "gradients": 0, "seconds": 0.0}
+    originals = (Evaluators.fcnvmc1, Evaluators.fcnvmc2)
+
+    def timing(fn, kind):
+        def call(self, *a, **kw):
+            began = time.perf_counter()
+            try:
+                return fn(self, *a, **kw)
+            finally:
+                model["seconds"] += time.perf_counter() - began
+                model[kind] += 1
+        return call
+
+    Evaluators.fcnvmc1 = timing(originals[0], "evaluations")
+    Evaluators.fcnvmc2 = timing(originals[1], "gradients")
     try:
         _, seconds = bench.timed(run.run)
     finally:
         FSolve.evaluate_eq_cons = counted
+        Evaluators.fcnvmc1, Evaluators.fcnvmc2 = originals
     m = int(data.numerics.n_equality_constraints + data.numerics.n_inequality_constraints)
     meq = int(data.numerics.n_equality_constraints)
     conf, *_ = constraints.constraint_eqns(m, -1, data)
@@ -100,6 +123,9 @@ def solve_row(name: str) -> dict:
     return {
         "iterations": int(data.numerics.n_solver_iterations),
         "fsolve_evaluations": calls[0],
+        "evaluations": model["evaluations"],     # model calls during the run
+        "gradients": model["gradients"],
+        "model_s": model["seconds"],
         "objf": float(objective_function(data.numerics.i_figure_merit, data)) if optimising else float("nan"),
         "max_eq": float(np.max(np.abs(conf[:meq]))) if meq else 0.0,
         "min_ie": float(np.min(conf[meq:])) if m > meq else float("nan"),
