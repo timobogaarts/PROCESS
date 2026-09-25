@@ -44,6 +44,7 @@ from functional_process.cottax.architectures.mda import (
     default_drivers,
     given_start,
     guess_sources,
+    scheme,
 )
 from functional_process.cottax.input.indat import STATED_VALUES, graph_for
 
@@ -544,7 +545,7 @@ def cold_state(data, graph=None) -> dict:
     key = graph if graph is not None else graph_for()
     cached = _COLD_STATES.get(key)
     if cached is None:
-        sweep = cut_graph(without_excluded(key), GaussSeidel())
+        sweep = cut_graph(without_excluded(key), scheme(GaussSeidel()))
         drivers = default_drivers(sweep)
         for problem in list(drivers):
             if is_fixed_point(sweep[problem]):

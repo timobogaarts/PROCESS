@@ -19,7 +19,7 @@ from cottax.interfaces import (
     ExecutableGraph,
     Graph,
     body_of,
-    is_bare_condition,
+    is_requirement,
     is_driven,
     is_problem,
     shape_of,
@@ -547,7 +547,7 @@ def problem_kind(node) -> str | None:
     A fixed point over several relations is *not* called combined: a join of pairings is
     still a fixed point, which is what `is_fixed_point` says of it.
     """
-    if not (is_problem(node) or is_bare_condition(node)):
+    if not (is_problem(node) or is_requirement(node)):
         return None
     kind = shape_of(node)
     statement = node.statement if is_driven(node) else node
@@ -563,7 +563,7 @@ def problem_kind(node) -> str | None:
 def driver_name(node) -> str | None:
     """Which algorithm answers a problem: the driver's class name, `UNDRIVEN` for a
     problem none has been `Assign`ed to yet, `None` for a node that is not a problem."""
-    if not (is_problem(node) or is_bare_condition(node)):
+    if not (is_problem(node) or is_requirement(node)):
         return None
     return type(node.driver).__name__ if is_driven(node) else UNDRIVEN
 
@@ -856,7 +856,7 @@ def _matrix_struct(
             "colour": hue[name].colour,
             "base": hue[name].base,
             "overlay": hue[name].overlay,
-            "problem": is_problem(graph[name]) or is_bare_condition(graph[name]),
+            "problem": is_problem(graph[name]) or is_requirement(graph[name]),
             "minted": is_minted(name),
             "reads": reads,
             "nr": n_reads,

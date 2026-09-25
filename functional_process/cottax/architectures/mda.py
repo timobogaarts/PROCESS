@@ -17,7 +17,11 @@ from cottax.interfaces import (
     is_problem,
     is_equalities,
 )
-from cottax.mdao_architectures import GaussSeidelMinimal
+from cottax.mdao_architectures import (At, CloseFunctionalCycles, Closing, CutRule,
+                                        GaussSeidelMinimal)
+from cottax.pytree.mint import Minted
+from cottax.pytree.path import NodePath, node_of
+from jax.tree_util import GetAttrKey
 from cottax.pytree.mint import unminted
 
 from functional_process.cottax.architectures.drivers import (
@@ -29,11 +33,50 @@ from functional_process.cottax.input.indat import GRAPH
 from functional_process.cottax.paths import written
 from functional_process.cottax.queries import declared
 
-SCHEME = GaussSeidelMinimal()
+HAT, MDA = Minted("hat"), Minted("mda")
+"""Where a cut copy lives (`^hat.<place>`) and where a closure binds (`^mda.<place>`)."""
+
+
+class AsBefore(At):
+    """How a closure is named: after the cut variable's own place for one cut
+    (`^mda.<place>`), after the first cut's place under `.mda` for several
+    (`^mda.<place>.mda`) -- the names every pin and every `^mda` lookup in this port
+    were written against."""
+
+    def __call__(self, group):
+        var = next(iter(group))
+        return MDA(
+            node_of(var)
+            if len(group) == 1
+            else NodePath((*var.segments, GetAttrKey("mda")))
+        )
+
+    def __repr__(self):
+        return "as_before"
+
+
+CLOSING = Closing(HAT, AsBefore())
+"""How a group of cuts is closed: copies under `^hat`, the closure named `AsBefore`."""
+
+
+MAX_EXACT_ORDER = 18
+"""The largest cycle `GaussSeidelMinimal` searches exactly; beyond it the scheme refuses
+rather than guessing."""
+
+
+def scheme(rule: CutRule) -> CloseFunctionalCycles:
+    """`rule` as a cutting scheme of this port: every cycle of the bodies closed per
+    cycle, copies under `^hat`, closures named `AsBefore`. An architecture is handed
+    its `rule` and `closing`."""
+    return CloseFunctionalCycles(rule, CLOSING)
+
+
+SCHEME = scheme(GaussSeidelMinimal(MAX_EXACT_ORDER))
 """How the raw graph's cycles are opened: a Gauss-Seidel sweep of each cycle in the
-order that cuts the fewest variables, one consistency statement per cycle
+order that cuts the fewest variables, one consistency problem per cycle
 (`cottax.mdao_architectures`). One Picard iterate of a cycle is then one sweep of it
-in that order, which is how PROCESS's own idempotence loop runs."""
+in that order, which is how PROCESS's own idempotence loop runs. An architecture is
+handed its `rule` and `closing` and cuts inside itself."""
 
 
 def cut_graph(graph=GRAPH, scheme=SCHEME):

@@ -33,6 +33,7 @@ import dataclasses
 import numpy as np
 from cottax.execution.drivers.kinds import Converged, Steps
 from cottax.interfaces import (
+    RelationalCondition,
     Combine,
     Determine,
     Eq,
@@ -42,7 +43,7 @@ from cottax.interfaces import (
     Plan,
     RunnableGraph,
     Schedule,
-    is_bare_condition,
+    is_requirement,
     is_problem,
     shape_of,
 )
@@ -180,11 +181,11 @@ def flattened(graph: Graph, place: NodePath) -> tuple[Graph, NodePath]:
     inner = tuple(
         n
         for n in component
-        if n != place and (is_problem(graph[n]) or is_bare_condition(graph[n]))
+        if n != place and (is_problem(graph[n]) or is_requirement(graph[n]))
     )
     if not inner:
         return graph, place
-    return (Plan(graph) + Combine(place, (place, *inner))).graph, place
+    return (Plan(graph) + Combine(place, (place, *inner), RelationalCondition)).graph, place
 
 
 # ---------------------------------------------------------------- the closed graph

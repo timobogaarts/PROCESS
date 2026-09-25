@@ -7,9 +7,9 @@ from PROCESS), with one *arm* per architecture:
 | arm    | recipe                                    | solved by                |
 |--------|-------------------------------------------|--------------------------|
 | `MDA`  | `mda.cut_graph` + `mda.default_drivers`   | the cut graph with the condition nodes, once |
-| `MDF`  | `sand.problem_graph` + `MDF()`            | `evaluate.run_schedule`  |
-| `IDF`  | `idf.idf_graph` (`IDF()`)                 | `evaluate.run_schedule`  |
-| `SAND` | `sand.assemble` (`SAND()`)                | `evaluate.run_schedule`  |
+| `MDF`  | `mdf_block_graph` (`MDF(...)`)            | `evaluate.run_schedule`  |
+| `IDF`  | `idf.idf_graph` (`IDF(...)`)              | `evaluate.run_schedule`  |
+| `SAND` | `sand.assemble` (`SAND(...)`)             | `evaluate.run_schedule`  |
 
 A root-find configuration's `MDF` is `mdf.assemble(root_find=True)`'s in-graph root
 find, solved by `mdf.in_graph_solve`.
@@ -55,7 +55,9 @@ from functional_process.cottax.architectures.evaluate import (
     resolve,
     run_schedule,
     seed_block,
+    without_excluded,
 )
+from functional_process.cottax.architectures import mda
 from functional_process.cottax.architectures.mda import seed_starts
 from functional_process.cottax.input import native
 from functional_process.cottax.input.indat import configuration_from_indat, graph_for
@@ -324,32 +326,50 @@ def build_sand(reference, machine_graph, switch_values, optimiser=None, scheme=N
         reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
     )
     combined, report = sand.assemble(
-        reference, driven, env, switch_values=switch_values, drop_arrays=False
+        reference,
+        driven,
+        env,
+        switch_values=switch_values,
+        drop_arrays=False,
+        graph=machine_graph,
+        scheme=scheme,
     )
     return _block_build(
         combined, reference, env, optimiser, report["omitted"], scheme, nested=False
     )
 
 
-def build_mdf_block(reference, machine_graph, switch_values, optimiser=None, scheme=None):
-    """Assemble the MDF arm **in the graph**: the cut MDA, the constraint and
-    objective nodes and the `Optimise`, then `cottax.mdao_architectures.MDF` -- every
-    consistency statement nested in the optimiser, every model's own solve inside
-    the consistency statement on its cycle. Solved as IDF and SAND are, by
-    `solve_block`, so the three arms differ in the architecture and nothing else.
+def mdf_block_graph(reference, machine_graph, switch_values, scheme=None):
+    """`(graph, report)`: the MDF arm **in the graph** -- the constraint and objective
+    nodes and the `Optimise` over the raw machine graph, then
+    `cottax.mdao_architectures.MDF` handed the scheme's rule and closing: it cuts the cycles itself, nests
+    every closure it bound in the optimiser and every model's own solve inside the
+    closure on its cycle. Not cut beforehand: a closure is what the architecture's own
+    cutting binds.
     """
-    driven, env = mda_env(
-        reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
-    )
-    with_problem, _optimiser, report = sand.problem_graph(
-        driven,
+    raw = without_excluded(machine_graph if machine_graph is not None else graph_for())
+    with_problem, optimiser, report = sand.problem_graph(
+        raw,
         reference.ixc,
         reference.icc,
         reference.n_equality,
         reference.i_figure_merit,
         switch_values=switch_values,
     )
-    nested = (Plan(with_problem) + MDF()).graph
+    scheme = mda.SCHEME if scheme is None else scheme
+    architecture = MDF(scheme.rule, scheme.closing, optimiser)
+    return (Plan(with_problem) + architecture).graph, report
+
+
+def build_mdf_block(reference, machine_graph, switch_values, optimiser=None, scheme=None):
+    """Assemble the MDF arm **in the graph** (`mdf_block_graph`). Solved as IDF and
+    SAND are, by `solve_block`, so the three arms differ in the architecture and
+    nothing else; the MDA env seeds it as it seeds them.
+    """
+    _driven, env = mda_env(
+        reference, graph=machine_graph, **({} if scheme is None else {"scheme": scheme})
+    )
+    nested, report = mdf_block_graph(reference, machine_graph, switch_values, scheme)
     return _block_build(
         nested, reference, env, optimiser, report["omitted"], scheme, nested=True
     )
@@ -483,7 +503,7 @@ class Session:
     """
     scheme: object = None
     """How the raw graph's cycles are opened: `None` for `mda.SCHEME`, or any
-    `cottax.mdao_architectures.Scheme` (`Jacobi`, `GaussSeidel`, `GaussSeidelMinimal`).
+    `mda.scheme(rule)` (`Jacobi`, `GaussSeidel`, `GaussSeidelMinimal`).
     """
     builds: dict = field(default_factory=dict)
 

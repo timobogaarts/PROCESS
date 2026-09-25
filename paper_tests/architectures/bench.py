@@ -29,10 +29,10 @@ import jax  # noqa: E402
 
 jax.config.update("jax_enable_x64", True)  # PROCESS is float64; the Picards NaN without it
 
-from cottax.mdao_architectures import GaussSeidel, GaussSeidelMinimal, Jacobi  # noqa: E402
+from cottax.mdao_architectures import GaussSeidel, Jacobi  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
-from functional_process.cottax.architectures import session  # noqa: E402
+from functional_process.cottax.architectures import mda, session  # noqa: E402
 from functional_process.cottax.architectures.drivers import SlsqpDriver, VmconDriver  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -45,9 +45,9 @@ NAMES = tuple(configurations.NAMES)
 ARMS = ("MDA", "MDF", "IDF", "SAND")
 
 SCHEMES = {
-    "minimal": GaussSeidelMinimal(),   # the default: fewest cut variables, exactly
-    "binding": GaussSeidel(),          # PROCESS's own call order
-    "jacobi": Jacobi(),                # every coupling
+    "minimal": mda.SCHEME,                          # the default: fewest cut variables, exactly
+    "binding": mda.scheme(GaussSeidel()),           # PROCESS's own call order
+    "jacobi": mda.scheme(Jacobi()),                 # every coupling
 }
 
 PROCESS_EPSFCN = 1.0e-3

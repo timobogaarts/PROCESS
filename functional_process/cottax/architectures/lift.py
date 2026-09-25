@@ -27,7 +27,7 @@ caller says it. `lift_winding_pack` establishes it for the coil and
 `tests/architectures/test_lift.py` pins it numerically (a wider pack satisfies).
 
 **A relaxed requirement determines nothing**, so a graph holding one is not by itself
-executable (`check_no_bare_conditions`): an architecture absorbs it into the optimiser.
+executable (`check_no_requirements`): an architecture absorbs it into the optimiser.
 Where the optimiser is *outside* the graph a `Schedule` runs -- the closed MDA, the
 OUU recourse -- `keep=False` drops it and the caller states the same inequality in its
 own `Optimise`, off `report["relation"]`.
@@ -64,7 +64,7 @@ from cottax.interfaces import (
     Undetermine,
     Undrive,
     Unnest,
-    is_bare_condition,
+    is_requirement,
     is_driven,
     is_problem,
     shape_of,
@@ -114,7 +114,7 @@ def relaxed(residual: VarPath, safe: str) -> RelationalCondition:
 
 def _one_unknown(graph: Graph, problem: NodePath, unknown: VarPath):
     node = graph[problem]
-    if not (is_problem(node) or is_bare_condition(node)):
+    if not (is_problem(node) or is_requirement(node)):
         raise TypeError(
             f"{problem.spelling} is a {type(node).__name__} and determines nothing, "
             f"so there is no sizing choice to lift"

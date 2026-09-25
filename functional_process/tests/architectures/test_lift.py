@@ -200,7 +200,7 @@ def test_the_kept_requirement_is_the_inequality_and_nothing_answers_it(closed):
     # Every case the proof reports, as data rather than as the first refusal: the one
     # thing wrong with this graph is the requirement nothing answers.
     cases = list(executable_violations(ExecutableGraph, graph))
-    assert [type(c).__name__ for c in cases] == ["BareCondition"]
+    assert [type(c).__name__ for c in cases] == ["RequirementUnanswered"]
     assert cases[0].node == place
     with pytest.raises(ValueError, match="against nothing"):
         ExecutableGraph(graph)

@@ -8,21 +8,22 @@ they are and are converged inside each optimiser iterate. The optimiser therefor
 the design variables and one copy per cut, and every discipline is feasible at every
 iterate -- which is what the name says.
 
-The recipe, in cottax's ops: `mda.cut_graph` (the scheme), `sand.problem_graph` (the
-constraint declarations -- each a body and the requirement beside it -- the objective
-node and the `Optimise`), then
-`cottax.mdao_architectures.IDF` -- absorb the `^mda` statements, nest the models' own
-inside the optimiser. `sand.sand_schedule` then assigns the drivers, exactly as for
-SAND.
+The recipe, in cottax's ops: `sand.problem_graph` on the raw graph (the constraint
+declarations -- each a body and the requirement beside it -- the objective node and
+the `Optimise`), then `cottax.mdao_architectures.IDF` handed `mda.SCHEME`'s rule and closing: it cuts the
+cycles itself, absorbs the closures it bound and nests the models' own problems inside
+the optimiser. A closure is what the architecture's own cutting binds, so the graph is
+**not** cut beforehand -- a closure cut earlier would be a declared problem to it, and
+nested rather than lifted. `sand.sand_schedule` then assigns the drivers, exactly as
+for SAND.
 """
 
 from __future__ import annotations
 
-from cottax.interfaces import Plan
-from cottax.mdao_architectures import IDF, Global
+from cottax.mdao_architectures import IDF
 
 from functional_process.cottax.architectures.evaluate import without_excluded
-from functional_process.cottax.architectures.mda import SCHEME, cut_graph
+from functional_process.cottax.architectures.mda import SCHEME
 from functional_process.cottax.architectures.sand import problem_graph
 
 
@@ -39,9 +40,8 @@ def idf_graph(
     """`(graph, problem, report)`: the IDF graph, the optimiser's name, and
     `sand.problem_graph`'s report with the lifted statements under `"coupling"`.
     """
-    driven = cut_graph(without_excluded(graph), scheme)
     with_problem, optimiser, report = problem_graph(
-        driven,
+        without_excluded(graph),
         ixc,
         icc,
         n_equality,
@@ -49,10 +49,8 @@ def idf_graph(
         switch_values=switch_values,
         omit=omit,
     )
-    architecture = IDF(optimiser=optimiser)
-    # `resolved` is `placed` read off the graph the architecture's own first op leaves
-    # -- a statement the design reaches only through a requirement is on the
-    # optimiser's cycle once the requirements are absorbed and not before. The
-    # architecture answers that itself, so the report does not repeat the op here.
-    report["coupling"] = architecture.resolved(with_problem)[Global]
-    return (Plan(with_problem) + architecture).graph, optimiser, report
+    # The lifted problems are the closures the architecture's cutting binds: read off
+    # its own derivation, applied once, so the report says what the op did.
+    resolution = IDF(scheme.rule, scheme.closing, optimiser).resolution(with_problem)
+    report["coupling"] = tuple(c.at for c in resolution.closures)
+    return resolution.graph, optimiser, report

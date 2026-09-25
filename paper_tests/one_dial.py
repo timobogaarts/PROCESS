@@ -60,7 +60,7 @@ jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float6
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.interfaces import (  # noqa: E402
-    BareCondition,
+    RequirementUnanswered,
     Cut,
     ExecutableGraph,
     Function,
@@ -296,7 +296,7 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
 def refusal(graph, condition: VarPath) -> str:
     """What the graph says when `condition` still has to hold and nothing is left to
     move it: a problem holding it against no unknown, and the case cottax reports of
-    that node quoted verbatim -- the `BareCondition` naming it, matched **by kind**,
+    that node quoted verbatim -- the `RequirementUnanswered` naming it, matched **by kind**,
     since the node is the trial insertion. The trial graph is thrown away -- this is a
     question, not an op.
 
@@ -310,7 +310,7 @@ def refusal(graph, condition: VarPath) -> str:
     return REFUSAL + next(
         v.message
         for v in violations(ExecutableGraph, trial)
-        if isinstance(v, BareCondition) and v.node == place
+        if isinstance(v, RequirementUnanswered) and v.node == place
     )
 
 

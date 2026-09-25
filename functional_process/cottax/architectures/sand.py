@@ -12,8 +12,9 @@ The problem is two kinds of node, both stated the way the models are:
 - one **objective** node owning `.numerics.objf`, and `Optimise(objf, design)` at
   `Opt`, with no constraints of its own.
 
-An architecture (`SAND()`, `MDF()`, `IDF()`) absorbs every requirement the design
-reaches and places the statements on the optimiser's cycle by level.
+An architecture (`SAND(rule, closing, OPT)`, `MDF(...)`, `IDF(...)`) absorbs every requirement
+the design reaches, cuts what is still cyclic, and combines or nests every problem on
+the optimiser's cycle its own way.
 """
 
 import dataclasses
@@ -34,13 +35,14 @@ from cottax.interfaces import (
     Plan,
     RunnableGraph,
     Schedule,
-    bare_conditions,
     is_fixed_point,
     is_optimise,
+    is_problem,
+    requirements,
 )
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.interfaces.statements import Optimise
-from cottax.mdao_architectures import SAND, Mda
+from cottax.mdao_architectures import SAND
 from cottax.pytree.mint import unminted
 from cottax.pytree.path import NodePath, PathMap, VarPath
 from jax.flatten_util import ravel_pytree
@@ -232,7 +234,7 @@ def unanswered_requirements(graph, optimiser=OPT):
     owners = graph.graph.owners
     return tuple(
         r
-        for r in bare_conditions(graph.definitions)
+        for r in requirements(graph.definitions)
         if not all(owners.get(c) in reached for c in graph[r].conditions)
     )
 
@@ -257,10 +259,10 @@ def problem_graph(
     `report["external"]`: no architecture can absorb it and the proof refuses it. An
     *equality* among them would change what feasible means, so that is refused instead.
 
-    The rest are left standing: an architecture (`MDF()` / `IDF()` / `SAND()`) absorbs
-    every requirement the design reaches as its own first op and reads the levels off
-    the graph that leaves, so nothing here has to absorb them first to put a statement
-    the design reaches only through a constraint on the optimiser's cycle.
+    The rest are left standing: an architecture (`MDF` / `IDF` / `SAND`) absorbs every
+    requirement the design reaches as its own first step and reads the cycles off the
+    graph that leaves, so nothing here has to absorb them first to put a problem the
+    design reaches only through a constraint on the optimiser's cycle.
     `report["required"]` names the ones it will take.
 
     Raises
@@ -313,7 +315,7 @@ def problem_graph(
             )
     report["design"] = design
     report["external"] = external
-    report["required"] = bare_conditions(stated.definitions)
+    report["required"] = requirements(stated.definitions)
     return stated, OPT, report
 
 
@@ -449,13 +451,25 @@ def array_valued_problems(graph, env, problems=None):
 # ---------------------------------------------------------------- the architecture
 
 
-def sand_graph(graph, keep=()):
-    """`graph` with every statement on the optimiser's cycle (bar `keep`, left nested)
-    folded into the optimiser, which keeps its name:
-    `cottax.mdao_architectures.SAND`. A statement the design does not reach stays a
-    solve of its own.
+def sand_graph(graph, keep=(), scheme=None):
+    """`graph` with every problem on the optimiser's cycle folded into the optimiser,
+    which keeps its name: `cottax.mdao_architectures.SAND`, handed `scheme`'s rule
+    (`mda.SCHEME`) to open what is still cyclic first. A problem the design does not
+    reach stays a solve of its own.
+
+    `keep` -- problems left nested rather than folded -- has no counterpart since the
+    architecture's per-name levels went (cottax 2026-09-24): a final of `Monolithic`
+    with a `keep` field is the way to say it, and nothing in this port asks for one.
     """
-    return (Plan(graph) + SAND(levels=PathMap({p: Mda for p in keep}))).graph
+    if keep:
+        raise NotImplementedError(
+            f"keep={tuple(p.spelling for p in keep)}: SAND with problems left nested is "
+            f"a `Monolithic` final of its own now, and none is written"
+        )
+    from functional_process.cottax.architectures.mda import SCHEME
+
+    scheme = SCHEME if scheme is None else scheme
+    return (Plan(graph) + SAND(scheme.rule, scheme.closing, OPT)).graph
 
 
 def residual_condition_scales(drive, env, floor=1e-12):
@@ -504,7 +518,10 @@ def sand_schedule(
     optimiser=None,
 ):
     """A `Schedule` for `graph`'s single optimise statement, answered by `driver`."""
-    optimise = next(p for p, d in graph.definitions.items() if is_optimise(d))
+    # `is_problem` first: a shape predicate is asked of a condition node only.
+    optimise = next(
+        p for p, d in graph.definitions.items() if is_problem(d) and is_optimise(d)
+    )
     drivers = default_drivers(
         graph,
         bounds=bounds,
@@ -555,9 +572,29 @@ def sand_shape(schedule: Schedule) -> dict:
 
 
 def assemble(
-    reference, driven, env, omit=(), switch_values=None, keep=(), drop_arrays=True
+    reference,
+    driven,
+    env,
+    omit=(),
+    switch_values=None,
+    keep=(),
+    drop_arrays=True,
+    graph=None,
+    scheme=None,
 ):
     """The SAND graph for `reference`'s own `ixc`/`icc`/`i_figure_merit`.
+
+    Built from `graph` (default: `graph_for()`), since SAND cuts the cycles itself and
+    refuses a closure cut beforehand: `SAND(...).resolution` of the problem graph.
+    `driven` and `env` are `evaluate.mda_env`'s over that graph cut by `scheme`
+    (default: `mda.SCHEME`), and the degenerate and array-valued problems are measured
+    on them. Not on the resolution's `opened`: there the requirements are already in
+    the optimiser, so a closure's cycle runs through `.Opt` and pulls the constraint
+    nodes into the fixed point's body, whose reads `env` does not hold. `driven`'s
+    closures are the resolution's (same scheme, same graph), which is checked. A
+    dropped problem is deleted from `opened` and the rest placed by SAND's own
+    `combining`, so a dropped closure's copies stand frozen at the seed, as deleting
+    it from `driven` did.
 
     `drop_arrays`: delete every fixed point over a non-scalar unknown, leaving its copy
     frozen at the seed -- what every reference SAND row was measured with. `False`
@@ -569,25 +606,18 @@ def assemble(
     ValueError
         If an equality constraint reads nothing the design reaches.
     """
-    keep = frozenset(keep)
-    degenerate = tuple(p for p in degenerate_fixed_points(driven, env) if p not in keep)
-    array_valued = (
-        tuple(
-            p
-            for p in array_valued_problems(
-                driven,
-                env,
-                tuple(p for p in declared(driven) if p not in set(degenerate)),
-            )
-            if p not in keep
+    from functional_process.cottax.architectures.evaluate import without_excluded
+    from functional_process.cottax.architectures.mda import SCHEME
+    from functional_process.cottax.input.indat import graph_for
+
+    scheme = SCHEME if scheme is None else scheme
+    if keep:
+        raise NotImplementedError(
+            f"keep={tuple(p.spelling for p in keep)}: SAND with problems left nested is "
+            f"a `Monolithic` final of its own now, and none is written"
         )
-        if drop_arrays
-        else ()
-    )
-    dropped = tuple(degenerate) + tuple(array_valued)
-    graph = Delete(dropped).apply(driven) if dropped else driven
     with_problem, _name, report = problem_graph(
-        graph,
+        without_excluded(graph if graph is not None else graph_for()),
         reference.ixc,
         reference.icc,
         reference.n_equality,
@@ -595,9 +625,39 @@ def assemble(
         switch_values=switch_values,
         omit=omit,
     )
+    architecture = SAND(scheme.rule, scheme.closing, OPT)
+    resolution = architecture.resolution(with_problem)
+    opened = resolution.opened
+    cut = {p for p in declared(driven) if p not in set(declared(with_problem))}
+    if cut != {c.at for c in resolution.closures}:
+        raise ValueError(
+            f"`driven` was cut differently from SAND's own cutting: "
+            f"{sorted(p.spelling for p in cut)} against "
+            f"{sorted(c.at.spelling for c in resolution.closures)} -- pass the "
+            f"`graph` and `scheme` `driven` was built from"
+        )
+    degenerate = degenerate_fixed_points(driven, env)
+    array_valued = (
+        array_valued_problems(
+            driven,
+            env,
+            tuple(p for p in declared(driven) if p not in set(degenerate)),
+        )
+        if drop_arrays
+        else ()
+    )
+    dropped = tuple(degenerate) + tuple(array_valued)
+    if dropped:
+        opened = Delete(dropped).apply(opened)
+        closures = tuple(c.at for c in resolution.closures if c.at not in set(dropped))
+        combined = opened
+        for op in architecture.combining(opened, closures):
+            combined = op.apply(combined)
+    else:
+        combined = resolution.graph
     report["degenerate"] = degenerate
     report["array_valued"] = array_valued
-    return sand_graph(with_problem, keep=keep), report
+    return combined, report
 
 
 __all__ = [

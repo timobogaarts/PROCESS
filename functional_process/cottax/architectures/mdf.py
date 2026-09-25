@@ -313,13 +313,10 @@ def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCH
     # `problem_graph` leaves the requirements standing for an architecture to absorb,
     # and this route states the nesting itself instead of taking one -- so it does the
     # absorb an architecture would do first, or the proof refuses them. **Which** ones
-    # it takes is `MDF`'s own answer (`requirements_of`), not a set re-derived here.
-    required = MDF(optimiser=problem_name).requirements_of(with_problem)
-    absorbed = (
-        Combine(problem_name, (problem_name, *required)).apply(with_problem)
-        if required
-        else with_problem
-    )
+    # it takes is `MDF`'s own answer (`absorbing`), not a set re-derived here.
+    absorbed = with_problem
+    for op in MDF(scheme.rule, scheme.closing, problem_name).absorbing(with_problem):
+        absorbed = op.apply(absorbed)
     nested = nested_inside(absorbed, problem_name)
     return ExecutableGraph(nested), problem_name, report
 

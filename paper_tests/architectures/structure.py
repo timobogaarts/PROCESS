@@ -18,12 +18,11 @@ from cottax.interfaces import (  # noqa: E402
     is_optimise,
     problems,
 )
-from cottax.mdao_architectures import coupled  # noqa: E402
 
 from functional_process.cottax.architectures.evaluate import (
     without_excluded,  # noqa: E402
 )
-from functional_process.cottax.architectures.mda import relation_counts  # noqa: E402
+from functional_process.cottax.architectures.mda import SCHEME, relation_counts  # noqa: E402
 from functional_process.cottax.visualization.grouping import (  # noqa: E402
     render_grouped_dsm_html,
     structure_order,
@@ -106,7 +105,7 @@ def main():
                 "problem": "root-find" if live.root_find else "optimise",
                 "arm": arm,
                 "nodes": len(graph.nodes),
-                "cycles": len(coupled(raw)),
+                "cycles": len(SCHEME.composed(raw)),   # one closure per cycle the scheme opens
                 "cut_variables": cuts_of(live, args),
                 "problems": len(problems(graph.definitions)),
                 "nested": len(graph.within),
