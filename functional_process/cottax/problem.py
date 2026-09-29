@@ -38,7 +38,7 @@ def problem_model(configuration: Configuration):
         slots = {}
         top = cx.RootFind([held(c) for c in problem.equalities], problem.design)
     bodies = {held(c).segments[-1].name: c for c in constraints}
-    return cx.declare(configuration.machine, bodies | slots | {"Opt": top})
+    return cx.Declared.of(configuration.machine, bodies | slots | {"Opt": top})
 
 
 __all__ = ["TOP", "problem_model"]

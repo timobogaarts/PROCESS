@@ -83,7 +83,7 @@ DuctFeasibilityConditions = vacuum.inequality_constraint(
 
 
 DuctFeasibility = vacuum.Feasibility(
-    unknowns=["ceff_i"], subject_to=[DuctFeasibilityConditions]
+    design=["ceff_i"], subject_to=[DuctFeasibilityConditions]
 )
 """The declared problem itself: "find a feasible `ceff_i`", no objective."""
 

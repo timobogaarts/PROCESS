@@ -1105,7 +1105,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    problem = cx.problem(N["Intersect"])
+    problem = cx.minted.problem(N["Intersect"])
     driven = (
         Plan(graph)
         + cx.assign(graph, problem, PortRootFinding())
