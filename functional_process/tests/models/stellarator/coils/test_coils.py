@@ -2,21 +2,29 @@
 
 from types import MappingProxyType
 
+import cottax.interfaces as cx
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.execution.drivers.kinds import Start
-from cottax.interfaces import Assign, RunnableGraph, Schedule, to_graph
-from cottax.interfaces.pytree_namespace_module import resolve
-from cottax.pytree.path import PathMap, VarPath
-from cottax.visualization.sequencing import problem_types
+from cottax.core.frozen import OrderedMap
+from cottax.core.kinds import is_problem
+from cottax.core.plan import Plan
+from cottax.execution import CallableGraph, Inputs, run
+from cottax.interfaces import V
+from cottax.visualization.sequencing import shape_of
 
-from functional_process.cottax.models.stellarator.coils.coils import (
+from functional_process.cottax.architectures.contracts import (
     CurveLhs,
     CurveRhs,
     CurveX,
-    Intersect,
+    IntersectRootFinding,
+    Start,
+)
+from functional_process.cottax.architectures.intersect_driver import (
     IntersectBisectionNewtonPolish,
+)
+from functional_process.cottax.models.stellarator.coils.coils import Intersect
+from functional_process.models.stellarator.coils.coils import (
     bmax_from_awp,
     intersect,
     intersect_residual,
@@ -30,8 +38,6 @@ from functional_process.cottax.models.stellarator.coils.coils import (
     jcrit_from_material_rebco,
     jcrit_from_material_wst_nb3sn,
 )
-from functional_process.cottax.paths import stellarator
-from functional_process.cottax.queries import declared
 from functional_process.tests._harness import (
     Sample,
     Tier1Contract,
@@ -462,28 +468,30 @@ class TestIntersect(Tier2Contract):
 # ---------------------------------------------------------------------------
 
 
+def _problems(graph):
+    return tuple(name for name, d in graph.definitions.items() if is_problem(d))
+
+
 def test_intersect_declares_a_body_and_a_root_find_problem():
-    """`to_graph(Intersect())` must assemble cleanly into exactly two nodes: the
-    `residual` body (a `ImplementedFunction`) and the `RootFind` problem it feeds -- the pair
-    `ImplicitFunction.node_definitions_and_names` documents.
+    """`to_graph(Intersect)` must assemble cleanly into exactly two nodes: the residual
+    body (an `ImplementedFunction`) and the root-find problem it feeds -- the pair a
+    `residual` wrapper declares.
     """
-    node = Intersect
-    graph = to_graph(node)
+    graph = cx.to_graph(Intersect)
     assert len(graph.definitions) == 2
     assert not graph.graph.is_acyclic
-    assert declared(graph) == (node.problem_name,)
-    assert problem_types(graph) == ("root-find",)
+    (problem,) = _problems(graph)
+    assert shape_of(graph[problem]) == "root-find"
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():
-    """`residual` reads `.stellarator.wp_width_r_min` (the same `VarPath` its own
-    `Output` declares) alongside the two curves -- not a self-loop: the body node only
-    *reads* the real path and *writes* the minted `^cond` copy; the separate `RootFind`
-    problem node is the one that actually owns `.stellarator.wp_width_r_min`.
+    """The body reads `.stellarator.wp_width_r_min` alongside the two curves -- not a
+    self-loop: the body only *reads* the real place and *writes* the minted `^cond`
+    copy; the separate root-find problem is the one that owns
+    `.stellarator.wp_width_r_min`.
     """
-    node = Intersect
-    body, problem = node.node_definitions
-    unknown = resolve(stellarator.wp_width_r_min, VarPath)
+    body, problem = cx.to_graph(Intersect).definitions.values()
+    unknown = cx.place(V.stellarator.wp_width_r_min)
     assert unknown in body.reads
     assert unknown not in body.owns
     assert problem.owns == (unknown,)
@@ -492,47 +500,39 @@ def test_intersect_body_reads_the_unknown_back_without_owning_it():
 
 def test_intersect_has_no_port_for_xin():
     """`intersect`'s `xin` argument has no place in `Intersect`'s declared interface at
-    all -- `residual` declares exactly 4 `FromExactly`s (the unknown plus the two curves), one
-    fewer than `intersect`'s own 5-argument signature -- confirming `coils.md`'s open
-    question 2 directly rather than merely asserting it.
+    all -- the body reads exactly 4 places (the unknown plus the curves), one fewer than
+    `intersect`'s own 5-argument signature -- confirming `coils.md`'s open question 2
+    directly rather than merely asserting it.
     """
-    node = Intersect
-    assert len(node.inputs) == 4
+    assert len(Intersect.reads) == 4
     assert intersect.__code__.co_argcount == 5
 
 
 def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersect():
-    """The actual numeric point: driving `Intersect`'s declared `RootFind` with
-    `IntersectBisectionNewtonPolish` (test-only, wraps `intersect` exactly) must recover
-    precisely the value `intersect` itself computes on the same curves -- same algorithm,
-    reached through the new structural/driven path instead of a plain eager call.
+    """The actual numeric point: driving `Intersect`'s declared root find with
+    `IntersectBisectionNewtonPolish` (wraps `intersect` exactly) must recover precisely
+    the value `intersect` itself computes on the same curves -- same algorithm, reached
+    through the structural/driven path instead of a plain eager call.
 
     Reuses `_intersect_samples()` (the same curated crossing-curve samples
     `TestIntersect` itself checks against PROCESS) rather than inventing a new fixture --
     this is checking the *port's own* two ways of getting an answer agree, not a fresh
     correctness claim about `intersect` itself.
     """
-    node = Intersect
-    # `Initialise` declares the problem's `Start` port, which is where the driver now
-    # reads its guess from; without it `Drive` refuses the pair, and seeding the
-    # unknown's own name would silently fall back to the median instead (a different
-    # root -- see the `env` comment below).
-    graph = Assign(node.problem_name, IntersectBisectionNewtonPolish()).apply(
-        to_graph(node)
-    )
-    driven = graph[node.problem_name]
-    slot = lambda kind: driven.data[driven.driver.requires.index(kind)][0]
-    guess_path = slot(Start)
-    curve_x_port, curve_lhs_port, curve_rhs_port = (
-        slot(CurveX),
-        slot(CurveLhs),
-        slot(CurveRhs),
-    )
-    schedule = Schedule(RunnableGraph(graph))
-    wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
-    lhs_path = resolve(stellarator.lhs, VarPath)
-    rhs_path = resolve(stellarator.rhs, VarPath)
-    wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
+    graph = cx.to_graph(Intersect)
+    (problem,) = _problems(graph)
+    driven = (
+        Plan(graph)
+        + cx.assign(graph, problem, IntersectRootFinding())
+        + cx.implement({problem: IntersectBisectionNewtonPolish()})
+    ).graph
+    node = driven[problem]
+    slot = lambda role: node.data[node.driver.takes.index(role)][0]  # noqa: E731
+    wp_width_r_path = cx.place(V.stellarator.wp_width_r)
+    lhs_path = cx.place(V.stellarator.lhs)
+    rhs_path = cx.place(V.stellarator.rhs)
+    wp_width_r_min_path = cx.place(V.stellarator.wp_width_r_min)
+    callable_graph = CallableGraph(driven)
 
     for sample in _intersect_samples():
         kwargs = sample.kwargs
@@ -541,22 +541,22 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             lhs_path: jnp.asarray(kwargs["y1"]),
             rhs_path: jnp.asarray(kwargs["y2"]),
             # Seed the same starting guess `intersect` itself was called with below,
-            # at the problem's `^guess.*` port -- a start is declared driver data now,
-            # not an already-present unknown. Some `_crossing_curve_case` samples have
-            # more than one genuine crossing in-domain (only the *sign* of the endpoints
-            # is pinned, not the interior), so bisection's own answer can genuinely
-            # depend on where it starts -- matching `xin` here is what makes this an
+            # at the problem's `Start` slot -- a start is driver data, not an
+            # already-present unknown. Some `_crossing_curve_case` samples have more
+            # than one genuine crossing in-domain (only the *sign* of the endpoints is
+            # pinned, not the interior), so bisection's own answer can genuinely depend
+            # on where it starts -- matching `xin` here is what makes this an
             # apples-to-apples check of "same algorithm, driven instead of eager", not a
             # claim that any starting guess reaches the same root.
-            guess_path: jnp.asarray(kwargs["xin"]),
-            # The curves again, at the driver's own data ports: what an algorithm reads
-            # for itself is an ordinary read at a derived name, never the block's
+            slot(Start): jnp.asarray(kwargs["xin"]),
+            # The curves again, at the driver's own data places: what an algorithm
+            # reads for itself is an ordinary read at a derived name, never the block's
             # context. In a real graph a `Rename` points each at its producer.
-            curve_x_port: jnp.asarray(kwargs["x1"]),
-            curve_lhs_port: jnp.asarray(kwargs["y1"]),
-            curve_rhs_port: jnp.asarray(kwargs["y2"]),
+            slot(CurveX): jnp.asarray(kwargs["x1"]),
+            slot(CurveLhs): jnp.asarray(kwargs["y1"]),
+            slot(CurveRhs): jnp.asarray(kwargs["y2"]),
         }
-        out = schedule.run(PathMap(env))
+        out = run(Inputs(callable_graph, OrderedMap(env)))
         want = intersect(
             jnp.asarray(kwargs["x1"]),
             jnp.asarray(kwargs["y1"]),

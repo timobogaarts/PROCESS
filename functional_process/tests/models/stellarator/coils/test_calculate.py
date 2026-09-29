@@ -25,13 +25,19 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.execution.driver import GapDriver
-from cottax.execution.drivers.kinds import Start
-from cottax.interfaces import Assign, RunnableGraph, Schedule, is_root_find, to_graph
-from cottax.interfaces.pytree_namespace_module import resolve
-from cottax.pytree.path import PathMap, VarPath
-from cottax.visualization.sequencing import problem_types
+import cottax.interfaces as cx
+from cottax.core import problems
+from cottax.core.frozen import OrderedMap
+from cottax.core.plan import Plan
+from cottax.execution import CallableGraph, Inputs, run
+from cottax.interfaces import N, to_graph
+from cottax.visualization.sequencing import shape_of
 
+from functional_process.cottax.architectures.contracts import PortRootFinding, Start
+from functional_process.cottax.architectures.reading import GapsDriver
+from functional_process.cottax.models.stellarator.coils import (
+    calculate as ported_calculate,
+)
 from functional_process.cottax.models.stellarator.coils.calculate import (
     Bi2212WindingPackIntersectInputs,
     CrocoRebcoWindingPackIntersectInputs,
@@ -40,7 +46,6 @@ from functional_process.cottax.models.stellarator.coils.calculate import (
     IterNb3snWindingPackIntersectInputs,
     OldLubellNbtiWindingPackIntersectInputs,
     UserDefinedNb3snWindingPackIntersectInputs,
-    WindingPackIntersectInputs,
     WindingPackTotalSizePost,
     WstNb3snWindingPackIntersectInputs,
     calculate_casing,
@@ -76,7 +81,6 @@ from functional_process.cottax.paths import (
     stellarator_config,
     tfcoil,
 )
-from functional_process.cottax.queries import declared
 from functional_process.tests._harness import Sample, Tier1Contract, Tier2Contract
 from functional_process.tests._harness.process_reference import data_reference
 from functional_process.tests._harness.sample_store import FROM_FILE
@@ -269,7 +273,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out for out in node.outputs}
-    z_tf_inside_half_path = resolve(build.z_tf_inside_half, VarPath)
+    z_tf_inside_half_path = build.place("z_tf_inside_half")
     assert z_tf_inside_half_path in owned
 
 
@@ -316,7 +320,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out for out in node.outputs}
-    assert resolve(tfcoil.len_tf_coil, VarPath) in owned
+    assert tfcoil.place("len_tf_coil") in owned
 
 
 def _reference_tfcryoarea(
@@ -367,7 +371,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out for out in node.outputs}
-    assert resolve(tfcoil.tfcryoarea, VarPath) in owned
+    assert tfcoil.place("tfcryoarea") in owned
 
 
 def _reference_coils_summary_variables(
@@ -823,13 +827,13 @@ tests the classes, and a test that shares the registry with the thing it checks 
 pass on an empty one. `test_machine.py` is what checks the registry itself."""
 
 
-def test_the_family_head_cannot_be_instantiated():
-    """`WindingPackIntersectInputs` is a family, not a node: the switch selects a class,
-    so there is no "generic" occupant to build and no `i_tf_sc_mat=` kwarg to build it
-    with (`_audit/next_steps.md` §14.2).
+def test_the_family_has_no_generic_head():
+    """The winding-pack family is its occupants, not a node: the switch selects one, so
+    there is no "generic" occupant to build and no `i_tf_sc_mat=` setting to build it
+    with (`_audit/next_steps.md` §14.2). The family head was an abstract class that
+    refused instantiation; as declarations are wrapper values there is no head at all.
     """
-    with pytest.raises(TypeError):
-        WindingPackIntersectInputs()
+    assert not hasattr(ported_calculate, "WindingPackIntersectInputs")
 
 
 @pytest.mark.parametrize(
@@ -841,7 +845,7 @@ def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occup
     """Every occupant is a drop-in for the slot: same four outputs, `.tfcoil.j_tf_wp`
     owned by none of them (that is `WindingPackTotalSizePost`'s).
     """
-    node = occupant()
+    node = occupant
     graph = to_graph(node)
     assert graph.definitions
     owned = {out.spelling for out in node.outputs}
@@ -851,7 +855,7 @@ def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occup
         ".stellarator.rhs",
         ".stellarator.wp_width_r_min_guess",
     }
-    assert resolve(tfcoil.j_tf_wp, VarPath) not in {out for out in node.outputs}
+    assert tfcoil.place("j_tf_wp") not in set(node.outputs)
 
 
 def test_only_the_bi2212_occupant_reads_j_tf_wp():
@@ -861,9 +865,9 @@ def test_only_the_bi2212_occupant_reads_j_tf_wp():
     the coils SCC. Each occupant's extra reads over the shared fourteen are its own
     material's, and no others.
     """
-    shared = {i.spelling for i in IterNb3snWindingPackIntersectInputs().inputs}
+    shared = {i.spelling for i in IterNb3snWindingPackIntersectInputs.reads.values()}
     extra = {
-        material: {i.spelling for i in occupant().inputs} - shared
+        material: {i.spelling for i in occupant.reads.values()} - shared
         for material, occupant in _WINDING_PACK_OCCUPANTS.items()
     }
     assert extra == {
@@ -899,9 +903,7 @@ def test_each_occupant_reproduces_the_composite_at_its_own_material(material, oc
     expected = winding_pack_pre_intersect(**{
         name: base[name] for name in _WINDING_PACK_CURVE_PARAMS
     })
-    got = occupant()(**{
-        name: base[name] for name in inspect.signature(occupant().__call__).parameters
-    })
+    got = occupant(**{name: base[name] for name in occupant.reads})
     for name, i in (("wp_width_r", 0), ("lhs", 1), ("rhs", 2)):
         assert np.allclose(
             np.asarray(got[i]), np.asarray(expected[i]), equal_nan=True
@@ -918,7 +920,7 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
     graph = to_graph(node)
     assert graph.definitions
     owned = {out for out in node.outputs}
-    j_tf_wp_path = resolve(tfcoil.j_tf_wp, VarPath)
+    j_tf_wp_path = tfcoil.place("j_tf_wp")
     assert j_tf_wp_path in owned
 
 
@@ -929,14 +931,16 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     around `intersect` this pass makes (`_audit/next_steps.md` §7, `Intersect`'s own
     docstring).
     """
-    pre = IterNb3snWindingPackIntersectInputs()
-    graph = to_graph(pre, Intersect)
+    pre = IterNb3snWindingPackIntersectInputs
+    graph = to_graph({"pre": pre, "Intersect": Intersect})
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.graph.is_acyclic
     blocks = [graph.subgraph(c) for c in graph.graph.components]
-    (block,) = [b for b in blocks if declared(b)]
-    assert problem_types(block) == ("root-find",)
+    (block,) = [b for b in blocks if problems(b.definitions)]
+    assert tuple(shape_of(block[p]) for p in problems(block.definitions)) == (
+        "root-find",
+    )
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
@@ -945,8 +949,8 @@ def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     `.tfcoil.j_tf_wp` itself (see above). Two different edges, not a second self-loop.
     """
     post = WindingPackTotalSizePost
-    wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
-    assert wp_width_r_min_path in post.node_definition.reads
+    wp_width_r_min_path = stellarator.place("wp_width_r_min")
+    assert wp_width_r_min_path in post.reads.values()
     assert wp_width_r_min_path not in {out for out in post.outputs}
 
 
@@ -961,7 +965,11 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     """
     post = WindingPackTotalSizePost
 
-    graph = to_graph(Bi2212WindingPackIntersectInputs(), Intersect, post)
+    graph = to_graph({
+        "Bi2212WindingPackIntersectInputs": Bi2212WindingPackIntersectInputs,
+        "Intersect": Intersect,
+        "WindingPackTotalSizePost": post,
+    })
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
     assert not graph.graph.is_acyclic
     (cycle,) = graph.graph.cycles
@@ -975,7 +983,11 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     for material, occupant in _WINDING_PACK_OCCUPANTS.items():
         if material is SuperconductorModel.BI2212:
             continue
-        graph = to_graph(occupant(), Intersect, post)
+        graph = to_graph({
+            "occupant": occupant,
+            "Intersect": Intersect,
+            "WindingPackTotalSizePost": post,
+        })
         assert len(graph.definitions) == 4
         (cycle,) = graph.graph.cycles
         assert {n.spelling for n in cycle} == {
@@ -984,8 +996,8 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
         }, material
 
 
-class _GenericBisectionRootFind(GapDriver):
-    """Test-only `GapDriver` answering a root find generically, through the gap the
+class _GenericBisectionRootFind(GapsDriver[PortRootFinding]):
+    """Test-only `GapsDriver` answering a root find generically, through the gap the
     reading hands back and nothing else.
 
     `IntersectBisectionNewtonPolish` takes the tabulated curves as **driver data**
@@ -1007,9 +1019,12 @@ class _GenericBisectionRootFind(GapDriver):
     narrower `IntersectBisectionNewtonPolish` does.
     """
 
-    accepts = staticmethod(is_root_find)
     lower: float
     upper: float
+
+    needs = frozenset()
+    provides = frozenset()
+    computes = ()
 
     def solve(self, gaps, data):
         start = data.get(Start)
@@ -1049,38 +1064,40 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     # owns `.tfcoil.j_tf_wp` now, so it is produced inside the driven block, not fed in.
 
     field_paths = {
-        "r_coil_major": stellarator.r_coil_major,
-        "r_coil_minor": stellarator.r_coil_minor,
-        "coilcurrent": stellarator.coilcurrent,
-        "n_tf_coils": tfcoil.n_tf_coils,
-        "stella_config_a1": stellarator_config.stella_config_a1,
-        "stella_config_a2": stellarator_config.stella_config_a2,
-        "stella_config_wp_ratio": stellarator_config.stella_config_wp_ratio,
-        "tftmp": tfcoil.tftmp,
-        "tmargmin": tfcoil.tmargmin,
-        "b_crit_upper_nbti": tfcoil.b_crit_upper_nbti,
-        "bcritsc": tfcoil.bcritsc,
-        "f_a_tf_turn_cable_copper": tfcoil.f_a_tf_turn_cable_copper,
-        "fhts": tfcoil.fhts,
-        "t_crit_nbti": tfcoil.t_crit_nbti,
-        "tcritsc": tfcoil.tcritsc,
-        "f_a_tf_turn_cable_space_extra_void": (
-            tfcoil.f_a_tf_turn_cable_space_extra_void
-        ),
-        "f_j_tf_wp_critical_max": constraints.f_j_tf_wp_critical_max,
-        "a_tf_turn_cable_space_no_void": (tfcoil.a_tf_turn_cable_space_no_void),
-        "dx_tf_turn_general": tfcoil.dx_tf_turn_general,
-        "dx_tf_wp_insulation": tfcoil.dx_tf_wp_insulation,
-        "a_tf_turn_steel": tfcoil.a_tf_turn_steel,
+        "r_coil_major": stellarator,
+        "r_coil_minor": stellarator,
+        "coilcurrent": stellarator,
+        "n_tf_coils": tfcoil,
+        "stella_config_a1": stellarator_config,
+        "stella_config_a2": stellarator_config,
+        "stella_config_wp_ratio": stellarator_config,
+        "tftmp": tfcoil,
+        "tmargmin": tfcoil,
+        "b_crit_upper_nbti": tfcoil,
+        "bcritsc": tfcoil,
+        "f_a_tf_turn_cable_copper": tfcoil,
+        "fhts": tfcoil,
+        "t_crit_nbti": tfcoil,
+        "tcritsc": tfcoil,
+        "f_a_tf_turn_cable_space_extra_void": tfcoil,
+        "f_j_tf_wp_critical_max": constraints,
+        "a_tf_turn_cable_space_no_void": tfcoil,
+        "dx_tf_turn_general": tfcoil,
+        "dx_tf_wp_insulation": tfcoil,
+        "a_tf_turn_steel": tfcoil,
     }
     env = {
-        resolve(where, VarPath): jax.numpy.asarray(base[name])
+        where.place(name): jax.numpy.asarray(base[name])
         for name, where in field_paths.items()
     }
 
-    pre = _WINDING_PACK_OCCUPANTS[SuperconductorModel(int(i_tf_sc_mat))]()
+    pre = _WINDING_PACK_OCCUPANTS[SuperconductorModel(int(i_tf_sc_mat))]
     post = WindingPackTotalSizePost
-    graph = to_graph(pre, Intersect, post)
+    graph = to_graph({
+        "pre": pre,
+        "Intersect": Intersect,
+        "WindingPackTotalSizePost": post,
+    })
     # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that
     # function's own `lo`/`hi` (`i_tf_sc_mat == 6` uses a different lower bound, not hit
     # here since this test uses material 1).
@@ -1088,16 +1105,31 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    schedule = Schedule(
-        RunnableGraph(Assign(Intersect.problem_name, driver).apply(graph))
+    problem = cx.problem(N["Intersect"])
+    driven = (
+        Plan(graph)
+        + cx.assign(graph, problem, PortRootFinding())
+        + cx.implement({problem: driver})
+    ).graph
+    # The contract takes a `Start`, at `^start.stellarator.wp_width_r_min`; bisection
+    # reads only its shape, so the bracket's midpoint.
+    (start,) = driven[problem].data[driven[problem].driver.takes.index(Start)]
+    env[start] = jax.numpy.asarray(0.5 * (driver.lower + driver.upper))
+    # A value at exactly each input: the materials this occupant does not read are left
+    # out (a run refuses a value the graph neither reads nor computes).
+    inputs = driven.graph.boundary_inputs
+    out = run(
+        Inputs(
+            CallableGraph(driven),
+            OrderedMap({p: v for p, v in env.items() if p in inputs}),
+        )
     )
-    out = schedule.run(PathMap(env))
 
     reference = winding_pack_total_size(
         **base, j_tf_wp=jax.numpy.asarray(0.0), i_tf_sc_mat=i_tf_sc_mat
     )
-    dr_tf_wp_with_insulation_path = resolve(tfcoil.dr_tf_wp_with_insulation, VarPath)
-    a_tf_wp_with_insulation_path = resolve(tfcoil.a_tf_wp_with_insulation, VarPath)
+    dr_tf_wp_with_insulation_path = tfcoil.place("dr_tf_wp_with_insulation")
+    a_tf_wp_with_insulation_path = tfcoil.place("a_tf_wp_with_insulation")
     assert out[dr_tf_wp_with_insulation_path] == pytest.approx(reference[3])
     assert out[a_tf_wp_with_insulation_path] == pytest.approx(reference[12])
 

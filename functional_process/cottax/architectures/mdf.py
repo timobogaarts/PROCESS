@@ -29,6 +29,7 @@ from jax.tree_util import GetAttrKey
 
 from functional_process.cottax.architectures import sand
 from functional_process.cottax.architectures.drivers import (
+    MdfNewtonDriver,
     SeededNewtonDriver,
     flat_gaps,
     # `Status` was written here, for `MdfNewtonDriver`, and moved to `drivers` when
@@ -58,8 +59,7 @@ from functional_process.cottax.queries import component_of, nested_inside
 
 @dataclasses.dataclass(frozen=True)
 class Mdf:
-    """One assembled MDF problem: the graph, the two schedules, and the problem's shape.
-    """
+    """One assembled MDF problem: the graph, the two schedules, and the problem's shape."""
 
     graph: Graph
     """The MDA graph plus one node per active constraint and one for the objective."""
@@ -72,7 +72,7 @@ class Mdf:
     n_equality: int
     n_inequality: int
     report: dict
-    problem_type: str = 'optimise'
+    problem_type: str = "optimise"
     """Which problem this file states -- `Optimise` or `RootFind`. See `assemble`."""
     reported: tuple[VarPath, ...] = ()
     """Conditions assembled but **not driven**: a `RootFind`'s inequalities."""
@@ -176,7 +176,7 @@ def assemble(
         n_equality=n_equality,
         n_inequality=0 if root_find else n_inequality,
         report=report,
-        problem_type='root-find' if root_find else 'optimise',
+        problem_type="root-find" if root_find else "optimise",
         reported=reported,
         raw=raw,
     )
@@ -244,46 +244,6 @@ def _inputs_only(mdf: Mdf, env):
     return {var: value for var, value in env.items() if var in inputs}
 
 
-class MdfNewtonDriver(SeededNewtonDriver):
-    """`SeededNewtonDriver` that reports optimistix's verdict instead of raising it."""
-
-    max_steps: int = 256
-
-    @property
-    def reports(self):
-        """`(Steps, Converged, Status)` -- what `__call__` returns after the design."""
-        return (Steps, Converged, Status)
-
-    def solve(self, gaps: Gaps, data) -> tuple:
-        """The root of `gaps` started from `data[Start]`, then the verdict."""
-        import optimistix as optx  # noqa: PLC0415 -- only this arm needs it
-
-        start = data.get(Start)
-        if start is None:
-            raise ValueError(
-                f"MdfNewtonDriver needs a starting value for every design variable "
-                f"({', '.join(v.spelling for v in gaps.unknowns)})"
-            )
-        flat_guess, unravel = ravel_pytree(start)
-
-        def residual(flat, args=None):
-            return flat_gaps(gaps, unravel(flat))
-
-        solution = optx.root_find(
-            residual,
-            optx.Newton(rtol=self.rtol, atol=self.atol),
-            flat_guess,
-            throw=False,
-            max_steps=self.max_steps,
-        )
-        return (
-            *unravel(solution.value),
-            solution.stats["num_steps"],
-            solution.result == optx.RESULTS.successful,
-            getattr(solution.result, "_value", jnp.asarray(-1)),
-        )
-
-
 def report_place(node, naming):
     """Where `naming`'s report of a driven statement lands, or `None` where its driver
     does not report one. A report is named from the statement's **first unknown**
@@ -303,10 +263,13 @@ def verdict(out, naming, node):
     return None if place is None else out.get(place)
 
 
-def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCHEME, **kwargs):
-    """MDF **stated as structure**: `ExecutableGraph(nested_inside(graph + Optimise, the Optimise))`.
-    """
-    driven = cut_graph(without_excluded(graph if graph is not None else graph_for()), scheme)
+def nested_blocking(
+    ixc, icc, n_equality, i_figure_merit, graph=None, scheme=SCHEME, **kwargs
+):
+    """MDF **stated as structure**: `ExecutableGraph(nested_inside(graph + Optimise, the Optimise))`."""
+    driven = cut_graph(
+        without_excluded(graph if graph is not None else graph_for()), scheme
+    )
     with_problem, problem_name, report = sand.problem_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
@@ -393,9 +356,8 @@ class InGraphRootFind:
 
 
 def root_find_node(mdf: Mdf):
-    """The root find `mdf` states, as a cottax node: owns `design`, reads `conditions`.
-    """
-    if not mdf.problem_type == 'root-find':
+    """The root find `mdf` states, as a cottax node: owns `design`, reads `conditions`."""
+    if not mdf.problem_type == "root-find":
         raise TypeError(
             f"this MDF states an {mdf.problem_type}, and only the `RootFind` "
             f"arm is stated in-graph here -- an `Optimise` nests just as well "

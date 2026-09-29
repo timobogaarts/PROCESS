@@ -1,12 +1,9 @@
-"""Generic `cottax.execution.driver.Driver`s for this port's fixed points, root finds
-and optimisations.
-
-**Every driver here sits on one of cottax's two readings of a statement.** The seam
-hands the *sides* of each relation and subtracts nothing, so a driver that wants
-`lhs - rhs` says so by being a `GapDriver` and is handed a `Gaps` (`gaps(*x)` is
-`(objectives, one gap per relation)`), and one that wants `u = g(u)`'s next value is an
-`IterateDriver` handed a `NextValues`. Nothing below reads a side, and nothing below
-subtracts.
+"""The port's drivers: each a cottax `DriverImplementation` of a contract in
+`contracts.py`, reading the posed problem one of two ways (`reading.py`). A root find or
+an optimisation reads every relation as a gap, `lhs - rhs` (`GapsDriver`, handed a
+`Gaps`: `gaps(*x)` is `(objectives, one gap per relation)`); a fixed point reads
+`u = g(u)`'s next value (`IterationDriver`, handed a `NextValues`). Nothing below reads
+a side, and nothing below subtracts.
 """
 
 import dataclasses
@@ -18,22 +15,21 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
-from cottax.execution.driver import GapDriver, Gaps, IterateDriver, NextValues
-from cottax.execution.drivers.kinds import Converged, Start, Steps
-from cottax.interfaces import (
-    Le,
-    is_equalities,
-    is_fixed_point,
-    is_optimise,
-    is_root_find,
-)
-from cottax.interfaces import (
-    PicardDriver as CottaxPicardDriver,
-)
-from cottax.pytree.mint import Minted
+from cottax.relational import Le
 from cottax.pytree.path import VarPath
 from jax.flatten_util import ravel_pytree
 
+from functional_process.cottax.architectures.contracts import (
+    Bracket,
+    BracketedRootFinding,
+    Converged,
+    PortFixedPointIteration,
+    PortMinimisation,
+    PortRootFinding,
+    Start,
+    Status,
+    Steps,
+)
 from functional_process.cottax.architectures.host_cache import (
     _flat_key,
     _rebuild,
@@ -42,6 +38,13 @@ from functional_process.cottax.architectures.host_cache import (
 )
 from functional_process.cottax.architectures.host_cache import (
     condition_sizes as host_condition_sizes,
+)
+from functional_process.cottax.architectures.reading import (
+    Gaps,
+    GapsDriver,
+    IterationDriver,
+    NextValues,
+    require_square,
 )
 from functional_process.cottax.paths import written
 
@@ -63,19 +66,16 @@ def condition_places(conditions: Gaps) -> tuple[VarPath, ...]:
     then the side each relation names -- its left, or its right where the left is zero.
     What a diagnostic writes a row's name from.
 
-    A reading forwards the statement's *names* (`objectives`, `unknowns`, `symbols`) and
-    not its sides, so the relations are read off the `ConditionMap` underneath it.
     """
     return conditions.objectives + tuple(
-        lhs if lhs is not None else rhs
-        for lhs, rhs, _op in conditions.conditions.relations
+        r.lhs if r.lhs is not None else r.rhs for r in conditions.relations
     )
 
 
 def gap_order(symbols) -> list[int]:
     """The gaps' indices with the equalities first, declaration order kept inside each.
 
-    A statement writes its relations as it means them and `ConditionMap.symbols` says
+    A statement writes its relations as it means them and `Gaps.symbols` says
     what each gap is held to; the SQP drivers here partition by *position*, so the
     permutation is taken once and the rows are read through it.
     """
@@ -117,12 +117,12 @@ def by_symbol(conditions: Gaps, name: str, n_equality: int, n_inequality: int):
 
     A statement writes its relations in whatever order it was built in (a SAND problem,
     `Combine`d from requirements and cut fixed points, interleaves them), and
-    `ConditionMap.symbols` is what says which is which. The counts the driver was told
+    `Gaps.symbols` is what says which is which. The counts the driver was told
     are checked against the symbols, so a mis-declared split is a refusal and not a
     silently mis-read row.
 
-    The permutation is made on the statement under the reading and the reading rebuilt
-    around it, so a `Gaps` goes in and a `Gaps` comes out.
+    The permutation is the reading's (`Gaps.order`), so a `Gaps` goes in and a `Gaps`
+    comes out, and the problem is untouched.
     """
     symbols = conditions.symbols
     counted = (
@@ -140,13 +140,7 @@ def by_symbol(conditions: Gaps, name: str, n_equality: int, n_inequality: int):
     order = gap_order(symbols)
     if order == list(range(len(symbols))):
         return conditions
-    stated = conditions.conditions
-    return dataclasses.replace(
-        conditions,
-        conditions=dataclasses.replace(
-            stated, relations=tuple(stated.relations[i] for i in order)
-        ),
-    )
+    return dataclasses.replace(conditions, order=tuple(order))
 
 
 def entry_count(sizes, first: int, count: int) -> int:
@@ -434,7 +428,6 @@ def _name_singular_equalities(jacobian, conditions: Gaps, meq: int, sizes=None) 
     )
 
 
-Status = Minted("status")
 """How a driver names the integer code its own solver library stopped with:
 `^status.<the problem's first unknown>`."""
 
@@ -553,21 +546,18 @@ def start_from(data, driver_name: str, conditions) -> tuple:
         raise ValueError(
             f"{driver_name} needs a starting value for every unknown "
             f"({', '.join(v.spelling for v in conditions.unknowns)}) -- supply one "
-            f"in env at its `^guess.*` port, or give this driver a `seed`"
+            f"at its `^start.*` place, or give this driver a `seed`"
         )
     return start
 
 
-class SlsqpDriver(GapDriver):
+class SlsqpDriver(GapsDriver[PortMinimisation]):
     """`scipy.optimize.minimize(method="SLSQP")` answering `Optimise`, on exactly the
     problem `VmconDriver` receives.
 
     A `GapDriver`: every relation reaches the SQP as `lhs - rhs`, so an equality is
     `= 0` and an inequality `<= 0` whichever side each was written on.
     """
-
-    accepts = staticmethod(is_optimise)
-    requires = (Start,)
 
     n_equality: int = 0
     n_inequality: int = 0
@@ -583,20 +573,15 @@ class SlsqpDriver(GapDriver):
     callback: object = None
     """`f(iteration, x_unscaled) -> None`, or `None`."""
 
-    @property
-    def reports(self) -> tuple:
-        """`(Steps, Converged, Status)`, the same three `VmconDriver` reports, so the
-        two SQPs can be compared on their verdicts and not only on their answers.
-        """
-        return (Steps, Converged, Status)
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
 
     def solve(self, gaps: Gaps, data) -> tuple:
         """Values for the block's unknowns, then `steps`, `converged` and `status`."""
         from scipy.optimize import minimize
 
-        conditions = by_symbol(
-            gaps, "SlsqpDriver", self.n_equality, self.n_inequality
-        )
+        conditions = by_symbol(gaps, "SlsqpDriver", self.n_equality, self.n_inequality)
         start = start_from(data, "SlsqpDriver", conditions)
 
         _flat, unravel = ravel_pytree(start)
@@ -781,7 +766,7 @@ budget spent, the outer-call budget spent, or the move box halved below `delta_m
 without a feasible success."""
 
 
-class BoxedSlsqpDriver(GapDriver):
+class BoxedSlsqpDriver(GapsDriver[PortMinimisation]):
     """`SlsqpDriver`'s problem, solved under **move limits**: SLSQP has no trust
     region, and on a problem whose conditions are sample statistics (a CVaR, a median:
     piecewise smooth, with kinks where samples change order) its first unboxed QP step
@@ -821,9 +806,6 @@ class BoxedSlsqpDriver(GapDriver):
     and `Status` (`BOXED_CONVERGED`, or a `BOXED_STATUS` code).
     """
 
-    accepts = staticmethod(is_optimise)
-    requires = (Start,)
-
     n_equality: int = 0
     n_inequality: int = 0
     bounds: tuple = ()
@@ -852,10 +834,9 @@ class BoxedSlsqpDriver(GapDriver):
     callback: object = None
     """`f(entry: dict) -> None` after every SLSQP call, with what it did, or `None`."""
 
-    @property
-    def reports(self) -> tuple:
-        """`(Steps, Converged, Status)`, as the other SQP drivers here."""
-        return (Steps, Converged, Status)
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
 
     def solve(self, gaps: Gaps, data) -> tuple:
         """Values for the block's unknowns, then `steps`, `converged` and `status`."""
@@ -1125,17 +1106,22 @@ class BoxedSlsqpDriver(GapDriver):
         return _sqp_callback(conditions, start, host)
 
 
-class SeededNewtonDriver(GapDriver):
-    """`cottax.execution.drivers.NewtonDriver`, plus a fallback starting guess derived from the
+class NewtonDriver(GapsDriver[PortRootFinding]):
+    """The level of this port's Newtons: equalities from a `Start`, inverting the gaps,
+    so as many numbers in them as in the unknowns (`require_square`, at the start)."""
+
+
+class SeededNewtonDriver(NewtonDriver):
+    """`cottax.jax_execution.solvers.Newton`, plus a fallback starting guess derived from the
     block's own **context** when the one supplied in `env` is unusable.
 
     `square`, because it inverts the gaps: cottax counts them against the unknowns once
     per solve, at the start it is handed.
     """
 
-    accepts = staticmethod(is_equalities)
-    requires = (Start,)
-    square = True
+    needs = frozenset({Start})
+    provides = frozenset()
+    computes = ()
 
     rtol: float = 1e-4
     atol: float = 1e-4
@@ -1150,8 +1136,9 @@ class SeededNewtonDriver(GapDriver):
             raise ValueError(
                 f"SeededNewtonDriver needs a starting value for every unknown "
                 f"({', '.join(v.spelling for v in gaps.unknowns)}) -- supply "
-                f"one in env at its `^guess.*` port, or give this driver a `seed`"
+                f"one at its `^start.*` place, or give this driver a `seed`"
             )
+        require_square("SeededNewtonDriver", gaps, start)
         flat_guess, unravel = ravel_pytree(start)
         # One compiled Newton per block structure, as `host_cache.bind`'s programs are:
         # `optx.root_find` is a `filter_jit`, and handed a fresh `residual` closure on
@@ -1222,7 +1209,49 @@ def condition_scale(conditions: Gaps, start):
     return jnp.concatenate(scales)
 
 
-class SafeguardedNewtonDriver(SeededNewtonDriver):
+class MdfNewtonDriver(NewtonDriver):
+    """Undamped optimistix Newton from a `Start`, reporting its verdict instead of
+    raising it."""
+
+    rtol: float = 1e-4
+    atol: float = 1e-4
+
+    max_steps: int = 256
+
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
+
+    def solve(self, gaps: Gaps, data) -> tuple:
+        """The root of `gaps` started from `data[Start]`, then the verdict."""
+        start = data.get(Start)
+        if start is None:
+            raise ValueError(
+                f"MdfNewtonDriver needs a starting value for every design variable "
+                f"({', '.join(v.spelling for v in gaps.unknowns)})"
+            )
+        require_square("MdfNewtonDriver", gaps, start)
+        flat_guess, unravel = ravel_pytree(start)
+
+        def residual(flat, args=None):
+            return flat_gaps(gaps, unravel(flat))
+
+        solution = optx.root_find(
+            residual,
+            optx.Newton(rtol=self.rtol, atol=self.atol),
+            flat_guess,
+            throw=False,
+            max_steps=self.max_steps,
+        )
+        return (
+            *unravel(solution.value),
+            solution.stats["num_steps"],
+            solution.result == optx.RESULTS.successful,
+            getattr(solution.result, "_value", jnp.asarray(-1)),
+        )
+
+
+class SafeguardedNewtonDriver(NewtonDriver):
     """Newton on a `RootFind`, reporting its verdict (`Steps`, `Converged`, `Status`)
     instead of raising it, with the two safeguards an outer line search needs: a
     relative step cap and backtracking on the residual norm, in coordinates scaled by
@@ -1275,13 +1304,12 @@ class SafeguardedNewtonDriver(SeededNewtonDriver):
     jacobian: str = "broyden"
     """`"broyden"` or `"newton"` -- see the class docstring."""
 
-    @property
-    def reports(self) -> tuple:
-        """`(Steps, Converged, Status)` -- what `__call__` returns after the unknowns.
-        `Status` is 0 converged, 1 out of steps, 2 stalled (no step lowered the
-        residual within the backtracking budget).
-        """
-        return (Steps, Converged, Status)
+    seed: object = None
+    """`f(Gaps) -> tuple` giving one starting value per unknown, or `None`."""
+
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
 
     def solve(self, gaps: Gaps, data) -> tuple:
         """The root of `gaps` from `data[Start]`, then the verdict.
@@ -1300,8 +1328,9 @@ class SafeguardedNewtonDriver(SeededNewtonDriver):
             raise ValueError(
                 f"SafeguardedNewtonDriver needs a starting value for every unknown "
                 f"({', '.join(v.spelling for v in gaps.unknowns)}) -- supply "
-                f"one in env at its `^guess.*` port, or give this driver a `seed`"
+                f"one at its `^start.*` place, or give this driver a `seed`"
             )
+        require_square("SafeguardedNewtonDriver", gaps, start)
         flat_guess, unravel = ravel_pytree(start)
         scale = jnp.where(flat_guess == 0.0, 1.0, flat_guess)  # noqa: RUF069
         rscale = condition_scale(gaps, start)
@@ -1397,14 +1426,6 @@ class SafeguardedNewtonDriver(SeededNewtonDriver):
         return (*unravel(u * scale), steps, converged, status)
 
 
-def is_single_unknown_root_find(node) -> bool:
-    """`is_root_find`, and exactly one unknown -- what `BracketedRootDriver` answers.
-    Whether that unknown is a scalar is a fact about its value, not the node, and is
-    checked at the call.
-    """
-    return is_root_find(node) and len(node.unknowns) == 1
-
-
 BRACKET_CONVERGED = 0
 BRACKET_OUT_OF_STEPS = 1
 BRACKET_COLLAPSED = 2
@@ -1423,7 +1444,7 @@ def _count(value):
     return jnp.asarray(value, dtype=jnp.int32)
 
 
-class BracketedRootDriver(GapDriver):
+class BracketedRootDriver(GapsDriver[BracketedRootFinding]):
     """A **single-unknown** `RootFind` answered by a bracketed method, so that it
     converges from any start: find two points where the residual changes sign, then
     Newton inside the bracket with bisection as the fallback (`rtsafe`), then the
@@ -1440,9 +1461,8 @@ class BracketedRootDriver(GapDriver):
     would (Numerical Recipes' `rtsafe` rule), so the tail is quadratic and the head is
     safe.
 
-    **The bracket.** The first pair tried is the unknown's `bounds` when it has them
-    (the file's `boundl`/`boundu`, `closing.close` fills them from the session), else
-    `(x0 / growth, x0 * growth)`. Where the residual has one sign over that pair the
+    **The bracket.** The first pair tried is the `Bracket` datum when the contract
+    takes one (the file's `boundl`/`boundu`), else `(x0 / growth, x0 * growth)`. Where the residual has one sign over that pair the
     pair is widened geometrically -- the lower end divided by `growth`, the upper
     multiplied -- up to `max_expansions` times, and the first widening that crosses
     zero becomes the bracket, tightened to the two adjacent points. Bounds are a first
@@ -1475,8 +1495,6 @@ class BracketedRootDriver(GapDriver):
     absolute floor.
     """
 
-    accepts = staticmethod(is_single_unknown_root_find)
-    requires = (Start,)
     # Not `square`: this driver brackets one scalar unknown and reads the first gap,
     # refusing anything else itself (below), so cottax's count would buy nothing and
     # cost one evaluation of the block per solve -- which on a belief sample's root
@@ -1484,10 +1502,6 @@ class BracketedRootDriver(GapDriver):
 
     rtol: float = 1e-10
     atol: float = 1e-10
-    bounds: tuple = ()
-    """`((VarPath, lower, upper), ...)` as the SQP drivers spell them; the entry for
-    this problem's unknown, if any, is the first bracket tried.
-    """
     growth: float = 2.0
     """Factor each widening of the bracket multiplies its upper end by and divides its
     lower end by.
@@ -1506,17 +1520,9 @@ class BracketedRootDriver(GapDriver):
     if the residual is still above tolerance.
     """
 
-    @property
-    def reports(self) -> tuple:
-        """`(Steps, Converged, Status)`."""
-        return (Steps, Converged, Status)
-
-    def bracket_for(self, unknown: VarPath):
-        """`(lower, upper)` of `bounds` for `unknown`, or `None`."""
-        for var, lo, hi in self.bounds:
-            if var == unknown:
-                return float(lo), float(hi)
-        return None
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
 
     def solve(self, gaps: Gaps, data) -> tuple:
         """The root of `gaps` from `data[Start]`, then the verdict.
@@ -1557,7 +1563,7 @@ class BracketedRootDriver(GapDriver):
         tol = self.atol + self.rtol * rscale
         growth = self.growth
         max_expansions, max_steps, xtol = self.max_expansions, self.max_steps, self.xtol
-        pair = self.bracket_for(gaps.unknowns[0])
+        (pair,) = data.get(Bracket, (None,))
 
         def residual(u):
             return flat_gaps(gaps, unravel(jnp.reshape(u * scale, (1,))))[0]
@@ -1702,24 +1708,20 @@ class BracketedRootDriver(GapDriver):
         return (*unravel(jnp.reshape(u * scale, (1,))), steps, converged, status)
 
 
-class PicardDriver(CottaxPicardDriver):
-    """`cottax.interfaces.PicardDriver` at this port's tolerances -- `optx.fixed_point`,
+class PicardDriver(IterationDriver[PortFixedPointIteration]):
+    """`cottax.jax_execution.solvers.Picard` at this port's tolerances -- `optx.fixed_point`,
     and therefore an **implicit adjoint**.
     """
 
     rtol: float = 1e-6
     atol: float = 1e-8
     max_steps: int = 256
-    report_steps: bool = False
-    """Report `Steps` -- how many iterates the contraction took -- as a graph output.
-    Off by default so the graphs every reference was measured on carry no new names."""
+    needs = frozenset({Start})
+    provides = frozenset({Steps})
+    computes = (Steps,)
 
-    @property
-    def reports(self) -> tuple:
-        return (Steps,) if self.report_steps else ()
-
-    def iterate(self, next_values: NextValues, data) -> tuple:
-        """`cottax.execution.drivers.PicardDriver.iterate`, behind this port's refusal
+    def solve(self, next_values: NextValues, data) -> tuple:
+        """`cottax.jax_execution.solvers.Picard`, behind this port's refusal
         message, and with `throw=False` on the `optx.fixed_point` call -- **not**
         `super().iterate()`, which cottax's own `PicardDriver` (`~/jaxgraph`) leaves
         at optimistix's default `throw=True`.
@@ -1754,12 +1756,10 @@ class PicardDriver(CottaxPicardDriver):
         solution = optx.fixed_point(
             step, solver, flat_guess, max_steps=self.max_steps, throw=False
         )
-        if not self.report_steps:
-            return unravel(solution.value)
         return (*unravel(solution.value), solution.stats["num_steps"])
 
 
-class SweepDriver(IterateDriver):
+class SweepDriver(IterationDriver[PortFixedPointIteration]):
     """One application of a `FixedPoint`'s map, `u <- g(u)`, and no test of convergence.
 
     Not a solver: what one pass of PROCESS's own pipeline does to its coupling
@@ -1768,22 +1768,20 @@ class SweepDriver(IterateDriver):
     models before it in call order just left it, which is where PROCESS starts too.
     """
 
-    accepts = staticmethod(is_fixed_point)
-    requires = (Start,)
+    needs = frozenset({Start})
+    provides = frozenset()
+    computes = ()
 
-    def iterate(self, next_values: NextValues, data) -> tuple:
+    def solve(self, next_values: NextValues, data) -> tuple:
         return next_values(*data[Start])
 
 
-class VmconDriver(GapDriver):
+class VmconDriver(GapsDriver[PortMinimisation]):
     """PROCESS's own SQP (`pyvmcon`) answering `Optimise`, fed `jax.jacfwd` instead of
     finite differences.
 
     A `GapDriver`, as `SlsqpDriver`: every relation reaches the SQP as `lhs - rhs`.
     """
-
-    accepts = staticmethod(is_optimise)
-    requires = (Start,)
 
     n_equality: int
     n_inequality: int
@@ -1820,11 +1818,9 @@ class VmconDriver(GapDriver):
     *unscaled* coordinates, or `None`.
     """
 
-    @property
-    def reports(self) -> tuple:
-        """`(Steps, Converged, Status)` -- what `__call__` returns after the unknowns.
-        """
-        return (Steps, Converged, Status)
+    needs = frozenset({Start})
+    provides = frozenset({Steps, Converged, Status})
+    computes = (Steps, Converged, Status)
 
     def solve(self, gaps: Gaps, data) -> tuple:
         """Values for the block's unknowns, then `steps`, `converged` and `status` --
@@ -1832,9 +1828,7 @@ class VmconDriver(GapDriver):
         """
         # In `(objective, *equalities, *inequalities)` order, by role: everything
         # below partitions by position, and the counts are checked against the roles.
-        conditions = by_symbol(
-            gaps, "VmconDriver", self.n_equality, self.n_inequality
-        )
+        conditions = by_symbol(gaps, "VmconDriver", self.n_equality, self.n_inequality)
         start = start_from(data, "VmconDriver", conditions)
 
         from pyvmcon import Result, VMCONConvergenceException, solve
@@ -1873,7 +1867,7 @@ class VmconDriver(GapDriver):
 
         def host(live, flat_start):
             """One VMCON solve, on the host, on concrete NumPy."""
-            # **Compiled, and deliberately unlike `cottax.execution.drivers.SLSQPDriver`**, which
+            # **Compiled, and deliberately unlike `cottax.jax_execution.solvers.SLSQP`**, which
             # leaves its inner model eager. An SQP iteration here converges a whole
             # PROCESS block; running it op by op costs far more than the one trace it
             # replaces, and the `pure_callback` boundary is per *solve*, not per

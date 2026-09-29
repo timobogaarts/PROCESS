@@ -1,7 +1,7 @@
 """Compiled, cached calls into a block's `Gaps` from a **host-side** solver loop.
 
 What `bind` takes is the driver's *reading* of the statement (`GapDriver`'s `Gaps`),
-not the `ConditionMap` under it: the gaps come from the level, so nothing here
+not the condition map under it: the gaps come from the level, so nothing here
 subtracts.
 """
 
@@ -11,7 +11,7 @@ import math
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.execution.driver import Gaps
+from functional_process.cottax.architectures.reading import Gaps
 
 # **There is no memo here any more** (`_audit/optimise_design.md` §37). `_BOUND` was a
 # list of compiled blocks scanned with `==`, and it existed because `bind` built its
