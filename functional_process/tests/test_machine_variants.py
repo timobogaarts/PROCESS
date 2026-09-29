@@ -89,16 +89,6 @@ NOT_PLACES = {"i_p_coolant_pumping": 2, "i_blkt_dual_coolant": 0}
 FIXED = {"qtorus": 0.0}
 """Values the declarations fix at `Vacuum.run`'s one call site."""
 
-BROKEN_BEFORE = {
-    "PfMagnetCostPerKgNoCentralSolenoid": (
-        "its body passes `calculate_pf_magnet_cost_per_kg_no_central_solenoid` no "
-        "`den_pf_conductor` (the 2026-08-31 split never reached this occupant), so a "
-        "call is one argument short; unchanged by the switch work"
-    ),
-}
-"""Declarations that cannot be called, for a reason that predates the variants. Pinned
-as failing, so that a fix shows up here."""
-
 PF_COIL_ARRAYS = ("r_pf_coil_middle", "c_pf_cs_coils_peak_ma")
 """Computed per-coil arrays no configuration values, shaped as `n_pf_coil_turns`."""
 
@@ -148,15 +138,17 @@ def _switch_values(name):
 
 
 def _random_like(value, rng):
-    """A random value shaped like `value`; an integer (an index, a count) kept."""
+    """`value` perturbed by up to 10 % per entry, so every model is evaluated near a
+    point it is valid at; an integer (an index, a count) kept, and a zero moved off
+    zero."""
     if isinstance(value, bool | int | np.integer):
         return value
     array = np.asarray(value)
     if array.dtype.kind in "iub":
         return value
-    if array.ndim == 0:
-        return float(rng.uniform(0.5, 2.0))
-    return rng.uniform(0.5, 2.0, size=array.shape)
+    base = np.where(array == 0.0, 1.0, array)
+    perturbed = base * rng.uniform(0.9, 1.1, size=array.shape)
+    return float(perturbed) if array.ndim == 0 else perturbed
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -189,16 +181,13 @@ def test_each_variant_is_the_branch_processes_switches_take(name):
         for parameter in places:
             leaf = leaf_of[parameter]
             values.append(arguments[leaf] if leaf in arguments else arguments[parameter])
-        if _declared_name(declaration) in BROKEN_BEFORE:
-            with pytest.raises(TypeError):
-                declaration.fn(*values)
-            continue
         got = declaration.fn(*values)
         want = dispatch(**arguments)
         got = got if isinstance(got, tuple) else (got,)
         want = want if isinstance(want, tuple) else (want,)
         assert len(got) == len(want), slot
         for g, w in zip(got, want, strict=True):
+            assert np.all(np.isfinite(np.asarray(w, dtype=float))), slot
             np.testing.assert_allclose(
                 np.asarray(g, dtype=float),
                 np.asarray(w, dtype=float),

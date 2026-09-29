@@ -25,7 +25,6 @@ from and is compared against).
 | `common.py` | the env pin, `process_reference`, `deterministic_values` |
 | `decision_kinds.md`, `output_kinds.md` | the census behind `kinds.py`: every build decision (design variable or fixed), every belief, and the guarantee that no build decision is left in the graph |
 | `cluster/` | the Snellius jobs and their environment |
-| `out/` | the one run kept: `flex_n262144_s{0.10,0.05,0.02}_hfact{,_req982.4}.npz` + `_summary.json`, `flex_coe.png`, `flex_histograms.png`, `ga_run.json` (penalty 1000), `ga_run_penalty250.json`, `ga_best.json`, `ga.png`, `dsm/` (regenerated, not tracked) |
 
 ```bash
 PY=~/miniconda3/envs/process_port/bin/python      # see ../CLAUDE.md for the env
