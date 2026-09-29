@@ -19,7 +19,7 @@ def problem_model(configuration: Configuration):
     if isinstance(problem, Optimisation):
         constraints = (*problem.equalities, *problem.inequalities)
         requirements = tuple(
-            cx.Requirement(held(c), cx.Eq if c in problem.equalities else cx.Le)
+            cx.requirement(held(c), cx.Eq if c in problem.equalities else cx.Le)
             for c in constraints
         )
         merit = problem.minimise or problem.maximise
@@ -28,7 +28,7 @@ def problem_model(configuration: Configuration):
             f"require_{held(c).segments[-1].name}": r
             for c, r in zip(constraints, requirements, strict=True)
         }
-        top = cx.Optimise(
+        top = cx.optimise(
             design=problem.design,
             subject_to=requirements,
             **{sense: merit.outputs[0]},
@@ -36,7 +36,7 @@ def problem_model(configuration: Configuration):
     else:
         constraints = (*problem.equalities, *problem.evaluated)
         slots = {}
-        top = cx.RootFind([held(c) for c in problem.equalities], problem.design)
+        top = cx.root_find([held(c) for c in problem.equalities], problem.design)
     bodies = {held(c).segments[-1].name: c for c in constraints}
     return cx.declare(configuration.machine, bodies | slots | {"Opt": top})
 
