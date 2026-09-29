@@ -74,7 +74,7 @@ def node(name, d) -> dict:
         out["relations"] = [[None if r.lhs is None else place(r.lhs),
                              None if r.rhs is None else place(r.rhs), r.op.__name__]
                             for r in d.relations]
-        out["objectives"] = [place(p) for p in d.objectives]
+        out["objectives"] = [place(getattr(p, "place", p)) for p in d.objectives]
         out["unknowns"] = [place(p) for p in d.unknowns]
         out["parameters"] = [place(p) for p in getattr(d, "parameters", ())]
     return out

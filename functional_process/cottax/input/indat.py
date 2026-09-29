@@ -439,7 +439,6 @@ from functional_process.vocabulary import (
     DivertorHeatLoadModel,
     DivertorNumberModels,
     ElectricConversionModelTypes,
-    FiguresOfMerit,
     FwBlktVVShape,
     IndInternalNormModel,
     OutbordSOLPowerDecayLengthModel,
@@ -3043,22 +3042,6 @@ def iteration_variables_from_indat(input_file):
 def problem_from_indat(input_file):
     """The problem statement this input file declares -- `importer.Problem`, in order."""
     return _as_imported(input_file).problem
-
-
-def objective_selection(i_figure_merit):
-    """Which figure of merit the run states, and in which direction --
-    `models.objectives.ObjectiveSelection`, resolved here and nowhere else.
-    """
-    from functional_process.cottax.models.objectives import (
-        ObjectiveSelection,  # noqa: PLC0415
-    )
-    from functional_process.models import objectives  # noqa: PLC0415
-
-    merit = FiguresOfMerit(abs(int(i_figure_merit)))
-    return ObjectiveSelection(
-        metric=objectives.OBJECTIVE_METRICS[merit],
-        maximise=int(i_figure_merit) < 0,
-    )
 
 
 # ------------------------------------------------------------- sentinel resolution

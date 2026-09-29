@@ -308,8 +308,8 @@ def _pedestal_temperature_bound(ixc, state, low: float, high: float):
 
 def native_bounds(ixc, imported, state=None):
     """`((VarPath, lower, upper), ...)` -- `ReferenceRun.bounds`, from the file."""
-    from functional_process.cottax.architectures.sand import (
-        iteration_variable_path,  # noqa: PLC0415
+    from functional_process.cottax.problem import (
+        design_place,  # noqa: PLC0415
     )
 
     lower = imported.get("numerics", "boundl")
@@ -324,7 +324,7 @@ def native_bounds(ixc, imported, state=None):
             high = float(upper.as_dict().get(int(i) - 1, high))
         if int(i) == 4 and state is not None:
             low, high = _pedestal_temperature_bound(ixc, state, low, high)
-        out.append((iteration_variable_path(int(i)), low, high))
+        out.append((design_place(int(i)), low, high))
     return tuple(out)
 
 
@@ -348,8 +348,8 @@ class NativeReference:
 
 def reference_of(configuration: Configuration) -> NativeReference:
     """Everything a cold solve needs for one configuration."""
-    from functional_process.cottax.architectures.sand import (
-        iteration_variable_path,  # noqa: PLC0415
+    from functional_process.cottax.problem import (
+        design_place,  # noqa: PLC0415
     )
 
     problem = configuration.problem
@@ -362,7 +362,7 @@ def reference_of(configuration: Configuration) -> NativeReference:
         n_equality=int(problem.n_equality),
         i_figure_merit=int(problem.i_figure_merit),
         bounds=tuple(
-            (iteration_variable_path(i), *problem.bounds[i]) for i in problem.ixc
+            (design_place(i), *problem.bounds[i]) for i in problem.ixc
         ),
     )
 

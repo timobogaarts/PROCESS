@@ -26,7 +26,7 @@ from cottax.driven import Driver
 from cottax.execution import ByRole, Context, DriverImplementation, Posed, Unknowns
 from cottax.jax_execution.solvers import NotSquare
 from cottax.jax_execution.solvers.canonical_nlp import Box, box
-from cottax.relational import Le, Relation
+from cottax.relational import Le, Max, Relation
 from jax.tree_util import GetAttrKey, register_pytree_with_keys
 
 __all__ = [
@@ -97,7 +97,8 @@ class Reading(Frozen):
 
     @property
     def objectives(self) -> tuple:
-        return self.posed.condition.objectives
+        """The objectives' places."""
+        return tuple(o.place for o in self.posed.condition.objectives)
 
     def values(self, unknowns: Unknowns) -> dict:
         """Every place the condition reads or determines, at `unknowns`."""
@@ -122,13 +123,17 @@ class Reading(Frozen):
 
 
 class Gaps(Reading):
-    """`(objectives, one gap per relation)`, the bounds aside."""
+    """`(objectives, one gap per relation)`, the bounds aside; a maximised objective
+    negated, so every driver minimises."""
 
     def __call__(self, *unknowns: Any) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
         at = self.values(unknowns)
         value = lambda p: None if p is None else at[p]  # noqa: E731
         return (
-            tuple(at[o] for o in self.objectives),
+            tuple(
+                -at[o.place] if o.sense is Max else at[o.place]
+                for o in self.posed.condition.objectives
+            ),
             tuple(_gap(value(r.lhs), value(r.rhs)) for r in self.relations),
         )
 

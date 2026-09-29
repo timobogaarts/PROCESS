@@ -60,8 +60,8 @@ def _duct_diameter_root_find(d_duct, l1, l2, l3, xmult_i, ceff_i):
 DuctDiameterRootFind = vacuum.residual(_duct_diameter_root_find, "d_duct")
 
 
-# cottax node: the two inequality residuals `DuctFeasibility` (below) reads.
-DuctFeasibilityConditions = vacuum.function(
+# cottax node: the two inequality residuals, each held `<= 0`.
+DuctFeasibilityConditions = vacuum.inequality(
     calculate_duct_feasibility_conditions,
     "duct_fits_residual",
     "pumping_speed_floor_residual",
@@ -69,7 +69,7 @@ DuctFeasibilityConditions = vacuum.function(
 
 
 DuctFeasibility = vacuum.Feasibility(
-    ["ceff_i"], inequalities=["duct_fits_residual", "pumping_speed_floor_residual"]
+    unknowns=["ceff_i"], subject_to=[DuctFeasibilityConditions]
 )
 """The declared problem itself: "find a feasible `ceff_i`", no objective."""
 

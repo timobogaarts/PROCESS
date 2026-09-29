@@ -1,50 +1,42 @@
-"""PROCESS's constraint equations as model nodes.
+"""PROCESS's constraints and figures of merit as model bodies.
 
-One `constraint_<id>` in `functional_process.models.constraints` is a ported function
-like any other; this module is the thin cottax layer over it -- the reads resolved
-against the graph the run actually holds, the switch arguments frozen at assembly, and
-the node owning `.constraints.c<id>`, element 1 of the function's
-`(residual, normalised_residual, value, bound)` tuple.
+A `constraint_<id>` or `objective_metric_<id>` in `functional_process.models` is a
+ported function like any other; this is the thin cottax layer over it. A **switch** is
+never read: it picks which function is the model (`VARIANTS`, the switched functions
+split into one per branch), and where a switch only chose which quantity a formula
+reads, it picks the place instead. Every other parameter is read at the place its name
+lives (`area_of`: PROCESS's declared inputs, and `NON_INPUT_FIELDS` for what a model
+computes).
 
-**A constraint's value is a model's output**, so it lives in the port's own namespace
-and not in one cottax opened: `.constraints.c<id>`, beside the limits PROCESS already
-keeps in that area. `^cond` was a mint over a place nothing else claimed, which said
-the value was fabricated when it is computed.
-
-**A constraint is declared where it is computed.** The node is a cottax
-`ConstraintFunction`, the declaration form for a body whose outputs are *held* against
-zero: `holds = Eq` for an equality, `Le` for an inequality, and the requirement that
-says so is the declaration's own, bound beside it at `^require.Constraint<id>`. Nothing
-states it a second time; an architecture absorbs it into the optimiser its conditions
-reach, or `Determine` closes it over a variable.
+A constraint's body owns its four values, `c<id>_residual`, `c<id>` (the normalised
+residual, the one held), `c<id>_value` and `c<id>_bound`. Whether `c<id>` is held `= 0`
+or `<= 0` is not the constraint's: PROCESS holds the first `neqns` of `icc` as
+equalities, whatever the function's own sense, so `problem.py` decides.
 """
 
-import functools
 import inspect
 
-from cottax.interfaces import Le, Minted
-from cottax.interfaces.pytree_namespace_module import Area, ConstraintFunction
-from cottax.pytree.mint import Minted
-from cottax.pytree.path import DictKey, GetAttrKey, NodePath, SequenceKey, VarPath
+from cottax.interfaces import Scope, V
+from jax.tree_util import GetAttrKey
 
 from functional_process.models import constraints as ported_constraints
+from functional_process.models import objectives as ported_objectives
+from functional_process.vocabulary.enums import FiguresOfMerit
+from functional_process.vocabulary import (
+    AvailabilityModel,
+    BetaComponentLimits,
+    DensityLimitModel,
+    TFConductorModel,
+    TFCSRadialConfiguration,
+)
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
-REQUIREMENT = Minted("require")
-"""How the requirement beside a constraint is named: `.Constraint5` ->
-`^require.Constraint5`. `ConstraintFunction`'s own default, written down here because
-`requirement_place` spells the same name without building the declaration."""
+CONSTRAINTS = Scope(V.constraints, GetAttrKey)
+"""Where a constraint's value is computed: `.constraints.c<id>`, beside the limits
+PROCESS already keeps in that area."""
 
-
-REFERENCE_SWITCH_VALUES = {
-    "i_rad_loss": 1,  # `.physics.i_rad_loss`
-    # `.physics.i_plasma_ignited`, `stellarator_helias.IN.DAT:126`
-    "i_plasma_ignited": 1,
-    "i_beta_component": 0,  # `.physics.i_beta_component`
-    "istell": 6,  # `.stellarator.istell`, `stellarator_helias.IN.DAT:137`
-}
-"""Static switch arguments of the reference run's active constraints, and their values.
-"""
+NUMERICS = Scope(V.numerics, GetAttrKey)
+"""Where the figure of merit is computed: `.numerics.objf`."""
 
 
 SWITCH_PARAMETER_NAMES = (
@@ -186,195 +178,233 @@ layer can ask for that is **not** a declared PROCESS input.
 """
 
 
-class Resolver:
-    """`parameter name -> VarPath`, graph first, PROCESS's declared inputs second.
+def area_of(name: str) -> Scope:
+    """The area parameter `name` is read in.
 
-    A constraint names its reads by parameter name, the way every ported model does, so
-    the place each one means is looked up: a variable this graph already holds when its
-    **leaf name is unique** there, else the `DataStructure` area the name is declared
-    in. Ambiguity is refused rather than guessed at.
+    Raises
+    ------
+    ValueError
+        If `name` is neither a declared PROCESS input nor in `NON_INPUT_FIELDS`.
     """
-
-    def __init__(self, graph_variables):
-        self.by_name = {}
-        for var in graph_variables:
-            keys = var.segments
-            if len(keys) == 2 and all(isinstance(k, GetAttrKey) for k in keys):
-                self.by_name.setdefault(keys[-1].name, set()).add(var)
-
-    def __call__(self, name: str) -> VarPath:
-        """Where `name` lives.
-
-        Raises
-        ------
-        ValueError
-            If the graph holds several variables with that leaf name, or none does and
-            the name is no declared input either.
-        """
-        hits = self.by_name.get(name)
-        if hits and len(hits) == 1:
-            return next(iter(hits))
-        if hits:
-            raise ValueError(
-                f"{name!r} names {len(hits)} variables in the graph "
-                f"({sorted(v.spelling for v in hits)}) -- resolution is by unique "
-                f"name, so this one has to be given explicitly"
-            )
-        area = NON_INPUT_FIELDS.get(name)
-        if area is None:
-            declaration = INPUT_VARIABLES.get(name)
-            # `ixc`/`icc` carry `module=None`: they are the problem statement, not a
-            # field, so they are no more resolvable than an undeclared name.
-            area = None if declaration is None else declaration.module
-        if area is not None:
-            return VarPath((GetAttrKey(area), GetAttrKey(name)))
+    area = NON_INPUT_FIELDS.get(name)
+    if area is None:
+        # `ixc`/`icc` carry `module=None`: the problem statement, not a field.
+        area = getattr(INPUT_VARIABLES.get(name), "module", None)
+    if area is None:
         raise ValueError(
-            f"{name!r} resolves to nothing, and the two halves of that are different "
-            f"failures. (1) No node in this graph owns or reads it -- it is not part of "
-            f"*this* machine's dataflow, and the same name may well be produced on "
-            f"another device configuration, so check the machine before the spelling. "
-            f"(2) It is not a declared PROCESS input either "
-            f"(`vocabulary/input_variables.py`, PROCESS's own `INPUT_VARIABLES`), so it "
-            f"cannot be a constraint bound read off the boundary -- which leaves a "
-            f"typo, or a quantity an unported model computes, in which case it "
-            f"belongs in "
-            f"`NON_INPUT_FIELDS` with its `DataStructure` area."
+            f"{name!r} is neither a declared PROCESS input nor in `NON_INPUT_FIELDS`: "
+            f"a typo, or a quantity an unported model computes, which belongs in "
+            f"`NON_INPUT_FIELDS` with its area"
         )
+    return Scope(getattr(V, area), GetAttrKey)
 
 
-def bind(fn, resolve, switches):
-    """`(switch pairs, read names, reads)` for one ported constraint/objective function.
-
-    A parameter named in `switches` is frozen at assembly -- the port's rule that a
-    model never reads an integer switch -- and every other one is a read.
-    """
-    parameters = list(inspect.signature(fn).parameters)
-    static = tuple((p, switches[p]) for p in parameters if p in switches)
-    read = [p for p in parameters if p not in switches]
-    return static, read, tuple(resolve(p) for p in read)
+class NoVariant(ValueError):
+    """A switch value no ported branch answers."""
 
 
-def condition_place(cid: int) -> VarPath:
-    """Where constraint `cid`'s value is computed: `.constraints.c<id>`."""
-    return VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}")))
+def _at(name: str):
+    """Where `name` lives: the place a variant reads in its parameter's stead."""
+    return area_of(name).place(name)
 
 
-def constraint_place(cid: int) -> NodePath:
-    """Where constraint `cid`'s body binds: `Constraint<id>`."""
-    return NodePath((GetAttrKey(f"Constraint{cid}"),))
+def _ignited(switches) -> bool:
+    return switches["i_plasma_ignited"] != 0
 
 
-def requirement_place(cid: int) -> NodePath:
-    """Where constraint `cid`'s requirement binds: `^require.Constraint<id>` -- the
-    declaration's own name for it, spelled without building the declaration.
-    """
-    return REQUIREMENT(constraint_place(cid))
+def _radiated(switches):
+    """The radiated power `i_rad_loss` counts: a place, as a read of the variant."""
+    i_rad_loss = switches["i_rad_loss"]
+    if i_rad_loss == 0:
+        return {"pden_plasma_radiated_mw": _at("pden_plasma_rad_mw")}
+    if i_rad_loss == 1:
+        return {"pden_plasma_radiated_mw": _at("pden_plasma_core_rad_mw")}
+    raise NoVariant(f"i_rad_loss={i_rad_loss} (no radiated loss) has no ported variant")
 
 
-def _where(place):
-    """`place` as something `FromExactly` and `Output` take: the area it sits in, then
-    the one key that reaches it.
-
-    A declaration names a place by the access path that reaches it, and these are
-    places resolved against a graph -- so the path is walked back into the recording
-    the two calls expect.
-
-    Raises
-    ------
-    ValueError
-        If `place` is the root, or ends in a key kind no declaration can spell.
-    """
-    keys = place.segments
-    if not keys:
-        raise ValueError(f"{place!r} names the root itself, not a place inside it")
-    area, last = Area(keys[:-1]), keys[-1]
-    if isinstance(last, GetAttrKey):
-        return getattr(area, last.name)
-    if isinstance(last, SequenceKey):
-        return area[last.idx]
-    if isinstance(last, DictKey):
-        return area[last.key]
-    raise ValueError(f"{place!r} ends in {last!r}, which no declaration can spell")
+def _only(fn, condition: bool, why: str, reads=None):
+    if not condition:
+        raise NoVariant(why)
+    return fn, reads or {}
 
 
-@functools.cache
-def _constraint_class(cid: int, holds, read_names: tuple, reads: tuple, switches: tuple):
-    """The `ConstraintFunction` class for one constraint, its reads and its switches.
+C, O = ported_constraints, ported_objectives
 
-    Cached on exactly what it is made of, because the class **is** the body: a
-    declaration compares by its type and its fields, and a graph is a jit cache key, so
-    assembling the same problem twice must give the same class back.
-
-    The `__call__` is synthesised the way `cottax.wraps.WrapsFunction` synthesises one
-    -- a signature whose parameter defaults are the reads -- since a constraint's reads
-    are resolved against the graph and cannot be written in a class body.
-    """
-    fn = getattr(ported_constraints, f"constraint_{cid}")
-    static = dict(switches)
-
-    def call(self, *args, **kwargs):
-        bound = inspect.signature(type(self).__call__).bind(self, *args, **kwargs)
-        bound.apply_defaults()
-        arguments = {k: v for k, v in bound.arguments.items() if k != "self"}
-        arguments.update(static)
-        return fn(**arguments)[1]
-
-    call.__signature__ = inspect.Signature([
-        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-        *(
-            inspect.Parameter(
-                name,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=FromExactly(_where(place)),
-            )
-            for name, place in zip(read_names, reads, strict=True)
-        ),
-    ])
-    call.__name__ = "__call__"
-    call.__doc__ = (
-        f"`{fn.__module__}.{fn.__name__}`'s normalised residual -- element 1 of "
-        f"`(residual, normalised_residual, value, bound)`, ports declared above."
-    )
-    return type(
-        f"Constraint{cid}",
-        (ConstraintFunction,),
+VARIANTS = {
+    "constraint_2": lambda s: (
+        C.constraint_2_ignited if _ignited(s) else C.constraint_2_non_ignited,
+        _radiated(s),
+    ),
+    "constraint_3": lambda s: (
+        C.constraint_3_ignited if _ignited(s) else C.constraint_3_non_ignited,
+        {},
+    ),
+    "constraint_4": lambda s: (
+        C.constraint_4_ignited if _ignited(s) else C.constraint_4_non_ignited,
+        _radiated(s),
+    ),
+    "constraint_5": lambda s: (
+        C.constraint_5_density_limit,
         {
-            "__module__": __name__,
-            "__doc__": f"PROCESS constraint {cid}, held by `{holds.__name__}`.",
-            "holds": holds,
-            "__call__": call,
-            condition_place(cid).leaf.name: Output(_where(condition_place(cid))),
+            "nd_plasma_electron_limited": _at(
+                "nd_plasma_electron_line"
+                if s["i_density_limit"] == DensityLimitModel.GREENWALD
+                else "nd_plasma_electrons_vol_avg",
+            )
         },
+    ),
+    "constraint_7": lambda s: _only(
+        C.constraint_7_non_ignited, not _ignited(s), "constraint 7: ignited"
+    ),
+    "constraint_17": lambda s: (
+        C.constraint_17_stellarator if s["istell"] != 0 else C.constraint_17_tokamak,
+        {},
+    ),
+    "constraint_24": lambda s: _beta_limit(s),
+    "constraint_28": lambda s: _only(
+        C.constraint_28_non_ignited, not _ignited(s), "constraint 28: ignited"
+    ),
+    "constraint_43": lambda s: (
+        C.constraint_43_copper
+        if s["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
+        else C.constraint_43_other,
+        {},
+    ),
+    "constraint_44": lambda s: (
+        C.constraint_44_copper
+        if s["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
+        else C.constraint_44_other,
+        {},
+    ),
+    "constraint_45": lambda s: _only(
+        C.constraint_45_tart, s["itart"] != 0, "constraint 45: not a TART"
+    ),
+    "constraint_46": lambda s: _only(
+        C.constraint_46_tart, s["itart"] != 0, "constraint 46: not a TART"
+    ),
+    "constraint_68": lambda s: (
+        C.constraint_68_fixed_q95
+        if s["i_q95_fixed"] == 1
+        else C.constraint_68_computed_q95,
+        {},
+    ),
+    "constraint_72": lambda s: (
+        C.constraint_72_bucked
+        if s["i_tf_bucking"] >= 2
+        and s["i_tf_inside_cs"] == TFCSRadialConfiguration.TF_OUTSIDE_CS
+        else C.constraint_72_free,
+        {},
+    ),
+    "constraint_85": lambda s: _cp_lifetime(s),
+    "constraint_90": lambda s: (
+        C.constraint_90_cycles,
+        {
+            "n_cycle_bound": _at("bktcycles")
+            if s["ibkt_life"] == 1 and s["bkt_life_csf"] == 1
+            else _at("n_cycle_min")
+        },
+    ),
+    "constraint_91": lambda s: (
+        C.constraint_91_ignited if _ignited(s) else C.constraint_91_non_ignited,
+        {},
+    ),
+    "objective_metric_7": lambda s: (
+        O.objective_metric_7_direct
+        if s["ireactor"] == 0
+        else O.objective_metric_7_reactor,
+        {},
+    ),
+    "objective_metric_15": lambda s: _only(
+        O.objective_metric_15_modelled,
+        s["i_plant_availability"] != AvailabilityModel.USER_INPUT,
+        "objective 15: the availability is an input",
+    ),
+}
+"""A switched function's name -> `switches -> (the variant, {parameter: place})`:
+which function is the model, and the places it reads that are not read by name. These
+run once, where the problem is stated; the graph holds only the variant."""
+
+
+def _beta_limit(s):
+    if (
+        s["i_beta_component"] == BetaComponentLimits.THERMAL_AND_BEAM
+        and s["istell"] == 0
+    ):
+        return C.constraint_24_thermal_and_beam, {}
+    limited = {
+        BetaComponentLimits.TOTAL: "beta_total_vol_avg",
+        BetaComponentLimits.THERMAL: "beta_thermal_vol_avg",
+        BetaComponentLimits.TOROIDAL: "beta_toroidal_vol_avg",
+    }
+    component = (
+        BetaComponentLimits.TOTAL
+        if s["istell"] != 0
+        else BetaComponentLimits(s["i_beta_component"])
+    )
+    return C.constraint_24_beta_limit, {"beta_limited": _at(limited[component])}
+
+
+def _cp_lifetime(s):
+    bound = {0: "cplife_input", 1: "life_div_fpy", 2: "life_blkt_fpy", 3: "life_plant"}
+    if s["i_cp_lifetime"] not in bound:
+        raise NoVariant(f"i_cp_lifetime={s['i_cp_lifetime']} is not in {{0, 1, 2, 3}}")
+    return C.constraint_85_lifetime, {"cplife_bound": _at(bound[s["i_cp_lifetime"]])}
+
+
+def variant(fn, switches):
+    """`(function, reads)` for ported `fn` under `switches`: `fn` itself where it takes
+    no switch."""
+    choose = VARIANTS.get(fn.__name__)
+    if choose is None:
+        return fn, {}
+    return choose(switches)
+
+
+def _reads(fn, chosen) -> dict:
+    return {
+        p: chosen[p] if p in chosen else area_of(p)
+        for p in inspect.signature(fn).parameters
+    }
+
+
+def constraint_places(cid: int) -> tuple:
+    """Constraint `cid`'s four values, in the ported function's order: the residual,
+    the normalised residual (the one held), the value and the bound."""
+    return tuple(
+        CONSTRAINTS.place(f"c{cid}{suffix}")
+        for suffix in ("_residual", "", "_value", "_bound")
     )
 
 
-def constraint_declaration(graph_variables, cid: int, holds=Le, switches=None):
-    """The declaration of PROCESS constraint `cid` over a graph's variables.
+def constraint_place(cid: int):
+    """Where constraint `cid`'s normalised residual is computed: `.constraints.c<id>`."""
+    return constraint_places(cid)[1]
 
-    A `ConstraintFunction`: the body owns `.constraints.c<id>` at
-    `Constraint<id>`, and the requirement holding it against zero by `holds` is bound
-    beside it at `^require.Constraint<id>`.
+
+def constraint(cid: int, switches):
+    """The body of PROCESS constraint `cid`, the variant `switches` pick, owning its
+    four values (`constraint_places`).
 
     Raises
     ------
     ValueError
-        If no `constraint_<id>` is ported, or one of its parameters names no place.
+        If no `constraint_<id>` is ported, no variant answers `switches`, or a
+        parameter has no place.
     """
-    switches = REFERENCE_SWITCH_VALUES if switches is None else switches
     fn = getattr(ported_constraints, f"constraint_{cid}", None)
     if fn is None:
-        raise ValueError(
-            f"constraint {cid} is active in this run but `models/constraints.py` has "
-            f"no `constraint_{cid}`"
-        )
-    try:
-        static, read, reads = bind(fn, Resolver(graph_variables), switches)
-    except ValueError as e:
-        raise ValueError(
-            f"constraint {cid} cannot be assembled: {e}. An optimiser missing one of "
-            f"PROCESS's active constraints solves a different problem -- leave it out "
-            f"on purpose and have it reported, or give the name a place"
-        ) from e
-    return _constraint_class(cid, holds, tuple(read), reads, static)(
-        mint_requirement=REQUIREMENT
-    )
+        raise ValueError(f"constraint {cid}: `models/constraints.py` ports no such one")
+    fn, chosen = variant(fn, switches)
+    return CONSTRAINTS.function(fn, *constraint_places(cid), reads=_reads(fn, chosen))
+
+
+MERIT = NUMERICS.place("merit")
+"""Where the figure of merit is computed, before its direction is applied."""
+
+
+def merit(i_figure_merit: int, switches):
+    """The body of PROCESS's figure of merit `abs(i_figure_merit)`, the variant
+    `switches` pick, owning `MERIT`."""
+    fn = ported_objectives.OBJECTIVE_METRICS[FiguresOfMerit(abs(i_figure_merit))]
+    fn, chosen = variant(fn, switches)
+    return NUMERICS.function(fn, MERIT, reads=_reads(fn, chosen))

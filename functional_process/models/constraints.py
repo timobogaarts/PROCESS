@@ -67,6 +67,60 @@ def constraint_1(
     )
 
 
+def constraint_2_non_ignited(
+    pden_electron_transport_loss_mw,
+    pden_ion_transport_loss_mw,
+    pden_plasma_radiated_mw,
+    f_p_alpha_plasma_deposited,
+    pden_alpha_total_mw,
+    pden_non_alpha_charged_mw,
+    pden_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+    vol_plasma,
+):
+    """Global power balance (total), a plasma heated from outside: the transport and
+    radiated losses against every heating term, injection included. Which radiated
+    power counts (`i_rad_loss`) is which place `pden_plasma_radiated_mw` reads."""
+    return eq(
+        pden_electron_transport_loss_mw
+        + pden_ion_transport_loss_mw
+        + pden_plasma_radiated_mw,
+        f_p_alpha_plasma_deposited * pden_alpha_total_mw
+        + pden_non_alpha_charged_mw
+        + pden_plasma_ohmic_mw
+        + p_hcd_injected_total_mw / vol_plasma,
+    )
+
+
+def constraint_2_ignited(
+    pden_electron_transport_loss_mw,
+    pden_ion_transport_loss_mw,
+    pden_plasma_radiated_mw,
+    f_p_alpha_plasma_deposited,
+    pden_alpha_total_mw,
+    pden_non_alpha_charged_mw,
+    pden_plasma_ohmic_mw,
+):
+    """Global power balance (total), an ignited plasma: no injected power."""
+    return eq(
+        pden_electron_transport_loss_mw
+        + pden_ion_transport_loss_mw
+        + pden_plasma_radiated_mw,
+        f_p_alpha_plasma_deposited * pden_alpha_total_mw
+        + pden_non_alpha_charged_mw
+        + pden_plasma_ohmic_mw,
+    )
+
+
+def _radiated(i_rad_loss, pden_plasma_rad_mw, pden_plasma_core_rad_mw):
+    """The radiated power density `i_rad_loss` counts as a loss."""
+    if i_rad_loss == 0:
+        return pden_plasma_rad_mw
+    if i_rad_loss == 1:
+        return pden_plasma_core_rad_mw
+    return 0.0
+
+
 def constraint_2(
     i_rad_loss,
     i_plasma_ignited,
@@ -81,30 +135,49 @@ def constraint_2(
     p_hcd_injected_total_mw,
     vol_plasma,
 ):
-    """Global power balance equation (total)."""
-    pscaling = pden_electron_transport_loss_mw + pden_ion_transport_loss_mw
-    if i_rad_loss == 0:
-        pnumerator = pscaling + pden_plasma_rad_mw
-    elif i_rad_loss == 1:
-        pnumerator = pscaling + pden_plasma_core_rad_mw
-    else:
-        pnumerator = pscaling
-
+    """Global power balance equation (total): PROCESS's switches, dispatched."""
+    radiated = _radiated(i_rad_loss, pden_plasma_rad_mw, pden_plasma_core_rad_mw)
+    common = (
+        pden_electron_transport_loss_mw,
+        pden_ion_transport_loss_mw,
+        radiated,
+        f_p_alpha_plasma_deposited,
+        pden_alpha_total_mw,
+        pden_non_alpha_charged_mw,
+        pden_plasma_ohmic_mw,
+    )
     if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
-        pdenom = (
-            f_p_alpha_plasma_deposited * pden_alpha_total_mw
-            + pden_non_alpha_charged_mw
-            + pden_plasma_ohmic_mw
-            + p_hcd_injected_total_mw / vol_plasma
-        )
-    else:
-        pdenom = (
-            f_p_alpha_plasma_deposited * pden_alpha_total_mw
-            + pden_non_alpha_charged_mw
-            + pden_plasma_ohmic_mw
-        )
+        return constraint_2_non_ignited(*common, p_hcd_injected_total_mw, vol_plasma)
+    return constraint_2_ignited(*common)
 
-    return eq(pnumerator, pdenom)
+
+def constraint_3_non_ignited(
+    pden_ion_transport_loss_mw,
+    pden_ion_electron_equilibration_mw,
+    f_p_alpha_plasma_deposited,
+    f_pden_alpha_ions_mw,
+    p_hcd_injected_ions_mw,
+    vol_plasma,
+):
+    """Global power balance for ions, heated from outside."""
+    return eq(
+        pden_ion_transport_loss_mw + pden_ion_electron_equilibration_mw,
+        f_p_alpha_plasma_deposited * f_pden_alpha_ions_mw
+        + p_hcd_injected_ions_mw / vol_plasma,
+    )
+
+
+def constraint_3_ignited(
+    pden_ion_transport_loss_mw,
+    pden_ion_electron_equilibration_mw,
+    f_p_alpha_plasma_deposited,
+    f_pden_alpha_ions_mw,
+):
+    """Global power balance for ions, ignited."""
+    return eq(
+        pden_ion_transport_loss_mw + pden_ion_electron_equilibration_mw,
+        f_p_alpha_plasma_deposited * f_pden_alpha_ions_mw,
+    )
 
 
 def constraint_3(
@@ -116,18 +189,50 @@ def constraint_3(
     p_hcd_injected_ions_mw,
     vol_plasma,
 ):
-    """Global power balance equation for ions."""
-    lhs = pden_ion_transport_loss_mw + pden_ion_electron_equilibration_mw
-
+    """Global power balance equation for ions: PROCESS's switch, dispatched."""
+    common = (
+        pden_ion_transport_loss_mw,
+        pden_ion_electron_equilibration_mw,
+        f_p_alpha_plasma_deposited,
+        f_pden_alpha_ions_mw,
+    )
     if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
-        rhs = (
-            f_p_alpha_plasma_deposited * f_pden_alpha_ions_mw
-            + p_hcd_injected_ions_mw / vol_plasma
-        )
-    else:
-        rhs = f_p_alpha_plasma_deposited * f_pden_alpha_ions_mw
+        return constraint_3_non_ignited(*common, p_hcd_injected_ions_mw, vol_plasma)
+    return constraint_3_ignited(*common)
 
-    return eq(lhs, rhs)
+
+def constraint_4_non_ignited(
+    pden_electron_transport_loss_mw,
+    pden_plasma_radiated_mw,
+    f_p_alpha_plasma_deposited,
+    f_pden_alpha_electron_mw,
+    pden_ion_electron_equilibration_mw,
+    p_hcd_injected_electrons_mw,
+    vol_plasma,
+):
+    """Global power balance for electrons, heated from outside; the radiated power
+    `i_rad_loss` counts is the place `pden_plasma_radiated_mw` reads."""
+    return eq(
+        pden_electron_transport_loss_mw + pden_plasma_radiated_mw,
+        f_p_alpha_plasma_deposited * f_pden_alpha_electron_mw
+        + pden_ion_electron_equilibration_mw
+        + p_hcd_injected_electrons_mw / vol_plasma,
+    )
+
+
+def constraint_4_ignited(
+    pden_electron_transport_loss_mw,
+    pden_plasma_radiated_mw,
+    f_p_alpha_plasma_deposited,
+    f_pden_alpha_electron_mw,
+    pden_ion_electron_equilibration_mw,
+):
+    """Global power balance for electrons, ignited."""
+    return eq(
+        pden_electron_transport_loss_mw + pden_plasma_radiated_mw,
+        f_p_alpha_plasma_deposited * f_pden_alpha_electron_mw
+        + pden_ion_electron_equilibration_mw,
+    )
 
 
 def constraint_4(
@@ -142,28 +247,32 @@ def constraint_4(
     p_hcd_injected_electrons_mw,
     vol_plasma,
 ):
-    """Global power balance equation for electrons."""
-    pscaling = pden_electron_transport_loss_mw
-    if i_rad_loss == 0:
-        pnumerator = pscaling + pden_plasma_rad_mw
-    elif i_rad_loss == 1:
-        pnumerator = pscaling + pden_plasma_core_rad_mw
-    else:
-        pnumerator = pscaling
-
+    """Global power balance equation for electrons: PROCESS's switches, dispatched."""
+    radiated = _radiated(i_rad_loss, pden_plasma_rad_mw, pden_plasma_core_rad_mw)
+    common = (
+        pden_electron_transport_loss_mw,
+        radiated,
+        f_p_alpha_plasma_deposited,
+        f_pden_alpha_electron_mw,
+        pden_ion_electron_equilibration_mw,
+    )
     if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
-        pdenom = (
-            f_p_alpha_plasma_deposited * f_pden_alpha_electron_mw
-            + pden_ion_electron_equilibration_mw
-            + p_hcd_injected_electrons_mw / vol_plasma
-        )
-    else:
-        pdenom = (
-            f_p_alpha_plasma_deposited * f_pden_alpha_electron_mw
-            + pden_ion_electron_equilibration_mw
-        )
+        return constraint_4_non_ignited(*common, p_hcd_injected_electrons_mw, vol_plasma)
+    return constraint_4_ignited(*common)
 
-    return eq(pnumerator, pdenom)
+
+def constraint_5_density_limit(
+    nd_plasma_electron_limited,
+    nd_plasma_electrons_max,
+    f_nd_plasma_electron_limit_max,
+):
+    """Electron density upper limit; which density is limited (`i_density_limit`:
+    the line average for Greenwald, else the volume average) is the place
+    `nd_plasma_electron_limited` reads."""
+    return leq(
+        nd_plasma_electron_limited,
+        nd_plasma_electrons_max * f_nd_plasma_electron_limit_max,
+    )
 
 
 def constraint_5(
@@ -173,11 +282,15 @@ def constraint_5(
     nd_plasma_electrons_max,
     f_nd_plasma_electron_limit_max,
 ):
-    """Electron density upper limit."""
-    bound = nd_plasma_electrons_max * f_nd_plasma_electron_limit_max
-    if i_density_limit == DensityLimitModel.GREENWALD:
-        return leq(nd_plasma_electron_line, bound)
-    return leq(nd_plasma_electrons_vol_avg, bound)
+    """Electron density upper limit: PROCESS's switch, dispatched."""
+    limited = (
+        nd_plasma_electron_line
+        if i_density_limit == DensityLimitModel.GREENWALD
+        else nd_plasma_electrons_vol_avg
+    )
+    return constraint_5_density_limit(
+        limited, nd_plasma_electrons_max, f_nd_plasma_electron_limit_max
+    )
 
 
 def constraint_6(beta_poloidal_eps, beta_poloidal_eps_max):
@@ -185,12 +298,16 @@ def constraint_6(beta_poloidal_eps, beta_poloidal_eps_max):
     return leq(beta_poloidal_eps, beta_poloidal_eps_max)
 
 
+def constraint_7_non_ignited(nd_beam_ions_out, nd_beam_ions):
+    """Hot beam ion density consistency; there is none in an ignited plasma."""
+    return eq(nd_beam_ions_out, nd_beam_ions)
+
+
 def constraint_7(i_plasma_ignited, nd_beam_ions_out, nd_beam_ions):
-    """Hot beam ion density consistency."""
+    """Hot beam ion density consistency: PROCESS's switch, dispatched."""
     if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.IGNITED:
         raise ValueError("constraint_7: do not use if i_plasma_ignited=IGNITED")
-
-    return eq(nd_beam_ions_out, nd_beam_ions)
+    return constraint_7_non_ignited(nd_beam_ions_out, nd_beam_ions)
 
 
 def constraint_8(pflux_fw_neutron_mw, pflux_fw_neutron_max_mw):
@@ -233,6 +350,24 @@ def constraint_16(p_plant_electric_net_mw, p_plant_electric_net_required_mw):
     return geq(p_plant_electric_net_mw, p_plant_electric_net_required_mw)
 
 
+def constraint_17_tokamak(f_p_plasma_separatrix_rad, f_p_plasma_separatrix_rad_max):
+    """Plasma radiation fraction upper limit, a tokamak."""
+    return leq(f_p_plasma_separatrix_rad, f_p_plasma_separatrix_rad_max)
+
+
+def constraint_17_stellarator(
+    f_p_plasma_separatrix_rad,
+    f_p_plasma_separatrix_rad_max,
+    psolradmw,
+    p_plasma_heating_total_mw,
+):
+    """Plasma radiation fraction upper limit, a stellarator: less the SOL's share."""
+    return leq(
+        f_p_plasma_separatrix_rad - psolradmw / p_plasma_heating_total_mw,
+        f_p_plasma_separatrix_rad_max,
+    )
+
+
 def constraint_17(
     istell,
     f_p_plasma_separatrix_rad,
@@ -240,14 +375,17 @@ def constraint_17(
     psolradmw,
     p_plasma_heating_total_mw,
 ):
-    """Plasma radiation fraction upper limit."""
+    """Plasma radiation fraction upper limit: PROCESS's switch, dispatched."""
     if istell != 0:
-        f_rad_sol = psolradmw / p_plasma_heating_total_mw
-        value = f_p_plasma_separatrix_rad - f_rad_sol
-    else:
-        value = f_p_plasma_separatrix_rad
-
-    return leq(value, f_p_plasma_separatrix_rad_max)
+        return constraint_17_stellarator(
+            f_p_plasma_separatrix_rad,
+            f_p_plasma_separatrix_rad_max,
+            psolradmw,
+            p_plasma_heating_total_mw,
+        )
+    return constraint_17_tokamak(
+        f_p_plasma_separatrix_rad, f_p_plasma_separatrix_rad_max
+    )
 
 
 def constraint_18(pflux_div_heat_load_mw, pflux_div_heat_load_max_mw):
@@ -288,6 +426,17 @@ def constraint_23(
     return leq(rcw, f_r_conducting_wall * rminor)
 
 
+def constraint_24_beta_limit(beta_limited, beta_vol_avg_max):
+    """Beta upper limit; which beta is limited (`i_beta_component`, always the total
+    on a stellarator) is the place `beta_limited` reads."""
+    return leq(beta_limited, beta_vol_avg_max)
+
+
+def constraint_24_thermal_and_beam(beta_thermal_vol_avg, beta_beam, beta_vol_avg_max):
+    """Beta upper limit on the thermal and the beam beta together."""
+    return leq(beta_thermal_vol_avg + beta_beam, beta_vol_avg_max)
+
+
 def constraint_24(
     i_beta_component,
     istell,
@@ -297,22 +446,21 @@ def constraint_24(
     beta_toroidal_vol_avg,
     beta_vol_avg_max,
 ):
-    """Beta upper limit."""
+    """Beta upper limit: PROCESS's switches, dispatched."""
     if i_beta_component == BetaComponentLimits.TOTAL or istell != 0:
-        value = beta_total_vol_avg
-    elif i_beta_component == BetaComponentLimits.THERMAL:
-        value = beta_thermal_vol_avg
-    elif i_beta_component == BetaComponentLimits.THERMAL_AND_BEAM:
-        value = beta_thermal_vol_avg + beta_beam
-    elif i_beta_component == BetaComponentLimits.TOROIDAL:
-        value = beta_toroidal_vol_avg
-    else:
-        raise ValueError(
-            f"constraint_24: i_beta_component={i_beta_component!r} is not a member of "
-            f"BetaComponentLimits"
+        return constraint_24_beta_limit(beta_total_vol_avg, beta_vol_avg_max)
+    if i_beta_component == BetaComponentLimits.THERMAL:
+        return constraint_24_beta_limit(beta_thermal_vol_avg, beta_vol_avg_max)
+    if i_beta_component == BetaComponentLimits.THERMAL_AND_BEAM:
+        return constraint_24_thermal_and_beam(
+            beta_thermal_vol_avg, beta_beam, beta_vol_avg_max
         )
-
-    return leq(value, beta_vol_avg_max)
+    if i_beta_component == BetaComponentLimits.TOROIDAL:
+        return constraint_24_beta_limit(beta_toroidal_vol_avg, beta_vol_avg_max)
+    raise ValueError(
+        f"constraint_24: i_beta_component={i_beta_component!r} is not a member of "
+        f"BetaComponentLimits"
+    )
 
 
 def constraint_25(b_tf_inboard_peak_with_ripple, b_tf_inboard_max):
@@ -330,12 +478,16 @@ def constraint_27(j_cs_pulse_start, j_cs_critical_pulse_start, fjohc0):
     return leq(j_cs_pulse_start / j_cs_critical_pulse_start, fjohc0)
 
 
+def constraint_28_non_ignited(big_q_plasma, big_q_plasma_min):
+    """Fusion gain (big Q) lower limit; meaningless for an ignited plasma."""
+    return geq(big_q_plasma, big_q_plasma_min)
+
+
 def constraint_28(i_plasma_ignited, big_q_plasma, big_q_plasma_min):
-    """Fusion gain (big Q) lower limit."""
+    """Fusion gain (big Q) lower limit: PROCESS's switch, dispatched."""
     if PlasmaIgnitionModel(i_plasma_ignited) != PlasmaIgnitionModel.NON_IGNITED:
         raise ValueError("constraint_28: not valid if i_plasma_ignited != NON_IGNITED")
-
-    return geq(big_q_plasma, big_q_plasma_min)
+    return constraint_28_non_ignited(big_q_plasma, big_q_plasma_min)
 
 
 def constraint_29(rmajor, rminor, rinboard):
@@ -421,47 +573,65 @@ def constraint_42(
     return geq(t_plant_pulse_total, t_cycle_min)
 
 
-def constraint_43(
-    i_tf_sup,
-    temp_cp_average,
-    tcpav2,
-):
-    """Average centrepost temperature consistency equation (TART)."""
-    if i_tf_sup == TFConductorModel.WATER_COOLED_COPPER:
-        temp_cp_average -= constants.TEMP_ROOM
-        tcpav2 -= constants.TEMP_ROOM
+def constraint_43_copper(temp_cp_average, tcpav2):
+    """Average centrepost temperature consistency, water-cooled copper: both above
+    room temperature."""
+    return eq(temp_cp_average - constants.TEMP_ROOM, tcpav2 - constants.TEMP_ROOM)
 
+
+def constraint_43_other(temp_cp_average, tcpav2):
+    """Average centrepost temperature consistency, any other conductor."""
     return eq(temp_cp_average, tcpav2)
 
 
-def constraint_44(
-    i_tf_sup,
-    temp_cp_max,
-    temp_cp_peak,
-):
-    """Centrepost temperature upper limit (TART)."""
+def constraint_43(i_tf_sup, temp_cp_average, tcpav2):
+    """Average centrepost temperature consistency (TART): PROCESS's switch,
+    dispatched."""
     if i_tf_sup == TFConductorModel.WATER_COOLED_COPPER:
-        temp_cp_max -= constants.TEMP_ROOM
-        temp_cp_peak -= constants.TEMP_ROOM
+        return constraint_43_copper(temp_cp_average, tcpav2)
+    return constraint_43_other(temp_cp_average, tcpav2)
 
+
+def constraint_44_copper(temp_cp_max, temp_cp_peak):
+    """Centrepost temperature upper limit, water-cooled copper: both above room
+    temperature."""
+    return leq(temp_cp_peak - constants.TEMP_ROOM, temp_cp_max - constants.TEMP_ROOM)
+
+
+def constraint_44_other(temp_cp_max, temp_cp_peak):
+    """Centrepost temperature upper limit, any other conductor."""
     return leq(temp_cp_peak, temp_cp_max)
 
 
-def constraint_45(itart, q95, q95_min):
-    """Edge safety factor lower limit (TART)."""
-    if itart == 0:
-        raise ValueError("constraint_45: itart=0 -- constraint 45 requires itart=1")
+def constraint_44(i_tf_sup, temp_cp_max, temp_cp_peak):
+    """Centrepost temperature upper limit (TART): PROCESS's switch, dispatched."""
+    if i_tf_sup == TFConductorModel.WATER_COOLED_COPPER:
+        return constraint_44_copper(temp_cp_max, temp_cp_peak)
+    return constraint_44_other(temp_cp_max, temp_cp_peak)
 
+
+def constraint_45_tart(q95, q95_min):
+    """Edge safety factor lower limit, a TART."""
     return geq(q95, q95_min)
 
 
+def constraint_45(itart, q95, q95_min):
+    """Edge safety factor lower limit (TART): PROCESS's switch, dispatched."""
+    if itart == 0:
+        raise ValueError("constraint_45: itart=0 -- constraint 45 requires itart=1")
+    return constraint_45_tart(q95, q95_min)
+
+
+def constraint_46_tart(eps, plasma_current, c_tf_total):
+    """I_p / I_rod upper limit, a TART."""
+    return leq(plasma_current / c_tf_total, 1.0 + 4.91 * (eps - 0.62))
+
+
 def constraint_46(itart, eps, plasma_current, c_tf_total):
-    """I_p / I_rod upper limit (TART)."""
+    """I_p / I_rod upper limit (TART): PROCESS's switch, dispatched."""
     if itart == 0:
         raise ValueError("constraint_46: itart=0 -- constraint 46 requires itart=1")
-
-    cratmx = 1.0 + 4.91 * (eps - 0.62)
-    return leq(plasma_current / c_tf_total, cratmx)
+    return constraint_46_tart(eps, plasma_current, c_tf_total)
 
 
 def constraint_48(beta_poloidal_vol_avg, beta_poloidal_max):
@@ -536,6 +706,29 @@ def constraint_67(pflux_fw_rad_max_mw, pflux_fw_rad_max):
     return leq(pflux_fw_rad_max_mw, pflux_fw_rad_max)
 
 
+def constraint_68_fixed_q95(
+    p_plasma_separatrix_mw,
+    b_plasma_toroidal_on_axis,
+    q95_fixed,
+    aspect,
+    rmajor,
+    p_div_bt_q_aspect_rmajor_max_mw,
+):
+    """Upper limit on Psep Bt / (q95 A R0), at the fixed `q95_fixed`."""
+    return leq(
+        (p_plasma_separatrix_mw * b_plasma_toroidal_on_axis)
+        / (q95_fixed * aspect * rmajor),
+        p_div_bt_q_aspect_rmajor_max_mw,
+    )
+
+
+def constraint_68_computed_q95(
+    p_div_bt_q_aspect_rmajor_mw, p_div_bt_q_aspect_rmajor_max_mw
+):
+    """Upper limit on Psep Bt / (q95 A R0), as the physics computed it."""
+    return leq(p_div_bt_q_aspect_rmajor_mw, p_div_bt_q_aspect_rmajor_max_mw)
+
+
 def constraint_68(
     i_q95_fixed,
     p_plasma_separatrix_mw,
@@ -547,15 +740,33 @@ def constraint_68(
     p_div_bt_q_aspect_rmajor_mw,
     p_div_bt_q_aspect_rmajor_max_mw,
 ):
-    """Upper limit on Psep scaling (PsepBt / q95*A*R0)."""
+    """Upper limit on Psep scaling (PsepBt / q95*A*R0): PROCESS's switch, dispatched.
+    `q95` is read by neither variant, as in PROCESS."""
+    del q95
     if i_q95_fixed == 1:
-        value = (p_plasma_separatrix_mw * b_plasma_toroidal_on_axis) / (
-            q95_fixed * aspect * rmajor
+        return constraint_68_fixed_q95(
+            p_plasma_separatrix_mw,
+            b_plasma_toroidal_on_axis,
+            q95_fixed,
+            aspect,
+            rmajor,
+            p_div_bt_q_aspect_rmajor_max_mw,
         )
-    else:
-        value = p_div_bt_q_aspect_rmajor_mw
+    return constraint_68_computed_q95(
+        p_div_bt_q_aspect_rmajor_mw, p_div_bt_q_aspect_rmajor_max_mw
+    )
 
-    return leq(value, p_div_bt_q_aspect_rmajor_max_mw)
+
+def constraint_72_bucked(stress_shear_cs_peak, sig_tf_cs_bucked, stress_cs_steel_max):
+    """Central Solenoid Tresca stress upper limit, the TF bucked on a CS inside it:
+    the larger of the two stresses. `jnp.maximum`, not the builtin: `max(a, b)` calls
+    `bool()` on a traced comparison, and silently discards a `nan`."""
+    return leq(jnp.maximum(stress_shear_cs_peak, sig_tf_cs_bucked), stress_cs_steel_max)
+
+
+def constraint_72_free(stress_shear_cs_peak, stress_cs_steel_max):
+    """Central Solenoid Tresca stress upper limit, the CS's own stress alone."""
+    return leq(stress_shear_cs_peak, stress_cs_steel_max)
 
 
 def constraint_72(
@@ -565,20 +776,13 @@ def constraint_72(
     sig_tf_cs_bucked,
     stress_cs_steel_max,
 ):
-    """Upper limit on Central Solenoid Tresca yield stress."""
+    """Upper limit on Central Solenoid Tresca yield stress: PROCESS's switches,
+    dispatched."""
     if i_tf_bucking >= 2 and i_tf_inside_cs == TFCSRadialConfiguration.TF_OUTSIDE_CS:
-        # `jnp.maximum`, not the builtin: `max(a, b)` evaluates `b > a` and calls
-        # `bool()` on the result, which raises `TracerBoolConversionError` the moment
-        # either operand is traced -- so this line made the whole tokamak MDF problem
-        # untraceable while SAND's eager path walked straight past it
-        # (`_audit/optimise_design.md` §16). It also *silently* discarded a `nan`:
-        # `nan > a` is `False`, so the builtin returns `a` and the missing-value alarm
-        # `sand_harness.UNWRITTEN_BY_PROCESS` exists to raise never fired here.
-        value = jnp.maximum(stress_shear_cs_peak, sig_tf_cs_bucked)
-    else:
-        value = stress_shear_cs_peak
-
-    return leq(value, stress_cs_steel_max)
+        return constraint_72_bucked(
+            stress_shear_cs_peak, sig_tf_cs_bucked, stress_cs_steel_max
+        )
+    return constraint_72_free(stress_shear_cs_peak, stress_cs_steel_max)
 
 
 def constraint_73(p_plasma_separatrix_mw, p_l_h_threshold_mw, p_hcd_injected_total_mw):
@@ -659,24 +863,23 @@ def constraint_84(beta_total_vol_avg, beta_vol_avg_min):
     return geq(beta_total_vol_avg, beta_vol_avg_min)
 
 
+def constraint_85_lifetime(cplife, cplife_bound):
+    """The centrepost lifetime equal to the lifetime `i_cp_lifetime` names, which is
+    the place `cplife_bound` reads."""
+    return eq(cplife, cplife_bound)
+
+
 def constraint_85(
     i_cp_lifetime, cplife, cplife_input, life_div_fpy, life_blkt_fpy, life_plant
 ):
-    """Equality constraint for the centrepost (CP) lifetime."""
-    if i_cp_lifetime == 0:
-        bound = cplife_input
-    elif i_cp_lifetime == 1:
-        bound = life_div_fpy
-    elif i_cp_lifetime == 2:
-        bound = life_blkt_fpy
-    elif i_cp_lifetime == 3:
-        bound = life_plant
-    else:
+    """Equality constraint for the centrepost (CP) lifetime: PROCESS's switch,
+    dispatched."""
+    bounds = {0: cplife_input, 1: life_div_fpy, 2: life_blkt_fpy, 3: life_plant}
+    if i_cp_lifetime not in bounds:
         raise ValueError(
             f"constraint_85: i_cp_lifetime={i_cp_lifetime!r} is not in {{0, 1, 2, 3}}"
         )
-
-    return eq(cplife, bound)
+    return constraint_85_lifetime(cplife, bounds[i_cp_lifetime])
 
 
 def constraint_86(dx_tf_turn_general, t_turn_tf_max):
@@ -699,12 +902,29 @@ def constraint_89(copperaoh_m2, copperaoh_m2_max):
     return leq(copperaoh_m2, copperaoh_m2_max)
 
 
-def constraint_90(n_cycle, n_cycle_min, ibkt_life, bkt_life_csf, bktcycles):
-    """Lower limit for CS coil stress load cycles."""
-    if ibkt_life == 1 and bkt_life_csf == 1:
-        n_cycle_min = bktcycles
+def constraint_90_cycles(n_cycle, n_cycle_bound):
+    """CS coil stress load cycles lower limit; the bound (`ibkt_life` with
+    `bkt_life_csf`: the blanket's cycles, else `n_cycle_min`) is the place
+    `n_cycle_bound` reads."""
+    return geq(n_cycle, n_cycle_bound)
 
-    return geq(n_cycle, n_cycle_min)
+
+def constraint_90(n_cycle, n_cycle_min, ibkt_life, bkt_life_csf, bktcycles):
+    """Lower limit for CS coil stress load cycles: PROCESS's switches, dispatched."""
+    bound = bktcycles if ibkt_life == 1 and bkt_life_csf == 1 else n_cycle_min
+    return constraint_90_cycles(n_cycle, bound)
+
+
+def constraint_91_non_ignited(
+    p_hcd_primary_extra_heat_mw, powerht_constraint, powerscaling_constraint
+):
+    """ECRH ignition heating-power lower limit, the extra heating counted."""
+    return geq(powerht_constraint + p_hcd_primary_extra_heat_mw, powerscaling_constraint)
+
+
+def constraint_91_ignited(powerht_constraint, powerscaling_constraint):
+    """ECRH ignition heating-power lower limit, ignited."""
+    return geq(powerht_constraint, powerscaling_constraint)
 
 
 def constraint_91(
@@ -713,13 +933,12 @@ def constraint_91(
     powerht_constraint,
     powerscaling_constraint,
 ):
-    """ECRH ignition heating-power lower limit."""
+    """ECRH ignition heating-power lower limit: PROCESS's switch, dispatched."""
     if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
-        value = powerht_constraint + p_hcd_primary_extra_heat_mw
-    else:
-        value = powerht_constraint
-
-    return geq(value, powerscaling_constraint)
+        return constraint_91_non_ignited(
+            p_hcd_primary_extra_heat_mw, powerht_constraint, powerscaling_constraint
+        )
+    return constraint_91_ignited(powerht_constraint, powerscaling_constraint)
 
 
 def constraint_92(f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_helium3):

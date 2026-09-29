@@ -30,9 +30,21 @@ def objective_metric_6(coe):
     return coe / 100.0
 
 
+def objective_metric_7_direct(cdirt):
+    """`FiguresOfMerit.CAPITAL_COST`, no reactor costed: the direct cost."""
+    return cdirt / 1.0e3
+
+
+def objective_metric_7_reactor(concost):
+    """`FiguresOfMerit.CAPITAL_COST`, a reactor costed: the constructed cost."""
+    return concost / 1.0e4
+
+
 def objective_metric_7(cdirt, concost, ireactor):
-    """`FiguresOfMerit.CAPITAL_COST`."""
-    return cdirt / 1.0e3 if ireactor == 0 else concost / 1.0e4
+    """`FiguresOfMerit.CAPITAL_COST`: PROCESS's switch, dispatched."""
+    if ireactor == 0:
+        return objective_metric_7_direct(cdirt)
+    return objective_metric_7_reactor(concost)
 
 
 def objective_metric_8(aspect):
@@ -60,8 +72,13 @@ def objective_metric_14(t_plant_pulse_burn):
     return t_plant_pulse_burn / 2.0e4
 
 
+def objective_metric_15_modelled(f_t_plant_available):
+    """`FiguresOfMerit.PLANT_AVAILABILITY_FACTOR`, the availability a model computed."""
+    return f_t_plant_available
+
+
 def objective_metric_15(i_plant_availability, f_t_plant_available):
-    """`FiguresOfMerit.PLANT_AVAILABILITY_FACTOR`."""
+    """`FiguresOfMerit.PLANT_AVAILABILITY_FACTOR`: PROCESS's switch, dispatched."""
     if AvailabilityModel(i_plant_availability) == AvailabilityModel.USER_INPUT:
         raise ValueError(
             "objective_metric_15 (plant availability factor): "
@@ -69,7 +86,7 @@ def objective_metric_15(i_plant_availability, f_t_plant_available):
             "`f_t_plant_available` is not a model output in this mode, "
             "so there is nothing to optimise against."
         )
-    return f_t_plant_available
+    return objective_metric_15_modelled(f_t_plant_available)
 
 
 def objective_metric_16(rmajor, t_plant_pulse_burn):

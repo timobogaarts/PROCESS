@@ -355,8 +355,8 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
 
 def _duct_feasibility_graph():
-    """`DuctFeasibility` (a hand-written condition node) assembled together with
-    `DuctFeasibilityConditions` and `DuctDiameterRootFind`, each bound at its slot.
+    """`DuctFeasibility` (subject to `DuctFeasibilityConditions`' two inequalities)
+    assembled together with them and `DuctDiameterRootFind`, each bound at its slot.
     """
     return cx.to_graph({
         "DuctFeasibilityConditions": DuctFeasibilityConditions,
@@ -395,14 +395,17 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     tests alone, since this is the first real (non-toy) instance of that join in this
     codebase.
     """
-    root_find_problem = _duct_feasibility_graph()[cx.problem(_ROOT_FIND)]
+    graph = _duct_feasibility_graph()
+    feasibility = graph[cx.node(N["DuctFeasibility"])]
+    root_find_problem = graph[cx.problem(_ROOT_FIND)]
+    assert is_feasibility(feasibility)
     assert is_root_find(root_find_problem)
 
-    joined = DuctFeasibility + root_find_problem
+    joined = feasibility + root_find_problem
     assert is_feasibility(joined)
-    assert joined.unknowns == DuctFeasibility.unknowns + root_find_problem.unknowns
-    assert joined.relations == DuctFeasibility.relations + root_find_problem.relations
-    assert joined.conditions == DuctFeasibility.conditions + root_find_problem.conditions
+    assert joined.unknowns == feasibility.unknowns + root_find_problem.unknowns
+    assert joined.relations == feasibility.relations + root_find_problem.relations
+    assert joined.conditions == feasibility.conditions + root_find_problem.conditions
 
 
 class _FeasibilityFinding(Driver):
@@ -498,7 +501,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     merged = (
         Plan(graph) + Combine(name, (name, cx.problem(_ROOT_FIND)), RelationalCondition)
     ).graph
-    assert merged[name] == DuctFeasibility + graph[cx.problem(_ROOT_FIND)]
+    assert merged[name] == graph[name] + graph[cx.problem(_ROOT_FIND)]
 
     callable_graph, starts = _drive(
         merged,
