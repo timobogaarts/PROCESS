@@ -172,8 +172,9 @@ def _place(var):
 
 
 def _typed(value):
-    """An integer as a Python `int` (static under jit: it may size an array), a number
-    as an array (traced), anything else (a table of the machine) as it is."""
+    """An integer as a Python `int` and an integer table as nested tuples of them
+    (static under jit: it may size or index an array), a number as an array (traced),
+    anything else (a table of the machine) as it is."""
     if isinstance(value, int | np.integer) and not isinstance(value, bool):
         return int(value)
     if isinstance(value, jax.Array):
@@ -182,7 +183,13 @@ def _typed(value):
         array = np.asarray(value)
     except ValueError:  # a ragged table: not a number
         return value
-    return array if array.dtype.kind in "biufc" else value
+    if array.dtype.kind in "iu":
+        return _nested(array.tolist())
+    return array if array.dtype.kind in "bfc" else value
+
+
+def _nested(x):
+    return tuple(map(_nested, x)) if isinstance(x, list) else x
 
 
 def values(graph, state, given=OrderedMap(), cold=None) -> OrderedMap:

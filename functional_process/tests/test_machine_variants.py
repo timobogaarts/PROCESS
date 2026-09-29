@@ -13,6 +13,7 @@ reads one is fed the entries derived from the same values the dispatch is called
 and agrees with the dispatch called with the configuration's index.
 """
 
+import functools
 import inspect
 
 import numpy as np
@@ -129,6 +130,18 @@ TF_DENSITY = {"den_tf_sc_material": ("dcond", "i_tf_sc_mat")}
 PF_DENSITY = {"den_pf_conductor": ("dcond", "i_pf_superconductor")}
 CS_DENSITY = {"den_cs_conductor": ("dcond", "i_cs_superconductor")}
 
+
+def _without(dispatch, index):
+    """`dispatch` with its result's entry `index` dropped."""
+
+    @functools.wraps(dispatch)
+    def dropped(*args, **kwargs):
+        out = dispatch(*args, **kwargs)
+        return (*out[:index], *out[index + 1 :])
+
+    return dropped
+
+
 SLOTS = {
     ("costs", "convert_fpy_to_calendar"): C.convert_fpy_to_calendar,
     ("costs", "structures_cost"): C.calculate_structures_cost,
@@ -146,7 +159,11 @@ SLOTS = {
     ("costs", "vacuum_system_cost"): C.calculate_vacuum_system_cost,
     ("costs", "cost_of_electricity"): C.calculate_cost_of_electricity,
     ("costs", "pf_magnet_cost"): C.calculate_pf_magnet_cost,
-    ("power", "component_thermal_powers"): T.calculate_component_thermal_powers_owned,
+    # PROCESS's function also returns `i_div_primary_heat`, which branch ran (16): an arm
+    # fixes it, so it does not output it.
+    ("power", "component_thermal_powers"): _without(
+        T.calculate_component_thermal_powers_owned, 16
+    ),
     ("power", "delta_eta_step"): T.calculate_delta_eta_next,
     ("vacuum", "vacuum_old"): calculate_vacuum_pumping_old,
     ("stellarator", "fwbs", "fw_blanket_shield_geometry"): (

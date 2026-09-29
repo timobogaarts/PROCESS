@@ -851,7 +851,7 @@ def _component_thermal_powers_owned_arm(
     of the twelve public wrappers below calls this with its own three literals baked
     in, so no arm duplicates this forwarding call -- only its own three constants.
     """
-    return calculate_component_thermal_powers_owned(
+    powers = calculate_component_thermal_powers_owned(
         i_p_coolant_pumping,
         p_fw_coolant_pump_mw,
         p_blkt_coolant_pump_mw,
@@ -880,6 +880,9 @@ def _component_thermal_powers_owned_arm(
         i_shld_primary_heat,
         i_thermal_electric_conversion,
     )
+    # `i_div_primary_heat` (index 16) says which branch of the divertor heat ran: this
+    # arm fixes it, so it is no computed value and the arms do not output it.
+    return (*powers[:16], *powers[17:])
 
 
 def calculate_component_thermal_powers_owned_summed_solid_ccfe_shield_primary(
