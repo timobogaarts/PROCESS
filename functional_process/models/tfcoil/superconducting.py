@@ -684,7 +684,8 @@ def cicc_integer_turn_geometry(
 
     dx_tf_turn_general = safe_sqrt(dr_tf_turn * dx_tf_turn)
 
-    n_tf_coil_turns = n_tf_wp_layers * n_tf_wp_pancakes
+    # A real, as PROCESS keeps it (`n_tf_coil_turns: float`), though two counts make it.
+    n_tf_coil_turns = jnp.asarray(n_tf_wp_layers * n_tf_wp_pancakes, dtype=float)
     c_tf_turn = c_tf_coil / n_tf_coil_turns
 
     dr_tf_turn_conduit_full = dr_tf_turn - 2.0 * dx_tf_turn_insulation
