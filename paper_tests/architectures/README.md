@@ -15,7 +15,7 @@ same tolerance.
 | `ulp.py` | `ulp/` | the solve's stability under last-bit perturbation of its start: every design variable moved `k` ulp, each optimiser (autodiff and finite-difference) and each arm rerun, `--native` PROCESS too |
 | `native.py` | `native/` | PROCESS: one pass, its idempotence loop, its finite-difference gradient, the full VMCON run at `epsvmc = TOLERANCE` |
 | `batched.py` | `batched_<scheme>_<platform>/` | the optimiser's problem over N designs at once (`vmap`, `lax.map`ped over chunks past `--chunk`), per design, CPU or GPU |
-| `om_mdf.py` | `openmdao_mdf/` | the same models under OpenMDAO as MDF (`to_openmdao.py`, the port's converter): a jitted component per model with sparse coloured partials, NLBGS, DirectSolver, SLSQP |
+| `om_mdf.py` | `openmdao_mdf/` | the same MDF under OpenMDAO, through cottax's own export (`study.openmdao`): a jitted component per model, NLBGS or Newton per solve, DirectSolver, SLSQP |
 | `table.py` | `table.tex`, `table_batched.tex`, `table_scaling.tex`, `table_openmdao.tex` | the paper's `tabular`s |
 | `bench.py` | -- | what they share: the machines, the arms, the schemes, the optimisers, the timer, the writer, the optimiser's problem posed on its own (`block`) |
 

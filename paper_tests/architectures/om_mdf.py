@@ -1,13 +1,8 @@
-"""Table 6 -- the same MDF under OpenMDAO, **on the port's own partition**: the
-optimiser block the port's `SlsqpDriver` answers (`study.assemble(..., "MDF",
-optimiser=SlsqpDriver)`), converted by `to_openmdao` (the port's converter: why not
-`cottax.export.openmdao` is in its docstring) -- one `ExplicitComponent` per model (its `compute` the
-port's jax body, jitted; its partials by `jax.jacfwd`, sparse and coloured), one
-`om.Group` per coupled block the port's schedule drives (a fixed point under
-`NonlinearBlockGS`, a root find under `NewtonSolver`, `DirectSolver` in each, at the
-port driver's tolerances), everything else feed-forward in the schedule's order
-(`NonlinearRunOnce`), the block's context set once as inputs, SLSQP outside at the
-port's design scaling and tolerance.
+"""Table 6 -- the same MDF under OpenMDAO, through cottax's own export
+(`study.openmdao`, `cottax.export.openmdao`): one jitted component per model, its
+partials by `jax.jacfwd` where the jaxpr says they are nonzero; a group per nested solve
+(`NonlinearBlockGS` for a fixed point, `NewtonSolver` for a root find, `DirectSolver` in
+each); SLSQP as the driver, in units of the design's starts.
 
 What it measures is the cost of *a call per component*: the models' arithmetic, the
 blocks and the problem are the port's, so the difference between this table and
@@ -16,12 +11,16 @@ one Python call per component per sweep -- against one program for the whole blo
 
     JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu $PY paper_tests/architectures/om_mdf.py --configurations stellarator_helias
 
-Per machine: the components and solver groups, the sweeps one MDA takes from the port's
-starts (`sweeps`, per block in `block_sweeps`) and warm (`warm_sweeps`), one converged
-MDA warm (`model_ms`, `run_model` at the same design) and restarted from the port's
-starts (`restart_model_ms`, what the port's evaluation does), one total Jacobian warm
-(`totals_ms`), and the full SLSQP run (`iterations` are SLSQP's major iterations, as the
-port's `SlsqpDriver` counts them; `evaluations` OpenMDAO's model runs).
+Per machine: the components and solver groups, the sweeps one MDA takes from the
+starts (`sweeps`, per group `kind:count` in `block_sweeps`) and warm (`warm_sweeps`), one
+converged MDA warm (`model_ms`, `run_model` at the same design with the groups' start
+guess switched off) and restarted from the starts (`restart_model_ms`, the export's own
+`run_model`: each group sets its unknowns to their starts as its solver begins), one
+total Jacobian warm (`totals_ms`), and the full SLSQP run (`iterations` SLSQP's major
+iterations, `evaluations` OpenMDAO's model runs).
+
+Dropped: `zeroed_partials`, `dense_components`, `zeroed_sinks`, which recorded what the
+port's own converter patched; the export patches nothing.
 
 `--once`: every solver `NonlinearRunOnce` -- one pass over the components, warm, into
 `out/openmdao_once/`.
@@ -31,35 +30,62 @@ from __future__ import annotations
 
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
+import openmdao.api as om
+from cottax.export.openmdao.component import ProblemComponent
+from openmdao.core.component import Component
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from to_openmdao import name, to_openmdao  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
 from functional_process.cottax import study  # noqa: E402
-from functional_process.cottax.architectures.drivers import SlsqpDriver  # noqa: E402
 
-__all__ = ["name", "problem_of"]
-
-
-def problem_of(configuration, args, once=False):
-    """`(conversion, assembled)`: the port's MDF block as an OpenMDAO problem, with the
-    port's SLSQP on its optimiser whatever `--optimiser` says -- the converted problem
-    takes its scaling, tolerance and budget from it."""
-    assembled = study.assemble(configuration, "MDF", rule=bench.SCHEMES[args.scheme],
-                               optimiser=SlsqpDriver)
-    return to_openmdao(assembled.graph, assembled.inputs, once=once), assembled
+KINDS = {om.NonlinearBlockGS: "fixed", om.NewtonSolver: "root"}
+"""The solver of a group the export iterates, by the kind of problem it answers."""
 
 
-def sweeps(conv) -> tuple[int, str]:
-    """The last run's sweeps: their total, and per block `kind:count`."""
-    per = conv.sweeps()
-    kinds = {path: kind for path, kind, _ in conv.groups}
-    return sum(per.values()), "|".join(f"{kinds[p].split()[0]}:{n}" for p, n in per.items())
+def problem_of(configuration, args, once=False) -> om.Problem:
+    """The MDF of `configuration` as the export's `om.Problem`, set up; `once` swaps every
+    solver for `NonlinearRunOnce` before its first run."""
+    problem = study.openmdao(configuration, "MDF", rule=bench.SCHEMES[args.scheme]).problem()
+    if once:
+        for group in problem.model.system_iter(recurse=True, include_self=True, typ=om.Group):
+            group.nonlinear_solver = om.NonlinearRunOnce()
+            group.linear_solver = om.LinearRunOnce()
+    return problem
+
+
+def components(problem) -> int:
+    return sum(1 for _ in problem.model.system_iter(recurse=True, typ=Component))
+
+
+def groups(problem) -> list:
+    """The export's solver groups, one per nested solve, outermost first."""
+    return list(problem.model.system_iter(recurse=True, typ=om.Group))
+
+
+def sweeps(problem) -> tuple[int, str]:
+    """The last run's sweeps: their total, and per group `kind:count`."""
+    per = [(KINDS[type(g.nonlinear_solver)], g.nonlinear_solver._iter_count)
+           for g in groups(problem) if type(g.nonlinear_solver) in KINDS]
+    return sum(n for _, n in per), "|".join(f"{k}:{n}" for k, n in per)
+
+
+@contextmanager
+def warm(problem):
+    """Every group left where its last run converged: the start guess switched off."""
+    solves = list(problem.model.system_iter(recurse=True, typ=ProblemComponent))
+    for c in solves:
+        c.guess_nonlinear = lambda *a: None
+    try:
+        yield
+    finally:
+        for c in solves:
+            del c.guess_nonlinear
 
 
 def once(args):
@@ -69,12 +95,12 @@ def once(args):
         configuration = configurations.load(name_)
         if bench.is_root_find(configuration):
             continue
-        (conv, _assembled), setup_s = bench.timed(problem_of, configuration, args, once=True)
-        _, cold_s = bench.timed(conv.problem.run_model)
-        pass_s = bench.median_seconds(conv.problem.run_model, args.repeats)
+        prob, setup_s = bench.timed(problem_of, configuration, args, once=True)
+        _, cold_s = bench.timed(prob.run_model)
+        pass_s = bench.median_seconds(prob.run_model, args.repeats)
         rows.append({
             "configuration": name_, "arm": "one pass (OpenMDAO)",
-            "components": conv.components, "groups": len(conv.groups),
+            "components": components(prob), "groups": len(groups(prob)),
             "setup_s": setup_s, "cold_pass_s": cold_s, "pass_ms": 1e3 * pass_s,
         })
         print(rows[-1])
@@ -91,41 +117,36 @@ def main():
         configuration = configurations.load(name_)
         if bench.is_root_find(configuration):
             continue
-        (conv, _assembled), setup_s = bench.timed(problem_of, configuration, args)
-        prob = conv.problem
-        conv.restart()
+        prob, setup_s = bench.timed(problem_of, configuration, args)
         _, cold_s = bench.timed(prob.run_model)
-        total, by_block = sweeps(conv)
-
-        def restarted():
-            conv.restart()
-            prob.run_model()
-
-        restart_s = bench.median_seconds(restarted, args.repeats)
-        prob.run_model()
-        model_s = bench.median_seconds(prob.run_model, args.repeats)
-        warm_sweeps, _ = sweeps(conv)                      # the timed, warm MDA's
-        totals_s = bench.median_seconds(lambda: prob.compute_totals(), args.repeats)
-        conv.restart()
+        total, by_group = sweeps(prob)
+        restart_s = bench.median_seconds(prob.run_model, args.repeats)
+        with warm(prob):
+            model_s = bench.median_seconds(prob.run_model, args.repeats)
+            warm_sweeps, _ = sweeps(prob)
+            totals_s = bench.median_seconds(lambda: prob.compute_totals(), args.repeats)
         began = time.perf_counter()
         prob.run_driver()
         driver_s = time.perf_counter() - began
-        result = prob.driver._scipy_optimize_result
-        scalar = lambda n: float(np.asarray(prob.get_val(n)).reshape(-1)[0])  # noqa: E731
-        eqs = [abs(scalar(c)) for c in conv.equalities]
-        ies = [-scalar(c) for c in conv.inequalities]
+        result, driver = prob.driver._scipy_optimize_result, prob.driver
+        (objf,) = (float(np.ravel(v)[0])
+                   for v in driver.get_objective_values(driver_scaling=False).values())
+        cons = driver.get_constraint_values(driver_scaling=False)
+        equality = {k: driver._cons[k]["equals"] is not None for k in cons}
+        eqs = [np.max(np.abs(v)) for k, v in cons.items() if equality[k] and np.size(v)]
+        ies = [np.min(-np.asarray(v)) for k, v in cons.items() if not equality[k] and np.size(v)]
         rows.append({
             "configuration": name_, "arm": "MDF (OpenMDAO)",
-            "components": conv.components, "groups": len(conv.groups), "design": len(conv.design),
-            "sweeps": total, "block_sweeps": by_block, "warm_sweeps": warm_sweeps,
+            "components": components(prob), "groups": len(groups(prob)),
+            "design": len(driver._designvars),
+            "sweeps": total, "block_sweeps": by_group, "warm_sweeps": warm_sweeps,
             "setup_s": setup_s, "cold_model_s": cold_s,
             "model_ms": 1e3 * model_s, "restart_model_ms": 1e3 * restart_s, "totals_ms": 1e3 * totals_s,
-            "iterations": int(result.nit), "evaluations": prob.driver.iter_count,
+            "iterations": int(result.nit), "evaluations": driver.iter_count,
             "status": "converged" if result.success else "failed",
-            "driver_s": driver_s, "objf": scalar(conv.objective),
-            "max_eq": max(eqs) if eqs else 0.0, "min_ie": min(ies) if ies else float("nan"),
-            "zeroed_partials": len(conv.nonfinite), "dense_components": len(conv.dense),
-            "zeroed_sinks": len(conv.held),
+            "driver_s": driver_s, "objf": objf,
+            "max_eq": float(max(eqs)) if eqs else 0.0,
+            "min_ie": float(min(ies)) if ies else float("nan"),
         })
         print(rows[-1])
     if rows:

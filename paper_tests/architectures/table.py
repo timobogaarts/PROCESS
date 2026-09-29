@@ -261,8 +261,8 @@ def scaling(args):
 
 def openmdao(args):
     """`out/table_openmdao.tex`: one evaluation and one Jacobian of each optimisation's
-    MDF, warm, in three codes -- the port (in-program, `iteration.py`), OpenMDAO (the
-    same bodies as one component per model: a warm MDA, which is one sweep, and
+    MDF, warm, in three codes -- the port (in-program, `iteration.py`), OpenMDAO (cottax's
+    export, the same bodies as one component per model: a warm MDA and
     `compute_totals`) and PROCESS (its evaluation loop and its finite-difference
     gradient). Single runs, not batched: the batching figure has the port alone."""
     om = by(bench.read("openmdao_mdf"), "configuration")
