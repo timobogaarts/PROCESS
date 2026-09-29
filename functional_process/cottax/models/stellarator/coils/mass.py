@@ -1,7 +1,5 @@
 """Pure-functional port of `process/models/stellarator/coils/mass.py` (registry #12)."""
 
-from cottax.interfaces import V
-
 from functional_process.cottax.paths import (
     fwbs,
     tfcoil,
@@ -13,10 +11,10 @@ from functional_process.vocabulary import (
     constants,  # noqa: F401
 )
 
-# The CoilsMass family:
-# The `calculate_coils_mass` family -- one occupant per `.tfcoil.i_tf_sc_mat`
-# value, differing only in which element of `.tfcoil.dcond` is the superconductor
-# density.
+# `calculate_coils_mass`, given the superconductor's density
+# `.tfcoil.den_tf_sc_material` -- the entry of `.tfcoil.dcond` at `.tfcoil.i_tf_sc_mat`,
+# derived from a configuration's values (`cottax.input.native`), so one occupant serves
+# every material.
 
 
 def _coils_mass(
@@ -70,66 +68,8 @@ _COILS_MASS_OUTPUTS = (
 )
 
 
-# `i_tf_sc_mat == ITER_NB3SN` (1) -- ITER Nb3Sn -- PROCESS's own default and the
-# reference run's.
-IterNb3snCoilsMass = tfcoil.function(
+CoilsMass = tfcoil.function(
     _coils_mass,
     *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[0], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == BI2212` (2) -- Bi-2212.
-Bi2212CoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[1], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == OLD_LUBELL_NBTI` (3) -- old Lubell NbTi.
-OldLubellNbtiCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[2], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- user-defined ITER Nb3Sn.
-UserDefinedNb3snCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[3], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == WST_NB3SN` (5) -- WST Nb3Sn.
-WstNb3snCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[4], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == CROCO_REBCO` (6) -- CroCo REBCO.
-CrocoRebcoCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[5], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == DURHAM_NBTI` (7) -- Durham Ginzburg-Landau NbTi.
-DurhamNbtiCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[6], "den_steel": fwbs},
-)
-
-
-# `i_tf_sc_mat == DURHAM_REBCO` (8) -- Durham REBCO.
-DurhamRebcoCoilsMass = tfcoil.function(
-    _coils_mass,
-    *_COILS_MASS_OUTPUTS,
-    reads={"den_tf_sc_material": V.tfcoil.dcond[7], "den_steel": fwbs},
+    reads={"den_steel": fwbs},
 )

@@ -587,8 +587,7 @@ def calculate_pf_coil_masses_from_elements(
     f_a_cs_turn_steel,
     f_a_cs_void,
 ):
-    """`PFCoilMasses`/`PFCoilMassesCsWstNb3Sn`: the whole calculation, given this
-    occupant's two conductor densities.
+    """`PFCoilMasses`: the whole calculation, given the two conductor densities.
 
     Moved from the node bodies' shared `_masses`: `calculate_pf_coil_masses` addresses
     `b_pf_coil_peak`/`bpf2` as one six-entry array each, but cottax reads a coil's field

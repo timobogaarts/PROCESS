@@ -447,29 +447,10 @@ CiccInboardAreasAndFractions = tfcoil.function(
 TfTurnArea = tfcoil.function(calculate_a_tf_turn, "a_tf_turn")
 
 
-# The SuperconductingTfCoilAreasAndMasses family:
-# The family that owns the superconducting TF coil masses.
-
-
-# The SuperconductingTfCoilAreasAndMassesConventional family:
-# The `itart == 0` (conventional aspect ratio) **arm** -- one of the two axes.
-
-
-# The SuperconductingTfCoilAreasAndMassesSphericalTokamak family:
-# The `itart == 1` (spherical tokamak) **arm** -- one of the two axes.
-
-
-# The material occupants differ only in the density they read,
-# `.tfcoil.dcond[i_tf_sc_mat - 1]`; the arm is the body.
-#   `i_tf_sc_mat == ITER_NB3SN` (1) -- ITER Nb3Sn.
-#   `i_tf_sc_mat == BI2212` (2) -- Bi-2212.
-#   `i_tf_sc_mat == OLD_LUBELL_NBTI` (3) -- old Lubell NbTi.
-#   `i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- user-defined Nb3Sn.
-#   `i_tf_sc_mat == WST_NB3SN` (5) -- WST Nb3Sn.
-#   `i_tf_sc_mat == CROCO_REBCO` (6) -- CroCo REBCO.
-#   `i_tf_sc_mat == DURHAM_NBTI` (7) -- Durham Ginzburg-Landau NbTi.
-#   `i_tf_sc_mat == DURHAM_REBCO` (8) -- Durham Ginzburg-Landau REBCO.
-#   `i_tf_sc_mat == HAZELTON_ZHAI_REBCO` (9) -- Hazelton-Zhai REBCO.
+# The family that owns the superconducting TF coil masses: one occupant per `itart`
+# arm. The superconductor's density is `.tfcoil.den_tf_sc_material`, the entry of
+# `.tfcoil.dcond` at `.tfcoil.i_tf_sc_mat`, derived from a configuration's values
+# (`cottax.input.native`), so the material index reaches no node.
 
 
 def _superconducting_tf_coil_areas_and_masses_conventional(
@@ -593,8 +574,8 @@ _TF_COIL_MASSES = {
 """Per `itart` arm: the body, then its outputs."""
 
 
-def _tf_coil_masses(arm, i_tf_sc_mat):
-    """The occupant for this arm and material: its density at `.tfcoil.dcond[i - 1]`."""
+def _tf_coil_masses(arm):
+    """The occupant for this arm."""
     body, *outputs = _TF_COIL_MASSES[arm]
     return tfcoil.function(
         body,
@@ -604,131 +585,17 @@ def _tf_coil_masses(arm, i_tf_sc_mat):
             "a_tf_wp_no_insulation": superconducting_tfcoil,
             "z_tf_inside_half": build,
             "dr_tf_inboard": build,
-            "den_tf_sc_material": V.tfcoil.dcond[i_tf_sc_mat - 1],
             "den_steel": fwbs,
         },
     )
 
 
-# `(itart, i_tf_sc_mat) == (0, 1)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# ITER_NB3SN]`.
-IterNb3snSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 1
-)
+# `itart == 0`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO]`.
+SuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses("Conventional")
 
 
-# `(itart, i_tf_sc_mat) == (1, 1)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, ITER_NB3SN]`.
-IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 1
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 2)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# BI2212]`.
-Bi2212SuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 2
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 2)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, BI2212]`.
-Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 2
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 3)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# OLD_LUBELL_NBTI]`.
-OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 3
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 3)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK,
-# OLD_LUBELL_NBTI]`.
-OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 3
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 4)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# USER_DEFINED_NB3SN]`.
-UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 4
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 4)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK,
-# USER_DEFINED_NB3SN]`.
-UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 4
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 5)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# WST_NB3SN]`.
-WstNb3snSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 5
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 5)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, WST_NB3SN]`.
-WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 5
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 6)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# CROCO_REBCO]`.
-CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 6
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 6)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, CROCO_REBCO]`.
-CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 6
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 7)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# DURHAM_NBTI]`.
-DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 7
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 7)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK, DURHAM_NBTI]`.
-DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 7
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 8)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# DURHAM_REBCO]`.
-DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 8
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 8)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK,
-# DURHAM_REBCO]`.
-DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 8
-)
-
-
-# `(itart, i_tf_sc_mat) == (0, 9)`: `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO,
-# HAZELTON_ZHAI_REBCO]`.
-HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional = _tf_coil_masses(
-    "Conventional", 9
-)
-
-
-# `(itart, i_tf_sc_mat) == (1, 9)`: `SC_TF_MASSES[SPHERICAL_TOKAMAK,
-# HAZELTON_ZHAI_REBCO]`.
-HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses(
-    "SphericalTokamak", 9
-)
+# `itart == 1`: `SC_TF_MASSES[SPHERICAL_TOKAMAK]`.
+SuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses("SphericalTokamak")
 
 
 # cottax node: `.superconducting_tfcoil.vv_stress_quench`, constraint 65's read.

@@ -530,7 +530,7 @@ def _reference_pf_coil_chain(**inputs):
 
 def _reference_pf_coil_chain_cs_wst_nb3sn(**inputs):
     """`low_aspect_ratio_DEMO.IN.DAT`'s pair: `i_cs_superconductor = 5` (WST Nb3Sn),
-    CS density from `dcond[4]` -- arm 1, `masses.PFCoilMassesCsWstNb3Sn`'s binding.
+    CS density from `dcond[4]`, `.pf_coil.den_cs_conductor` on that configuration.
     """
     return _run_reference_pf_coil_chain(5, 4, **inputs)
 

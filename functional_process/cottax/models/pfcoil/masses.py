@@ -15,26 +15,6 @@ from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_sizes_no_central_solenoid,
 )
 
-I_PF_SUPERCONDUCTOR = 3
-"""`.pf_coil.i_pf_superconductor` on the reference run (`large_tokamak_eval.IN.DAT:246`)
--- NbTi, `pfcoil_variables.py:260`.
-"""
-
-I_CS_SUPERCONDUCTOR = 1
-"""`.pf_coil.i_cs_superconductor` on the reference run (`:245`) -- ITER Nb3Sn,
-`pfcoil_variables.py:256`.
-"""
-
-I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO = 9
-"""`.pf_coil.i_pf_superconductor` on both spherical tokamaks
-(`spherical_tokamak_eval.IN.DAT:235`, `st_regression.IN.DAT:1670`) -- Hazelton/Zhai
-REBCO tape, `pfcoil_variables.py`'s `SuperconductorModel` value 9.
-"""
-
-I_CS_SUPERCONDUCTOR_WST_NB3SN = 5
-"""`.pf_coil.i_cs_superconductor` on `low_aspect_ratio_DEMO.IN.DAT:845` -- WST Nb3Sn."""
-
-
 # cottax node: `.tokamak.pf_coil.sizes`.
 #
 # Which slot each coil occupies and whether there is a CS slot to fill is fixed by
@@ -74,7 +54,10 @@ PFCoilSizesNoCentralSolenoid = pf_coil.function(
 )
 
 
-# cottax node: `.tokamak.pf_coil.masses`.
+# cottax node: `.tokamak.pf_coil.masses`. The conductor densities are
+# `.pf_coil.den_pf_conductor` / `.pf_coil.den_cs_conductor`, the entries of
+# `.tfcoil.dcond` at the PF and CS superconductor indices, derived from a
+# configuration's values (`cottax.input.native`).
 PFCoilMasses = pf_coil.function(
     calculate_pf_coil_masses_from_elements,
     "m_pf_coil_conductor",
@@ -100,8 +83,6 @@ PFCoilMasses = pf_coil.function(
         "bpf2_4": V.pf_coil.bpf2[4],
         "bpf2_5": V.pf_coil.bpf2[5],
         "den_steel": fwbs,
-        "den_pf_conductor": V.tfcoil.dcond[2],
-        "den_cs_conductor": V.tfcoil.dcond[0],
     },
 )
 
@@ -118,41 +99,5 @@ PFCoilMassesNoCentralSolenoid = pf_coil.function(
     "ricpf",
     reads={
         "den_steel": fwbs,
-        "den_pf_conductor": V.tfcoil.dcond[8],
-    },
-)
-
-
-# cottax node: `.tokamak.pf_coil.masses`, the `i_cs_superconductor = 5` occupant.
-#
-# Shares every read and `fn` with `PFCoilMasses`; only the CS conductor density's
-# source differs, so only that one attribute is redeclared.
-PFCoilMassesCsWstNb3Sn = pf_coil.function(
-    calculate_pf_coil_masses_from_elements,
-    "m_pf_coil_conductor",
-    "m_pf_coil_structure",
-    "pfcaseth",
-    "m_pf_coil_conductor_total",
-    "m_pf_coil_structure_total",
-    "m_pf_coil_max",
-    "ricpf",
-    "a_cs_steel_poloidal",
-    "a_cs_cable_space",
-    reads={
-        "b_pf_coil_peak_0": V.pf_coil.b_pf_coil_peak[0],
-        "b_pf_coil_peak_1": V.pf_coil.b_pf_coil_peak[1],
-        "b_pf_coil_peak_2": V.pf_coil.b_pf_coil_peak[2],
-        "b_pf_coil_peak_3": V.pf_coil.b_pf_coil_peak[3],
-        "b_pf_coil_peak_4": V.pf_coil.b_pf_coil_peak[4],
-        "b_pf_coil_peak_5": V.pf_coil.b_pf_coil_peak[5],
-        "bpf2_0": V.pf_coil.bpf2[0],
-        "bpf2_1": V.pf_coil.bpf2[1],
-        "bpf2_2": V.pf_coil.bpf2[2],
-        "bpf2_3": V.pf_coil.bpf2[3],
-        "bpf2_4": V.pf_coil.bpf2[4],
-        "bpf2_5": V.pf_coil.bpf2[5],
-        "den_steel": fwbs,
-        "den_pf_conductor": V.tfcoil.dcond[2],
-        "den_cs_conductor": V.tfcoil.dcond[4],
     },
 )

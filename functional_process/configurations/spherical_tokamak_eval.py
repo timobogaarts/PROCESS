@@ -374,8 +374,8 @@ from functional_process.cottax.models.tfcoil.stress import (
 )
 from functional_process.cottax.models.tfcoil.superconducting import (
     DxTfSideCaseTrapezoidal,
-    HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     PeakBTfInboardWithRippleFlatAllowance,
+    SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     SuperconductingTfWpGeometryTrapezoidal,
     TfCaseAreasCircularFront,
     TfTurnArea,
@@ -557,7 +557,7 @@ machine = TokamakProcess(
             tf_wp_currents=TfWpCurrents,
             peak_b_tf_inboard_with_ripple=PeakBTfInboardWithRippleFlatAllowance,
             tf_turn_area=TfTurnArea,
-            superconducting_tf_coil_areas_and_masses=HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+            superconducting_tf_coil_areas_and_masses=SuperconductingTfCoilAreasAndMassesSphericalTokamak,
             tf_field_and_force=TfFieldAndForceClampedJoints,
             tf_stress=TfStressExtendedPlaneStrainBuckedCaseAveragedTurn,
             tf_superconductor_temperature_margin=HazeltonZhaiRebcoCrocoTemperatureMargin,

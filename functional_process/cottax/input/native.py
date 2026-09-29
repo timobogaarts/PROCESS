@@ -218,6 +218,102 @@ def _quench_helium_tables(values: _Places, out: _Places) -> None:
     out["tfcoil", "cp_helium_at_nodes"] = cp
 
 
+def _entry(values: _Places, table, index) -> float | None:
+    """`table[index - 1]`, both places of `values`; `None` if either is not valued."""
+    if table not in values or index not in values:
+        return None
+    return float(np.asarray(_expand(values[table]), dtype=float)[int(values[index]) - 1])
+
+
+def _level_of_safety_assurance(values: _Places, out: _Places) -> None:
+    """The cost multipliers at `.costs.lsa`: `.costs.cmlsa_<name>` for each of
+    `models.costs.costs.SAFETY_ASSURANCE_TABLES`, and `.costs.cfind_lsa`,
+    `.costs.ucoam_lsa`, `.costs.ucwst_lsa`. `lsa` only indexes tables, so the lookup
+    happens here, once, and no node reads it."""
+    from functional_process.models.costs.costs import (  # noqa: PLC0415
+        SAFETY_ASSURANCE_TABLES,
+    )
+
+    lsa = int(values["costs", "lsa"])
+    for name, table in SAFETY_ASSURANCE_TABLES.items():
+        out["costs", f"cmlsa_{name}"] = float(table[lsa - 1])
+    for name in ("cfind", "ucoam", "ucwst"):
+        out["costs", f"{name}_lsa"] = _entry(values, ("costs", name), ("costs", "lsa"))
+
+
+TABLE_ENTRIES: tuple[tuple[tuple[str, str], tuple[str, str], tuple[str, str]], ...] = (
+    (
+        ("costs", "uchts"),
+        ("fwbs", "i_blkt_coolant_type"),
+        ("costs", "uchts_blkt_coolant"),
+    ),
+    (
+        ("costs", "ucturb"),
+        ("fwbs", "i_blkt_coolant_type"),
+        ("costs", "ucturb_blkt_coolant"),
+    ),
+    (("costs", "ucsc"), ("pf_coil", "i_pf_superconductor"), ("costs", "ucsc_pf")),
+    (("costs", "ucsc"), ("pf_coil", "i_cs_superconductor"), ("costs", "ucsc_cs")),
+    (("costs", "ucsc"), ("tfcoil", "i_tf_sc_mat"), ("costs", "ucsc_tf")),
+    (
+        ("tfcoil", "dcond"),
+        ("pf_coil", "i_pf_superconductor"),
+        ("pf_coil", "den_pf_conductor"),
+    ),
+    (
+        ("tfcoil", "dcond"),
+        ("pf_coil", "i_cs_superconductor"),
+        ("pf_coil", "den_cs_conductor"),
+    ),
+    (("tfcoil", "dcond"), ("tfcoil", "i_tf_sc_mat"), ("tfcoil", "den_tf_sc_material")),
+    (
+        ("costs", "sc_mat_cost_0"),
+        ("pf_coil", "i_pf_superconductor"),
+        ("costs", "sc_mat_cost_0_pf"),
+    ),
+    (
+        ("costs", "sc_mat_cost_0"),
+        ("pf_coil", "i_cs_superconductor"),
+        ("costs", "sc_mat_cost_0_cs"),
+    ),
+    (
+        ("costs", "sc_mat_cost_0"),
+        ("tfcoil", "i_tf_sc_mat"),
+        ("costs", "sc_mat_cost_0_tf"),
+    ),
+    (
+        ("tfcoil", "j_crit_str_0"),
+        ("pf_coil", "i_pf_superconductor"),
+        ("pf_coil", "j_crit_str_0_pf"),
+    ),
+    (
+        ("tfcoil", "j_crit_str_0"),
+        ("pf_coil", "i_cs_superconductor"),
+        ("pf_coil", "j_crit_str_0_cs"),
+    ),
+    (
+        ("tfcoil", "j_crit_str_0"),
+        ("tfcoil", "i_tf_sc_mat"),
+        ("tfcoil", "j_crit_str_0_tf"),
+    ),
+)
+"""`(table, index, entry)`: a table the models read only at an index a configuration
+states, and the place its entry is derived at. The blanket coolant indexes the turbine
+and heat transport unit costs; the superconductor materials index the unit costs,
+densities and critical current densities."""
+
+
+def _table_entries(values: _Places, out: _Places) -> None:
+    """Every `TABLE_ENTRIES` entry whose table and index are valued. The `PER_KAM`
+    tables `.costs.sc_mat_cost_0` and `.tfcoil.j_crit_str_0` are valued by no
+    configuration (none takes that arm), so their entries are derived only where they
+    are."""
+    for table, index, entry in TABLE_ENTRIES:
+        value = _entry(values, table, index)
+        if value is not None:
+            out[entry] = value
+
+
 DERIVATIONS = (
     _initialise_imprad,
     _alias_impurity_fractions,
@@ -225,9 +321,12 @@ DERIVATIONS = (
     _deprecated_temperature_margin_alias,
     _pf_coil_counts,
     _quench_helium_tables,
+    _level_of_safety_assurance,
+    _table_entries,
 )
-"""The rules a native state applies over the file's own values, in PROCESS's own order.
-"""
+"""The rules a native state applies over the file's own values, in PROCESS's own order;
+then the table entries at the indices the configuration states, which PROCESS looks up
+inside its models."""
 
 
 def stated_values(input_file: str | Imported) -> tuple[dict[str, dict[str, Any]], list]:

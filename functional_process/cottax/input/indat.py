@@ -93,7 +93,6 @@ from functional_process.cottax.models.costs.costs import (
     PfMagnetCostPerKam,
     PfMagnetCostPerKamNoCentralSolenoid,
     PfMagnetCostPerKg,
-    PfMagnetCostPerKgCsWstNb3Sn,
     PfMagnetCostPerKgNoCentralSolenoid,
     PowerInjectionCostCapitalIonCyclotron,
     PowerInjectionCostCapitalLowerHybrid,
@@ -141,7 +140,6 @@ from functional_process.cottax.models.pfcoil import (
 from functional_process.cottax.models.pfcoil.namespace import (
     CSCoil,
     PFCoil,
-    PFCoilCsWstNb3Sn,
     PFCoilSphericalTokamak,
 )
 from functional_process.cottax.models.pfcoil.superconductor import (
@@ -334,16 +332,6 @@ from functional_process.cottax.models.stellarator.coils.calculate import (
     UserDefinedNb3snWindingPackIntersectInputs,
     WstNb3snWindingPackIntersectInputs,
 )
-from functional_process.cottax.models.stellarator.coils.mass import (
-    Bi2212CoilsMass,
-    CrocoRebcoCoilsMass,
-    DurhamNbtiCoilsMass,
-    DurhamRebcoCoilsMass,
-    IterNb3snCoilsMass,
-    OldLubellNbtiCoilsMass,
-    UserDefinedNb3snCoilsMass,
-    WstNb3snCoilsMass,
-)
 from functional_process.cottax.models.stellarator.density_limits import EcrhDensityLimit
 from functional_process.cottax.models.stellarator.heating import (
     EcrhHeating,
@@ -413,46 +401,30 @@ from functional_process.cottax.models.tfcoil.stress import (
     TfStressPlaneStressBuckedCaseIntegerTurn,
 )
 from functional_process.cottax.models.tfcoil.superconducting import (
-    Bi2212SuperconductingTfCoilAreasAndMassesConventional,
-    Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     CiccAveragedTurnGeometryFromCurrentPerTurn,
     CiccIntegerTurnGeometry,
-    CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional,
-    CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     DurhamNbtiCiccSuperconductorProperties,
-    DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional,
-    DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-    DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional,
-    DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     DxTfSideCaseDoubleRectangular,
     DxTfSideCaseRectangular,
     DxTfSideCaseTrapezoidal,
-    HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional,
-    HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     IterNb3snCiccSuperconductorProperties,
-    IterNb3snSuperconductingTfCoilAreasAndMassesConventional,
-    IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     IterNb3snTfSuperconductorTemperatureMargin,
     OldLubellNbtiCiccSuperconductorProperties,
-    OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional,
-    OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     OldLubellNbtiTfSuperconductorTemperatureMargin,
     PeakBTfInboardWithRipple16Coils,
     PeakBTfInboardWithRipple18Coils,
     PeakBTfInboardWithRipple20Coils,
     PeakBTfInboardWithRippleFlatAllowance,
+    SuperconductingTfCoilAreasAndMassesConventional,
+    SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     SuperconductingTfWpGeometryDoubleRectangular,
     SuperconductingTfWpGeometryRectangular,
     SuperconductingTfWpGeometryTrapezoidal,
     TfCaseAreasCircularFront,
     TfCaseAreasStraightFront,
     UserDefinedNb3snCiccSuperconductorProperties,
-    UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional,
-    UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     UserDefinedNb3snTfSuperconductorTemperatureMargin,
     WstNb3snCiccSuperconductorProperties,
-    WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
-    WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     WstNb3snTfSuperconductorTemperatureMargin,
 )
 from functional_process.cottax.models.tokamak.namespace import Tokamak
@@ -840,11 +812,11 @@ UNPORTED = {
         "handles 1..8 and then raises `Illegal value for i_pf_superconductor`), so "
         "there is no PROCESS arm to port and no reads-set to declare. A ninth occupant "
         "would have to invent the model, not port it. **This refusal is scoped to the "
-        "critical-surface slots** -- `WINDING_PACK_MATERIAL` and `COILS_MASS_MATERIAL`, "
-        "which key on the bare field name. `SC_TF_MASSES` keys on "
-        "`itart_i_tf_sc_mat_sc_tf_masses` and has all nine materials, because the "
-        "tokamak TF mass path uses `i_tf_sc_mat` only to index `.tfcoil.dcond`, never "
-        "to dispatch: `dcond[8] == 8500.0` exists, so value 9 is portable there. The "
+        "critical-surface slot** -- `WINDING_PACK_MATERIAL`, which keys on the bare "
+        "field name. The TF masses take any of the nine "
+        "materials, because the tokamak TF mass path uses `i_tf_sc_mat` only to index "
+        "`.tfcoil.dcond`, never to dispatch: `dcond[8] == 8500.0` exists, so value 9 is "
+        "portable there. The "
         "two `i_str_wp_i_tf_sc_mat_*` slots key on their own composite names for the "
         "same reason and carry their own, differently-scoped refusals below"
     ),
@@ -1572,18 +1544,6 @@ CONFINEMENT_SCALING = {
 }
 """`i_confinement_time` -> the scaling-law occupant."""
 
-COILS_MASS_MATERIAL = {
-    SuperconductorModel.ITER_NB3SN: IterNb3snCoilsMass,
-    SuperconductorModel.BI2212: Bi2212CoilsMass,
-    SuperconductorModel.OLD_LUBELL_NBTI: OldLubellNbtiCoilsMass,
-    SuperconductorModel.USER_DEFINED_NB3SN: UserDefinedNb3snCoilsMass,
-    SuperconductorModel.WST_NB3SN: WstNb3snCoilsMass,
-    SuperconductorModel.CROCO_REBCO: CrocoRebcoCoilsMass,
-    SuperconductorModel.DURHAM_NBTI: DurhamNbtiCoilsMass,
-    SuperconductorModel.DURHAM_REBCO: DurhamRebcoCoilsMass,
-}
-"""`i_tf_sc_mat` -> the occupant of `stellarator.coils.coils_mass`."""
-
 WINDING_PACK_MATERIAL = {
     SuperconductorModel.ITER_NB3SN: IterNb3snWindingPackIntersectInputs,
     SuperconductorModel.BI2212: Bi2212WindingPackIntersectInputs,
@@ -2077,24 +2037,20 @@ PF_MAGNET_COST = {
     1: PfMagnetCostPerKam,
     2: PfMagnetCostPerKgNoCentralSolenoid,
     3: PfMagnetCostPerKamNoCentralSolenoid,
-    4: PfMagnetCostPerKgCsWstNb3Sn,
 }
-"""`_pf_magnet_cost_arm(supercond_cost_model, iohcl, pf_coil_arm)` -> the Account 222.2
-occupant.
+"""`_pf_magnet_cost_arm(supercond_cost_model, iohcl)` -> the Account 222.2 occupant.
+The materials are not a switch here: their unit costs and densities are derived from
+the configuration's values (`native`).
 """
 
 
-def _pf_magnet_cost_arm(supercond_cost_model, iohcl, pf_coil_arm) -> int:
-    """`.costs.supercond_cost_model` x `.build.iohcl` x the PF coil system's own arm ->
-    `PF_MAGNET_COST`'s arm index.
-    """
+def _pf_magnet_cost_arm(supercond_cost_model, iohcl) -> int:
+    """`.costs.supercond_cost_model` x `.build.iohcl` -> `PF_MAGNET_COST`'s arm index."""
     if (
         SuperconductorCostModel(int(supercond_cost_model))
         is SuperconductorCostModel.PER_KG
     ):
-        if int(iohcl) == 0:
-            return 2
-        return 4 if int(pf_coil_arm) == 1 else 0
+        return 0 if int(iohcl) != 0 else 2
     return 1 if int(iohcl) != 0 else 3
 
 
@@ -2622,51 +2578,16 @@ CICC_TURN_GEOMETRY = {
 """The turn-geometry arm -> its occupant. See `_cicc_turn_geometry_arm`."""
 
 SC_TF_MASSES = {
-    (_itart, _mat): _occupant
-    for _mat, (_conventional, _spherical) in {
-        SuperconductorModel.ITER_NB3SN: (
-            IterNb3snSuperconductingTfCoilAreasAndMassesConventional,
-            IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.BI2212: (
-            Bi2212SuperconductingTfCoilAreasAndMassesConventional,
-            Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.OLD_LUBELL_NBTI: (
-            OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional,
-            OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.USER_DEFINED_NB3SN: (
-            UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional,
-            UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.WST_NB3SN: (
-            WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
-            WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.CROCO_REBCO: (
-            CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional,
-            CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.DURHAM_NBTI: (
-            DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional,
-            DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.DURHAM_REBCO: (
-            DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional,
-            DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-        SuperconductorModel.HAZELTON_ZHAI_REBCO: (
-            HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional,
-            HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
-        ),
-    }.items()
-    for _itart, _occupant in (
-        (SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO, _conventional),
-        (SphericalTokamakModel.SPHERICAL_TOKAMAK, _spherical),
-    )
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
+        SuperconductingTfCoilAreasAndMassesConventional
+    ),
+    SphericalTokamakModel.SPHERICAL_TOKAMAK: (
+        SuperconductingTfCoilAreasAndMassesSphericalTokamak
+    ),
 }
-"""`(.physics.itart, .tfcoil.i_tf_sc_mat)` -> the superconducting TF mass occupant."""
+"""`.physics.itart` -> the superconducting TF mass occupant. The material is not a
+switch here: its density is `.tfcoil.den_tf_sc_material`, derived from the
+configuration's values (`native`)."""
 
 
 def _tf_field_and_force_arm(itart: int, i_cp_joints: int) -> bool:
@@ -3032,21 +2953,7 @@ def _pf_coil_system_arm(
     )
     if deviations:
         return deviations[0]
-    return _pf_coil_material_arm(iohcl, i_cs_superconductor)
-
-
-def _pf_coil_material_arm(iohcl, i_cs_superconductor) -> int:
-    """`_pf_coil_system_arm`'s **positive** arms alone: `.build.iohcl` x the CS
-    superconductor material, with no deviation check in front of it.
-    """
-    if int(iohcl) == 0:
-        return 2
-    return (
-        0
-        if SuperconductorModel(int(i_cs_superconductor))
-        is SuperconductorModel.ITER_NB3SN
-        else 1
-    )
+    return 0 if int(iohcl) != 0 else 2
 
 
 def _pf_coil_system_deviations(
@@ -3139,7 +3046,7 @@ def _refuse_pf_coil_system(deviations):
     raise NotImplementedError("\n\n".join(message))
 
 
-CS_COIL = {0: CSCoil, 1: CSCoil, 2: None}
+CS_COIL = {0: CSCoil, 2: None}
 """`_pf_coil_system_arm` -> `.tokamak.cs_coil`'s occupant namespace."""
 
 CS_SUPERCONDUCTOR = {
@@ -3155,7 +3062,7 @@ CS_TEMPERATURE_MARGIN = {
 """`.pf_coil.i_cs_superconductor` -> `.tokamak.cs_coil.temperature_margin`'s occupant.
 """
 
-PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn, 2: PFCoilSphericalTokamak}
+PF_COIL = {0: PFCoil, 2: PFCoilSphericalTokamak}
 """`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace."""
 
 
@@ -3877,14 +3784,8 @@ def _tokamak_device(
             _peak_b_ripple_arm(numbers.get("n_tf_coils", 16.0)),
             PEAK_B_TF_RIPPLE,
         ),
-        # Two switches, one slot -- see `SC_TF_MASSES`. `itart` and `i_tf_sc_mat` are
-        # both *threaded*, resolved once in `machine_from_indat`; `i_tf_sc_mat` is the
-        # same local the stellarator branch gives `WINDING_PACK_MATERIAL` and
-        # `COILS_MASS_MATERIAL`, so no two consumers of that switch can disagree.
         superconducting_tf_coil_areas_and_masses=_slot_occupant(
-            "itart_i_tf_sc_mat_sc_tf_masses",
-            (SphericalTokamakModel(int(itart)), i_tf_sc_mat),
-            SC_TF_MASSES,
+            "itart", SphericalTokamakModel(int(itart)), SC_TF_MASSES
         ),
         tf_field_and_force=_slot_occupant(
             "tf_field_and_force_arm",
@@ -4320,13 +4221,6 @@ def machine_from_indat(input_file, stella_conf=None):
     # second read of one dict entry rather than a second *answer*: both go through
     # `_pf_coil_topology`, so a machine cannot hold two topologies again.
     pf_magnet_cost_iohcl = switches.get("iohcl", 1)
-    # The PF coil system's own positive arm, asked of the same two switches
-    # `_pf_coil_system_arm` asks -- see `_pf_coil_material_arm` for why it is one
-    # function and not two copies of one `if`.
-    pf_magnet_cost_material_arm = _pf_coil_material_arm(
-        pf_magnet_cost_iohcl,
-        switches.get("i_cs_superconductor", 1),  # `pfcoil_variables.py:239`
-    )
     # `cost_variables.py`'s default: every replacement a capital cost.
     ifueltyp = int(switches.get("ifueltyp", 0))
     by_fuel_type = _slot_occupant(
@@ -4432,11 +4326,7 @@ def machine_from_indat(input_file, stella_conf=None):
             pf_magnet_cost=(
                 _slot_occupant(
                     "supercond_cost_model_iohcl",
-                    _pf_magnet_cost_arm(
-                        supercond_cost_model,
-                        pf_magnet_cost_iohcl,
-                        pf_magnet_cost_material_arm,
-                    ),
+                    _pf_magnet_cost_arm(supercond_cost_model, pf_magnet_cost_iohcl),
                     PF_MAGNET_COST,
                 )
                 if device is TokamakProcess
@@ -4748,16 +4638,12 @@ def machine_from_indat(input_file, stella_conf=None):
     winding_pack_intersect_inputs = _slot_occupant(
         "i_tf_sc_mat", i_tf_sc_mat, WINDING_PACK_MATERIAL
     )
-    # The second consumer of the same switch, and until `_audit/next_steps.md` §14.2 it
-    # answered the question itself, with a module constant no instrument could see.
-    coils_mass = _slot_occupant("i_tf_sc_mat", i_tf_sc_mat, COILS_MASS_MATERIAL)
     return StellaratorProcess(
         initialisation=initialisation,
         costs=costs,
         stellarator=Stellarator(
             coils=StellaratorCoils(
                 winding_pack_intersect_inputs=winding_pack_intersect_inputs,
-                coils_mass=coils_mass,
             ),
             machine_config=machine_config,
             heating=pick("isthtr", HEATING, 1),

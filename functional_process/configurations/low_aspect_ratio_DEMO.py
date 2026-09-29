@@ -113,7 +113,7 @@ from functional_process.cottax.models.costs.costs import (
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
     PfCoilPowerConditioningCost,
-    PfMagnetCostPerKgCsWstNb3Sn,
+    PfMagnetCostPerKg,
     PowerConditioningCost,
     PowerInjectionCostFuelLowerHybrid,
     ReactorCoolingSystemCost,
@@ -170,11 +170,8 @@ from functional_process.cottax.models.pfcoil.geometry import (
     PFCoilPositions,
 )
 from functional_process.cottax.models.pfcoil.inductance import PFCoilInductance
-from functional_process.cottax.models.pfcoil.masses import (
-    PFCoilMassesCsWstNb3Sn,
-    PFCoilSizes,
-)
-from functional_process.cottax.models.pfcoil.namespace import CSCoil, PFCoilCsWstNb3Sn
+from functional_process.cottax.models.pfcoil.masses import PFCoilMasses, PFCoilSizes
+from functional_process.cottax.models.pfcoil.namespace import CSCoil, PFCoil
 from functional_process.cottax.models.pfcoil.stresses import CSCoilStresses
 from functional_process.cottax.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesWstNb3Sn,
@@ -379,13 +376,13 @@ from functional_process.cottax.models.tfcoil.superconducting import (
     CiccIntegerTurnGeometry,
     DxTfSideCaseRectangular,
     PeakBTfInboardWithRipple16Coils,
+    SuperconductingTfCoilAreasAndMassesConventional,
     SuperconductingTfWpGeometryRectangular,
     TfCaseAreasCircularFront,
     TfTurnArea,
     TfWpCurrents,
     VvStressOnQuench,
     WstNb3snCiccSuperconductorProperties,
-    WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
     WstNb3snTfSuperconductorTemperatureMargin,
 )
 from functional_process.cottax.models.tokamak.namespace import Tokamak
@@ -418,7 +415,7 @@ machine = TokamakProcess(
         divertor_cost=DivertorCostFuel,
         reactor_cost=ReactorCost,
         tf_magnet_cost_superconducting=TfMagnetCostSuperconductingPerKg,
-        pf_magnet_cost=PfMagnetCostPerKgCsWstNb3Sn,
+        pf_magnet_cost=PfMagnetCostPerKg,
         vacuum_vessel_assembly_cost=VacuumVesselAssemblyCost,
         magnets_cost=MagnetsCost,
         power_injection_cost=PowerInjectionCostFuelLowerHybrid,
@@ -563,7 +560,7 @@ machine = TokamakProcess(
             tf_wp_currents=TfWpCurrents,
             peak_b_tf_inboard_with_ripple=PeakBTfInboardWithRipple16Coils,
             tf_turn_area=TfTurnArea,
-            superconducting_tf_coil_areas_and_masses=WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
+            superconducting_tf_coil_areas_and_masses=SuperconductingTfCoilAreasAndMassesConventional,
             tf_field_and_force=TfFieldAndForceClampedJoints,
             tf_stress=TfStressPlaneStressBuckedCaseIntegerTurn,
             tf_superconductor_temperature_margin=WstNb3snTfSuperconductorTemperatureMargin,
@@ -574,7 +571,7 @@ machine = TokamakProcess(
             cicc_inboard_areas_and_fractions=CiccInboardAreasAndFractions,
             cicc_superconductor_properties=WstNb3snCiccSuperconductorProperties,
         ),
-        pf_coil=PFCoilCsWstNb3Sn(
+        pf_coil=PFCoil(
             placement=PFCoilPlacement,
             positions=PFCoilPositions,
             initiation_currents=PFCoilInitiationCurrents,
@@ -583,7 +580,7 @@ machine = TokamakProcess(
             waveform=PFCoilCurrentWaveform,
             peak_field=PFCoilPeakField,
             sizes=PFCoilSizes,
-            masses=PFCoilMassesCsWstNb3Sn,
+            masses=PFCoilMasses,
             strand_critical_current=PFStrandCriticalCurrentDensity,
             inductance=PFCoilInductance,
             turn_currents=PFCoilTurnCurrents,

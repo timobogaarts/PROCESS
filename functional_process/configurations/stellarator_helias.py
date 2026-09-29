@@ -183,7 +183,7 @@ from functional_process.cottax.models.stellarator.coils.forces import (
     MaxForceDensity,
     MaximumStress,
 )
-from functional_process.cottax.models.stellarator.coils.mass import IterNb3snCoilsMass
+from functional_process.cottax.models.stellarator.coils.mass import CoilsMass
 from functional_process.cottax.models.stellarator.coils.quench import QuenchProtection
 from functional_process.cottax.models.stellarator.density_limits import (
     EcrhDensityLimit,
@@ -324,7 +324,7 @@ machine = StellaratorProcess(
             z_tf_inside_half=ZTfInsideHalf,
             tf_cryo_area=TfCryoArea,
             len_tf_coil=LenTfCoil,
-            coils_mass=IterNb3snCoilsMass,
+            coils_mass=CoilsMass,
             max_force_density=MaxForceDensity,
             maximum_stress=MaximumStress,
             quench_protection=QuenchProtection,

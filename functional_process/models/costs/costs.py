@@ -42,6 +42,54 @@ import jax.numpy as jnp
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 
+# The `cmlsa` tables: a cost multiplier per level of safety assurance `.costs.lsa`
+# (1-4), one per group of accounts, literals inline in PROCESS. The formulas take the
+# multiplier. The PROCESS-signature functions look it up, and so does
+# `cottax.input.native`'s derivation, which writes each as `.costs.cmlsa_<name>`.
+
+STRUCTURES_SAFETY = (0.6800e0, 0.8400e0, 0.9200e0, 1.0000e0)
+"""Account 21, structures and site facilities (`acc21`)."""
+
+REACTOR_STRUCTURE_SAFETY = (0.6700e0, 0.8350e0, 0.9175e0, 1.0000e0)
+"""Account 221.4, reactor structure (`acc2214`)."""
+
+FIRST_WALL_BLANKET_SHIELD_SAFETY = (0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0)
+"""Accounts 221.1-221.3, first wall, blanket and shield."""
+
+MAGNETS_SAFETY = (0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0)
+"""Account 222: TF and PF magnets and the vacuum vessel assembly."""
+
+HEAT_TRANSPORT_SAFETY = (0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0)
+"""Account 226: reactor cooling, auxiliary cooling and cryogenics."""
+
+ELECTRICAL_PLANT_SAFETY = (0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0)
+"""Account 24, electric plant equipment (`acc241`-`acc245`)."""
+
+MISC_PLANT_SAFETY = (0.7700e0, 0.8850e0, 0.9425e0, 1.0000e0)
+"""Account 25, miscellaneous plant equipment (`acc25`)."""
+
+HEAT_REJECTION_SAFETY = (0.8000e0, 0.9000e0, 0.9500e0, 1.0000e0)
+"""Account 26, heat rejection (`acc26`)."""
+
+SAFETY_ASSURANCE_TABLES = {
+    "structures": STRUCTURES_SAFETY,
+    "reactor_structure": REACTOR_STRUCTURE_SAFETY,
+    "first_wall_blanket_shield": FIRST_WALL_BLANKET_SHIELD_SAFETY,
+    "magnets": MAGNETS_SAFETY,
+    "heat_transport": HEAT_TRANSPORT_SAFETY,
+    "electrical_plant": ELECTRICAL_PLANT_SAFETY,
+    "misc_plant": MISC_PLANT_SAFETY,
+    "heat_rejection": HEAT_REJECTION_SAFETY,
+}
+"""`name` -> its table; the entry at `.costs.lsa` is the place `.costs.cmlsa_<name>`."""
+
+
+def at_index(table, index):
+    """`table[index - 1]`, PROCESS's one-based lookup: what the PROCESS-signature
+    functions below do with an index before calling the formula.
+    """
+    return jnp.asarray(table)[index - 1]
+
 
 def convert_fpy_to_calendar(
     life_blkt_fpy,
@@ -167,9 +215,9 @@ def calculate_structures_cost(
 
     `lsa` (level of safety assurance, 1-4) indexes four `cmlsa` multiplier tables that
     differ *per account* (hardcoded literals inline in the source, not a shared
-    constant) -- kept as literal arrays here too, indexed the same way
-    (`cmlsa[lsa - 1]`). Not a switch in the topology sense: it selects a scaling
-    coefficient, never which formula runs -- see `costs.md`'s switches touched.
+    constant) -- module constants here (`STRUCTURES_SAFETY`), looked up by this
+    function; the variants take the multiplier. It selects a scaling coefficient,
+    never which formula runs.
 
     `c213` (turbine building) is only computed by PROCESS when `ireactor == 1`; the port
     returns `0.0` on the other branch, matching the dataclass field's own default (unlike
@@ -216,7 +264,7 @@ def calculate_structures_cost(
     """
     common = (
         csi,
-        lsa,
+        at_index(STRUCTURES_SAFETY, lsa),
         cland,
         ucrb,
         rbvol,
@@ -244,7 +292,7 @@ def calculate_structures_cost(
 
 def calculate_structures_cost_reactor(
     csi,
-    lsa,
+    cmlsa_structures,
     cland,
     ucrb,
     rbvol,
@@ -267,10 +315,9 @@ def calculate_structures_cost_reactor(
     cturbb,
 ):
     """Account 21 at `ireactor == 1`: with the turbine building, `c213`."""
-    cmlsa = jnp.asarray([0.6800e0, 0.8400e0, 0.9200e0, 1.0000e0])[lsa - 1]
     return _structures_cost(
         csi,
-        cmlsa,
+        cmlsa_structures,
         cland,
         ucrb,
         rbvol,
@@ -290,13 +337,13 @@ def calculate_structures_cost_reactor(
         shovol,
         UCCR,
         cryvol,
-        cturbb * cmlsa,
+        cturbb * cmlsa_structures,
     )
 
 
 def calculate_structures_cost_non_reactor(
     csi,
-    lsa,
+    cmlsa_structures,
     cland,
     ucrb,
     rbvol,
@@ -320,10 +367,9 @@ def calculate_structures_cost_non_reactor(
     """Account 21 at `ireactor != 1`: no turbine building, `c213 = 0.0`, and
     `.costs.cturbb` is not read.
     """
-    cmlsa = jnp.asarray([0.6800e0, 0.8400e0, 0.9200e0, 1.0000e0])[lsa - 1]
     return _structures_cost(
         csi,
-        cmlsa,
+        cmlsa_structures,
         cland,
         ucrb,
         rbvol,
@@ -427,7 +473,12 @@ def calculate_indirect_costs(cfind, lsa, cdirt, cowner, fcontng):
     tuple
         `(cindrt, ccont)`.
     """
-    cindrt = jnp.asarray(cfind)[lsa - 1] * cdirt * (1.0e0 + cowner)
+    return calculate_indirect_costs_formula(at_index(cfind, lsa), cdirt, cowner, fcontng)
+
+
+def calculate_indirect_costs_formula(cfind_lsa, cdirt, cowner, fcontng):
+    """Account 9 given `cfind_lsa`, the indirect cost factor at `.costs.lsa`."""
+    cindrt = cfind_lsa * cdirt * (1.0e0 + cowner)
     ccont = fcontng * (cdirt + cindrt)
     return cindrt, ccont
 
@@ -451,8 +502,16 @@ def calculate_reactor_structure_cost(gsmass, UCGSS, lsa, fkind):
     float
         `c2214`.
     """
-    cmlsa = jnp.asarray([0.6700e0, 0.8350e0, 0.9175e0, 1.0000e0])[lsa - 1]
-    return fkind * (1.0e-6 * gsmass * UCGSS * cmlsa)
+    return calculate_reactor_structure_cost_formula(
+        gsmass, UCGSS, at_index(REACTOR_STRUCTURE_SAFETY, lsa), fkind
+    )
+
+
+def calculate_reactor_structure_cost_formula(
+    gsmass, UCGSS, cmlsa_reactor_structure, fkind
+):
+    """Account 221.4 given the multiplier at `.costs.lsa`."""
+    return fkind * (1.0e-6 * gsmass * UCGSS * cmlsa_reactor_structure)
 
 
 def calculate_vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind):
@@ -475,8 +534,14 @@ def calculate_vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind):
     float
         `c2223`.
     """
-    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
-    return fkind * (1.0e-6 * m_vv * uccryo) * cmlsa
+    return calculate_vacuum_vessel_assembly_cost_formula(
+        m_vv, uccryo, at_index(MAGNETS_SAFETY, lsa), fkind
+    )
+
+
+def calculate_vacuum_vessel_assembly_cost_formula(m_vv, uccryo, cmlsa_magnets, fkind):
+    """Account 222.3 given the multiplier at `.costs.lsa`."""
+    return fkind * (1.0e-6 * m_vv * uccryo) * cmlsa_magnets
 
 
 def calculate_divertor_cost(ife, a_div_surface_total, ucdiv, fkind, ifueltyp):
@@ -998,12 +1063,39 @@ def calculate_reactor_cooling_system_cost(
     tuple
         `(cpp, chx, c2261)`.
     """
-    cmlsa = jnp.asarray([0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0])[lsa - 1]
+    return calculate_reactor_cooling_system_cost_formula(
+        at_index(uchts, i_blkt_coolant_type),
+        p_fw_div_heat_deposited_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        at_index(HEAT_TRANSPORT_SAFETY, lsa),
+        fkind,
+        UCPHX,
+        n_primary_heat_exchangers,
+        p_plant_primary_heat_mw,
+    )
+
+
+def calculate_reactor_cooling_system_cost_formula(
+    uchts_blkt_coolant,
+    p_fw_div_heat_deposited_mw,
+    p_blkt_nuclear_heat_total_mw,
+    p_shld_nuclear_heat_mw,
+    cmlsa_heat_transport,
+    fkind,
+    UCPHX,
+    n_primary_heat_exchangers,
+    p_plant_primary_heat_mw,
+):
+    """Account 2261 given the unit cost at `.fwbs.i_blkt_coolant_type` and the
+    multiplier at `.costs.lsa`.
+    """
+    cmlsa = cmlsa_heat_transport
     exphts = 0.7e0
 
     cpp = fkind * (
         1.0e-6
-        * jnp.asarray(uchts)[i_blkt_coolant_type - 1]
+        * uchts_blkt_coolant
         * (
             safe_pow(1.0e6 * p_fw_div_heat_deposited_mw, exphts)
             + safe_pow(1.0e6 * p_blkt_nuclear_heat_total_mw, exphts)
@@ -1128,19 +1220,21 @@ def calculate_turbine_plant_equipment_cost(
     """
     if ireactor == 1:
         return calculate_turbine_plant_equipment_cost_reactor(
-            ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
+            at_index(ucturb, i_blkt_coolant_type), p_plant_electric_gross_mw
         )
     return calculate_turbine_plant_equipment_cost_non_reactor()
 
 
 def calculate_turbine_plant_equipment_cost_reactor(
-    ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
+    ucturb_blkt_coolant, p_plant_electric_gross_mw
 ):
-    """Account 23 at `ireactor == 1`."""
+    """Account 23 at `ireactor == 1`, given the turbine unit cost at
+    `.fwbs.i_blkt_coolant_type`.
+    """
     exptpe = 0.83e0
     return (
         1.0e-6
-        * jnp.asarray(ucturb)[i_blkt_coolant_type - 1]
+        * ucturb_blkt_coolant
         * safe_pow(p_plant_electric_gross_mw / 1200.0e0, exptpe)
     )
 
@@ -1165,8 +1259,14 @@ def calculate_switchyard_cost(UCSWYD, lsa):
     float
         `c241`.
     """
-    cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * UCSWYD * cmlsa
+    return calculate_switchyard_cost_formula(
+        UCSWYD, at_index(ELECTRICAL_PLANT_SAFETY, lsa)
+    )
+
+
+def calculate_switchyard_cost_formula(UCSWYD, cmlsa_electrical_plant):
+    """Account 241 given the multiplier at `.costs.lsa`."""
+    return 1.0e-6 * UCSWYD * cmlsa_electrical_plant
 
 
 def calculate_transformers_cost(UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, lsa):
@@ -1190,7 +1290,20 @@ def calculate_transformers_cost(UCPP, pacpmw, UCAP, p_plant_electric_base_total_
     float
         `c242`.
     """
-    cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
+    return calculate_transformers_cost_formula(
+        UCPP,
+        pacpmw,
+        UCAP,
+        p_plant_electric_base_total_mw,
+        at_index(ELECTRICAL_PLANT_SAFETY, lsa),
+    )
+
+
+def calculate_transformers_cost_formula(
+    UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, cmlsa_electrical_plant
+):
+    """Account 242 given the multiplier at `.costs.lsa`."""
+    cmlsa = cmlsa_electrical_plant
     expepe = 0.9e0
     c242 = 1.0e-6 * (
         UCPP * safe_pow(pacpmw * 1.0e3, expepe)
@@ -1216,8 +1329,14 @@ def calculate_low_voltage_cost(UCLV, tlvpmw, lsa):
     float
         `c243`.
     """
-    cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * UCLV * tlvpmw * 1.0e3 / 0.8e0 * cmlsa
+    return calculate_low_voltage_cost_formula(
+        UCLV, tlvpmw, at_index(ELECTRICAL_PLANT_SAFETY, lsa)
+    )
+
+
+def calculate_low_voltage_cost_formula(UCLV, tlvpmw, cmlsa_electrical_plant):
+    """Account 243 given the multiplier at `.costs.lsa`."""
+    return 1.0e-6 * UCLV * tlvpmw * 1.0e3 / 0.8e0 * cmlsa_electrical_plant
 
 
 def calculate_diesel_generators_cost(UCDGEN, lsa):
@@ -1236,8 +1355,14 @@ def calculate_diesel_generators_cost(UCDGEN, lsa):
     float
         `c244`.
     """
-    cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * UCDGEN * 4.0e0 * cmlsa
+    return calculate_diesel_generators_cost_formula(
+        UCDGEN, at_index(ELECTRICAL_PLANT_SAFETY, lsa)
+    )
+
+
+def calculate_diesel_generators_cost_formula(UCDGEN, cmlsa_electrical_plant):
+    """Account 244 given the multiplier at `.costs.lsa`."""
+    return 1.0e-6 * UCDGEN * 4.0e0 * cmlsa_electrical_plant
 
 
 def calculate_auxiliary_facility_power_cost(UCAF, lsa):
@@ -1255,8 +1380,14 @@ def calculate_auxiliary_facility_power_cost(UCAF, lsa):
     float
         `c245`.
     """
-    cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * UCAF * cmlsa
+    return calculate_auxiliary_facility_power_cost_formula(
+        UCAF, at_index(ELECTRICAL_PLANT_SAFETY, lsa)
+    )
+
+
+def calculate_auxiliary_facility_power_cost_formula(UCAF, cmlsa_electrical_plant):
+    """Account 245 given the multiplier at `.costs.lsa`."""
+    return 1.0e-6 * UCAF * cmlsa_electrical_plant
 
 
 def calculate_electric_plant_equipment_cost(c241, c242, c243, c244, c245):
@@ -1292,8 +1423,14 @@ def calculate_misc_plant_equipment_cost(ucmisc, lsa):
     float
         `c25`.
     """
-    cmlsa = jnp.asarray([0.7700e0, 0.8850e0, 0.9425e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * ucmisc * cmlsa
+    return calculate_misc_plant_equipment_cost_formula(
+        ucmisc, at_index(MISC_PLANT_SAFETY, lsa)
+    )
+
+
+def calculate_misc_plant_equipment_cost_formula(ucmisc, cmlsa_misc_plant):
+    """Account 25 given the multiplier at `.costs.lsa`."""
+    return 1.0e-6 * ucmisc * cmlsa_misc_plant
 
 
 def calculate_heat_rejection_cost(
@@ -1334,35 +1471,41 @@ def calculate_heat_rejection_cost(
     float
         `c26`.
     """
+    cmlsa_heat_rejection = at_index(HEAT_REJECTION_SAFETY, lsa)
     if ireactor == 0:
         return calculate_heat_rejection_cost_non_reactor(
-            p_fusion_total_mw, p_hcd_electric_total_mw, tfcmw, uchrs, lsa
+            p_fusion_total_mw,
+            p_hcd_electric_total_mw,
+            tfcmw,
+            uchrs,
+            cmlsa_heat_rejection,
         )
     return calculate_heat_rejection_cost_reactor(
-        p_plant_primary_heat_mw, p_plant_electric_gross_mw, uchrs, lsa
+        p_plant_primary_heat_mw, p_plant_electric_gross_mw, uchrs, cmlsa_heat_rejection
     )
 
 
-def _heat_rejection_cost(pwrrej, uchrs, lsa):
-    cmlsa = jnp.asarray([0.8000e0, 0.9000e0, 0.9500e0, 1.0000e0])[lsa - 1]
-    return 1.0e-6 * uchrs * pwrrej / 2300.0e0 * cmlsa
+def _heat_rejection_cost(pwrrej, uchrs, cmlsa_heat_rejection):
+    return 1.0e-6 * uchrs * pwrrej / 2300.0e0 * cmlsa_heat_rejection
 
 
 def calculate_heat_rejection_cost_reactor(
-    p_plant_primary_heat_mw, p_plant_electric_gross_mw, uchrs, lsa
+    p_plant_primary_heat_mw, p_plant_electric_gross_mw, uchrs, cmlsa_heat_rejection
 ):
     """Account 26 at `ireactor != 0`: the primary heat not turned into electricity."""
     return _heat_rejection_cost(
-        p_plant_primary_heat_mw - p_plant_electric_gross_mw, uchrs, lsa
+        p_plant_primary_heat_mw - p_plant_electric_gross_mw,
+        uchrs,
+        cmlsa_heat_rejection,
     )
 
 
 def calculate_heat_rejection_cost_non_reactor(
-    p_fusion_total_mw, p_hcd_electric_total_mw, tfcmw, uchrs, lsa
+    p_fusion_total_mw, p_hcd_electric_total_mw, tfcmw, uchrs, cmlsa_heat_rejection
 ):
     """Account 26 at `ireactor == 0`: fusion, heating and TF power, all rejected."""
     return _heat_rejection_cost(
-        p_fusion_total_mw + p_hcd_electric_total_mw + tfcmw, uchrs, lsa
+        p_fusion_total_mw + p_hcd_electric_total_mw + tfcmw, uchrs, cmlsa_heat_rejection
     )
 
 
@@ -1435,7 +1578,7 @@ def calculate_first_wall_cost(
             "unported (unit_registry.md has no `ife` unit). Only ife != 1 is ported."
         )
     return calculate_first_wall_cost_magnetic_confinement(
-        lsa,
+        at_index(FIRST_WALL_BLANKET_SHIELD_SAFETY, lsa),
         UCFWA,
         UCFWS,
         a_fw_total,
@@ -1446,7 +1589,7 @@ def calculate_first_wall_cost(
 
 
 def calculate_first_wall_cost_magnetic_confinement(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     UCFWA,
     UCFWS,
     a_fw_total,
@@ -1472,30 +1615,48 @@ def calculate_first_wall_cost_magnetic_confinement(
         calculate_first_wall_cost_fuel,
         calculate_first_wall_cost_capital_then_fuel,
     )[_fuel_type_arm(ifueltyp)]
-    return branch(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind)
+    return branch(
+        cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+    )
 
 
-def _first_wall_raw(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind):
-    cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
+def _first_wall_raw(
+    cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+):
+    cmlsa = cmlsa_first_wall_blanket_shield
     return fkind * (1.0e-6 * cmlsa * ((UCFWA + UCFWS) * a_fw_total + UCFWPS))
 
 
-def calculate_first_wall_cost_capital(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind):
+def calculate_first_wall_cost_capital(
+    cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+):
     """Account 221.1 at `ifueltyp == 0` (magnetic confinement): `(c2211, fwallcst)`."""
-    return _as_capital(_first_wall_raw(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind))
+    return _as_capital(
+        _first_wall_raw(
+            cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+        )
+    )
 
 
-def calculate_first_wall_cost_fuel(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind):
+def calculate_first_wall_cost_fuel(
+    cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+):
     """Account 221.1 at `ifueltyp == 1` (magnetic confinement)."""
-    return _as_fuel(_first_wall_raw(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind))
+    return _as_fuel(
+        _first_wall_raw(
+            cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+        )
+    )
 
 
 def calculate_first_wall_cost_capital_then_fuel(
-    lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+    cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
 ):
     """Account 221.1 at `ifueltyp == 2` (magnetic confinement)."""
     return _as_capital_then_fuel(
-        _first_wall_raw(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind)
+        _first_wall_raw(
+            cmlsa_first_wall_blanket_shield, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind
+        )
     )
 
 
@@ -1564,7 +1725,7 @@ def calculate_blanket_cost(
             "is ported."
         )
     return calculate_blanket_cost_magnetic_confinement(
-        lsa,
+        at_index(FIRST_WALL_BLANKET_SHIELD_SAFETY, lsa),
         m_blkt_beryllium,
         ucblbe,
         m_blkt_li2o,
@@ -1579,7 +1740,7 @@ def calculate_blanket_cost(
 
 
 def calculate_blanket_cost_magnetic_confinement(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     m_blkt_beryllium,
     ucblbe,
     m_blkt_li2o,
@@ -1610,7 +1771,7 @@ def calculate_blanket_cost_magnetic_confinement(
         calculate_blanket_cost_capital_then_fuel,
     )[_fuel_type_arm(ifueltyp)]
     return branch(
-        lsa,
+        cmlsa_first_wall_blanket_shield,
         m_blkt_beryllium,
         ucblbe,
         m_blkt_li2o,
@@ -1625,7 +1786,7 @@ def calculate_blanket_cost_magnetic_confinement(
 
 def _blanket_cost(
     split,
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     m_blkt_beryllium,
     ucblbe,
     m_blkt_li2o,
@@ -1639,8 +1800,7 @@ def _blanket_cost(
     """Account 221.2's body; `split` is which of `_as_capital`/`_as_fuel`/
     `_as_capital_then_fuel` the caller's arm is.
     """
-    cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
-    scale = fkind * cmlsa
+    scale = fkind * cmlsa_first_wall_blanket_shield
 
     c22121 = scale * (1.0e-6 * m_blkt_beryllium * ucblbe)
     c22122 = scale * (1.0e-6 * m_blkt_li2o * ucblli2o)
@@ -1656,7 +1816,7 @@ def _blanket_cost(
 
 
 def calculate_blanket_cost_capital(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     m_blkt_beryllium,
     ucblbe,
     m_blkt_li2o,
@@ -1670,7 +1830,7 @@ def calculate_blanket_cost_capital(
     """Account 221.2 at `ifueltyp == 0` (magnetic confinement)."""
     return _blanket_cost(
         _as_capital,
-        lsa,
+        cmlsa_first_wall_blanket_shield,
         m_blkt_beryllium,
         ucblbe,
         m_blkt_li2o,
@@ -1684,7 +1844,7 @@ def calculate_blanket_cost_capital(
 
 
 def calculate_blanket_cost_fuel(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     m_blkt_beryllium,
     ucblbe,
     m_blkt_li2o,
@@ -1698,7 +1858,7 @@ def calculate_blanket_cost_fuel(
     """Account 221.2 at `ifueltyp == 1` (magnetic confinement)."""
     return _blanket_cost(
         _as_fuel,
-        lsa,
+        cmlsa_first_wall_blanket_shield,
         m_blkt_beryllium,
         ucblbe,
         m_blkt_li2o,
@@ -1712,7 +1872,7 @@ def calculate_blanket_cost_fuel(
 
 
 def calculate_blanket_cost_capital_then_fuel(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     m_blkt_beryllium,
     ucblbe,
     m_blkt_li2o,
@@ -1726,7 +1886,7 @@ def calculate_blanket_cost_capital_then_fuel(
     """Account 221.2 at `ifueltyp == 2` (magnetic confinement)."""
     return _blanket_cost(
         _as_capital_then_fuel,
-        lsa,
+        cmlsa_first_wall_blanket_shield,
         m_blkt_beryllium,
         ucblbe,
         m_blkt_li2o,
@@ -1773,7 +1933,7 @@ def calculate_shield_cost(ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind):
             "ife != 1 is ported."
         )
     return calculate_shield_cost_magnetic_confinement(
-        lsa,
+        at_index(FIRST_WALL_BLANKET_SHIELD_SAFETY, lsa),
         whtshld,
         ucshld,
         wpenshld,
@@ -1783,7 +1943,7 @@ def calculate_shield_cost(ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind):
 
 
 def calculate_shield_cost_magnetic_confinement(
-    lsa,
+    cmlsa_first_wall_blanket_shield,
     whtshld,
     ucshld,
     wpenshld,
@@ -1803,7 +1963,7 @@ def calculate_shield_cost_magnetic_confinement(
 
     Parameters and returns are the composite's, less `ife`.
     """
-    cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
+    cmlsa = cmlsa_first_wall_blanket_shield
     c22131 = fkind * (1.0e-6 * whtshld * ucshld * cmlsa)
     c22132 = fkind * (1.0e-6 * wpenshld * ucpens * cmlsa)
     return c22131, c22132, c22131 + c22132
@@ -1929,11 +2089,11 @@ def calculate_tf_magnet_cost_superconducting(
     tuple
         `(c22211, c22212, c22213, c22214, c22215, c2221)`.
     """
+    cmlsa_magnets = at_index(MAGNETS_SAFETY, lsa)
     if supercond_cost_model == 0:
         return calculate_tf_magnet_cost_superconducting_per_kg(
-            lsa,
-            ucsc,
-            i_tf_sc_mat,
+            cmlsa_magnets,
+            at_index(ucsc, i_tf_sc_mat),
             m_tf_coil_superconductor,
             len_tf_coil,
             n_tf_coil_turns,
@@ -1952,10 +2112,9 @@ def calculate_tf_magnet_cost_superconducting(
             fkind,
         )
     return calculate_tf_magnet_cost_superconducting_per_kam(
-        lsa,
-        sc_mat_cost_0,
-        i_tf_sc_mat,
-        j_crit_str_0,
+        cmlsa_magnets,
+        at_index(sc_mat_cost_0, i_tf_sc_mat),
+        at_index(j_crit_str_0, i_tf_sc_mat),
         j_crit_str_tf,
         len_tf_coil,
         n_tf_coil_turns,
@@ -1976,9 +2135,8 @@ def calculate_tf_magnet_cost_superconducting(
 
 
 def calculate_tf_magnet_cost_superconducting_per_kg(
-    lsa,
-    ucsc,
-    i_tf_sc_mat,
+    cmlsa_magnets,
+    ucsc_tf,
     m_tf_coil_superconductor,
     len_tf_coil,
     n_tf_coil_turns,
@@ -2005,18 +2163,16 @@ def calculate_tf_magnet_cost_superconducting_per_kg(
     the three-edge difference that made this a family rather than a static kwarg
     (`_audit/next_steps.md` §14.2).
 
-    `.tfcoil.i_tf_sc_mat` stays an ordinary declared read on **both** arms: it indexes
-    a cost table rather than selecting a model here, which is the case the policy
-    leaves as a read.
+    `.tfcoil.i_tf_sc_mat` only indexes tables, so it reaches no arm: the dispatcher
+    looks up `ucsc_tf` (`.costs.ucsc` at it), and the configuration's values derive
+    `.costs.ucsc_tf` (`cottax.input.native`).
 
     Parameters and returns are `calculate_tf_magnet_cost_superconducting`'s, less
     `supercond_cost_model` and the other arm's three fields.
     """
     return _tf_magnet_cost_superconducting(
-        jnp.asarray(ucsc)[i_tf_sc_mat - 1]
-        * m_tf_coil_superconductor
-        / (len_tf_coil * n_tf_coil_turns),
-        lsa,
+        ucsc_tf * m_tf_coil_superconductor / (len_tf_coil * n_tf_coil_turns),
+        cmlsa_magnets,
         len_tf_coil,
         n_tf_coil_turns,
         uccu,
@@ -2036,10 +2192,9 @@ def calculate_tf_magnet_cost_superconducting_per_kg(
 
 
 def calculate_tf_magnet_cost_superconducting_per_kam(
-    lsa,
-    sc_mat_cost_0,
-    i_tf_sc_mat,
-    j_crit_str_0,
+    cmlsa_magnets,
+    sc_mat_cost_0_tf,
+    j_crit_str_0_tf,
     j_crit_str_tf,
     len_tf_coil,
     n_tf_coil_turns,
@@ -2067,10 +2222,8 @@ def calculate_tf_magnet_cost_superconducting_per_kam(
     `supercond_cost_model` and the other arm's two fields.
     """
     return _tf_magnet_cost_superconducting(
-        jnp.asarray(sc_mat_cost_0)[i_tf_sc_mat - 1]
-        * jnp.asarray(j_crit_str_0)[i_tf_sc_mat - 1]
-        / j_crit_str_tf,
-        lsa,
+        sc_mat_cost_0_tf * j_crit_str_0_tf / j_crit_str_tf,
+        cmlsa_magnets,
         len_tf_coil,
         n_tf_coil_turns,
         uccu,
@@ -2091,7 +2244,7 @@ def calculate_tf_magnet_cost_superconducting_per_kam(
 
 def _tf_magnet_cost_superconducting(
     costtfsc,
-    lsa,
+    cmlsa_magnets,
     len_tf_coil,
     n_tf_coil_turns,
     uccu,
@@ -2114,7 +2267,7 @@ def _tf_magnet_cost_superconducting(
     `costtfsc` is data, not a switch: which of the two expressions produced it follows
     from which arm function called this one.
     """
-    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
+    cmlsa = cmlsa_magnets
 
     costtfcu = uccu * m_tf_coil_copper / (len_tf_coil * n_tf_coil_turns)
     ctfconpm = costtfsc + costtfcu + cconshtf + cconfix
@@ -2161,7 +2314,23 @@ def calculate_tf_magnet_cost_resistive(
     tuple
         `(c22211, c22212, c2221, cpstcst)`.
     """
-    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
+    return calculate_tf_magnet_cost_resistive_formula(
+        at_index(MAGNETS_SAFETY, lsa),
+        whtcp,
+        uccpcl1,
+        whttflgs,
+        uccpclb,
+        itart,
+        ifueltyp,
+        fkind,
+    )
+
+
+def calculate_tf_magnet_cost_resistive_formula(
+    cmlsa_magnets, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
+):
+    """Account 222.1's resistive arm given the multiplier at `.costs.lsa`."""
+    cmlsa = cmlsa_magnets
 
     c22211_raw = fkind * (1.0e-6 * whtcp * uccpcl1 * cmlsa)
     is_tart = itart == 1
@@ -2321,26 +2490,30 @@ def calculate_pf_magnet_cost(
     tuple
         `(c22221, c22222, c22223, c22224, c2222)`.
     """
+    cmlsa_magnets = at_index(MAGNETS_SAFETY, lsa)
     if supercond_cost_model == 0:
+        ucsc_pf = at_index(ucsc, i_pf_superconductor)
+        den_pf_conductor = at_index(dcond, i_pf_superconductor)
         if iohcl == 1:
+            ucsc_cs = at_index(ucsc, i_cs_superconductor)
+            den_cs_conductor = at_index(dcond, i_cs_superconductor)
             return calculate_pf_magnet_cost_per_kg(
                 n_cs_pf_coils,
                 i_pf_conductor,
-                lsa,
+                cmlsa_magnets,
                 r_pf_coil_middle,
                 n_pf_coil_turns,
                 cconshpf,
-                ucsc,
-                i_pf_superconductor,
+                ucsc_pf,
                 fcupfsu,
                 f_a_pf_coil_void,
                 c_pf_cs_coils_peak_ma,
                 j_pf_coil_wp_peak,
-                jnp.asarray(dcond)[i_pf_superconductor - 1],
-                jnp.asarray(dcond)[i_cs_superconductor - 1],
+                den_pf_conductor,
+                den_cs_conductor,
                 uccu,
                 cconfix,
-                i_cs_superconductor,
+                ucsc_cs,
                 a_cs_cable_space,
                 f_a_cs_void,
                 fcuohsu,
@@ -2354,17 +2527,16 @@ def calculate_pf_magnet_cost(
         return calculate_pf_magnet_cost_per_kg_no_central_solenoid(
             n_cs_pf_coils,
             i_pf_conductor,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            ucsc,
-            i_pf_superconductor,
+            ucsc_pf,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            jnp.asarray(dcond)[i_pf_superconductor - 1],
+            den_pf_conductor,
             uccu,
             cconfix,
             ucwindpf,
@@ -2374,25 +2546,29 @@ def calculate_pf_magnet_cost(
             fncmass,
             fkind,
         )
+    sc_mat_cost_0_pf = at_index(sc_mat_cost_0, i_pf_superconductor)
+    j_crit_str_0_pf = at_index(j_crit_str_0, i_pf_superconductor)
     if iohcl == 1:
+        sc_mat_cost_0_cs = at_index(sc_mat_cost_0, i_cs_superconductor)
+        j_crit_str_0_cs = at_index(j_crit_str_0, i_cs_superconductor)
         return calculate_pf_magnet_cost_per_kam(
             n_cs_pf_coils,
             i_pf_conductor,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            i_pf_superconductor,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            sc_mat_cost_0,
-            j_crit_str_0,
+            sc_mat_cost_0_pf,
+            j_crit_str_0_pf,
             j_crit_str_pf,
             uccu,
             cconfix,
-            i_cs_superconductor,
+            sc_mat_cost_0_cs,
+            j_crit_str_0_cs,
             a_cs_cable_space,
             f_a_cs_void,
             fcuohsu,
@@ -2407,17 +2583,16 @@ def calculate_pf_magnet_cost(
     return calculate_pf_magnet_cost_per_kam_no_central_solenoid(
         n_cs_pf_coils,
         i_pf_conductor,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
@@ -2433,8 +2608,7 @@ def calculate_pf_magnet_cost(
 def _pf_strand_costs_per_kg(
     n_pf_coils_costed,
     is_superconducting,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2451,10 +2625,8 @@ def _pf_strand_costs_per_kg(
     each pass the count their own arm implies, so the switch is answered by which
     occupant was selected rather than re-read inside the formula.
 
-    **`den_pf_conductor` is the density itself, not `.tfcoil.dcond` and an index into
-    it** (2026-08-31). PROCESS writes `dcond(i_pf_superconductor)`; the node above now
-    reads that one element as its own port, for the reason `pfcoil/masses.py` already
-    does -- see `PfMagnetCostPerKg`.
+    `ucsc_pf` and `den_pf_conductor` are PROCESS's `ucsc(i_pf_superconductor)` and
+    `dcond(i_pf_superconductor)`, looked up once: the index reaches no node.
     """
     n_pf_coil_turns = jnp.asarray(n_pf_coil_turns)
     f_a_pf_coil_void = jnp.asarray(f_a_pf_coil_void)
@@ -2462,7 +2634,7 @@ def _pf_strand_costs_per_kg(
     j_pf_coil_wp_peak = jnp.asarray(j_pf_coil_wp_peak)
     return [
         (
-            jnp.asarray(ucsc)[i_pf_superconductor - 1]
+            ucsc_pf
             * (1.0e0 - fcupfsu)
             * (1.0e0 - f_a_pf_coil_void[i])
             * abs(c_pf_cs_coils_peak_ma[i] / n_pf_coil_turns[i])
@@ -2479,12 +2651,11 @@ def _pf_strand_costs_per_kg(
 def calculate_pf_magnet_cost_per_kg(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2493,7 +2664,7 @@ def calculate_pf_magnet_cost_per_kg(
     den_cs_conductor,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    ucsc_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -2510,12 +2681,11 @@ def calculate_pf_magnet_cost_per_kg(
     if i_pf_conductor == 0:
         return calculate_pf_magnet_cost_per_kg_superconducting(
             n_cs_pf_coils,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            ucsc,
-            i_pf_superconductor,
+            ucsc_pf,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
@@ -2524,7 +2694,7 @@ def calculate_pf_magnet_cost_per_kg(
             den_cs_conductor,
             uccu,
             cconfix,
-            i_cs_superconductor,
+            ucsc_cs,
             a_cs_cable_space,
             f_a_cs_void,
             fcuohsu,
@@ -2537,12 +2707,11 @@ def calculate_pf_magnet_cost_per_kg(
         )
     return calculate_pf_magnet_cost_per_kg_resistive(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2551,7 +2720,7 @@ def calculate_pf_magnet_cost_per_kg(
         den_cs_conductor,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        ucsc_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -2566,12 +2735,11 @@ def calculate_pf_magnet_cost_per_kg(
 
 def calculate_pf_magnet_cost_per_kg_superconducting(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2580,7 +2748,7 @@ def calculate_pf_magnet_cost_per_kg_superconducting(
     den_cs_conductor,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    ucsc_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -2595,12 +2763,11 @@ def calculate_pf_magnet_cost_per_kg_superconducting(
     return _pf_magnet_cost_per_kg(
         n_cs_pf_coils,
         0,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2609,7 +2776,7 @@ def calculate_pf_magnet_cost_per_kg_superconducting(
         den_cs_conductor,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        ucsc_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -2624,12 +2791,11 @@ def calculate_pf_magnet_cost_per_kg_superconducting(
 
 def calculate_pf_magnet_cost_per_kg_resistive(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2638,7 +2804,7 @@ def calculate_pf_magnet_cost_per_kg_resistive(
     den_cs_conductor,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    ucsc_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -2653,12 +2819,11 @@ def calculate_pf_magnet_cost_per_kg_resistive(
     return _pf_magnet_cost_per_kg(
         n_cs_pf_coils,
         1,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2667,7 +2832,7 @@ def calculate_pf_magnet_cost_per_kg_resistive(
         den_cs_conductor,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        ucsc_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -2683,12 +2848,11 @@ def calculate_pf_magnet_cost_per_kg_resistive(
 def _pf_magnet_cost_per_kg(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2697,7 +2861,7 @@ def _pf_magnet_cost_per_kg(
     den_cs_conductor,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    ucsc_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -2720,35 +2884,21 @@ def _pf_magnet_cost_per_kg(
     `.pf_coil.j_crit_str_cs` are not read at all**, which is the four-edge difference
     that made this a family rather than a static kwarg.
 
-    `.pf_coil.i_pf_superconductor` and `.pf_coil.i_cs_superconductor` stay ordinary
-    declared reads on **both** arms: they index a cost table rather than selecting a
-    model here, which is the case the policy leaves as a read -- exactly as
-    `.tfcoil.i_tf_sc_mat` does for Account 222.1.
-
-    **The two conductor *densities* are scalars here, not `.tfcoil.dcond` and an index
-    into it** (2026-08-31). The array read moved out to the caller for a reason that is
-    not about this arithmetic at all: `pfcoil/masses.py` and
-    `tfcoil/superconducting.py` already read the same array **by element**
-    (`FromExactly(tfcoil.dcond[k])`), so a node reading it whole named the same storage
-    both ways -- and a pytree cannot be written back at a path named both whole and by
-    element (the graph library's antichain check on write paths). Measured on
-    2026-08-31: two such
-    pairs on `large_tokamak_nof`/`large_tokamak_eval`, two on `low_aspect_ratio_DEMO`,
-    one on `spherical_tokamak_eval`, none on either stellarator (which has no PF magnet
-    cost node). `radiation_power.py`'s `f_nd_impurity_electron_array` is the standing
-    precedent for the fix; `.costs.ucsc` stays whole because nothing reads *it* by
-    element.
+    `.pf_coil.i_pf_superconductor` and `.pf_coil.i_cs_superconductor` only index
+    tables, so neither is a parameter: the unit costs `ucsc_pf` / `ucsc_cs` and the
+    densities `den_pf_conductor` / `den_cs_conductor` are the entries at them, looked
+    up by `calculate_pf_magnet_cost` and derived from a configuration's values
+    (`cottax.input.native`).
 
     Parameters and returns are `calculate_pf_magnet_cost`'s, less
-    `supercond_cost_model` and the other arm's four fields, and with `dcond` replaced by
-    the two elements the dispatcher selects out of it.
+    `supercond_cost_model` and the other arm's four fields, with the tables and indices
+    replaced by those entries and `lsa` by `cmlsa_magnets`.
     """
     is_superconducting = i_pf_conductor == 0
     costpfsc = _pf_strand_costs_per_kg(
         n_cs_pf_coils - 1,
         is_superconducting,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2759,7 +2909,7 @@ def _pf_magnet_cost_per_kg(
     #  Issue #328: use the CS conductor cross-sectional area (m^2).
     costpfsc_cs = (
         (
-            jnp.asarray(ucsc)[i_cs_superconductor - 1]
+            ucsc_cs
             * a_cs_cable_space
             * (1 - f_a_cs_void)
             * (1 - fcuohsu)
@@ -2774,7 +2924,7 @@ def _pf_magnet_cost_per_kg(
         costpfsc_cs,
         n_cs_pf_coils,
         i_pf_conductor,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
@@ -2799,12 +2949,11 @@ def _pf_magnet_cost_per_kg(
 def calculate_pf_magnet_cost_per_kg_no_central_solenoid(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2825,12 +2974,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid(
     if i_pf_conductor == 0:
         return calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
             n_cs_pf_coils,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            ucsc,
-            i_pf_superconductor,
+            ucsc_pf,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
@@ -2847,12 +2995,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid(
         )
     return calculate_pf_magnet_cost_per_kg_no_central_solenoid_resistive(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2871,12 +3018,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid(
 
 def calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2897,12 +3043,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
     return _pf_magnet_cost_per_kg_no_central_solenoid(
         n_cs_pf_coils,
         0,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2921,12 +3066,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
 
 def calculate_pf_magnet_cost_per_kg_no_central_solenoid_resistive(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2947,12 +3091,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid_resistive(
     return _pf_magnet_cost_per_kg_no_central_solenoid(
         n_cs_pf_coils,
         1,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -2972,12 +3115,11 @@ def calculate_pf_magnet_cost_per_kg_no_central_solenoid_resistive(
 def _pf_magnet_cost_per_kg_no_central_solenoid(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -2999,20 +3141,17 @@ def _pf_magnet_cost_per_kg_no_central_solenoid(
     (`costs.py:1630-1633`), and neither of the two CS conductor terms exists at all
     (`:1770-1790` and `:1745-1760` are both inside `if iohcl == 1`).
 
-    **Four reads leave with this occupant**: `.pf_coil.i_cs_superconductor`,
-    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void` and `.pf_coil.fcuohsu` -- which
-    is why `iohcl` is a family here and not a static kwarg. On both tracked spherical
-    tokamaks PROCESS never writes `a_cs_cable_space` at all (`provider`'s pin records it
-    as `unwritten`), so the sibling's port would read a field the run does not produce.
-
-    `den_pf_conductor` is the one `.tfcoil.dcond` element this arm needs, taken as a
-    scalar for the antichain reason `calculate_pf_magnet_cost_per_kg` states.
+    **The CS reads leave with this occupant**: `.costs.ucsc_cs`,
+    `.pf_coil.den_cs_conductor`, `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void`
+    and `.pf_coil.fcuohsu` -- which is why `iohcl` is a family here and not a static
+    kwarg. On both tracked spherical tokamaks PROCESS never writes `a_cs_cable_space` at
+    all (`provider`'s pin records it as `unwritten`), so the sibling's port would read a
+    field the run does not produce.
     """
     costpfsc = _pf_strand_costs_per_kg(
         n_cs_pf_coils,
         i_pf_conductor == 0,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -3025,7 +3164,7 @@ def _pf_magnet_cost_per_kg_no_central_solenoid(
         None,
         n_cs_pf_coils,
         i_pf_conductor,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
@@ -3047,21 +3186,21 @@ def _pf_magnet_cost_per_kg_no_central_solenoid(
 def calculate_pf_magnet_cost_per_kam(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    sc_mat_cost_0_cs,
+    j_crit_str_0_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -3079,21 +3218,21 @@ def calculate_pf_magnet_cost_per_kam(
     if i_pf_conductor == 0:
         return calculate_pf_magnet_cost_per_kam_superconducting(
             n_cs_pf_coils,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            i_pf_superconductor,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            sc_mat_cost_0,
-            j_crit_str_0,
+            sc_mat_cost_0_pf,
+            j_crit_str_0_pf,
             j_crit_str_pf,
             uccu,
             cconfix,
-            i_cs_superconductor,
+            sc_mat_cost_0_cs,
+            j_crit_str_0_cs,
             a_cs_cable_space,
             f_a_cs_void,
             fcuohsu,
@@ -3107,21 +3246,21 @@ def calculate_pf_magnet_cost_per_kam(
         )
     return calculate_pf_magnet_cost_per_kam_resistive(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        sc_mat_cost_0_cs,
+        j_crit_str_0_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -3137,21 +3276,21 @@ def calculate_pf_magnet_cost_per_kam(
 
 def calculate_pf_magnet_cost_per_kam_superconducting(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    sc_mat_cost_0_cs,
+    j_crit_str_0_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -3167,21 +3306,21 @@ def calculate_pf_magnet_cost_per_kam_superconducting(
     return _pf_magnet_cost_per_kam(
         n_cs_pf_coils,
         0,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        sc_mat_cost_0_cs,
+        j_crit_str_0_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -3197,21 +3336,21 @@ def calculate_pf_magnet_cost_per_kam_superconducting(
 
 def calculate_pf_magnet_cost_per_kam_resistive(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    sc_mat_cost_0_cs,
+    j_crit_str_0_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -3227,21 +3366,21 @@ def calculate_pf_magnet_cost_per_kam_resistive(
     return _pf_magnet_cost_per_kam(
         n_cs_pf_coils,
         1,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        sc_mat_cost_0_cs,
+        j_crit_str_0_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -3258,21 +3397,21 @@ def calculate_pf_magnet_cost_per_kam_resistive(
 def _pf_magnet_cost_per_kam(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    sc_mat_cost_0_cs,
+    j_crit_str_0_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -3299,16 +3438,14 @@ def _pf_magnet_cost_per_kam(
     is_superconducting = i_pf_conductor == 0
     costpfsc_pf = _pf_strand_cost_per_kam(
         is_superconducting,
-        sc_mat_cost_0,
-        j_crit_str_0,
-        i_pf_superconductor,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
     )
     costpfsc_cs = _pf_strand_cost_per_kam(
         is_superconducting,
-        sc_mat_cost_0,
-        j_crit_str_0,
-        i_cs_superconductor,
+        sc_mat_cost_0_cs,
+        j_crit_str_0_cs,
         j_crit_str_cs,
     )
     return _pf_magnet_cost(
@@ -3316,7 +3453,7 @@ def _pf_magnet_cost_per_kam(
         costpfsc_cs,
         n_cs_pf_coils,
         i_pf_conductor,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
@@ -3341,17 +3478,16 @@ def _pf_magnet_cost_per_kam(
 def calculate_pf_magnet_cost_per_kam_no_central_solenoid(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
@@ -3368,17 +3504,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid(
     if i_pf_conductor == 0:
         return calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
             n_cs_pf_coils,
-            lsa,
+            cmlsa_magnets,
             r_pf_coil_middle,
             n_pf_coil_turns,
             cconshpf,
-            i_pf_superconductor,
             fcupfsu,
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            sc_mat_cost_0,
-            j_crit_str_0,
+            sc_mat_cost_0_pf,
+            j_crit_str_0_pf,
             j_crit_str_pf,
             uccu,
             cconfix,
@@ -3391,17 +3526,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid(
         )
     return calculate_pf_magnet_cost_per_kam_no_central_solenoid_resistive(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
@@ -3416,17 +3550,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid(
 
 def calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
@@ -3443,17 +3576,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
     return _pf_magnet_cost_per_kam_no_central_solenoid(
         n_cs_pf_coils,
         0,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
@@ -3468,17 +3600,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
 
 def calculate_pf_magnet_cost_per_kam_no_central_solenoid_resistive(
     n_cs_pf_coils,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
@@ -3495,17 +3626,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid_resistive(
     return _pf_magnet_cost_per_kam_no_central_solenoid(
         n_cs_pf_coils,
         1,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
@@ -3521,17 +3651,16 @@ def calculate_pf_magnet_cost_per_kam_no_central_solenoid_resistive(
 def _pf_magnet_cost_per_kam_no_central_solenoid(
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
@@ -3550,9 +3679,8 @@ def _pf_magnet_cost_per_kam_no_central_solenoid(
     """
     costpfsc_pf = _pf_strand_cost_per_kam(
         i_pf_conductor == 0,
-        sc_mat_cost_0,
-        j_crit_str_0,
-        i_pf_superconductor,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
     )
     return _pf_magnet_cost(
@@ -3560,7 +3688,7 @@ def _pf_magnet_cost_per_kam_no_central_solenoid(
         None,
         n_cs_pf_coils,
         i_pf_conductor,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
@@ -3580,23 +3708,17 @@ def _pf_magnet_cost_per_kam_no_central_solenoid(
 
 
 def _pf_strand_cost_per_kam(
-    is_superconducting, sc_mat_cost_0, j_crit_str_0, i_superconductor, j_crit_str
+    is_superconducting, sc_mat_cost_0_at, j_crit_str_0_at, j_crit_str
 ):
     """The `PER_KAM` strand cost per metre for one conductor family
     (`costs.py:1656-1666`, and the byte-identical `:1791-1801` for the CS).
 
-    One helper for both sites because the two differ only in which superconductor index
+    One helper for both sites because the two differ only in which material's entries
     and which critical current density they read -- the shape the source repeats and
     `_pf_magnet_cost`'s docstring already names.
     """
     return (
-        (
-            jnp.asarray(sc_mat_cost_0)[i_superconductor - 1]
-            * jnp.asarray(j_crit_str_0)[i_superconductor - 1]
-            / j_crit_str
-        )
-        if is_superconducting
-        else 0.0
+        (sc_mat_cost_0_at * j_crit_str_0_at / j_crit_str) if is_superconducting else 0.0
     )
 
 
@@ -3605,7 +3727,7 @@ def _pf_magnet_cost(
     costpfsc_cs,
     n_cs_pf_coils,
     i_pf_conductor,
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
@@ -3643,8 +3765,7 @@ def _pf_magnet_cost(
     loop's bound, so the caller's own arm decides how many coils are costed rather than
     a switch re-read here.
     """
-    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
-    scale = fkind * cmlsa
+    scale = fkind * cmlsa_magnets
 
     r_pf_coil_middle = jnp.asarray(r_pf_coil_middle)
     n_pf_coil_turns = jnp.asarray(n_pf_coil_turns)
@@ -4128,7 +4249,7 @@ def calculate_auxiliary_component_cooling_cost(
             "different reads-set over an unported subsystem. Only ife != 1 is ported."
         )
     return calculate_auxiliary_component_cooling_cost_magnetic_confinement(
-        lsa,
+        at_index(HEAT_TRANSPORT_SAFETY, lsa),
         UCAHTS,
         p_hcd_electric_loss_mw,
         p_cryo_plant_electric_mw,
@@ -4140,7 +4261,7 @@ def calculate_auxiliary_component_cooling_cost(
 
 
 def calculate_auxiliary_component_cooling_cost_magnetic_confinement(
-    lsa,
+    cmlsa_heat_transport,
     UCAHTS,
     p_hcd_electric_loss_mw,
     p_cryo_plant_electric_mw,
@@ -4163,7 +4284,7 @@ def calculate_auxiliary_component_cooling_cost_magnetic_confinement(
 
     Parameters and returns are the composite's, less `ife`.
     """
-    cmlsa = jnp.asarray([0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0])[lsa - 1]
+    cmlsa = cmlsa_heat_transport
     exphts = 0.7e0
 
     cppa = (
@@ -4203,7 +4324,16 @@ def calculate_cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind):
     float
         `c2263`.
     """
-    cmlsa = jnp.asarray([0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0])[lsa - 1]
+    return calculate_cryogenic_system_cost_formula(
+        at_index(HEAT_TRANSPORT_SAFETY, lsa), uccry, temp_tf_cryo, helpow, fkind
+    )
+
+
+def calculate_cryogenic_system_cost_formula(
+    cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fkind
+):
+    """Account 2263 given the multiplier at `.costs.lsa`."""
+    cmlsa = cmlsa_heat_transport
     expcry = 0.67e0
     c2263 = 1.0e-6 * uccry * 4.5e0 / temp_tf_cryo * safe_pow(helpow, expcry)
     return fkind * c2263 * cmlsa
@@ -4565,6 +4695,9 @@ def calculate_cost_of_electricity(
             "and reads .ife.uctarg/.reprat for the fuel cost -- a different reads-set "
             "over an unported subsystem. Only ife != 1 is ported."
         )
+    cfind_lsa = at_index(cfind, lsa)
+    ucoam_lsa = at_index(ucoam, lsa)
+    ucwst_lsa = at_index(ucwst, lsa)
     if itart == 1:
         return calculate_cost_of_electricity_spherical_tokamak(
             p_plant_electric_net_mw,
@@ -4578,8 +4711,7 @@ def calculate_cost_of_electricity(
             life_blkt,
             fwallcst,
             blkcst,
-            cfind,
-            lsa,
+            cfind_lsa,
             fcap0cp,
             ifueltyp,
             life_blkt_fpy,
@@ -4593,12 +4725,12 @@ def calculate_cost_of_electricity(
             cdrlife_cal,
             cdcost,
             fcdfuel,
-            ucoam,
+            ucoam_lsa,
             ucfuel,
             f_plasma_fuel_helium3,
             wtgpd,
             uche3,
-            ucwst,
+            ucwst_lsa,
             decomf,
             dintrt,
             dtlife,
@@ -4615,8 +4747,7 @@ def calculate_cost_of_electricity(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         ifueltyp,
         life_blkt_fpy,
@@ -4627,12 +4758,12 @@ def calculate_cost_of_electricity(
         cdrlife_cal,
         cdcost,
         fcdfuel,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -4651,8 +4782,7 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     ifueltyp,
     life_blkt_fpy,
@@ -4663,12 +4793,12 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -4699,8 +4829,7 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
             life_blkt,
             fwallcst,
             blkcst,
-            cfind,
-            lsa,
+            cfind_lsa,
             fcap0cp,
             life_blkt_fpy,
             life_plant,
@@ -4710,12 +4839,12 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
             cdrlife_cal,
             cdcost,
             fcdfuel,
-            ucoam,
+            ucoam_lsa,
             ucfuel,
             f_plasma_fuel_helium3,
             wtgpd,
             uche3,
-            ucwst,
+            ucwst_lsa,
             decomf,
             dintrt,
             dtlife,
@@ -4733,8 +4862,7 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
             life_blkt,
             fwallcst,
             blkcst,
-            cfind,
-            lsa,
+            cfind_lsa,
             fcap0cp,
             life_plant,
             life_div,
@@ -4742,12 +4870,12 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
             cdrlife_cal,
             cdcost,
             fcdfuel,
-            ucoam,
+            ucoam_lsa,
             ucfuel,
             f_plasma_fuel_helium3,
             wtgpd,
             uche3,
-            ucwst,
+            ucwst_lsa,
             decomf,
             dintrt,
             dtlife,
@@ -4764,18 +4892,17 @@ def calculate_cost_of_electricity_conventional_aspect_ratio(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -4794,8 +4921,7 @@ def calculate_cost_of_electricity_spherical_tokamak(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     ifueltyp,
     life_blkt_fpy,
@@ -4809,12 +4935,12 @@ def calculate_cost_of_electricity_spherical_tokamak(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -4842,8 +4968,7 @@ def calculate_cost_of_electricity_spherical_tokamak(
             life_blkt,
             fwallcst,
             blkcst,
-            cfind,
-            lsa,
+            cfind_lsa,
             fcap0cp,
             life_blkt_fpy,
             life_plant,
@@ -4856,12 +4981,12 @@ def calculate_cost_of_electricity_spherical_tokamak(
             cdrlife_cal,
             cdcost,
             fcdfuel,
-            ucoam,
+            ucoam_lsa,
             ucfuel,
             f_plasma_fuel_helium3,
             wtgpd,
             uche3,
-            ucwst,
+            ucwst_lsa,
             decomf,
             dintrt,
             dtlife,
@@ -4879,8 +5004,7 @@ def calculate_cost_of_electricity_spherical_tokamak(
             life_blkt,
             fwallcst,
             blkcst,
-            cfind,
-            lsa,
+            cfind_lsa,
             fcap0cp,
             life_plant,
             life_div,
@@ -4890,12 +5014,12 @@ def calculate_cost_of_electricity_spherical_tokamak(
             cdrlife_cal,
             cdcost,
             fcdfuel,
-            ucoam,
+            ucoam_lsa,
             ucfuel,
             f_plasma_fuel_helium3,
             wtgpd,
             uche3,
-            ucwst,
+            ucwst_lsa,
             decomf,
             dintrt,
             dtlife,
@@ -4912,20 +5036,19 @@ def calculate_cost_of_electricity_spherical_tokamak(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
         cplife_cal,
         cpstcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -4944,18 +5067,17 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_capital(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_plant,
     life_div,
     divcst,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -4975,18 +5097,17 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_capital(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5008,8 +5129,7 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_fuel(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_plant,
     life_div,
@@ -5017,12 +5137,12 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_fuel(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5042,18 +5162,17 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_fuel(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5075,8 +5194,7 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_blkt_fpy,
     life_plant,
@@ -5086,12 +5204,12 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5111,18 +5229,17 @@ def calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5144,20 +5261,19 @@ def calculate_cost_of_electricity_spherical_tokamak_capital(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_plant,
     life_div,
     divcst,
     cplife_cal,
     cpstcst,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5177,18 +5293,17 @@ def calculate_cost_of_electricity_spherical_tokamak_capital(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5210,8 +5325,7 @@ def calculate_cost_of_electricity_spherical_tokamak_fuel(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_plant,
     life_div,
@@ -5221,12 +5335,12 @@ def calculate_cost_of_electricity_spherical_tokamak_fuel(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5246,18 +5360,17 @@ def calculate_cost_of_electricity_spherical_tokamak_fuel(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5279,8 +5392,7 @@ def calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_blkt_fpy,
     life_plant,
@@ -5293,12 +5405,12 @@ def calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel(
     cdrlife_cal,
     cdcost,
     fcdfuel,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5318,18 +5430,17 @@ def calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel(
         life_blkt,
         fwallcst,
         blkcst,
-        cfind,
-        lsa,
+        cfind_lsa,
         fcap0cp,
         life_plant,
         life_div,
         divcst,
-        ucoam,
+        ucoam_lsa,
         ucfuel,
         f_plasma_fuel_helium3,
         wtgpd,
         uche3,
-        ucwst,
+        ucwst_lsa,
         decomf,
         dintrt,
         dtlife,
@@ -5351,18 +5462,17 @@ def _cost_of_electricity(
     life_blkt,
     fwallcst,
     blkcst,
-    cfind,
-    lsa,
+    cfind_lsa,
     fcap0cp,
     life_plant,
     life_div,
     divcst,
-    ucoam,
+    ucoam_lsa,
     ucfuel,
     f_plasma_fuel_helium3,
     wtgpd,
     uche3,
-    ucwst,
+    ucwst_lsa,
     decomf,
     dintrt,
     dtlife,
@@ -5399,8 +5509,6 @@ def _cost_of_electricity(
     #  SJP Issue #836: guard against kwhpy == 0.
     kwhpy = jnp.maximum(kwhpy, 1.0e-10)
     coecap = 1.0e9 * anncap / kwhpy
-
-    cfind_lsa = jnp.asarray(cfind)[lsa - 1]
 
     #  Costs due to first wall and blanket renewal.
     feffwbl = (1.0e0 + discount_rate) ** life_blkt
@@ -5459,7 +5567,7 @@ def _cost_of_electricity(
         0.0,
         safe_sqrt(jnp.where(is_negative, 1.0, p_plant_electric_net_mw) / 1200.0e0),
     )
-    annoam = jnp.asarray(ucoam)[lsa - 1] * sqrt_p_plant_electric_net_mw_1200
+    annoam = ucoam_lsa * sqrt_p_plant_electric_net_mw_1200
     coeoam = 1.0e9 * annoam / kwhpy
 
     #  Costs due to reactor fuel: D-T fuel cost plus He3 fuel cost.
@@ -5476,7 +5584,7 @@ def _cost_of_electricity(
     coefuel = 1.0e9 * annfuel / kwhpy
 
     #  Costs due to waste disposal.
-    annwst = jnp.asarray(ucwst)[lsa - 1] * sqrt_p_plant_electric_net_mw_1200
+    annwst = ucwst_lsa * sqrt_p_plant_electric_net_mw_1200
     coewst = 1.0e9 * annwst / kwhpy
 
     #  Costs due to the decommissioning fund.

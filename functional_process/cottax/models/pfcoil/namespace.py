@@ -36,7 +36,6 @@ from functional_process.cottax.models.pfcoil.inductance import (
 )
 from functional_process.cottax.models.pfcoil.masses import (
     PFCoilMasses,
-    PFCoilMassesCsWstNb3Sn,
     PFCoilMassesNoCentralSolenoid,
     PFCoilSizes,
     PFCoilSizesNoCentralSolenoid,
@@ -162,18 +161,6 @@ class PFCoil(eqx.Module):
     """
 
 
-class PFCoilCsWstNb3Sn(PFCoil):
-    """`.tokamak.pf_coil` for the `(i_pf_superconductor, i_cs_superconductor) = (3, 5)`
-    pair -- NbTi PF coils, WST Nb3Sn CS, `low_aspect_ratio_DEMO.IN.DAT`'s pair (`:806`,
-    `:845`), `indat._pf_coil_system_arm` arm `1`.
-    """
-
-    masses: Explicit = PFCoilMassesCsWstNb3Sn
-    """Conductor and structure masses (`pfcoil.py:851-1023`), CS conductor density from
-    `.tfcoil.dcond[4]` (WST Nb3Sn) instead of `.tfcoil.dcond[0]`.
-    """
-
-
 class PFCoilSphericalTokamak(PFCoil):
     """`.tokamak.pf_coil` for a machine with **no central solenoid** --
     `indat._pf_coil_system_arm` arm 2, `spherical_tokamak_eval.IN.DAT` and
@@ -215,9 +202,7 @@ class PFCoilSphericalTokamak(PFCoil):
     """
 
     masses: Explicit = PFCoilMassesNoCentralSolenoid
-    """Conductor and structure masses (`:849-1026`), REBCO tape conductor density
-    (`.tfcoil.dcond[8]`) and no CS steel or cable space.
-    """
+    """Conductor and structure masses (`:849-1026`), with no CS steel or cable space."""
 
     strand_critical_current: Explicit = PFStrandCriticalCurrentDensityHazeltonZhaiRebco
     """`.pf_coil.j_crit_str_pf` from `superconpf`'s `HAZELTON_ZHAI_REBCO` arm

@@ -710,7 +710,7 @@ def _reference_sc_areas_and_masses(**inputs):
     """`i_tf_sc_mat = 1` (ITER Nb3Sn), density from `dcond[0]`.
 
     `large_tokamak_eval.IN.DAT:374` and `large_tokamak_nof.IN.DAT:583`'s configuration,
-    and `IterNb3snSuperconductingTfCoilAreasAndMassesConventional`'s binding.
+    and `.tfcoil.den_tf_sc_material` on it.
     """
     return _run_reference_sc_areas_and_masses(1, **inputs)
 
@@ -718,8 +718,8 @@ def _reference_sc_areas_and_masses(**inputs):
 def _reference_sc_areas_and_masses_wst_nb3sn(**inputs):
     """`i_tf_sc_mat = 5` (WST Nb3Sn), density from `dcond[4]`.
 
-    `low_aspect_ratio_DEMO.IN.DAT:910`'s configuration, and
-    `WstNb3snSuperconductingTfCoilAreasAndMassesConventional`'s binding.
+    `low_aspect_ratio_DEMO.IN.DAT:910`'s configuration, and `.tfcoil.den_tf_sc_material`
+    on it.
     """
     return _run_reference_sc_areas_and_masses(5, **inputs)
 
@@ -855,8 +855,7 @@ def _run_reference_sc_areas_and_masses_spherical_tokamak(
 def _reference_sc_areas_and_masses_spherical_tokamak(**inputs):
     """`(itart, i_tf_sc_mat) == (1, 1)`, density from `dcond[0]`.
 
-    The conventional reference's own material with `itart` flipped:
-    `IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak`'s binding.
+    The conventional reference's own material with `itart` flipped.
     """
     return _run_reference_sc_areas_and_masses_spherical_tokamak(1, **inputs)
 

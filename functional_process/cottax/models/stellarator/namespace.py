@@ -32,6 +32,7 @@ from functional_process.cottax.models.stellarator.coils.forces import (
     MaxForceDensity,
     MaximumStress,
 )
+from functional_process.cottax.models.stellarator.coils.mass import CoilsMass
 from functional_process.cottax.models.stellarator.coils.quench import QuenchProtection
 from functional_process.cottax.models.stellarator.density_limits import (
     SudoDensityLimit,
@@ -143,10 +144,8 @@ class StellaratorCoils(eqx.Module):
     # `nan` in `.costs.c22211`/`.c2221` (`costs.md`).
     len_tf_coil: Explicit = LenTfCoil
     # unit #12, coils/mass.py
-    coils_mass: Explicit = dataclasses.field(kw_only=True)
-    """The TF coil masses -- one occupant per `.tfcoil.i_tf_sc_mat` value, keyed by
-    `indat.COILS_MASS_MATERIAL`.
-    """
+    coils_mass: Explicit = CoilsMass
+    """The TF coil masses, at the material's density `.tfcoil.den_tf_sc_material`."""
     # unit #11, coils/forces.py
     max_force_density: Explicit = MaxForceDensity
     maximum_stress: Explicit = MaximumStress

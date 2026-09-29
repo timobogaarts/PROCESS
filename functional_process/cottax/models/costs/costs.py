@@ -8,12 +8,6 @@ import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces import V
 
-from functional_process.cottax.models.pfcoil.masses import (
-    I_CS_SUPERCONDUCTOR,
-    I_CS_SUPERCONDUCTOR_WST_NB3SN,
-    I_PF_SUPERCONDUCTOR,
-    I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO,
-)
 from functional_process.cottax.paths import (
     buildings,
     costs,
@@ -37,6 +31,7 @@ from functional_process.models.costs.costs import (
     calculate_auxiliary_component_cooling_cost,
     calculate_auxiliary_component_cooling_cost_magnetic_confinement,
     calculate_auxiliary_facility_power_cost,
+    calculate_auxiliary_facility_power_cost_formula,
     calculate_blanket_cost,
     calculate_blanket_cost_capital,
     calculate_blanket_cost_capital_then_fuel,
@@ -53,7 +48,9 @@ from functional_process.models.costs.costs import (
     calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel,
     calculate_cost_of_electricity_spherical_tokamak_fuel,
     calculate_cryogenic_system_cost,
+    calculate_cryogenic_system_cost_formula,
     calculate_diesel_generators_cost,
+    calculate_diesel_generators_cost_formula,
     calculate_divertor_cost,
     calculate_divertor_cost_capital,
     calculate_divertor_cost_capital_then_fuel,
@@ -77,12 +74,15 @@ from functional_process.models.costs.costs import (
     calculate_heat_rejection_cost_reactor,
     calculate_heat_transport_system_cost,
     calculate_indirect_costs,
+    calculate_indirect_costs_formula,
     calculate_instrumentation_and_control_cost,
     calculate_low_voltage_cost,
+    calculate_low_voltage_cost_formula,
     calculate_magnets_cost,
     calculate_magnets_cost_magnetic_confinement,
     calculate_maintenance_equipment_cost,
     calculate_misc_plant_equipment_cost,
+    calculate_misc_plant_equipment_cost_formula,
     calculate_nuclear_building_ventilation_cost,
     calculate_pf_coil_power_conditioning_cost,
     calculate_pf_magnet_cost,
@@ -101,29 +101,35 @@ from functional_process.models.costs.costs import (
     calculate_power_injection_cost_fuel,
     calculate_power_injection_cost_magnetic_confinement,
     calculate_reactor_cooling_system_cost,
+    calculate_reactor_cooling_system_cost_formula,
     calculate_reactor_cost,
     calculate_reactor_structure_cost,
+    calculate_reactor_structure_cost_formula,
     calculate_shield_cost,
     calculate_shield_cost_magnetic_confinement,
     calculate_structures_cost,
     calculate_structures_cost_non_reactor,
     calculate_structures_cost_reactor,
     calculate_switchyard_cost,
+    calculate_switchyard_cost_formula,
     calculate_tf_coil_power_conditioning_cost,
     calculate_tf_coil_power_conditioning_cost_resistive,
     calculate_tf_coil_power_conditioning_cost_superconducting,
     calculate_tf_magnet_cost_resistive,
+    calculate_tf_magnet_cost_resistive_formula,
     calculate_tf_magnet_cost_superconducting,
     calculate_tf_magnet_cost_superconducting_per_kam,
     calculate_tf_magnet_cost_superconducting_per_kg,
     calculate_total_plant_direct_cost,
     calculate_transformers_cost,
+    calculate_transformers_cost_formula,
     calculate_turbine_plant_equipment_cost,
     calculate_turbine_plant_equipment_cost_non_reactor,
     calculate_turbine_plant_equipment_cost_reactor,
     calculate_vacuum_system_cost,
     calculate_vacuum_system_cost_for_pump,
     calculate_vacuum_vessel_assembly_cost,
+    calculate_vacuum_vessel_assembly_cost_formula,
     convert_fpy_to_calendar,
     convert_fpy_to_calendar_conventional_aspect_ratio,
     convert_fpy_to_calendar_spherical_tokamak,
@@ -138,10 +144,6 @@ from functional_process.vocabulary import PFConductorModel
 # a partial list is the wrong move).
 
 __all__ = [
-    "I_CS_SUPERCONDUCTOR",
-    "I_CS_SUPERCONDUCTOR_WST_NB3SN",
-    "I_PF_SUPERCONDUCTOR",
-    "I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO",
     "AtmosphericRecoveryCost",
     "AuxiliaryComponentCoolingCost",
     "AuxiliaryFacilityPowerCost",
@@ -188,7 +190,6 @@ __all__ = [
     "PfMagnetCostPerKam",
     "PfMagnetCostPerKamNoCentralSolenoid",
     "PfMagnetCostPerKg",
-    "PfMagnetCostPerKgCsWstNb3Sn",
     "PfMagnetCostPerKgNoCentralSolenoid",
     "PowerConditioningCost",
     "PowerInjectionCostCapitalIonCyclotron",
@@ -426,16 +427,18 @@ StructuresCostNonReactor = costs.function(
 
 
 # cottax node: `calculate_indirect_costs` (Account 9).
-def _indirect_costs(cfind, lsa, cdirt, cowner, fcontng):
-    return calculate_indirect_costs(cfind, lsa, cdirt, cowner, fcontng)
+def _indirect_costs(cfind_lsa, cdirt, cowner, fcontng):
+    return calculate_indirect_costs_formula(cfind_lsa, cdirt, cowner, fcontng)
 
 
 IndirectCosts = costs.function(_indirect_costs, "cindrt", "ccont")
 
 
 # cottax node: `calculate_reactor_structure_cost` (Account 221.4).
-def _reactor_structure_cost(gsmass, UCGSS, lsa, fkind):
-    return calculate_reactor_structure_cost(gsmass, UCGSS, lsa, fkind)
+def _reactor_structure_cost(gsmass, UCGSS, cmlsa_reactor_structure, fkind):
+    return calculate_reactor_structure_cost_formula(
+        gsmass, UCGSS, cmlsa_reactor_structure, fkind
+    )
 
 
 ReactorStructureCost = costs.function(
@@ -448,8 +451,10 @@ ReactorStructureCost = costs.function(
 
 
 # cottax node: `calculate_vacuum_vessel_assembly_cost` (Account 222.3).
-def _vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind):
-    return calculate_vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind)
+def _vacuum_vessel_assembly_cost(m_vv, uccryo, cmlsa_magnets, fkind):
+    return calculate_vacuum_vessel_assembly_cost_formula(
+        m_vv, uccryo, cmlsa_magnets, fkind
+    )
 
 
 VacuumVesselAssemblyCost = costs.function(
@@ -630,24 +635,22 @@ PfCoilPowerConditioningCost = costs.function(
 
 # cottax node: `calculate_reactor_cooling_system_cost` (Account 2261).
 def _reactor_cooling_system_cost(
-    uchts,
-    i_blkt_coolant_type,
+    uchts_blkt_coolant,
     p_fw_div_heat_deposited_mw,
     p_blkt_nuclear_heat_total_mw,
     p_shld_nuclear_heat_mw,
-    lsa,
+    cmlsa_heat_transport,
     fkind,
     UCPHX,
     n_primary_heat_exchangers,
     p_plant_primary_heat_mw,
 ):
-    return calculate_reactor_cooling_system_cost(
-        uchts,
-        i_blkt_coolant_type,
+    return calculate_reactor_cooling_system_cost_formula(
+        uchts_blkt_coolant,
         p_fw_div_heat_deposited_mw,
         p_blkt_nuclear_heat_total_mw,
         p_shld_nuclear_heat_mw,
-        lsa,
+        cmlsa_heat_transport,
         fkind,
         UCPHX,
         n_primary_heat_exchangers,
@@ -661,7 +664,6 @@ ReactorCoolingSystemCost = costs.function(
     "chx",
     "c2261",
     reads={
-        "i_blkt_coolant_type": fwbs,
         "p_fw_div_heat_deposited_mw": heat_transport,
         "p_blkt_nuclear_heat_total_mw": fwbs,
         "p_shld_nuclear_heat_mw": fwbs,
@@ -716,7 +718,6 @@ TurbinePlantEquipmentCostReactor = costs.function(
     calculate_turbine_plant_equipment_cost_reactor,
     "c23",
     reads={
-        "i_blkt_coolant_type": fwbs,
         "p_plant_electric_gross_mw": heat_transport,
     },
 )
@@ -728,17 +729,19 @@ TurbinePlantEquipmentCostNonReactor = costs.function(
 
 
 # cottax node: `calculate_switchyard_cost` (Account 241).
-def _switchyard_cost(UCSWYD, lsa):
-    return calculate_switchyard_cost(UCSWYD, lsa)
+def _switchyard_cost(UCSWYD, cmlsa_electrical_plant):
+    return calculate_switchyard_cost_formula(UCSWYD, cmlsa_electrical_plant)
 
 
 SwitchyardCost = costs.function(_switchyard_cost, "c241")
 
 
 # cottax node: `calculate_transformers_cost` (Account 242).
-def _transformers_cost(UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, lsa):
-    return calculate_transformers_cost(
-        UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, lsa
+def _transformers_cost(
+    UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, cmlsa_electrical_plant
+):
+    return calculate_transformers_cost_formula(
+        UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, cmlsa_electrical_plant
     )
 
 
@@ -753,8 +756,8 @@ TransformersCost = costs.function(
 
 
 # cottax node: `calculate_low_voltage_cost` (Account 243).
-def _low_voltage_cost(UCLV, tlvpmw, lsa):
-    return calculate_low_voltage_cost(UCLV, tlvpmw, lsa)
+def _low_voltage_cost(UCLV, tlvpmw, cmlsa_electrical_plant):
+    return calculate_low_voltage_cost_formula(UCLV, tlvpmw, cmlsa_electrical_plant)
 
 
 LowVoltageCost = costs.function(
@@ -767,16 +770,16 @@ LowVoltageCost = costs.function(
 
 
 # cottax node: `calculate_diesel_generators_cost` (Account 244).
-def _diesel_generators_cost(UCDGEN, lsa):
-    return calculate_diesel_generators_cost(UCDGEN, lsa)
+def _diesel_generators_cost(UCDGEN, cmlsa_electrical_plant):
+    return calculate_diesel_generators_cost_formula(UCDGEN, cmlsa_electrical_plant)
 
 
 DieselGeneratorsCost = costs.function(_diesel_generators_cost, "c244")
 
 
 # cottax node: `calculate_auxiliary_facility_power_cost` (Account 245).
-def _auxiliary_facility_power_cost(UCAF, lsa):
-    return calculate_auxiliary_facility_power_cost(UCAF, lsa)
+def _auxiliary_facility_power_cost(UCAF, cmlsa_electrical_plant):
+    return calculate_auxiliary_facility_power_cost_formula(UCAF, cmlsa_electrical_plant)
 
 
 AuxiliaryFacilityPowerCost = costs.function(_auxiliary_facility_power_cost, "c245")
@@ -791,8 +794,8 @@ ElectricPlantEquipmentCost = costs.function(_electric_plant_equipment_cost, "c24
 
 
 # cottax node: `calculate_misc_plant_equipment_cost` (Account 25).
-def _misc_plant_equipment_cost(ucmisc, lsa):
-    return calculate_misc_plant_equipment_cost(ucmisc, lsa)
+def _misc_plant_equipment_cost(ucmisc, cmlsa_misc_plant):
+    return calculate_misc_plant_equipment_cost_formula(ucmisc, cmlsa_misc_plant)
 
 
 MiscPlantEquipmentCost = costs.function(_misc_plant_equipment_cost, "c25")
@@ -900,9 +903,11 @@ BlanketCostCapitalThenFuel = costs.function(
 
 
 # cottax node: `calculate_shield_cost` (Account 221.3).
-def _shield_cost(lsa, whtshld, ucshld, wpenshld, ucpens, fkind):
+def _shield_cost(
+    cmlsa_first_wall_blanket_shield, whtshld, ucshld, wpenshld, ucpens, fkind
+):
     return calculate_shield_cost_magnetic_confinement(
-        lsa, whtshld, ucshld, wpenshld, ucpens, fkind
+        cmlsa_first_wall_blanket_shield, whtshld, ucshld, wpenshld, ucpens, fkind
     )
 
 
@@ -933,9 +938,8 @@ ReactorCost = costs.function(_reactor_cost, "c221")
 # `.costs.supercond_cost_model == PER_KG` (0) -- PROCESS's own default
 # (`cost_variables.py:552`) and the reference run's.
 def _tf_magnet_cost_superconducting_per_kg(
-    lsa,
-    ucsc,
-    i_tf_sc_mat,
+    cmlsa_magnets,
+    ucsc_tf,
     m_tf_coil_superconductor,
     len_tf_coil,
     n_tf_coil_turns,
@@ -954,9 +958,8 @@ def _tf_magnet_cost_superconducting_per_kg(
     fkind,
 ):
     return calculate_tf_magnet_cost_superconducting_per_kg(
-        lsa,
-        ucsc,
-        i_tf_sc_mat,
+        cmlsa_magnets,
+        ucsc_tf,
         m_tf_coil_superconductor,
         len_tf_coil,
         n_tf_coil_turns,
@@ -985,7 +988,6 @@ TfMagnetCostSuperconductingPerKg = costs.function(
     "c22215",
     "c2221",
     reads={
-        "i_tf_sc_mat": tfcoil,
         "m_tf_coil_superconductor": tfcoil,
         "len_tf_coil": tfcoil,
         "n_tf_coil_turns": tfcoil,
@@ -1001,10 +1003,9 @@ TfMagnetCostSuperconductingPerKg = costs.function(
 # `.costs.supercond_cost_model == PER_KAM` (1) -- strand cost scaled by critical
 # current density.
 def _tf_magnet_cost_superconducting_per_kam(
-    lsa,
-    sc_mat_cost_0,
-    i_tf_sc_mat,
-    j_crit_str_0,
+    cmlsa_magnets,
+    sc_mat_cost_0_tf,
+    j_crit_str_0_tf,
     j_crit_str_tf,
     len_tf_coil,
     n_tf_coil_turns,
@@ -1023,10 +1024,9 @@ def _tf_magnet_cost_superconducting_per_kam(
     fkind,
 ):
     return calculate_tf_magnet_cost_superconducting_per_kam(
-        lsa,
-        sc_mat_cost_0,
-        i_tf_sc_mat,
-        j_crit_str_0,
+        cmlsa_magnets,
+        sc_mat_cost_0_tf,
+        j_crit_str_0_tf,
         j_crit_str_tf,
         len_tf_coil,
         n_tf_coil_turns,
@@ -1055,8 +1055,7 @@ TfMagnetCostSuperconductingPerKam = costs.function(
     "c22215",
     "c2221",
     reads={
-        "i_tf_sc_mat": tfcoil,
-        "j_crit_str_0": tfcoil,
+        "j_crit_str_0_tf": tfcoil,
         "j_crit_str_tf": tfcoil,
         "len_tf_coil": tfcoil,
         "n_tf_coil_turns": tfcoil,
@@ -1072,10 +1071,10 @@ TfMagnetCostSuperconductingPerKam = costs.function(
 # cottax node: `calculate_tf_magnet_cost_resistive` (Account 222.1,
 # `.tfcoil.i_tf_sup != 1`).
 def _tf_magnet_cost_resistive(
-    lsa, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
+    cmlsa_magnets, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
 ):
-    return calculate_tf_magnet_cost_resistive(
-        lsa, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
+    return calculate_tf_magnet_cost_resistive_formula(
+        cmlsa_magnets, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
     )
 
 
@@ -1100,16 +1099,17 @@ TfMagnetCostResistive = costs.function(
 # occupant is the superconducting arm: the converter refuses resistive PF coils.
 
 
-# `supercond_cost_model == PER_KG` (0) with a central solenoid -- the whole
-# calculation, shared by two occupants: the two conductor densities are the only thing
-# they differ in, and each reads its own.
+# `supercond_cost_model == PER_KG` (0) with a central solenoid. The PF and CS
+# superconductors' unit costs and densities are the entries at their material indices,
+# derived from a configuration's values (`.costs.ucsc_pf`, `.costs.ucsc_cs`,
+# `.pf_coil.den_pf_conductor`, `.pf_coil.den_cs_conductor`), so one occupant serves every
+# material pair.
 def _pf_magnet_cost_per_kg(
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -1118,7 +1118,7 @@ def _pf_magnet_cost_per_kg(
     den_cs_conductor,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    ucsc_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -1132,12 +1132,11 @@ def _pf_magnet_cost_per_kg(
 ):
     return calculate_pf_magnet_cost_per_kg_superconducting(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -1146,7 +1145,7 @@ def _pf_magnet_cost_per_kg(
         den_cs_conductor,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        ucsc_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -1159,9 +1158,6 @@ def _pf_magnet_cost_per_kg(
     )
 
 
-# `supercond_cost_model == PER_KG` (0) with a central solenoid, on the
-# `(i_pf_superconductor, i_cs_superconductor) = (3, 1)` pair -- NbTi PF coils, ITER
-# Nb3Sn CS.
 PfMagnetCostPerKg = costs.function(
     _pf_magnet_cost_per_kg,
     "c22221",
@@ -1172,44 +1168,12 @@ PfMagnetCostPerKg = costs.function(
     reads={
         "r_pf_coil_middle": pf_coil,
         "n_pf_coil_turns": pf_coil,
-        "i_pf_superconductor": pf_coil,
         "fcupfsu": pf_coil,
         "f_a_pf_coil_void": pf_coil,
         "c_pf_cs_coils_peak_ma": pf_coil,
         "j_pf_coil_wp_peak": pf_coil,
-        "den_pf_conductor": V.tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1],
-        "den_cs_conductor": V.tfcoil.dcond[I_CS_SUPERCONDUCTOR - 1],
-        "i_cs_superconductor": pf_coil,
-        "a_cs_cable_space": pf_coil,
-        "f_a_cs_void": pf_coil,
-        "fcuohsu": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "fncmass": structure,
-        "n_cs_pf_coils": pf_coil,
-    },
-)
-
-
-# The same arm on the `(3, 5)` pair -- NbTi PF coils, WST Nb3Sn CS,
-# `low_aspect_ratio_DEMO.IN.DAT`'s materials, `indat._pf_coil_system_arm` arm `1`.
-PfMagnetCostPerKgCsWstNb3Sn = costs.function(
-    _pf_magnet_cost_per_kg,
-    "c22221",
-    "c22222",
-    "c22223",
-    "c22224",
-    "c2222",
-    reads={
-        "r_pf_coil_middle": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "i_pf_superconductor": pf_coil,
-        "fcupfsu": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "den_pf_conductor": V.tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1],
-        "den_cs_conductor": V.tfcoil.dcond[I_CS_SUPERCONDUCTOR_WST_NB3SN - 1],
-        "i_cs_superconductor": pf_coil,
+        "den_pf_conductor": pf_coil,
+        "den_cs_conductor": pf_coil,
         "a_cs_cable_space": pf_coil,
         "f_a_cs_void": pf_coil,
         "fcuohsu": pf_coil,
@@ -1223,12 +1187,11 @@ PfMagnetCostPerKgCsWstNb3Sn = costs.function(
 # `supercond_cost_model == PER_KG` (0) on a machine with `.build.iohcl == 0` --
 # both tracked spherical tokamaks.
 def _pf_magnet_cost_per_kg_no_central_solenoid(
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    ucsc,
-    i_pf_superconductor,
+    ucsc_pf,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
@@ -1246,12 +1209,11 @@ def _pf_magnet_cost_per_kg_no_central_solenoid(
 ):
     return calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        ucsc,
-        i_pf_superconductor,
+        ucsc_pf,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
@@ -1278,12 +1240,11 @@ PfMagnetCostPerKgNoCentralSolenoid = costs.function(
     reads={
         "r_pf_coil_middle": pf_coil,
         "n_pf_coil_turns": pf_coil,
-        "i_pf_superconductor": pf_coil,
         "fcupfsu": pf_coil,
         "f_a_pf_coil_void": pf_coil,
         "c_pf_cs_coils_peak_ma": pf_coil,
         "j_pf_coil_wp_peak": pf_coil,
-        "den_pf_conductor": V.tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1],
+        "den_pf_conductor": pf_coil,
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
@@ -1294,21 +1255,21 @@ PfMagnetCostPerKgNoCentralSolenoid = costs.function(
 # `supercond_cost_model == PER_KAM` (1) with a central solenoid -- strand cost
 # scaled by critical current density.
 def _pf_magnet_cost_per_kam(
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
-    i_cs_superconductor,
+    sc_mat_cost_0_cs,
+    j_crit_str_0_cs,
     a_cs_cable_space,
     f_a_cs_void,
     fcuohsu,
@@ -1323,21 +1284,21 @@ def _pf_magnet_cost_per_kam(
 ):
     return calculate_pf_magnet_cost_per_kam_superconducting(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
-        i_cs_superconductor,
+        sc_mat_cost_0_cs,
+        j_crit_str_0_cs,
         a_cs_cable_space,
         f_a_cs_void,
         fcuohsu,
@@ -1361,14 +1322,13 @@ PfMagnetCostPerKam = costs.function(
     reads={
         "r_pf_coil_middle": pf_coil,
         "n_pf_coil_turns": pf_coil,
-        "i_pf_superconductor": pf_coil,
         "fcupfsu": pf_coil,
         "f_a_pf_coil_void": pf_coil,
         "c_pf_cs_coils_peak_ma": pf_coil,
         "j_pf_coil_wp_peak": pf_coil,
-        "j_crit_str_0": tfcoil,
+        "j_crit_str_0_pf": pf_coil,
         "j_crit_str_pf": pf_coil,
-        "i_cs_superconductor": pf_coil,
+        "j_crit_str_0_cs": pf_coil,
         "a_cs_cable_space": pf_coil,
         "f_a_cs_void": pf_coil,
         "fcuohsu": pf_coil,
@@ -1382,17 +1342,16 @@ PfMagnetCostPerKam = costs.function(
 
 # `supercond_cost_model == PER_KAM` (1) on a machine with `.build.iohcl == 0`.
 def _pf_magnet_cost_per_kam_no_central_solenoid(
-    lsa,
+    cmlsa_magnets,
     r_pf_coil_middle,
     n_pf_coil_turns,
     cconshpf,
-    i_pf_superconductor,
     fcupfsu,
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    sc_mat_cost_0,
-    j_crit_str_0,
+    sc_mat_cost_0_pf,
+    j_crit_str_0_pf,
     j_crit_str_pf,
     uccu,
     cconfix,
@@ -1406,17 +1365,16 @@ def _pf_magnet_cost_per_kam_no_central_solenoid(
 ):
     return calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
         n_cs_pf_coils,
-        lsa,
+        cmlsa_magnets,
         r_pf_coil_middle,
         n_pf_coil_turns,
         cconshpf,
-        i_pf_superconductor,
         fcupfsu,
         f_a_pf_coil_void,
         c_pf_cs_coils_peak_ma,
         j_pf_coil_wp_peak,
-        sc_mat_cost_0,
-        j_crit_str_0,
+        sc_mat_cost_0_pf,
+        j_crit_str_0_pf,
         j_crit_str_pf,
         uccu,
         cconfix,
@@ -1439,12 +1397,11 @@ PfMagnetCostPerKamNoCentralSolenoid = costs.function(
     reads={
         "r_pf_coil_middle": pf_coil,
         "n_pf_coil_turns": pf_coil,
-        "i_pf_superconductor": pf_coil,
         "fcupfsu": pf_coil,
         "f_a_pf_coil_void": pf_coil,
         "c_pf_cs_coils_peak_ma": pf_coil,
         "j_pf_coil_wp_peak": pf_coil,
-        "j_crit_str_0": tfcoil,
+        "j_crit_str_0_pf": pf_coil,
         "j_crit_str_pf": pf_coil,
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
@@ -1589,7 +1546,7 @@ PowerConditioningCost = costs.function(
 
 # cottax node: `calculate_auxiliary_component_cooling_cost` (Account 2262).
 def _auxiliary_component_cooling_cost(
-    lsa,
+    cmlsa_heat_transport,
     UCAHTS,
     p_hcd_electric_loss_mw,
     p_cryo_plant_electric_mw,
@@ -1599,7 +1556,7 @@ def _auxiliary_component_cooling_cost(
     fkind,
 ):
     return calculate_auxiliary_component_cooling_cost_magnetic_confinement(
-        lsa,
+        cmlsa_heat_transport,
         UCAHTS,
         p_hcd_electric_loss_mw,
         p_cryo_plant_electric_mw,
@@ -1625,8 +1582,10 @@ AuxiliaryComponentCoolingCost = costs.function(
 
 
 # cottax node: `calculate_cryogenic_system_cost` (Account 2263).
-def _cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind):
-    return calculate_cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind)
+def _cryogenic_system_cost(cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fkind):
+    return calculate_cryogenic_system_cost_formula(
+        cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fkind
+    )
 
 
 CryogenicSystemCost = costs.function(
