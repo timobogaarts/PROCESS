@@ -1,0 +1,464 @@
+"""One configuration solved under one architecture: the policy the port's studies share.
+
+`problem.problem_model` is what the input file states; this is how it is answered.
+
+- **The graph**: the configuration's model, and the architecture's op over it: `MDA` the
+  machine with each cycle closed (`cx.mda`), `MDF` / `IDF` / `SAND` the problem at
+  `problem.TOP` with the architecture around it. Every cycle is cut by `RULE`.
+- **The drivers**: every problem answered by the port's own algorithm for its shape
+  (`drivers_for`): Picard for a fixed point, a seeded Newton for a root find, VMCON for
+  the optimisation.
+- **The values**: every boundary input from the configuration's state (`truth`), a
+  given value where the model gives one, and a start from the value of the place it
+  starts -- the state's, else `cold_state`'s, one Gauss-Seidel sweep of the machine in
+  binding order, which is how PROCESS itself starts. An integer stays a Python `int`,
+  so a count sizes an array and is part of the jit key.
+"""
+
+import functools
+import time
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import numpy as np
+import cottax.interfaces as cx
+from cottax.core.frozen import OrderedMap
+from cottax.core.kinds import is_problem
+from cottax.core.plan import Plan, Rename
+from cottax.driven import is_driven
+from cottax.execution import CallableGraph, Inputs, run
+from cottax.pytree.mint import unminted
+from cottax.relational import (
+    CloseFunctionalCycles,
+    Eq,
+    GaussSeidel,
+    Le,
+    GaussSeidelMinimal,
+    is_equalities,
+    is_fixed_point,
+)
+
+from functional_process.configurations import Configuration, Optimisation
+from functional_process.cottax.architectures.contracts import (
+    Converged,
+    PortFixedPointIteration,
+    PortMinimisation,
+    PortRootFinding,
+    Start,
+    Status,
+    Steps,
+)
+from functional_process.cottax.architectures.drivers import (
+    MdfNewtonDriver,
+    PicardDriver,
+    SeededNewtonDriver,
+    SweepDriver,
+    VmconDriver,
+)
+from functional_process.cottax.input.native import state_of
+from functional_process.cottax.models.constraints import MERIT, held
+from functional_process.cottax.problem import TOP, problem_model
+from functional_process.cottax.truth import ground_truth
+
+RULE = GaussSeidelMinimal(18)
+"""How every cycle is cut: a Gauss-Seidel sweep in the order that cuts the fewest
+variables, searched exactly up to 18 nodes. One Picard iterate of a closure is then one
+sweep of its cycle, which is how PROCESS's own idempotence loop runs."""
+
+GIVEN_STARTS = {
+    ".pf_coil.ind_pf_cs_plasma_mutual": 1.0,
+    ".pf_coil.n_pf_coil_turns": 100.0,
+}
+"""A start given its value rather than read off the state, keyed by the quantity it
+starts: a dataclass default of zero is no starting guess for these."""
+
+SUPPLIED_STARTS = {
+    ".stellarator.wp_width_r_min": ".stellarator.wp_width_r_min_guess",
+}
+"""A start read off a place a node computes, where one does, off the solve's cycle."""
+
+
+# ---------------------------------------------------------------- the model
+
+
+def machine_model(configuration: Configuration):
+    """The machine, every constraint body and the merit, nothing held: what an MDA
+    evaluates at the file's design."""
+    problem = configuration.problem
+    constraints = (
+        *problem.equalities,
+        *getattr(problem, "inequalities", ()),
+        *getattr(problem, "evaluated", ()),
+    )
+    bodies = {held(c).segments[-1].name: c for c in constraints}
+    if isinstance(problem, Optimisation):
+        bodies["merit"] = problem.minimise or problem.maximise
+    return cx.declare(configuration.machine, bodies)
+
+
+# ---------------------------------------------------------------- the drivers
+
+
+def drivers_for(graph, fixed_point=PicardDriver, skip=()):
+    """`{problem: (contract, implementation)}` for every problem in `graph` not yet
+    driven and not in `skip`, by its shape."""
+    chosen = {}
+    for name, node in graph.definitions.items():
+        if not is_problem(node) or is_driven(node) or name in skip:
+            continue
+        if is_fixed_point(node):
+            chosen[name] = (PortFixedPointIteration(), fixed_point())
+        elif is_equalities(node):
+            chosen[name] = (PortRootFinding(), SeededNewtonDriver())
+        else:
+            raise TypeError(f"{name.spelling}: no default driver for {node!r}")
+    return chosen
+
+
+def driven(plan, chosen):
+    """`plan` with each problem assigned its contract and implemented, then the starts
+    `SUPPLIED_STARTS` names read off the nodes that compute them."""
+    for name, (contract, implementation) in chosen.items():
+        plan = plan + cx.assign(plan.graph, name, contract)
+    plan = plan + cx.implement({name: impl for name, (_c, impl) in chosen.items()})
+    return _supplied(plan)
+
+
+def starts(graph) -> dict:
+    """`{start place: the unknown it starts}` over every driven problem in `graph`."""
+    pairs = {}
+    for node in graph.definitions.values():
+        if is_driven(node) and Start in node.driver.takes:
+            slot = node.data[node.driver.takes.index(Start)]
+            pairs.update(zip(slot, node.unknowns, strict=True))
+    return pairs
+
+
+def _supplied(plan):
+    graph = plan.graph
+    owners = graph.graph.owners
+    by_spelling = {v.spelling: v for v in owners}
+    for name, node in graph.definitions.items():
+        if not (is_driven(node) and Start in node.driver.takes):
+            continue
+        slot = node.data[node.driver.takes.index(Start)]
+        onto = []
+        for start, unknown in zip(slot, node.unknowns, strict=True):
+            target = by_spelling.get(SUPPLIED_STARTS.get(unknown.spelling, ""))
+            if target is not None and owners[target] not in graph.graph.descendants([
+                name
+            ]):
+                onto.append((start, target))
+        if onto:
+            plan = plan + Rename(name, tuple(onto))
+    return plan
+
+
+# ---------------------------------------------------------------- the values
+
+
+def _place(var):
+    """The place `var` is a copy of, every mint stripped."""
+    while (stripped := unminted(var)) != var:
+        var = stripped
+    return var
+
+
+def _typed(value):
+    """An integer as a Python `int` (static under jit: it may size an array), a number
+    as an array (traced), anything else (a table of the machine) as it is."""
+    if isinstance(value, int | np.integer) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(value, jax.Array):
+        return value
+    try:
+        array = np.asarray(value)
+    except ValueError:  # a ragged table: not a number
+        return value
+    return array if array.dtype.kind in "biufc" else value
+
+
+def values(graph, state, given=OrderedMap(), cold=None) -> OrderedMap:
+    """A value at every boundary input of `graph`: a given one, else the state's at the
+    place (a start: at the unknown it starts), else `cold`'s, else `0.0`."""
+    started = starts(graph)
+    cold = cold or {}
+    out = {}
+    for var in graph.graph.boundary_inputs:
+        if var in given:
+            out[var] = given[var]
+            continue
+        source = started.get(var, var)
+        try:
+            value = ground_truth(state, source)
+        except (AttributeError, KeyError):
+            value = cold.get(_place(source), 0.0)
+        if var in started and (fixed := GIVEN_STARTS.get(_place(source).spelling)):
+            value = jnp.full_like(jnp.asarray(value, dtype=float), fixed)
+        out[var] = _typed(value)
+    return OrderedMap(out)
+
+
+@eqx.filter_jit
+def _run(graph, inputs):
+    return run(Inputs(graph, inputs))
+
+
+@functools.cache
+def proved(graph) -> CallableGraph:
+    """`graph` proved callable, once: the proof walks every node, which costs several
+    times a warm run of the graph itself."""
+    return CallableGraph(graph)
+
+
+def solve(graph, inputs) -> OrderedMap:
+    """`run` of `graph` at `inputs`, compiled once per graph: an array input is traced,
+    anything else (an integer, a table) is part of the compile key."""
+    return _run(proved(graph), inputs)
+
+
+# ---------------------------------------------------------------- the MDA
+
+
+def cold_state(configuration: Configuration) -> dict:
+    """`{place: value}` after one pass of the machine in binding order -- each cycle cut
+    Gauss-Seidel in binding order, each fixed point applied once (`SweepDriver`), each
+    root find solved -- from the state and zeros shaped as the MDA's own values. What a
+    cut copy the state does not hold starts from."""
+    state = state_of(configuration)
+    model = machine_model(configuration)
+    mda = mda_graph(model, RULE)
+    shaped = eqx.filter_eval_shape(
+        lambda v: run(Inputs(CallableGraph(mda), v)),
+        values(mda, state, model.given),
+    )
+    zeros = {
+        _place(k): jax.tree.map(
+            lambda s: jnp.zeros(s.shape, s.dtype) if hasattr(s, "shape") else s, v
+        )
+        for k, v in shaped.items()
+    }
+    sweep = mda_graph(model, GaussSeidel(), fixed_point=SweepDriver)
+    out = solve(sweep, values(sweep, state, model.given, zeros))
+    return {_place(k): v for k, v in out.items()}
+
+
+def mda_graph(model, rule=RULE, fixed_point=PicardDriver):
+    """`model` with every cycle closed by `rule` and every problem driven."""
+    plan = Plan(model.graph) + cx.mda(rule)
+    return driven(plan, drivers_for(plan.graph, fixed_point)).graph
+
+
+def conditions(configuration: Configuration, out) -> dict:
+    """`objf`, `max_eq` and `min_ie` off a run's values."""
+    problem = configuration.problem
+    number = lambda c: float(np.asarray(out[held(c)]))  # noqa: E731
+    equalities = [number(c) for c in problem.equalities]
+    others = getattr(problem, "inequalities", None) or getattr(problem, "evaluated", ())
+    inequalities = [number(c) for c in others]
+    objf = None
+    if isinstance(problem, Optimisation):
+        merit = float(np.asarray(out[MERIT]))
+        objf = merit if problem.minimise is not None else -merit
+    return {
+        "objf": objf,
+        "max_eq": max(map(abs, equalities)) if equalities else 0.0,
+        "min_ie": min(inequalities) if inequalities else None,
+    }
+
+
+# ---------------------------------------------------------------- the blocks
+
+ARMS = ("MDA", "MDF", "IDF", "SAND")
+
+MAX_ITER = 500
+"""SQP iterations an optimising arm allows itself."""
+
+TOLERANCE = 1.0e-6
+"""The convergence parameter below which a trace's last iterate counts as converged:
+`VmconDriver`'s own reading of PROCESS's `epsvmc` when none is set."""
+
+
+def arms(configuration: Configuration) -> tuple[str, ...]:
+    """The architectures `configuration` can be solved under: a root find has no
+    optimisation to distribute, so an MDA and an MDF only."""
+    return ARMS if isinstance(configuration.problem, Optimisation) else ARMS[:2]
+
+
+def _architecture(arm: str):
+    return {"MDF": cx.mdf, "IDF": cx.idf, "SAND": cx.sand}[arm](TOP, RULE)
+
+
+def _is_bound(node, r) -> bool:
+    fixed = lambda side: side is None or side in node.parameters  # noqa: E731
+    return r.op is Le and (
+        (r.rhs in node.unknowns and fixed(r.lhs))
+        or (r.lhs in node.unknowns and fixed(r.rhs))
+    )
+
+
+def condition_scale(node, env, floor=1e-12) -> tuple:
+    """`((condition, 1 / |value|), ...)` for every relation of `node` whose held side is
+    a copy of one of its unknowns, measured in `env` (an MDA at the same design): the
+    coupling conditions an SQP reads in the unknowns' own units. A constraint or the
+    merit is left at 1."""
+    unknowns = {_place(u): u for u in node.unknowns}
+    scales = []
+    for r in node.relations:
+        if _is_bound(node, r):
+            continue
+        condition = r.lhs if r.lhs is not None else r.rhs
+        if condition.spelling.startswith(".constraints.c"):
+            continue
+        unknown = unknowns.get(_place(condition))
+        if unknown is None or unknown not in env:
+            continue
+        magnitude = float(np.max(np.abs(np.asarray(env[unknown], dtype=float))))
+        usable = np.isfinite(magnitude) and magnitude > floor
+        scales.append((condition, 1.0 / magnitude if usable else 1.0))
+    return tuple(scales)
+
+
+def block_graph(configuration: Configuration, arm: str, env, trace: list):
+    """The problem under `arm`, every problem driven: the top by VMCON (or, for a root
+    find, `MdfNewtonDriver`), recording its iterates into `trace`."""
+    model = problem_model(configuration)
+    # An architecture places what lies on its top's cycle; a cycle of the machine off
+    # it (upstream of a root find, say) is closed by the same rule, on its own.
+    plan = Plan(model.graph) + _architecture(arm)
+    if any(len(c) > 1 for c in plan.graph.graph.components if TOP not in c):
+        plan = plan + CloseFunctionalCycles(RULE, cx.closing)
+    top = plan.graph[TOP]
+    chosen = drivers_for(plan.graph, skip=(TOP,))
+    if isinstance(configuration.problem, Optimisation):
+        held_relations = [r for r in top.relations if not _is_bound(top, r)]
+        chosen[TOP] = (
+            PortMinimisation(reports=(Steps, Converged, Status)),
+            VmconDriver(
+                n_equality=sum(r.op is Eq for r in held_relations),
+                n_inequality=sum(r.op is Le for r in held_relations),
+                condition_scale=condition_scale(top, env),
+                callback=_recorder(trace),
+                max_iter=MAX_ITER,
+            ),
+        )
+    else:
+        chosen[TOP] = (PortRootFinding(reports=(Steps, Converged)), MdfNewtonDriver())
+    return model, driven(plan, chosen).graph
+
+
+def _recorder(trace):
+    def record(i, result, _x, convergence):
+        trace.append((
+            i,
+            float(convergence),
+            float(np.asarray(result.f)),
+            float(np.max(np.abs(result.eq))) if len(result.eq) else 0.0,
+            float(np.min(result.ie)) if len(result.ie) else 0.0,
+        ))
+
+    return record
+
+
+def block_values(graph, state, given, env, design, nested_given: bool) -> OrderedMap:
+    """A value at every boundary input of a block arm: a design variable's start from
+    the state, every other start and every cut copy from `env` (an MDA at that design),
+    anything else from the state, else `env`. `GIVEN_STARTS` applies to the starts of
+    problems nested under the top where `nested_given`."""
+    started = starts(graph)
+    top_starts = set(graph[TOP].data[graph[TOP].driver.takes.index(Start)])
+    out = {}
+    for var in graph.graph.boundary_inputs:
+        if var in given:
+            out[var] = given[var]
+            continue
+        unknown = started.get(var)
+        source = var if unknown is None else unknown
+        coupling = unknown is not None and unknown not in design
+        cut = unknown is None and unminted(var) != var and var in env
+        if (coupling or cut) and source in env:
+            value = env[source]
+        else:
+            try:
+                value = ground_truth(state, source)
+            except (AttributeError, KeyError):
+                value = env.get(source, 0.0)
+        if (
+            nested_given
+            and unknown is not None
+            and var not in top_starts
+            and (fixed := GIVEN_STARTS.get(_place(unknown).spelling))
+        ):
+            value = jnp.full_like(jnp.asarray(value, dtype=float), fixed)
+        out[var] = _typed(value)
+    return OrderedMap(out)
+
+
+def study(configuration: Configuration, arm: str, cold=None) -> dict:
+    """`configuration` solved under `arm`, cold: `status`, `iterations`, `objf`,
+    `max_eq`, `min_ie`, `seconds` and the design at the answer, `x`."""
+    if arm not in arms(configuration):
+        raise ValueError(f"{configuration.name} has no {arm} arm: {arms(configuration)}")
+    cold = cold_state(configuration) if cold is None else cold
+    state = state_of(configuration)
+    model = machine_model(configuration)
+    mda = mda_graph(model)
+    env = solve(mda, values(mda, state, model.given, cold))
+    if arm == "MDA":
+        return {
+            "status": "evaluated",
+            "iterations": 0,
+            "seconds": None,
+            "x": (),
+            **conditions(configuration, env),
+        }
+    trace: list = []
+    problem_ = configuration.problem
+    design = set(problem_.design)
+    block_model, graph = block_graph(configuration, arm, env, trace)
+    inputs = block_values(
+        graph, state, block_model.given, env, design, nested_given=arm in ("MDF", "IDF")
+    )
+    started = time.perf_counter()
+    out = solve(graph, inputs)
+    seconds = time.perf_counter() - started
+    top = graph[TOP]
+    reported = dict(zip(top.driver.reports, (s[0] for s in top.reports), strict=True))
+    x = tuple(float(np.asarray(out[u])) for u in problem_.design)
+    if isinstance(problem_, Optimisation):
+        iterations, _f, _eq, _ie = (
+            (len(trace), *trace[-1][2:]) if trace else (0, None, None, None)
+        )
+        status = (
+            "no-step"
+            if not trace
+            else "converged"
+            if trace[-1][1] <= TOLERANCE
+            else f"cap({MAX_ITER})"
+            if len(trace) >= MAX_ITER
+            else "stopped"
+        )
+        if trace:
+            result = {
+                "objf": trace[-1][2],
+                "max_eq": trace[-1][3],
+                "min_ie": trace[-1][4],
+            }
+        else:
+            result = conditions(configuration, out)
+    else:
+        iterations = int(np.asarray(out[reported[Steps]]))
+        status = (
+            "converged"
+            if bool(np.asarray(out[reported[Converged]]))
+            else "not-converged"
+        )
+        result = conditions(configuration, out)
+    return {
+        "status": status,
+        "iterations": iterations,
+        **result,
+        "seconds": seconds,
+        "x": x,
+    }

@@ -153,8 +153,8 @@ def scaled_problem(driver, conditions: Gaps, flat_start, unravel, sizes=None):
 
     Everything is at the level of **flat entries**: an array-valued unknown is as many
     design coordinates as it has elements (`ravel_pytree`'s order), and an array-valued
-    condition as many rows. `condition_scale` names conditions and bounds name
-    unknowns, and both are spread over their entries here.
+    condition as many rows. `condition_scale` names conditions, the problem's box bounds
+    its unknowns, and both are spread over their entries here.
     """
     flat_start = np.asarray(flat_start, dtype=float)
     start = unravel(jnp.asarray(flat_start))
@@ -210,14 +210,19 @@ def scaled_problem(driver, conditions: Gaps, flat_start, unravel, sizes=None):
         raw_values, raw_jacobian = bound_both(flat_x)
         return _scale_values(raw_values), _scale_jacobian(raw_jacobian)
 
-    limits = {var: (lo, hi) for var, lo, hi in driver.bounds}
+    # The bounds are the problem's (`lb <= u <= ub` against its parameters), read at
+    # this solve's context: concrete here, inside the host callback.
+    box = conditions.box(tuple(start))
+
+    def spread(value, bound, missing):
+        filled = missing if bound is None else np.asarray(bound, dtype=float)
+        return np.broadcast_to(filled, np.shape(value)).ravel()
+
     lower = np.concatenate([
-        np.full(int(np.size(value)), limits.get(v, (-np.inf, np.inf))[0], dtype=float)
-        for v, value in zip(conditions.unknowns, start, strict=True)
+        spread(value, lo, -np.inf) for value, lo in zip(start, box.lower, strict=True)
     ])
     upper = np.concatenate([
-        np.full(int(np.size(value)), limits.get(v, (-np.inf, np.inf))[1], dtype=float)
-        for v, value in zip(conditions.unknowns, start, strict=True)
+        spread(value, hi, np.inf) for value, hi in zip(start, box.upper, strict=True)
     ])
     # A negative scale (a variable starting below zero) swaps which bound is which.
     scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
@@ -561,7 +566,6 @@ class SlsqpDriver(GapsDriver[PortMinimisation]):
 
     n_equality: int = 0
     n_inequality: int = 0
-    bounds: tuple = ()
     scaled: bool = True
     condition_scale: tuple = ()
     max_iter: int = 100
@@ -808,7 +812,6 @@ class BoxedSlsqpDriver(GapsDriver[PortMinimisation]):
 
     n_equality: int = 0
     n_inequality: int = 0
-    bounds: tuple = ()
     scaled: bool = True
     condition_scale: tuple = ()
     max_iter: int = 100
@@ -1785,8 +1788,6 @@ class VmconDriver(GapsDriver[PortMinimisation]):
 
     n_equality: int
     n_inequality: int
-    bounds: tuple[tuple[VarPath, float, float], ...] = ()
-    """`(unknown, lower, upper)`, in any order. Unknowns absent here are unbounded."""
     condition_scale: tuple[tuple[VarPath, float], ...] = ()
     """`(condition, positive factor)`."""
     scaled: bool = True

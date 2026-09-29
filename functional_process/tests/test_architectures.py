@@ -2,7 +2,7 @@
 
 One row per `(configuration, arm)`: `configurations.NAMES` (every
 `tests/regression/input_files/*.IN.DAT` but IFE, stated as a tree) under each of
-`session.ARMS` -- the MDA at the configuration's own design, then MDF, IDF and SAND
+`study.ARMS` -- the MDA at the configuration's own design, then MDF, IDF and SAND
 solved from it. The pin,
 `reference_architectures.txt`, holds what each row answered; a row that moves is a
 regression in the port, the recipe, or the cottax underneath, and this is the one test
@@ -26,7 +26,7 @@ import jax
 import pytest
 
 from functional_process import configurations
-from functional_process.cottax.architectures import session
+from functional_process.cottax import study
 
 PIN = Path(__file__).with_name("reference_architectures.txt")
 COLUMNS = ("configuration", "arm", "status", "iterations", "objf", "max_eq", "min_ie")
@@ -37,9 +37,7 @@ pytestmark = pytest.mark.tier4
 ROWS = [
     (name, arm)
     for name in configurations.NAMES
-    for arm in session.ARMS
-    # A root-find configuration has no optimisation to distribute: MDA and MDF only.
-    if arm in {"MDA", "MDF"} or not configurations.load(name).problem.root_find
+    for arm in study.arms(configurations.load(name))
 ]
 
 
@@ -89,22 +87,19 @@ def read_pin(path=PIN) -> dict:
     return pinned
 
 
-_LIVE: dict = {}
-"""The one open session -- rows are grouped by configuration, and holding every
-configuration's compiled programs at once has crashed XLA's compiler mid-run."""
-
-
-def _session(name):
-    if name not in _LIVE:
-        _LIVE.clear()
-        jax.clear_caches()
-        _LIVE[name] = session.open_session(name)
-    return _LIVE[name]
+_COLD: dict = {}
+"""The one configuration's cold state -- rows are grouped by configuration, and holding
+every configuration's compiled programs at once has crashed XLA's compiler mid-run."""
 
 
 @functools.cache
 def _solve(name, arm):
-    return _session(name).solve(arm)
+    configuration = configurations.load(name)
+    if name not in _COLD:
+        _COLD.clear()
+        jax.clear_caches()
+        _COLD[name] = study.cold_state(configuration)
+    return study.study(configuration, arm, _COLD[name])
 
 
 def _same_objf(got, pinned):
@@ -122,8 +117,8 @@ def test_architecture(name, arm, request):
     pinned = read_pin().get((name, arm))
     assert pinned is not None, f"{name} {arm}: no pin -- regenerate with --fp-write-pin"
     got = _row(name, arm, result)
-    assert result["status"] == pinned["status"], (got, pinned, result["note"])
-    assert _same_objf(result["objf"], pinned["objf"]), (got, pinned, result["note"])
+    assert result["status"] == pinned["status"], (got, pinned)
+    assert _same_objf(result["objf"], pinned["objf"]), (got, pinned)
 
 
 def test_write_pin(request):

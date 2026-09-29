@@ -1,34 +1,70 @@
-"""The MDA's timing per configuration, measured exactly as the paper's `iteration.py`
-measures its `MDA` row (`bench.open_session`, `iteration.mda_row`: compile once, then the
-median of `--repeats` warm runs), written here rather than into `paper_tests/.../out/`.
+"""The MDA's timing per configuration: the machine's own MDA (`study.mda_graph` of the
+machine alone) at the file's values, compiled once, then the median of `--repeats` warm
+runs -- what the paper's `iteration.mda_row` measured before the port moved, so the two
+columns compare. `timings/` holds that reference; write a new run elsewhere (`--out`).
 
-One process per configuration, as `run_all.sh` does, since XLA's CPU JIT runs out of
-section memory once enough programs are compiled in one process:
+One process per configuration, since XLA's CPU JIT runs out of section memory once
+enough programs are compiled in one process:
 
-    JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=<jaxgraph checkout>/src:~/PROCESS $PY \\
-        -m functional_process.tests.port_reference.timings [--repeats 5]
+    JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=<jaxgraph checkout>/src:~/PROCESS-port $PY \\
+        -m functional_process.tests.port_reference.timings --out <dir> [--repeats 5]
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import datetime
+import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 
+import jax
+
 HERE = Path(__file__).parent
-PAPER = Path(__file__).resolve().parents[3] / "paper_tests" / "architectures"
 
 
-def one(name: str, repeats: int) -> dict:
-    sys.path.insert(0, str(PAPER))
-    import bench  # noqa: PLC0415
-    import iteration  # noqa: PLC0415
+def _timed(fn, *args):
+    started = time.perf_counter()
+    jax.block_until_ready(fn(*args))
+    return time.perf_counter() - started
 
-    args = argparse.Namespace(scheme="minimal", repeats=repeats, epsfcn=None)
-    live = bench.open_session(name, args)
-    return {"configuration": name, **iteration.mda_row(live, args)}, bench.provenance("timings.py")
+
+def one(name: str, repeats: int) -> tuple[dict, str]:
+    from functional_process import configurations  # noqa: PLC0415
+    from functional_process.cottax import study  # noqa: PLC0415
+    from functional_process.cottax.input.native import state_of  # noqa: PLC0415
+
+    configuration = configurations.load(name)
+    model = study.cx.declare(configuration.machine)
+    graph = study.mda_graph(model)
+    values = study.values(graph, state_of(configuration), model.given)
+    compile_seconds = _timed(study.solve, graph, values)
+    warm = sorted(_timed(study.solve, graph, values) for _ in range(repeats))
+    row = {
+        "evaluate_ms": 1e3 * warm[len(warm) // 2],
+        "serial_us": float("nan"),
+        "jacobian_ms": float("nan"),
+        "serial_jacobian_us": float("nan"),
+        "compile_s": compile_seconds,
+        "unknowns": 0,
+        "block_nodes": len(graph.nodes),
+    }
+    return {"configuration": name, **row}, _provenance()
+
+
+def _provenance() -> str:
+    def head(path):
+        return subprocess.run(["git", "-C", str(path), "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+
+    import cottax  # noqa: PLC0415
+
+    return (f"# timings.py, {datetime.date.today()}, {platform.node()} "
+            f"({platform.machine()}), PROCESS {head(HERE)}, "
+            f"cottax {head(Path(cottax.__file__).parent)}")
 
 
 def main() -> None:
