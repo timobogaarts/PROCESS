@@ -109,13 +109,20 @@ class Reading(Frozen):
         )
 
     def box(self, unknowns: Unknowns) -> Box:
-        """Each unknown's lower and upper bound, `None` where it has none."""
+        """Each unknown's lower and upper bound, `None` where it has none.
+
+        A bound is a parameter, fixed while the unknowns move, so its value is read off
+        the context where the condition map says where each context value goes; only a
+        map that does not say is evaluated, which walks the whole interior.
+        """
         condition = self.posed.condition
-        return box(
-            condition,
-            tuple(unknowns),
-            self.posed.conditions(tuple(unknowns), self.context),
-        )
+        places = getattr(self.posed.conditions, "context_places", ())
+        at = dict(zip(places, self.context, strict=True)) if places else {}
+        if all(p in at for p in condition.parameters):
+            values = tuple(at.get(r) for r in condition.reads)
+        else:
+            values = self.posed.conditions(tuple(unknowns), self.context)
+        return box(condition, tuple(unknowns), values)
 
     @abstractmethod
     def __call__(self, *unknowns: Any) -> Any:

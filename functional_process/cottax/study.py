@@ -15,6 +15,7 @@
   so a count sizes an array and is part of the jit key.
 """
 
+import dataclasses
 import functools
 import time
 
@@ -27,7 +28,8 @@ from cottax.core.frozen import OrderedMap
 from cottax.core.kinds import is_problem
 from cottax.core.plan import Plan, Rename
 from cottax.driven import is_driven
-from cottax.execution import CallableGraph, Inputs, run
+from cottax.core import Solve
+from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
 from cottax.pytree.mint import unminted
 from cottax.relational import (
     CloseFunctionalCycles,
@@ -286,8 +288,8 @@ def arms(configuration: Configuration) -> tuple[str, ...]:
     return ARMS if isinstance(configuration.problem, Optimisation) else ARMS[:2]
 
 
-def _architecture(arm: str):
-    return {"MDF": cx.mdf, "IDF": cx.idf, "SAND": cx.sand}[arm](TOP, RULE)
+def _architecture(arm: str, rule=RULE):
+    return {"MDF": cx.mdf, "IDF": cx.idf, "SAND": cx.sand}[arm](TOP, rule)
 
 
 def _is_bound(node, r) -> bool:
@@ -320,22 +322,26 @@ def condition_scale(node, env, floor=1e-12) -> tuple:
     return tuple(scales)
 
 
-def block_graph(configuration: Configuration, arm: str, env, trace: list):
-    """The problem under `arm`, every problem driven: the top by VMCON (or, for a root
-    find, `MdfNewtonDriver`), recording its iterates into `trace`."""
+def block_graph(configuration: Configuration, arm: str, env, trace: list, rule=RULE,
+                optimiser=VmconDriver, reports=True):
+    """The problem under `arm`, every cycle cut by `rule` and every problem driven: the
+    top by `optimiser` (or, for a root find, `MdfNewtonDriver`), recording its iterates
+    into `trace`. `optimiser` is a driver class, or a partial of one, taking VMCON's
+    fields. `reports`: whether the top's contract asks its steps, verdict and status
+    back."""
     model = problem_model(configuration)
     # An architecture places what lies on its top's cycle; a cycle of the machine off
     # it (upstream of a root find, say) is closed by the same rule, on its own.
-    plan = Plan(model.graph) + _architecture(arm)
+    plan = Plan(model.graph) + _architecture(arm, rule)
     if any(len(c) > 1 for c in plan.graph.graph.components if TOP not in c):
-        plan = plan + CloseFunctionalCycles(RULE, cx.closing)
+        plan = plan + CloseFunctionalCycles(rule, cx.closing)
     top = plan.graph[TOP]
     chosen = drivers_for(plan.graph, skip=(TOP,))
     if isinstance(configuration.problem, Optimisation):
         held_relations = [r for r in top.relations if not _is_bound(top, r)]
         chosen[TOP] = (
-            PortMinimisation(reports=(Steps, Converged, Status)),
-            VmconDriver(
+            PortMinimisation(reports=(Steps, Converged, Status) if reports else ()),
+            optimiser(
                 n_equality=sum(r.op is Eq for r in held_relations),
                 n_inequality=sum(r.op is Le for r in held_relations),
                 condition_scale=condition_scale(top, env),
@@ -344,7 +350,8 @@ def block_graph(configuration: Configuration, arm: str, env, trace: list):
             ),
         )
     else:
-        chosen[TOP] = (PortRootFinding(reports=(Steps, Converged)), MdfNewtonDriver())
+        chosen[TOP] = (PortRootFinding(reports=(Steps, Converged) if reports else ()),
+                       MdfNewtonDriver())
     return model, driven(plan, chosen).graph
 
 
@@ -395,34 +402,64 @@ def block_values(graph, state, given, env, design, nested_given: bool) -> Ordere
     return OrderedMap(out)
 
 
-def study(configuration: Configuration, arm: str, cold=None) -> dict:
-    """`configuration` solved under `arm`, cold: `status`, `iterations`, `objf`,
-    `max_eq`, `min_ie`, `seconds` and the design at the answer, `x`."""
+@dataclasses.dataclass(frozen=True)
+class Assembled:
+    """One arm built and valued, not yet solved: what `answer` solves."""
+
+    arm: str
+    graph: object
+    """The driven graph the arm runs."""
+    inputs: OrderedMap
+    """A value at every boundary input of `graph`."""
+    env: OrderedMap
+    """The MDA at the configuration's design: every place's value."""
+    trace: list
+    """The top's iterates, `(i, convergence, objf, max|eq|, min ie)`, of the last
+    solve (an optimising arm's)."""
+
+
+def assemble(configuration: Configuration, arm: str, cold=None, *, rule=RULE,
+             optimiser=VmconDriver, state=None) -> Assembled:
+    """`arm` of `configuration` built, every cycle cut by `rule`, the top answered by
+    `optimiser`, and valued from `state` (default the configuration's) over `cold`:
+    the MDA solved once, the block not yet."""
     if arm not in arms(configuration):
         raise ValueError(f"{configuration.name} has no {arm} arm: {arms(configuration)}")
     cold = cold_state(configuration) if cold is None else cold
-    state = state_of(configuration)
+    state = state_of(configuration) if state is None else state
     model = machine_model(configuration)
-    mda = mda_graph(model)
-    env = solve(mda, values(mda, state, model.given, cold))
+    mda = mda_graph(model, rule)
+    mda_inputs = values(mda, state, model.given, cold)
+    env = solve(mda, mda_inputs)
     if arm == "MDA":
+        return Assembled(arm, mda, mda_inputs, env, [])
+    trace: list = []
+    block_model, graph = block_graph(configuration, arm, env, trace, rule, optimiser)
+    inputs = block_values(
+        graph, state, block_model.given, env, set(configuration.problem.design),
+        nested_given=arm in ("MDF", "IDF"),
+    )
+    return Assembled(arm, graph, inputs, env, trace)
+
+
+def answer(configuration: Configuration, assembled: Assembled) -> dict:
+    """`assembled` solved: `status`, `iterations`, `objf`, `max_eq`, `min_ie`,
+    `seconds` and the design at the answer, `x`. The MDA arm is its analysis, run
+    again."""
+    graph, trace = assembled.graph, assembled.trace
+    trace.clear()
+    problem_ = configuration.problem
+    started = time.perf_counter()
+    out = solve(graph, assembled.inputs)
+    seconds = time.perf_counter() - started
+    if assembled.arm == "MDA":
         return {
             "status": "evaluated",
             "iterations": 0,
-            "seconds": None,
+            "seconds": seconds,
             "x": (),
-            **conditions(configuration, env),
+            **conditions(configuration, out),
         }
-    trace: list = []
-    problem_ = configuration.problem
-    design = set(problem_.design)
-    block_model, graph = block_graph(configuration, arm, env, trace)
-    inputs = block_values(
-        graph, state, block_model.given, env, design, nested_given=arm in ("MDF", "IDF")
-    )
-    started = time.perf_counter()
-    out = solve(graph, inputs)
-    seconds = time.perf_counter() - started
     top = graph[TOP]
     reported = dict(zip(top.driver.reports, (s[0] for s in top.reports), strict=True))
     x = tuple(float(np.asarray(out[u])) for u in problem_.design)
@@ -462,3 +499,38 @@ def study(configuration: Configuration, arm: str, cold=None) -> dict:
         "seconds": seconds,
         "x": x,
     }
+
+
+def study(configuration: Configuration, arm: str, cold=None, **how) -> dict:
+    """`configuration` solved under `arm`, cold: `answer(assemble(...))`. `how` is
+    `assemble`'s `rule`, `optimiser` and `state`."""
+    return answer(configuration, assemble(configuration, arm, cold, **how))
+
+
+# ---------------------------------------------------------------- one problem, posed
+
+
+def posed(graph, inputs, problem=TOP) -> tuple:
+    """`(posed, context, data)`: what a run of `graph` at `inputs` hands `problem`'s
+    driver, without solving it -- what runs before it once, then the problem posed as
+    `cottax.execution.run` poses it. `problem` is outermost."""
+    cycle = set(graph.cycle_of(problem))
+    before = [n for n in graph.graph.ancestors(cycle) if n not in cycle]
+    env = dict(inputs)
+    if before:
+        upstream = graph.subgraph(before)
+        env.update(solve(upstream, OrderedMap(
+            (v, inputs[v]) for v in upstream.graph.boundary_inputs)))
+    interior = next(s.interior for s in proved(graph).steps
+                    if isinstance(s, Solve) and s.problem == problem)
+    node = graph[problem]
+    produced = set(interior.graph.graph.owned_variables)
+    fixed = tuple(dict.fromkeys(
+        p for p in (*interior.graph.graph.boundary_inputs, *node.condition.reads)
+        if p not in node.unknowns and p not in produced))
+    conditions_ = InteriorConditionMap(interior, node.unknowns, fixed,
+                                       node.condition.reads)
+    data = {role: tuple(env[p] for p in slot)
+            for role, slot in zip(node.driver.takes, node.data, strict=True)}
+    return (Posed(node.condition, node.driver.reports, conditions_),
+            tuple(env[p] for p in fixed), data)

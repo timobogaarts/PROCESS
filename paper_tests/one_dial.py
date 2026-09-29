@@ -27,7 +27,9 @@ The gap between them is the point: same model, two questions, one line of differ
 the problem statement.
 
 Every step below is one named procedure taking a `Plan` and returning a `Plan`, and
-records the graph operations it applied. `report(plan)` prints the recipe.
+records the graph operations it applied. `report(plan)` prints the recipe. The file's
+problem is `problem.problem_model`; the closed machine is `study.machine_model` with the
+root find as the top of `cx.mdf`; every run is `study.solve`.
 
     PY=~/miniconda3/envs/process_port/bin/python      # see ../CLAUDE.md for the env
     export JAX_PLATFORMS=cpu PYTHONPATH=~/PROCESS:~/jaxgraph/src
@@ -46,7 +48,6 @@ count a systems code relies on -- the dial is only what makes it visible.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import gc
 import json
 import sys
@@ -57,45 +58,38 @@ import jax
 
 jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float64
 
+import cottax.interfaces as cx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
-from cottax.interfaces import (  # noqa: E402
-    RequirementUnanswered,
-    Cut,
-    ExecutableGraph,
-    Function,
-    Implemented,
-    Insert,
-    Minted,
-    MintKey,
-    NodePath,
-    PathMap,
-    RunnableGraph,
-    Schedule,
-    VarPath,
-    prefix_path,
-    violations,
-)
-from cottax.interfaces import (  # noqa: E402
-    Plan as Ops,
-)
-from cottax.interfaces.statements import Requirement  # noqa: E402
+from cottax import ExecutableGraph, Function, Minted, NodePath, OrderedMap, VarPath  # noqa: E402
+from cottax.core.executable import RequirementUnanswered  # noqa: E402
+from cottax.core.frozen import violations  # noqa: E402
+from cottax.core.plan import Cut, Determine, Insert  # noqa: E402
+from cottax.core.plan import Plan as Ops  # noqa: E402
+from cottax.mdao_architectures import CloseFunctionalCycles  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from functional_process import configurations  # noqa: E402
-from functional_process.cottax.architectures import (  # noqa: E402
-    closing,
-    mdf,
-    sand,
-    stages,
+from functional_process.configurations import Optimisation  # noqa: E402
+from functional_process.configurations.kinds import CLAIMED_BUILD_OUTPUTS  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
+from functional_process.cottax.architectures.contracts import (  # noqa: E402
+    BracketedRootFinding,
+    Converged,
+    PortRootFinding,
+    Start,
+    Steps,
 )
-from functional_process.cottax.architectures.evaluate import (
-    without_excluded,
+from functional_process.cottax.architectures.contracts import Bracket as BracketRole  # noqa: E402
+from functional_process.cottax.architectures.drivers import (  # noqa: E402
+    BracketedRootDriver,
+    SafeguardedNewtonDriver,
 )
-from functional_process.cottax.architectures.mda import SCHEME, cut_graph  # noqa: E402
-from functional_process.cottax.architectures.session import open_session  # noqa: E402
+from functional_process.cottax.input.native import state_of  # noqa: E402
+from functional_process.cottax.models.constraints import held  # noqa: E402
+from functional_process.cottax.problem import problem_model  # noqa: E402
 from paper_tests.common import OUT, process_reference  # noqa: E402
 
 # ---------------------------------------------------------------- the one dial
@@ -109,7 +103,7 @@ DENSITY = ".physics.nd_plasma_electrons_vol_avg"
 HEATING = ".current_drive.p_hcd_primary_extra_heat_mw"
 """What absorbs it on a driven one -- a plain input in every PROCESS file."""
 HEATING_BRACKET = (-25.0, 1000.0)
-"""The bracket the heating closure is answered in (MW), `closing.bracketed()`. A Newton
+"""The bracket the heating closure is answered in (MW), by `BracketedRootDriver`. A Newton
 scales its step by the unknown it moves, and two of these files install no heating at
 all, so from zero it cannot move; a bracketed root converges from any start. The bottom
 is negative because the root is then *at* zero and a bracket has to contain it -- a
@@ -205,31 +199,25 @@ class Plan:
 
 
 # ---------------------------------------------------------------- freezing a build output
-#
-# Lifted from the tokamak flexibility study (`git show
-# b50ceda3:functional_process/cottax/architectures/driven.py`), which is where these
-# were written and measured. Nothing else of that module is needed here.
 
-BUILT = MintKey("built")
 BUILT_MINT = Minted("built")
-"""The same namespace as a `Naming`, which is what an op that fabricates a name takes."""
 """The namespace a frozen build output's copy is minted in: `.vacuum.n_vac_pumps_high`
--> `^built.vacuum.n_vac_pumps_high`."""
-COND = MintKey("cond")
+-> `^built.vacuum.n_vac_pumps_high`, as the `Naming` a `Cut` takes."""
+COND = Minted("cond")
 CHECK = NodePath((GetAttrKey("Built"),))
 
 
 def built_of(var: VarPath) -> VarPath:
     """`^built.<var>`: what was built, a boundary input of the built machine."""
-    return prefix_path(var, BUILT)
+    return BUILT_MINT(var)
 
 
 def check_condition_for(var: VarPath) -> VarPath:
     """`^cond.built.<var>`: the capacity inequality of a frozen place."""
-    return prefix_path(VarPath((GetAttrKey("built"), *var.segments)), COND)
+    return COND(VarPath((GetAttrKey("built"), *var.segments)))
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class Capacity:
     """`(|required| - |built|) / max|built|`, elementwise then the worst: negative when
     what this world asks for fits in what was built. Magnitudes, since a coil current
@@ -247,11 +235,12 @@ class Capacity:
 
 
 def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
-    """`var`'s readers rewired to `^built.<var>` (one `Cut` with the `BUILT` mint), so
-    what the rest of the machine is sized from is a boundary input fixed the day the
-    machine was built -- while the producer still computes what *this* world would ask
-    for, and one `Insert` states the two against each other as `.Built.<name>`, owning
-    the capacity inequality `^cond.built.<var>`.
+    """`var`'s readers rewired to `^built.<var>` (one `Cut` with the `BUILT_MINT`
+    naming), so what the rest of the machine is sized from is a boundary input fixed
+    the day the machine was built -- while the producer still computes what *this*
+    world would ask for, and one `Insert` states the two against each other as
+    `.Built.<name>`, owning the capacity inequality `^cond.built.<var>` (implemented by
+    `Capacity`).
 
     Returns the graph and a record: the ops, the readers rewired, the condition.
 
@@ -268,17 +257,8 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
     plan = (
         Ops(graph)
         + Cut(var, readers, BUILT_MINT)
-        + Insert(
-            PathMap((
-                (
-                    place,
-                    Implemented(
-                        Function((var, built_of(var)), (condition,)),
-                        Capacity(1.0 if check == "above" else -1.0),
-                    ),
-                ),
-            ))
-        )
+        + Insert(OrderedMap({place: Function((var, built_of(var)), (condition,))}))
+        + cx.implement({place: Capacity(1.0 if check == "above" else -1.0)})
     )
     return plan.graph, {
         "place": var.spelling,
@@ -290,23 +270,130 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
     }
 
 
+# ---------------------------------------------------------------- closing a condition
+
+CLOSE = NodePath((GetAttrKey("Close"),))
+"""Where a requirement closing an equality binds: `.Close.c2`."""
+
+
+def place_for(condition: VarPath) -> NodePath:
+    """`.Close.<the condition's last component>`."""
+    return NodePath((*CLOSE.segments, GetAttrKey(condition.spelling.split(".")[-1])))
+
+
+def closed_at(graph, condition: VarPath, var: VarPath) -> Ops:
+    """`graph` with `condition = 0` asserted at `place_for(condition)` and determined
+    by `var`: a requirement, and the `Determine` that makes it a root find over one
+    unknown."""
+    place = place_for(condition)
+    return (
+        Ops(graph)
+        + Insert(OrderedMap({place: cx.requirement(condition, cx.Eq)}))
+        + Determine(place, (var,))
+    )
+
+
+def cycle_of(graph, condition: VarPath, var: VarPath) -> tuple[NodePath, ...]:
+    """The component closing `condition` by `var` creates in `graph`: the root find and
+    every node its iteration would re-run."""
+    place = place_for(condition)
+    return next(c for c in closed_at(graph, condition, var).graph.graph.components if place in c)
+
+
+def analysis(configuration):
+    """The machine with every constraint body and the merit, each of its cycles closed
+    (`cx.mda`), nothing driven: what a closure's cycle is priced on."""
+    return (Ops(study.machine_model(configuration).graph) + cx.mda(study.RULE)).graph
+
+
+@dataclass(frozen=True)
+class Closed:
+    """The machine with `condition` closed by `var`: a root find at `place`, every
+    cycle on it closed and nested in it (`cx.mdf` with the root find as its top), the
+    rest closed on its own, every problem driven. The design is held -- it is a
+    boundary input -- so one run is PROCESS's machine at that design."""
+
+    configuration: object
+    graph: object
+    """The driven graph."""
+    pairings: dict
+    """`{condition: variable}` -- what closes what."""
+    place: NodePath
+    design: tuple
+    """The configuration's design minus the closing variable: what is held."""
+    report: dict
+    """`objective`, `equalities`, `inequalities` (places), `closing` (spellings)."""
+    given: OrderedMap
+    """The model's given values."""
+
+    @property
+    def closing(self) -> tuple[VarPath, ...]:
+        """The closing variables, in `pairings` order."""
+        return tuple(self.pairings.values())
+
+    def root_find_reports(self, out) -> dict:
+        """`{condition: (steps, converged, residual, unknown)}` out of a run's values."""
+        node = self.graph[self.place]
+        reported = dict(zip(node.driver.reports, (s[0] for s in node.reports), strict=True))
+        return {
+            cond: (
+                int(np.asarray(out[reported[Steps]])),
+                bool(np.asarray(out[reported[Converged]])),
+                float(np.asarray(out[cond])),
+                float(np.asarray(out[var])),
+            )
+            for cond, var in self.pairings.items()
+        }
+
+
+def close(configuration, condition: str, var: str, *, bracket=None) -> Closed:
+    """`configuration`'s machine with `condition` closed by `var` -- any boundary input
+    of the machine, not only a design variable. Answered by `SafeguardedNewtonDriver`,
+    or with `bracket` (`(lower, upper)`) by `BracketedRootDriver` from that bracket."""
+    model = study.machine_model(configuration)
+    cond, unknown = _var(model.graph, condition), _var(model.graph, var)
+    place = place_for(cond)
+    plan = closed_at(model.graph, cond, unknown) + cx.mdf(place, study.RULE)
+    if any(len(c) > 1 for c in plan.graph.graph.components if place not in c):
+        plan = plan + CloseFunctionalCycles(study.RULE, cx.closing)
+    chosen = study.drivers_for(plan.graph, skip=(place,))
+    chosen[place] = (
+        (PortRootFinding(reports=(Steps, Converged)), SafeguardedNewtonDriver())
+        if bracket is None
+        else (BracketedRootFinding(reports=(Steps, Converged), bracket=True),
+              BracketedRootDriver())
+    )
+    graph = study.driven(plan, chosen).graph
+    problem = configuration.problem
+    others = getattr(problem, "inequalities", ()) or getattr(problem, "evaluated", ())
+    merit = problem.minimise or problem.maximise
+    report = {
+        "objective": merit.outputs[0],
+        "equalities": tuple(held(c) for c in problem.equalities),
+        "inequalities": tuple(held(c) for c in others),
+        "closing": {cond.spelling: unknown.spelling},
+    }
+    design = tuple(p for p in problem.design if p != unknown)
+    return Closed(configuration, graph, {cond: unknown}, place, design, report, model.given)
+
+
 # ---------------------------------------------------------------- the steps
 
 
 def refusal(graph, condition: VarPath) -> str:
     """What the graph says when `condition` still has to hold and nothing is left to
-    move it: a problem holding it against no unknown, and the case cottax reports of
-    that node quoted verbatim -- the `RequirementUnanswered` naming it, matched **by kind**,
-    since the node is the trial insertion. The trial graph is thrown away -- this is a
-    question, not an op.
+    move it: a requirement holding it against no unknown, and the case cottax reports
+    of that node quoted verbatim -- the `RequirementUnanswered` naming it, matched **by
+    kind**, since the node is the trial insertion. The trial graph is thrown away --
+    this is a question, not an op.
 
     Raises
     ------
     StopIteration
         If the graph does not refuse, which would mean something can still move it.
     """
-    place = closing.place_for(condition)
-    trial = (Ops(graph) + Insert(PathMap(((place, Requirement(condition)),)))).graph
+    place = place_for(condition)
+    trial = (Ops(graph) + Insert(OrderedMap({place: cx.requirement(condition, cx.Eq)}))).graph
     return REFUSAL + next(
         v.message
         for v in violations(ExecutableGraph, trial)
@@ -329,28 +416,23 @@ def _var(graph, spelling: str) -> VarPath:
 
 
 def read_the_input_file(machine: str) -> Plan:
-    """Step 0. PROCESS's own question, verbatim: the `ixc` are what we choose, the
-    `icc` are what must hold, everything else is the file's.
+    """Step 0. PROCESS's own question, verbatim: the design variables are what we
+    choose, the constraints are what must hold, everything else is the file's
+    (`problem.problem_model`).
 
     No graph operation -- this is the baseline the paper reproduces.
     """
-    live = open_session(machine)
-    reference = live.reference
-    graph, _conditions, _n, report = mdf.mdf_graph(
-        cut_graph(without_excluded(live.machine_graph), SCHEME),
-        reference.icc,
-        reference.n_equality,
-        reference.i_figure_merit,
-        live.switch_values,
-    )
-    chosen = tuple(sand.iteration_variable_path(i).spelling for i in reference.ixc)
-    conditions = tuple(
-        c.spelling for c in (*report["equalities"], *report["inequalities"])
-    )
+    configuration = configurations.load(machine)
+    problem = configuration.problem
+    graph = problem_model(configuration).graph
+    chosen = tuple(p.spelling for p in problem.design)
+    inequalities = getattr(problem, "inequalities", ())
+    conditions = tuple(held(c).spelling for c in (*problem.equalities, *inequalities))
     values = dict(process_reference(machine)["x"])
-    # PROCESS's `x` covers its `ixc` only, and in three of the seven files the dial is
+    # PROCESS's `x` covers its design only, and in three of the seven files the dial is
     # not one: there it is the file's own number, given from the start.
-    values.setdefault(DIAL, float(reference.cold.get(*DIAL.lstrip(".").split("."))))
+    values.setdefault(DIAL, float(state_of(configuration).get(*DIAL.lstrip(".").split("."))))
+    merit = problem.minimise or problem.maximise
     plan = Plan(
         machine=machine,
         graph=graph,
@@ -365,10 +447,11 @@ def read_the_input_file(machine: str) -> Plan:
             ops=(),
             nodes=len(graph.nodes),
             note=(
-                f"{len(chosen)} chosen ({len(reference.ixc)} `ixc`), "
-                f"{len(report['equalities'])} equalities and "
-                f"{len(report['inequalities'])} inequalities, "
-                f"minimising {report['objective'].spelling}; "
+                f"{len(chosen)} chosen ({len(chosen)} `ixc`), "
+                f"{len(problem.equalities)} equalities and "
+                f"{len(inequalities)} inequalities, "
+                f"{'minimising' if problem.minimise is not None else 'maximising'} "
+                f"{merit.outputs[0].spelling}; "
                 f"`values` is PROCESS's own converged answer"
             ),
         )
@@ -419,17 +502,27 @@ def make_hfact_a_given(plan: Plan) -> Plan:
     )
 
 
+def _closure_ops(var: str) -> tuple[str, ...]:
+    """What `close` applies, as the recipe prints it."""
+    return (
+        f"Determine(Requirement({BALANCE}), ({var},)) at .Close.c2",
+        "MDF(.Close.c2)",
+    )
+
+
 def make_density_procedure(plan: Plan) -> Plan:
     """Step 2, ignited machines. The power balance is closed by the plasma density:
     at the operating temperature the plasma sits at whatever density balances its own
     heating.
 
-    One requirement `c2 = 0` `Determine`d by `nd_plasma_electrons_vol_avg`, nested on
-    its cycle.
-    Records the cycle size -- the price of this choice against the others.
+    One requirement `c2 = 0` `Determine`d by `nd_plasma_electrons_vol_avg`, and every
+    closure on its cycle nested in it (`MDF` with the root find as its top). Records
+    the cycle size -- the price of this choice against the others.
     """
-    built = closing.close(open_session(plan.machine), {BALANCE: DENSITY})
-    cycle = closing.cycle_of(plan.graph, _var(plan.graph, BALANCE), _var(plan.graph, DENSITY))
+    configuration = configurations.load(plan.machine)
+    built = close(configuration, BALANCE, DENSITY)
+    priced = analysis(configuration)
+    cycle = cycle_of(priced, _var(priced, BALANCE), _var(priced, DENSITY))
     return plan.having(
         Step(
             name="the density absorbs the power balance",
@@ -437,14 +530,11 @@ def make_density_procedure(plan: Plan) -> Plan:
                 "an ignited plasma is heated by its own alphas: at the operating "
                 "temperature it sits at whatever density balances its losses"
             ),
-            ops=(
-                f"Determine(Requirement({BALANCE}), ({DENSITY},)) at .Close.c2",
-                "nested_inside(.Close.c2)",
-            ),
+            ops=_closure_ops(DENSITY),
             nodes=len(built.graph.nodes),
             note=(
                 f"the cycle it opens: {len(cycle)} nodes"
-                f"{_prices(plan, DENSITY)}. {DENSITY} leaves `chosen` -- it is no "
+                f"{_prices(plan, priced, DENSITY)}. {DENSITY} leaves `chosen` -- it is no "
                 f"longer ours"
             ),
         ),
@@ -458,22 +548,16 @@ def make_heating_procedure(plan: Plan) -> Plan:
     """Step 2, driven machines. The power balance is closed by the auxiliary heating
     power: worse confinement simply means turning the heating up.
 
-    One requirement `c2 = 0` `Determine`d by `p_hcd_primary_extra_heat_mw`. The absorbing
-    variable is a plain input here, not an iteration variable -- PROCESS never treats
-    the heating as an unknown, which is exactly why this question is awkward to ask of
-    it.
+    One requirement `c2 = 0` `Determine`d by `p_hcd_primary_extra_heat_mw`, answered
+    in `HEATING_BRACKET`. The absorbing variable is a plain input here, not an
+    iteration variable -- PROCESS never treats the heating as an unknown, which is
+    exactly why this question is awkward to ask of it.
     """
-    live = open_session(plan.machine)
-    built = closing.close(
-        live,
-        {BALANCE: HEATING},
-        flatten=False,
-        driver=closing.bracketed(),
-        bounds={HEATING: HEATING_BRACKET},
-    )
-    cycle = closing.cycle_of(plan.graph, _var(plan.graph, BALANCE), _var(plan.graph, HEATING))
-    area, name = HEATING.lstrip(".").split(".")
-    nominal = float(live.reference.cold.get(area, name))
+    configuration = configurations.load(plan.machine)
+    built = close(configuration, BALANCE, HEATING, bracket=HEATING_BRACKET)
+    priced = analysis(configuration)
+    cycle = cycle_of(priced, _var(priced, BALANCE), _var(priced, HEATING))
+    nominal = float(state_of(configuration).get(*HEATING.lstrip(".").split(".")))
     return plan.having(
         Step(
             name="the heating power absorbs the power balance",
@@ -481,14 +565,11 @@ def make_heating_procedure(plan: Plan) -> Plan:
                 "a driven plasma is heated from outside: worse confinement means "
                 "turning the heating up, which is what an operator would do"
             ),
-            ops=(
-                f"Determine(Requirement({BALANCE}), ({HEATING},)) at .Close.c2",
-                "nested_inside(.Close.c2)",
-            ),
+            ops=_closure_ops(HEATING),
             nodes=len(built.graph.nodes),
             note=(
                 f"the cycle it opens: {len(cycle)} nodes"
-                f"{_prices(plan, HEATING)}. {HEATING} is a plain input in this file "
+                f"{_prices(plan, priced, HEATING)}. {HEATING} is a plain input in this file "
                 f"({nominal:g} MW), never an `ixc`: PROCESS cannot be asked this "
                 f"question without restating the problem"
             ),
@@ -499,22 +580,23 @@ def make_heating_procedure(plan: Plan) -> Plan:
     )
 
 
-def _prices(plan: Plan, chosen: str) -> str:
-    """What the other design variables would have cost, as `cycle_of` counts it: the
-    three cheapest cycles among them. The price of the choice against the others.
+def _prices(plan: Plan, priced, chosen: str) -> str:
+    """What the other design variables would have cost, as `cycle_of` counts it on
+    `priced`: the three cheapest cycles among them. The price of the choice against the
+    others.
     """
-    condition = _var(plan.graph, BALANCE)
-    priced = []
+    condition = _var(priced, BALANCE)
+    rows = []
     for spelling in plan.chosen:
         if spelling == chosen:
             continue
         try:
-            cycle = closing.cycle_of(plan.graph, condition, _var(plan.graph, spelling))
+            cycle = cycle_of(priced, condition, _var(priced, spelling))
         except (KeyError, StopIteration):
             continue
         if len(cycle) > 1:  # a cycle of one is the root find alone: it closes nothing
-            priced.append((len(cycle), spelling))
-    cheapest = ", ".join(f"{s} {n}" for n, s in sorted(priced)[:3])
+            rows.append((len(cycle), spelling))
+    cheapest = ", ".join(f"{s} {n}" for n, s in sorted(rows)[:3])
     return f" (the other candidates, cheapest first: {cheapest})" if cheapest else ""
 
 
@@ -528,48 +610,34 @@ def freeze_the_build(plan: Plan) -> Plan:
 
     Records both the cuts and -- the part PROCESS cannot answer -- which conditions are
     now *constants given the build*, decided the day the coil was wound, versus which
-    still depend on the swept dial.
+    still depend on the swept dial (`reach` from the dial, the one varying leaf).
     """
     built = plan.graph
-    _env, out = mdf.prime(built.problem, _seed(plan))  # the machine as PROCESS built it
-    driven, undriven = built.graph, built.problem.graph
-    split = stages.split(
-        driven,
-        stages.Leaves(belief=(_var(driven, DIAL),), operating=(), build=()),
-    )
-    hits, _confirmed = stages.violations(driven, split)
-    values, ops, conditions, held = dict(plan.values), [], [], []
-    for hit in hits:
-        var = next(v for v in driven.graph.owners if v.spelling == hit.place)
+    out = study.solve(built.graph, _inputs(plan))  # the machine as PROCESS built it
+    driven = built.graph
+    reached = set(driven.graph.reach([_var(driven, DIAL)]))
+    owners = driven.graph.owners
+    owned = {v.spelling: v for v in owners}
+    # Every claimed build output the dial still re-sizes, in spelling order.
+    hits = [owned[s] for s in sorted(CLAIMED_BUILD_OUTPUTS)
+            if s in owned and owners[owned[s]] in reached]
+    values, ops, conditions, held_ = dict(plan.values), [], [], []
+    for var in hits:
         # A lifetime must not fall short of what was assumed; every other built
         # quantity must not be exceeded by what this world asks for.
         check = "below" if var.spelling.split(".")[-1].startswith("life_") else "above"
         driven, record = freeze(driven, var, check)
-        undriven, _ = freeze(undriven, var, check)
         values[record["built"]] = float(np.asarray(out[var]))
         ops.extend(record["ops"])
         conditions.append(record["condition"])
-        held.append(record["built"])
-    schedule = Schedule(RunnableGraph(driven))
+        held_.append(record["built"])
     report = dict(
         built.report,
         inequalities=(*built.report["inequalities"], *conditions),
-        frozen={h: values[h] for h in held},
+        frozen={h: values[h] for h in held_},
         blocks=len(driven.graph.components),
     )
-    problem = replace(
-        built.problem,
-        graph=undriven,
-        eager=schedule,
-        traceable=schedule,
-        conditions=(*built.problem.conditions, *conditions),
-        n_inequality=built.problem.n_inequality + len(conditions),
-        report=report,
-    )
-    owners = driven.graph.owners
-    downstream = [
-        c for c in plan.conditions if split.stage[owners[_var(driven, c)]] is not stages.Stage.FIRST
-    ]
+    downstream = [c for c in plan.conditions if owners[_var(built.graph, c)] in reached]
     constant = [c for c in plan.conditions if c not in downstream]
     # Where the file fixed the dial, nothing refused at step 1 and **this** is the step
     # that breaks the equation count: with every design variable held, the power
@@ -589,14 +657,14 @@ def freeze_the_build(plan: Plan) -> Plan:
             note=(
                 f"{len(plan.chosen)} design variables held at PROCESS's answer; "
                 f"{len(hits)} build outputs were still being re-sized by the dial and "
-                f"are now cut and checked ({', '.join(h.place for h in hits)}). "
+                f"are now cut and checked ({', '.join(h.spelling for h in hits)}). "
                 f"Of the {len(plan.conditions)} conditions, {len(constant)} are "
                 f"constants given the build ({', '.join(c.split('.')[-1] for c in constant)}) "
                 f"and {len(downstream)} still depend on the dial "
                 f"({', '.join(c.rsplit('.', 1)[-1] for c in downstream)})" + drew
             ),
         ),
-        graph=replace(built, problem=problem),
+        graph=replace(built, graph=driven, report=report),
         values=values,
         chosen=(),
         conditions=(*plan.conditions, *(c.spelling for c in conditions)),
@@ -606,28 +674,42 @@ def freeze_the_build(plan: Plan) -> Plan:
 # ---------------------------------------------------------------- turning it
 
 
-def _seed(plan: Plan) -> dict:
-    """The env every solve of the built machine starts from: PROCESS's converged
-    design at each place the closed problem takes, the absorbing variable at its own
-    value, and every frozen place at what was built. Shared by `freeze_the_build`
+def _inputs(plan: Plan, dial: float | None = None) -> OrderedMap:
+    """A value at every boundary input of the built machine: PROCESS's converged design
+    at each design place held, the closing variable started from its own value (its
+    bracket, where it takes one), every frozen place at what was built, the dial at
+    `dial` (default its value), and everything else as `study.values` has it: the
+    file's state, the given values, else the cold state. Shared by `freeze_the_build`
     (which measures what was built) and `sweep` (which holds it).
     """
     built = plan.graph
-    env = closing.seed(
-        built,
-        built.session.reference.cold,
-        design_values=[plan.values[v.spelling] for v in built.design],
-        closing_values={
-            v.spelling: plan.values[v.spelling]
-            for v in built.closing
-            if v.spelling in plan.values
-        },
-    )
-    inputs = {v.spelling: v for v in built.problem.eager.inputs}
-    for spelling, value in plan.values.items():
-        if spelling.startswith("^built.") and spelling in inputs:
-            env[inputs[spelling]] = jnp.asarray(value, dtype=jnp.float64)
-    return env
+    graph, configuration = built.graph, built.configuration
+    node = graph[built.place]
+    given = dict(built.given)
+    for v in graph.graph.boundary_inputs:
+        if v.spelling in plan.values:
+            given[v] = jnp.asarray(plan.values[v.spelling], dtype=jnp.float64)
+    for role, slot in zip(node.driver.takes, node.data, strict=True):
+        for place, unknown in zip(slot, node.unknowns, strict=True):
+            if role is Start and unknown.spelling in plan.values:
+                given[place] = jnp.asarray(plan.values[unknown.spelling], dtype=jnp.float64)
+            elif role is BracketRole:
+                given[place] = jnp.asarray(HEATING_BRACKET, dtype=jnp.float64)
+    if dial is not None:
+        given[_var(graph, DIAL)] = jnp.asarray(float(dial), dtype=jnp.float64)
+    return study.values(graph, state_of(configuration), OrderedMap(given),
+                        _cold(configuration.name))
+
+
+_COLD: dict = {}
+
+
+def _cold(machine: str) -> dict:
+    """`study.cold_state`, once per machine."""
+    if machine not in _COLD:
+        _COLD.clear()
+        _COLD[machine] = study.cold_state(configurations.load(machine))
+    return _COLD[machine]
 
 
 def sweep(plan: Plan, dial: str, values) -> object:
@@ -638,8 +720,7 @@ def sweep(plan: Plan, dial: str, values) -> object:
     condition's residual, and which one binds first.
     """
     built = plan.graph
-    env = _seed(plan)
-    knob = next(v for v in built.problem.eager.inputs if v.spelling == dial)
+    assert dial == DIAL, "the built machine turns the one dial it was frozen for"
     # Not the closed ones: a condition a root find answers sits at zero by
     # construction, and `steps`/`converged` below are what says so.
     conditions = tuple(
@@ -651,9 +732,8 @@ def sweep(plan: Plan, dial: str, values) -> object:
     rows: list[dict] = []
     nominal: dict[str, float] = {}
     for value in values:
-        env[knob] = jnp.asarray(float(value), dtype=jnp.float64)
         try:
-            env, out = mdf.prime(built.problem, env)
+            out = study.solve(built.graph, _inputs(plan, value))
         except Exception as error:  # noqa: BLE001 -- a failed point is a row, not a crash
             rows.append({dial: float(value), "failed": f"{type(error).__name__}: {error}"})
             continue
@@ -688,44 +768,38 @@ def sweep(plan: Plan, dial: str, values) -> object:
 
 def redesign(plan: Plan, dial: str, values) -> object:
     """The control: PROCESS's own question at every value of the dial -- the whole
-    machine re-optimised, as `Scan` does. Always feasible, a different machine each
-    time. Run from the plan *before* `freeze_the_build`.
+    machine re-optimised under MDF (`study.study`), as `Scan` does. Always feasible, a
+    different machine each time. Run from the plan *before* `freeze_the_build`.
     """
     configuration = configurations.load(plan.machine)
     problem = configuration.problem
-    if problem.root_find:
+    if not isinstance(problem, Optimisation):
         return [{dial: float(v), "status": "no MDF arm: this file states a root find"}
                 for v in values]
-    # What is still ours to choose: `plan.chosen`, which is the file's `ixc` minus the
+    # What is still ours to choose: `plan.chosen`, which is the file's design minus the
     # dial -- so this must be the plan from *before* the build was frozen.
-    kept = tuple(
-        i for i in problem.ixc
-        if sand.iteration_variable_path(i).spelling in plan.chosen
-    )
+    kept = {p: b for p, b in problem.design.items() if p.spelling in plan.chosen}
+    cold = _cold(plan.machine)
     rows, previous = [], {}
     for value in values:
-        # The dial out of `ixc` and into the file's own numbers: PROCESS's question at
-        # this value of it, which is what `Scan` asks one point at a time. Each point
-        # starts from the last one that converged (PROCESS's `Scan` does the same), and
-        # `--no-redesign` skips the whole curve.
+        # The dial out of the design and into the file's own numbers: PROCESS's
+        # question at this value of it, which is what `Scan` asks one point at a time.
+        # Each point starts from the last one that converged (PROCESS's `Scan` does the
+        # same), and `--no-redesign` skips the whole curve.
         stated = {a: dict(fields) for a, fields in configuration.values.items()}
         for spelling, x in (*previous.items(), (dial, float(value))):
             where, field = spelling.lstrip(".").split(".")
             stated.setdefault(where, {})[field] = float(x)
-        live = open_session(
-            replace(
-                configuration,
-                values=stated,
-                problem=replace(problem, ixc=kept),
-            )
+        answer = study.study(
+            replace(configuration, values=stated, problem=replace(problem, design=kept)),
+            "MDF", cold,
         )
-        answer = live.solve("MDF")
-        design = dict(zip([sand.iteration_variable_path(i).spelling for i in kept],
-                          answer["x"], strict=True))
+        design = dict(zip([p.spelling for p in kept], answer["x"], strict=True))
         if answer["status"] == "converged":
-            # An `ixc` addressing one element of an array (`f_nd_impurity_electrons(13)`)
-            # is not a `{area: {field: value}}` place, so it stays at the file's value
-            # and only the scalars are carried forward.
+            # A design variable addressing one element of an array
+            # (`f_nd_impurity_electron_array[12]`) is not a `{area: {field: value}}`
+            # place, so it stays at the file's value and only the scalars are carried
+            # forward.
             previous = {s: x for s, x in design.items() if "[" not in s}
         rows.append({
             dial: float(value),
@@ -734,7 +808,6 @@ def redesign(plan: Plan, dial: str, values) -> object:
             "iterations": answer["iterations"],
             "max_eq": answer["max_eq"],
             "min_ie": answer["min_ie"],
-            "note": answer["note"],
             "x": design,
         })
     return rows

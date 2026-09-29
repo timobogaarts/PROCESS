@@ -1,12 +1,11 @@
-"""What the UQ drivers share: the environment pinned, PROCESS's own converged design,
+"""What the drivers here share: the environment pinned, PROCESS's own converged design,
 and where the reference run is cached.
 
-The drivers (`flexibility.py`, `flexibility_dsm.py`, `ga.py`) are thin command lines
-over the port (`functional_process.cottax.architectures`, `functional_process
-.configurations`): the physics, the graph operations and the statistics live there.
-What lives here is the one thing the port deliberately does not carry -- PROCESS
-itself in the loop (`process_reference`): one converged VMCON run per input file,
-which is the deterministic optimum every study starts from and is compared against.
+The drivers are thin command lines over the port (`functional_process.cottax.study`,
+`functional_process.configurations`). What lives here is the one thing the port
+deliberately does not carry -- PROCESS itself in the loop (`process_reference`): one
+converged VMCON run per input file, which is the deterministic optimum a study starts
+from and is compared against.
 """
 
 from __future__ import annotations
@@ -60,7 +59,7 @@ def process_reference(name: str = "stellarator_helias", use_cache: bool = True) 
     `seconds`. Run in-process (`process.main.SingleRun`, ~1-2 min for the
     stellarator) and cached as JSON under `CACHE_DIR`, keyed by the file's content.
 
-    The port's `session` is deliberately PROCESS-free; a comparison column against
+    The port's `study` is deliberately PROCESS-free; a comparison column against
     PROCESS is this directory's business, so the run lives here.
     """
     path = input_file(name)
@@ -71,9 +70,7 @@ def process_reference(name: str = "stellarator_helias", use_cache: bool = True) 
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
 
-    from functional_process.cottax.architectures.sand import (  # noqa: PLC0415
-        iteration_variable_path,
-    )
+    from functional_process.cottax.input.native import design_place  # noqa: PLC0415
     from process.core.solver.iteration_variables import (  # noqa: PLC0415
         ITERATION_VARIABLES,
     )
@@ -103,7 +100,7 @@ def process_reference(name: str = "stellarator_helias", use_cache: bool = True) 
     result = {
         "file": str(path),
         "ixc": ixc,
-        "x": {iteration_variable_path(i).spelling: value(i) for i in ixc},
+        "x": {design_place(i).spelling: value(i) for i in ixc},
         "iterations": int(data.numerics.n_solver_iterations),
         "convergence_parameter": float(data.globals.convergence_parameter),
         "outputs": {
@@ -126,21 +123,17 @@ def process_reference(name: str = "stellarator_helias", use_cache: bool = True) 
     return result
 
 
-def deterministic_values(live, pairing: str = "one") -> tuple[list, dict]:
-    """PROCESS's converged design for `live`'s configuration, as `ouu.two_stage` /
-    `closing.seed` take it: `design_values` (one per design place kept, `ixc` order
-    minus the closing variables of `kinds.PAIRINGS[pairing]`) and `closing_values`
-    (`{closing variable: value}`). The deterministic optimum every study here starts
-    from or is compared against.
+def deterministic_values(configuration, pairing: str = "one") -> tuple[list, dict]:
+    """PROCESS's converged design for `configuration`: `design_values` (one per design
+    place kept, in the configuration's order, minus the closing variables of
+    `kinds.PAIRINGS[pairing]`) and `closing_values` (`{closing variable: value}`). The
+    deterministic optimum a study starts from or is compared against.
     """
     from functional_process.configurations import kinds  # noqa: PLC0415
-    from functional_process.cottax.architectures.sand import (  # noqa: PLC0415
-        iteration_variable_path,
-    )
 
-    process = process_reference(live.name)
+    process = process_reference(configuration.name)
     closing = set(kinds.PAIRINGS[pairing].values())
-    design = [iteration_variable_path(i).spelling for i in live.reference.ixc]
+    design = [place.spelling for place in configuration.problem.design]
     return (
         [process["x"][v] for v in design if v not in closing],
         {v: process["x"][v] for v in closing},

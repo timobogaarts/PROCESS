@@ -39,8 +39,10 @@ functional_process/
                           input/indat.py, and checked against it.
 
   cottax/                 the models as cottax nodes, and the architectures over them
-    paths.py wraps.py stated.py queries.py   the declaration vocabulary: how a node
-                          spells its variables, declares its reads, states a value
+    paths.py stated.py    the declaration vocabulary: how a node spells its variables,
+                          states a value
+    problem.py study.py truth.py   a configuration's problem as a model; every
+                          architecture on it, and its runs; the state a solve starts from
     models/               one node per ported function, thin; mirrors models/. Plus
                           <subsystem>/namespace.py (the subsystem's slots),
                           total_process.py (StellaratorProcess / TokamakProcess: one
@@ -48,15 +50,9 @@ functional_process/
     input/                importer.py (read an IN.DAT), indat.py (the converter: its
                           switches -> the machine, and configuration_from_indat),
                           native.py (a configuration's solve state, no DataStructure)
-    architectures/        mda.py recipes.py (cutting the cycles), mdf.py idf.py sand.py
-                          (the optimisation architectures, as graph ops), evaluate.py
-                          (seeding and running a schedule), session.py (one input file,
-                          every architecture), drivers.py host_cache.py (the algorithms),
-                          closing.py stages.py beliefs.py ouu.py lift.py (an equality
-                          closed inside the MDA, the two-stage split, the belief draw,
-                          optimisation under uncertainty over them, and a sizing
-                          choice lifted out of a model into the optimiser)
-    visualization/        grouping.py render_xdsm.py: the grouped DSM the notebooks draw
+    architectures/        contracts.py drivers.py reading.py host_cache.py (the port's
+                          drivers, as cottax contracts and their implementations)
+    visualization/        grouping.py: the grouped DSM the notebooks draw
 
   tests/
     models/               one case per ported unit, mirroring models/; sample points
@@ -110,7 +106,7 @@ chosen directly -- PROCESS's integer switches exist only in the converter); `val
 `{area: {field: value}}`, the configuration's own numbers over `defaults.VALUES`;
 `problem` is the design variables, constraints, figure of merit, bounds and the static
 switch values the constraint nodes are bound with. `native.state_of` layers the values
-and applies `init.py`'s derivation rules; `native.reference_of` adds the problem.
+and applies `init.py`'s derivation rules.
 
 ## An architecture is a recipe
 
@@ -138,22 +134,12 @@ architecture absorbs it into the optimiser its conditions reach. The figure of m
 an ordinary node owning `.numerics.objf`. Neither carries a mint: a model's output is a
 place in the port's own namespace, and `^` is for what a rewrite fabricates.
 
-| | ops | in |
-|---|---|---|
-| MDA | `FixedPointCut` per loop-carried variable, `Nest` the models' own solves, Picard/Newton on each | `architectures.mda.cut_graph`, `architectures.recipes` |
-| MDF | the cut graph plus the constraint declarations, the objective node and one `Optimise`, the MDA nested inside it | `architectures.mdf.assemble` |
-| IDF | as MDF, then `Combine` the scheme's consistency statements into the optimiser; the models' own solves are nested in it | `architectures.idf.idf_graph` |
-| SAND | `Combine` every problem on the optimiser's cycle into it | `architectures.sand.assemble` |
-| closed MDA | `Insert` a `RootFind` per (equality, closing variable) inside the MDA -- nested, or flattened with the problems on its cycle into one square problem -- so the analysis answers the equality itself | `architectures.closing.close` |
-| two-stage OUU | the closed MDA (`ouu.CLOSURES`: `bracketed` by default -- the density's root find alone, the Picards nested, converging from any start -- or `flattened`) split by `reach` from the belief and operating leaves (`architectures.stages`: first stage hoisted, recourse batched over a Sobol' draw of `configurations.kinds.BELIEFS`), one node owning the CVaR statistics, an `Optimise` over the build variables under a boxed SLSQP | `architectures.ouu.two_stage`, `outer`, `solve` |
-| lifted sizing choice | `Undrive`, `Undetermine` and `Delete` a model's own root find, so its unknown is a design variable, and `Insert` one node stating its residual as an inequality on the safe side -- the winding pack: `wp_width_r_min` outer, `j_tf_wp <= f j_c` (PROCESS icc 33 / ixc 140) a chance constraint | `architectures.lift.lift`, `lift_winding_pack`; `ouu.two_stage(lifts=...)` |
-
-`architectures.session.open_session(name)` assembles each of the first four once and
-solves it from the configuration (`.mda()`, `.mdf()`, `.idf()`, `.sand()`); the notebooks
-under `architecture_examples/` spell the same recipes out step by step and check they
-build the same graph. The decision kinds the two-stage split reads (belief / build /
-operating per boundary input, the model outputs that are really build decisions, and
-what was decided about each) are data in `configurations/kinds.py`.
+`study.py` is every architecture on a configuration: `problem.problem_model` (the
+machine, each constraint and the merit, and the problem at `problem.TOP`) under
+`cx.mda` / `cx.mdf` / `cx.idf` / `cx.sand`, every cycle cut by `study.RULE`, every
+problem driven by the port's algorithm for its shape; `study.study(configuration, arm)`
+solves one arm cold. The decision kinds (belief / build / operating per boundary input,
+the model outputs that are really build decisions) are data in `configurations/kinds.py`.
 
 ## Conventions that hold
 

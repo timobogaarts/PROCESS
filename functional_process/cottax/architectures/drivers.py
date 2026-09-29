@@ -1455,7 +1455,7 @@ class BracketedRootDriver(GapsDriver[BracketedRootFinding]):
 
     Why not the safeguarded Newton: from a start far from the root a Newton, capped
     and backtracked or not, stalls where the residual flattens, and the closing root
-    find of `architectures.closing` is exactly that from an outer optimiser's far trial
+    find (`paper_tests/one_dial.py`) is exactly that from an outer optimiser's far trial
     design or a belief sample's far root -- 35-42 % of samples at the handoff's far
     design (`plans/handoff_2026-09-17.md`). A bracket is the one guarantee a 1-D root
     has that an n-D one does not: once the residual is known to change sign between

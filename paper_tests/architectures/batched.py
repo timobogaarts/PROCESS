@@ -11,7 +11,8 @@ fraction of its float32 rate).
     JAX_PLATFORMS=cpu $PY paper_tests/architectures/batched.py --configurations helias_5b
     JAX_PLATFORMS=cuda $PY paper_tests/architectures/batched.py --batches 1 16 256 4096 16384
 
-Each N is its own compilation; the time is the median of `--repeats` warm calls. Past
+The block is `study.assemble`'s arm posed on its own (`bench.block`), as its driver
+reads it. Each N is its own compilation; the time is the median of `--repeats` warm calls. Past
 `--chunk` designs the batch is `lax.map`ped over chunks of one `vmap`, so memory is
 bounded by the chunk and N by patience alone.
 """
@@ -23,54 +24,26 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax.flatten_util import ravel_pytree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-from cottax.execution.driver import Gaps  # noqa: E402
-from cottax.interfaces import PathMap, Schedule  # noqa: E402
 
-from functional_process.cottax.architectures.evaluate import (  # noqa: E402
-    ground_truth,
-    mda_env,
-    seed_block,
-)
-from functional_process.cottax.architectures.mda import seed_starts  # noqa: E402
+from functional_process import configurations  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
 
 BATCHES = (1, 16, 256, 4096)
 
 
-def block_of(live, arm, build, args):
-    """`(f, x)`: the arm's problem as `f(x) -> stacked conditions`, and its start."""
-    if live.root_find:
-        drive, schedule = build.in_graph.drive, Schedule(build.in_graph.blocking)
-    else:
-        drive, schedule = build.drive, build.solve_schedule
-    cold = live.reference.cold
-    stage = mda_env(live.reference, graph=live.machine_graph, data=cold, scheme=bench.SCHEMES[args.scheme])[1]
-    seeded, _ = seed_block(schedule, drive, cold, stage, design=set())
-    seeded.update(seed_starts(schedule, stage))
-
-    def value(v):
-        if v in stage:
-            return stage[v]
-        if v in seeded:
-            return seeded[v]
-        try:
-            return jnp.asarray(ground_truth(cold, v))
-        except (AttributeError, KeyError):
-            return jnp.asarray(0.0)
-
-    # As **gaps**, the way the arm's own driver reads the block: the seam hands both
-    # sides of every relation and `Gaps` is the level that subtracts.
-    cm = Gaps(drive.condition_map(PathMap({v: value(v) for v in drive.context})))
-    x, unravel = ravel_pytree(tuple(jnp.asarray(seeded[u]) for u in drive.unknowns))
+def block_of(assembled):
+    """`(f, x, nodes)`: the arm's problem as `f(x) -> stacked conditions` (as **gaps**,
+    the way the arm's own driver reads it), its start, and its cycle's size."""
+    gaps, x, unravel = bench.block(assembled)
 
     def f(flat):
-        return ravel_pytree(cm(*unravel(flat)))[0]
+        return ravel_pytree(gaps(*unravel(flat)))[0]
 
-    return f, x, len(drive.nodes)
+    return f, x, bench.block_nodes(assembled.graph)
 
 
 def designs(x, n):
@@ -101,9 +74,11 @@ def main():
     platform = jax.default_backend()
     rows = []
     for name in args.configurations:
-        live = bench.open_session(name, args)
-        for arm in [a for a in live.arms if a != "MDA" and (not args.arms or a in args.arms)]:
-            f, x, block = block_of(live, arm, live.assemble(arm), args)
+        configuration = configurations.load(name)
+        cold = study.cold_state(configuration)
+        for arm in [a for a in study.arms(configuration)
+                    if a != "MDA" and (not args.arms or a in args.arms)]:
+            f, x, block = block_of(study.assemble(configuration, arm, cold, **bench.how(args)))
             evaluate = jax.jit(chunked(f, args.chunk))
             jacobian = jax.jit(chunked(jax.jacfwd(f), args.chunk))
             for n in args.batches:

@@ -8,9 +8,9 @@ PROCESS number and its PROCESS label (`NumericsData.lablcc`,
 integer model switches that tell them apart, each value with the meaning PROCESS's
 own docstring gives it.
 
-The problem and the values are read off each configuration module's source, not
-imported from it: the tables need no machine tree, so they need no cottax, and do not
-move when cottax does.
+The problem and the values are each configuration's (`configurations.load`), read back
+into PROCESS's numbers (`ixc`, `icc`, `i_figure_merit`); a root find's design states no
+bounds, so its bounds are the file's (`native_bounds`), as PROCESS resolves them.
 
     $PY paper_tests/reference_problems.py          # -> out/reference_problems.{md,tex}
     $PY paper_tests/reference_problems.py --paper  # and the paper's copy, which
@@ -24,10 +24,16 @@ import ast
 import re
 from pathlib import Path
 
-import numpy as np
 
-from functional_process.configurations import NAMES, Problem
+from dataclasses import dataclass
+
+from functional_process import configurations as configurations_
+from functional_process.configurations import NAMES, Optimisation
 from functional_process.configurations.defaults import VALUES
+from functional_process.cottax.input.importer import read_indat
+from functional_process.cottax.input.native import design_place, native_bounds, native_state
+from functional_process.cottax.models import constraints
+from functional_process.cottax.models.constraints import held
 from functional_process.vocabulary.iteration_variables import ITERATION_VARIABLES
 from process.data_structure.numerics import FiguresOfMerit, NumericsData
 from process.data_structure.impurity_radiation_variables import ImpurityRadiationData
@@ -63,15 +69,59 @@ SWITCH_ENUMS = {
 """Switches whose values PROCESS names in an enum rather than in the docstring."""
 
 
+@dataclass(frozen=True)
+class Problem:
+    """A configuration's problem in PROCESS's numbers."""
+
+    ixc: tuple[int, ...]
+    bounds: dict[int, tuple[float, float]]
+    icc: tuple[int, ...]
+    """The equalities, then the inequalities."""
+    n_equality: int
+    i_figure_merit: int | None
+    """Negative where it is maximised; `None` for a root find."""
+
+    @property
+    def root_find(self) -> bool:
+        return self.i_figure_merit is None
+
+
+IXC = {design_place(i): i for i in ITERATION_VARIABLES}
+"""Each iteration variable by the place it lives at."""
+
+
+def _icc(constraint) -> int:
+    """The PROCESS number of a constraint declaration: `.constraints.c<n>`."""
+    return int(held(constraint).segments[-1].name.removeprefix("c"))
+
+
+def _figure_of_merit(problem: Optimisation) -> int:
+    """The PROCESS number of the merit `problem` minimises (or, negative, maximises):
+    `native.merit_declaration`, read backwards."""
+    merit = problem.minimise or problem.maximise
+    for fom in FiguresOfMerit:
+        names = (("CapitalCostDirect", "CapitalCostReactor") if fom is FiguresOfMerit.CAPITAL_COST
+                 else ("".join(w.capitalize() for w in fom.name.split("_")),))
+        if any(getattr(constraints, n, None) is merit for n in names):
+            return fom.value if problem.minimise is not None else -fom.value
+    raise KeyError(f"{merit!r} is no figure of merit")
+
+
 def stated(name: str) -> tuple[dict, Problem]:
-    """`values` and `problem` of configuration `name`, evaluated from its source."""
-    source = (CONFIGURATIONS / f"{name}.py").read_text()
-    got = {}
-    for node in ast.parse(source).body:
-        if isinstance(node, ast.Assign) and node.targets[0].id in {"values", "problem"}:
-            segment = ast.get_source_segment(source, node.value)
-            got[node.targets[0].id] = eval(segment, {"np": np, "Problem": Problem})
-    return got["values"], got["problem"]
+    """`values` and `problem` of configuration `name`."""
+    configuration = configurations_.load(name)
+    problem = configuration.problem
+    ixc = tuple(IXC[place] for place in problem.design)
+    if isinstance(problem, Optimisation):
+        bounds = {IXC[place]: tuple(b) for place, b in problem.design.items()}
+        inequalities, merit = problem.inequalities, _figure_of_merit(problem)
+    else:
+        imported = read_indat(str(ROOT / "tests/regression/input_files" / f"{name}.IN.DAT"))
+        resolved = native_bounds(ixc, imported, native_state(imported))
+        bounds = {IXC[place]: b for place, b in resolved.items()}
+        inequalities, merit = problem.evaluated, None
+    icc = tuple(_icc(c) for c in (*problem.equalities, *inequalities))
+    return configuration.values, Problem(ixc, bounds, icc, len(problem.equalities), merit)
 
 
 def field_docs() -> dict[str, str]:

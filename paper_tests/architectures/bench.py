@@ -1,5 +1,6 @@
 """What every script in this folder shares: the machines, the arms, the schemes, the
-optimisers, one timer, one csv writer.
+optimisers, one timer, one csv writer, and the optimiser's problem posed on its own
+(`block`). Every arm is `functional_process.cottax.study`'s.
 
 Run any script as a file, from the repo root, with the environment set (see README):
 
@@ -26,14 +27,19 @@ from datetime import date
 from pathlib import Path
 
 import jax  # noqa: E402
+import jax.numpy as jnp  # noqa: E402
+import numpy as np  # noqa: E402
 
 jax.config.update("jax_enable_x64", True)  # PROCESS is float64; the Picards NaN without it
 
 from cottax.mdao_architectures import GaussSeidel, Jacobi  # noqa: E402
+from jax.flatten_util import ravel_pytree  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
-from functional_process.cottax.architectures import mda, session  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
+from functional_process.cottax.architectures.contracts import Start  # noqa: E402
 from functional_process.cottax.architectures.drivers import SlsqpDriver, VmconDriver  # noqa: E402
+from functional_process.cottax.architectures.reading import Gaps  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -42,20 +48,21 @@ ROOT = HERE.parent.parent
 NAMES = tuple(configurations.NAMES)
 """The seven reference machines: five optimisations and two evaluations (root finds)."""
 
-ARMS = ("MDA", "MDF", "IDF", "SAND")
+ARMS = study.ARMS
 
 SCHEMES = {
-    "minimal": mda.SCHEME,                          # the default: fewest cut variables, exactly
-    "binding": mda.scheme(GaussSeidel()),           # PROCESS's own call order
-    "jacobi": mda.scheme(Jacobi()),                 # every coupling
+    "minimal": study.RULE,                          # the default: fewest cut variables, exactly
+    "binding": GaussSeidel(),                       # PROCESS's own call order
+    "jacobi": Jacobi(),                             # every coupling
 }
+"""How every cycle is cut: the `rule` `study.assemble` takes."""
 
 PROCESS_EPSFCN = 1.0e-3
 """PROCESS's own relative finite-difference perturbation (`data.numerics.epsfcn`,
 `configurations/defaults.py`), the step `Evaluators.fcnvmc2` differentiates with."""
 
 OPTIMISERS = {
-    "vmcon": None,                     # the port's VMCON (pyvmcon), the session's default
+    "vmcon": VmconDriver,              # the port's VMCON (pyvmcon), `study`'s default
     "slsqp": SlsqpDriver,              # scipy's SLSQP, exact jacobians
     # The same driver on the same block, differentiated the way PROCESS differentiates:
     # `x * (1 +/- epsfcn)` per coordinate, `2n` evaluations per iteration. The only
@@ -95,9 +102,31 @@ def arguments(description: str, *, optimiser: bool = True, batches: bool = False
     return p.parse_args()
 
 
-def open_session(name: str, args) -> session.Session:
-    optimiser = OPTIMISERS[getattr(args, "optimiser", "vmcon")]
-    return session.open_session(name, optimiser=optimiser, scheme=SCHEMES[args.scheme])
+def how(args) -> dict:
+    """`study.assemble`'s `rule` and `optimiser`, as `--scheme` and `--optimiser` say."""
+    return {"rule": SCHEMES[args.scheme],
+            "optimiser": OPTIMISERS[getattr(args, "optimiser", "vmcon")]}
+
+
+def is_root_find(configuration) -> bool:
+    return not isinstance(configuration.problem, configurations.Optimisation)
+
+
+def block(assembled) -> tuple:
+    """`(gaps, x, unravel)`: the optimiser's problem of an assembled arm as its driver
+    reads it (`Gaps`, every relation a gap), at the arm's own start, flattened."""
+    posed, context, data = study.posed(assembled.graph, assembled.inputs)
+    x, unravel = ravel_pytree(tuple(data[Start]))
+    # A numpy table as a jax array: closed over by a `jax.jit`, a numpy constant cannot
+    # be indexed by a traced index, which a model does.
+    context = jax.tree.map(lambda a: jnp.asarray(a) if isinstance(a, np.ndarray) else a,
+                           context)
+    return Gaps(posed, context), x, unravel
+
+
+def block_nodes(graph) -> int:
+    """What one iteration of the top re-runs: its cycle, the top with it."""
+    return len(graph.cycle_of(study.TOP))
 
 
 def timed(fn, *a, **kw):

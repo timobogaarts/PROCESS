@@ -1,6 +1,7 @@
 """Table 6 -- the same MDF under OpenMDAO, **on the port's own partition**: the
-optimiser block the port's `SlsqpDriver` answers (`Session.assemble("MDF").drive`),
-converted by `to_openmdao` -- one `ExplicitComponent` per model (its `compute` the
+optimiser block the port's `SlsqpDriver` answers (`study.assemble(..., "MDF",
+optimiser=SlsqpDriver)`), converted by `to_openmdao` (the port's converter: why not
+`cottax.export.openmdao` is in its docstring) -- one `ExplicitComponent` per model (its `compute` the
 port's jax body, jitted; its partials by `jax.jacfwd`, sparse and coloured), one
 `om.Group` per coupled block the port's schedule drives (a fixed point under
 `NonlinearBlockGS`, a root find under `NewtonSolver`, `DirectSolver` in each, at the
@@ -32,57 +33,26 @@ import sys
 import time
 from pathlib import Path
 
-import jax.numpy as jnp
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
 from to_openmdao import name, to_openmdao  # noqa: E402
 
-from functional_process.cottax.architectures.evaluate import (  # noqa: E402
-    ground_truth,
-    mda_env,
-    seed_block,
-)
-from functional_process.cottax.architectures.mda import seed_starts  # noqa: E402
+from functional_process import configurations  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
+from functional_process.cottax.architectures.drivers import SlsqpDriver  # noqa: E402
 
-__all__ = ["name", "problem_of", "values_of"]
+__all__ = ["name", "problem_of"]
 
 
-def values_of(live, build) -> dict:
-    """A value at every input of the MDF block (`drive.inputs`), as the port's own
-    solve is seeded (`iteration.optimiser_row`): the MDA's at the file's design, else
-    the seeded one, else the file's, else zero."""
-    drive, schedule = build.drive, build.solve_schedule
-    cold = live.reference.cold
-    stage = mda_env(live.reference, graph=live.machine_graph, data=cold, scheme=live.scheme)[1]
-    seeded, _ = seed_block(schedule, drive, cold, stage, design=set())
-    seeded.update(seed_starts(schedule, stage))
-
-    def value(v):
-        if v in stage:
-            return stage[v]
-        if v in seeded:
-            return seeded[v]
-        try:
-            return jnp.asarray(ground_truth(cold, v))
-        except (AttributeError, KeyError):
-            return jnp.asarray(0.0)
-
-    return {v: value(v) for v in drive.inputs}
-
-
-def problem_of(live, once=False):
-    """`(conversion, build)`: the port's MDF block as an OpenMDAO problem."""
-    build = live.assemble("MDF")
-    return to_openmdao(build.drive, values_of(live, build), once=once), build
-
-
-def open_session(name_, args):
-    """The session with the port's SLSQP on its optimiser, whatever `--optimiser`
-    says: the converted problem takes its scaling, tolerance and budget from it."""
-    args.optimiser = "slsqp"
-    return bench.open_session(name_, args)
+def problem_of(configuration, args, once=False):
+    """`(conversion, assembled)`: the port's MDF block as an OpenMDAO problem, with the
+    port's SLSQP on its optimiser whatever `--optimiser` says -- the converted problem
+    takes its scaling, tolerance and budget from it."""
+    assembled = study.assemble(configuration, "MDF", rule=bench.SCHEMES[args.scheme],
+                               optimiser=SlsqpDriver)
+    return to_openmdao(assembled.graph, assembled.inputs, once=once), assembled
 
 
 def sweeps(conv) -> tuple[int, str]:
@@ -96,10 +66,10 @@ def once(args):
     """`--once`: one pass over the components, warm -- `out/openmdao_once/`."""
     rows = []
     for name_ in args.configurations:
-        live = open_session(name_, args)
-        if live.root_find:
+        configuration = configurations.load(name_)
+        if bench.is_root_find(configuration):
             continue
-        (conv, _build), setup_s = bench.timed(problem_of, live, once=True)
+        (conv, _assembled), setup_s = bench.timed(problem_of, configuration, args, once=True)
         _, cold_s = bench.timed(conv.problem.run_model)
         pass_s = bench.median_seconds(conv.problem.run_model, args.repeats)
         rows.append({
@@ -118,10 +88,10 @@ def main():
         return once(args)
     rows = []
     for name_ in args.configurations:
-        live = open_session(name_, args)
-        if live.root_find:
+        configuration = configurations.load(name_)
+        if bench.is_root_find(configuration):
             continue
-        (conv, build), setup_s = bench.timed(problem_of, live)
+        (conv, _assembled), setup_s = bench.timed(problem_of, configuration, args)
         prob = conv.problem
         conv.restart()
         _, cold_s = bench.timed(prob.run_model)

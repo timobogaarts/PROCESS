@@ -90,7 +90,7 @@ def test_the_density_closure_is_one_determine(ignited):
     assert step.ops == (
         "Determine(Requirement(.constraints.c2), "
         "(.physics.nd_plasma_electrons_vol_avg,)) at .Close.c2",
-        "nested_inside(.Close.c2)",
+        "MDF(.Close.c2)",
     )
     assert ignited.graph.report["closing"] == {
         one_dial.BALANCE: one_dial.DENSITY
@@ -103,7 +103,7 @@ def test_the_heating_closure_is_one_determine_over_a_plain_input(driven):
     assert step.ops == (
         "Determine(Requirement(.constraints.c2), "
         "(.current_drive.p_hcd_primary_extra_heat_mw,)) at .Close.c2",
-        "nested_inside(.Close.c2)",
+        "MDF(.Close.c2)",
     )
     assert one_dial.HEATING not in one_dial.read_the_input_file(driven.machine).chosen
 

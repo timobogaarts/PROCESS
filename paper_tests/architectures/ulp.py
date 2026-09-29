@@ -16,13 +16,15 @@ the table's.
     $PY paper_tests/architectures/ulp.py --configurations stellarator_helias
     $PY paper_tests/architectures/ulp.py --configurations stellarator_helias --native --optimisers
 
-Writes `out/ulp/<configuration>.csv`, one row per (optimiser, arm, k). The port's
+The port's start is `study.assemble`'s, from the configuration's state with the design
+perturbed (`perturbed_state`); the graph is the unperturbed arm's, so only the values
+move. Writes `out/ulp/<configuration>.csv`, one row per (optimiser, arm, k). The port's
 rows are ~1.5 s each warm; a PROCESS row is a full PROCESS run (minutes).
 """
 
 from __future__ import annotations
 
-import copy
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -31,40 +33,48 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
 
+from functional_process import configurations  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
+from functional_process.cottax.input.native import state_of  # noqa: E402
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
 EPS = float(np.finfo(float).eps)
 ULPS = (0, 1, -1, 2, -2, 4, -4, 16, -16)
 
 
-def perturbed_cold(reference, k: int):
-    """`reference.cold` with every design variable at `x * (1 + k * eps)`."""
-    cold = copy.deepcopy(reference.cold)
-    for i in reference.ixc:
-        variable = ITERATION_VARIABLES[int(i)]
-        area, name = variable.module, variable.target_name or variable.name
-        value = cold.values[(area, name)]
-        if variable.array_index is not None:
+def perturbed_state(configuration, k: int):
+    """The configuration's state with every design variable at `x * (1 + k * eps)`."""
+    state = state_of(configuration)
+    for place in configuration.problem.design:
+        area, name, *index = place.segments
+        key = (area.name, name.name)
+        value = state.values[key]
+        if index:
             value = np.array(value, dtype=float)
-            value[variable.array_index] *= 1.0 + k * EPS
+            value[index[0].idx] *= 1.0 + k * EPS
         else:
             value = float(value) * (1.0 + k * EPS)
-        cold.values[(area, name)] = value
-        cold.areas[area].values[name] = value
-    return cold
+        state.values[key] = value
+        state.areas[area.name].values[name.name] = value
+    return state
 
 
 def port_rows(name: str, optimisers, arms, ulps) -> list[dict]:
     rows = []
+    configuration = configurations.load(name)
+    cold = study.cold_state(configuration)
     for optimiser in optimisers:
         args = type("Args", (), {"scheme": "minimal", "optimiser": optimiser})()
-        live = bench.open_session(name, args)
         for arm in arms:
-            if arm not in live.arms:
+            if arm not in study.arms(configuration):
                 continue
-            live.solve(arm)                                    # compile, off the clock
+            base = study.assemble(configuration, arm, cold, **bench.how(args))
+            study.answer(configuration, base)                  # compile, off the clock
             for k in ulps:
-                result, seconds = bench.timed(live.solve, arm, perturbed_cold(live.reference, k))
+                moved = study.assemble(configuration, arm, cold, state=perturbed_state(
+                    configuration, k), **bench.how(args))
+                result, seconds = bench.timed(
+                    study.answer, configuration, dataclasses.replace(base, inputs=moved.inputs))
                 rows.append({
                     "configuration": name, "optimiser": optimiser, "arm": arm, "k": k,
                     "status": result["status"], "iterations": result["iterations"],

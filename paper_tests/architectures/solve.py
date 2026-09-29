@@ -1,6 +1,8 @@
 """Table 3 -- the full solve of every arm on every machine, from the file's own values:
 wall time cold (assembly, compilation and the solve) and warm (the same solve again,
-everything compiled), the optimiser's iterations, and where it ended.
+everything compiled), the optimiser's iterations, and where it ended. Each arm is
+`study.assemble` (`assemble_s`: the graph built and valued, the MDA it starts from
+solved) then `study.answer`.
 
     $PY paper_tests/architectures/solve.py [--scheme minimal] [--optimiser vmcon|slsqp]
 
@@ -27,6 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
 
+from functional_process import configurations  # noqa: E402
+from functional_process.cottax import study  # noqa: E402
 from functional_process.cottax.architectures import drivers  # noqa: E402
 
 CALLS: Counter = Counter()
@@ -59,14 +63,16 @@ def main():
     args = bench.arguments(__doc__)
     rows = []
     for name in args.configurations:
-        live = bench.open_session(name, args)
-        for arm in live.arms:
-            _, assemble_s = bench.timed(live.assemble, arm)
-            cold, cold_s = bench.timed(live.solve, arm)      # compiles, then solves
+        configuration = configurations.load(name)
+        cold_state = study.cold_state(configuration)
+        for arm in study.arms(configuration):
+            assembled, assemble_s = bench.timed(
+                study.assemble, configuration, arm, cold_state, **bench.how(args))
+            _, cold_s = bench.timed(study.answer, configuration, assembled)  # compiles, then solves
             warm_times = []
             for _ in range(args.repeats):                     # the same solve, compiled
                 CALLS.clear()
-                warm, seconds = bench.timed(live.solve, arm)
+                warm, seconds = bench.timed(study.answer, configuration, assembled)
                 warm_times.append(seconds)
             warm_s = sorted(warm_times)[len(warm_times) // 2]
             model_s = CALLS["values_s"] + CALLS["jacobians_s"] + CALLS["fused_s"]
@@ -87,9 +93,8 @@ def main():
                 "jacobians": CALLS["jacobians"],
                 "fused": CALLS["fused"],
                 "model_s": model_s,                   # the seconds inside them
-                "note": warm.get("note", ""),
             })
-            print({k: v for k, v in rows[-1].items() if k != "note"})
+            print(rows[-1])
     bench.write("solve.py", rows, f"solve_{args.scheme}_{args.optimiser}")
 
 

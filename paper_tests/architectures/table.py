@@ -188,7 +188,7 @@ def main():
 
     # The root finds (`i_process_run_mode = -2`) under their own header: neither side
     # runs an optimiser. The port's MDF states the root find in the graph and a Newton
-    # (optimistix) answers it, whichever optimiser the session holds; PROCESS hands it
+    # (optimistix) answers it, whichever optimiser the study holds; PROCESS hands it
     # to `fsolve`, MINPACK's hybrid Powell. Its column is headed "it" like the others,
     # but what it holds is function evaluations -- its difference Jacobian's columns
     # included -- since MINPACK reports no iterations: the caption has to say so. The

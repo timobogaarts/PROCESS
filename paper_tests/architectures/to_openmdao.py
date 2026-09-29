@@ -1,23 +1,30 @@
 """A cottax optimiser block as an OpenMDAO problem, **on the block's own partition**.
 
-A stand-in for a future cottax feature ("export to OpenMDAO"): it reads nothing but a
-`cottax.interfaces.Drive` -- the step a `Schedule` executes for an `Optimise` statement
--- and the values at its inputs, and it builds nothing the schedule does not already
-say. So what differs between the port running that `Drive` and OpenMDAO running what
-this returns is OpenMDAO's execution (a Python call per component, host vectors, its
-solvers' own stopping tests) and nothing else: the bodies are the same functions, the
-blocks the same blocks, the problem the same problem.
+It reads the optimiser's `Solve` step of a graph `study` builds -- the problem, and
+the interior every iteration re-runs, as `study.posed` hands it to the driver -- and
+the values at its inputs, and it builds nothing the steps do not already say. So what
+differs between the port running that solve and OpenMDAO running what this returns is
+OpenMDAO's execution (a Python call per component, host vectors, its solvers' own
+stopping tests) and nothing else: the bodies are the same functions, the blocks the
+same blocks, the problem the same problem.
+
+**Not `cottax.export.openmdao`**, which does not serve here: it holds every computed
+place as a continuous variable and every non-floating input as a hashable discrete one,
+and PROCESS's machine computes an integer (`.power.i_div_primary_heat`: `NotFloating`)
+and reads an integer table (`.impurity_radiation.imp_indices`: `DiscreteUnhashable`);
+its SLSQP is unscaled, where the port's is scaled by the start; and it keeps no
+record of sweeps, colourings or zeroed partials, which `om_mdf.py` reports.
 
 The mapping, step by step:
 
-| the schedule                          | OpenMDAO                                             |
+| the steps                             | OpenMDAO                                             |
 |---------------------------------------|------------------------------------------------------|
-| the `Optimise` `Drive`                | the `Problem`: its unknowns the design variables, its objectives and relations the objective and constraints, `ScipyOptimizeDriver` |
-| its body, a `Schedule`                | the model: `NonlinearRunOnce` + `LinearRunOnce`, one subsystem per step in the schedule's order |
-| a `Call` step                         | one `Model` (`ExplicitComponent`) per node, in the block's topological order |
-| a `Drive` of a fixed point            | an `om.Group`: a `Solve` for the statement, then its body; `NonlinearBlockGS` + `DirectSolver` |
-| a `Drive` of a root find              | the same group under `NewtonSolver` + `DirectSolver` |
-| the `Drive`'s context                 | unconnected inputs (OpenMDAO's auto-IVC), set to the values handed in, never re-run |
+| the optimiser's `Solve`               | the `Problem`: its unknowns the design variables (bounded by its box), its objective and relations the objective and constraints, `ScipyOptimizeDriver` |
+| its interior's steps                  | the model: `NonlinearRunOnce` + `LinearRunOnce`, one subsystem per step in order |
+| a `Run` step                          | one `Model` (`ExplicitComponent`) for its node |
+| a nested `Solve` of a fixed point     | an `om.Group`: a `Solve` for the problem, then its interior; `NonlinearBlockGS` + `DirectSolver` |
+| a nested `Solve` of a root find       | the same group under `NewtonSolver` + `DirectSolver` |
+| what the interior reads from outside  | unconnected inputs (OpenMDAO's auto-IVC), set to the values handed in, never re-run |
 
 A fixed point's `Solve` sits first in its group and sets `u <- rhs`, so one Gauss-Seidel
 sweep of the group is one Picard iterate of the port's `PicardDriver` (`u_{k+1} =
@@ -27,16 +34,10 @@ change, relative to its first sweep's), which is part of what is being compared.
 
 **Scaling is the optimiser driver's.** `scaled` (the default) is `x / x_start` per
 design coordinate, `ref=x_start` here -- the port's `drivers.design_scale`, floor and
-all; `condition_scale` multiplies the named condition, `scaler=` here; `bounds` are the
-driver's own. The SQP is `ScipyOptimizeDriver(optimizer="SLSQP")` at the driver's
-`tolerance` and `max_iter`, so iteration counts compare with the port's `SlsqpDriver`.
-
-What it needs of cottax, beyond `cottax.interfaces`: `Start`
-(`cottax.execution.drivers.kinds`, the name a driver reads its starting value under) and
-three *port* driver fields read by duck type -- `bounds`, `scaled`, `condition_scale`,
-the optimiser's settings, which cottax's own `SLSQPDriver` does not state the same way.
-And the solver settings of a nested driver (`atol`, `rtol`, `max_steps`), read the same
-way. An export inside cottax would want those as declared driver data.
+all; `condition_scale` multiplies the named condition, `scaler=` here. The SQP is
+`ScipyOptimizeDriver(optimizer="SLSQP")` at the driver's `tolerance` and `max_iter`, so
+iteration counts compare with the port's `SlsqpDriver`. Those settings, and a nested
+driver's (`atol`, `rtol`, `max_steps`), are read off the implementations by duck type.
 """
 
 from __future__ import annotations
@@ -48,17 +49,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import openmdao.api as om
-from cottax.execution.drivers.kinds import Start
-from cottax.interfaces import (
-    Call,
-    Drive,
-    Le,
-    PathMap,
-    Schedule,
-    is_equalities,
-    is_fixed_point,
-    is_optimise,
-)
+from cottax import Le, OrderedMap, is_fixed_point
+from cottax.core import Run
+from cottax.core import Solve as SolveStep
+from cottax.interfaces import Max
+from cottax.relational import is_equalities
+
+from functional_process.cottax import study
+from functional_process.cottax.architectures.contracts import Start
+from functional_process.cottax.architectures.reading import Gaps
 
 # ---------------------------------------------------------------- names
 
@@ -79,10 +78,11 @@ class Conversion:
     """What `to_openmdao` built, and what it had to do to build it."""
 
     problem: om.Problem
-    drive: Drive
+    interior: object
+    """The optimiser's interior, a `CallableGraph`: what one of its iterations runs."""
     values: dict
-    """Every variable of the block at the start: the inputs handed in and the body's
-    outputs from one run of it."""
+    """Every variable of the block at the start: the inputs handed in and the
+    interior's outputs from one run of it."""
     design: tuple = ()
     objective: object = None
     equalities: tuple = ()
@@ -418,145 +418,152 @@ class Gap(om.ExplicitComponent):
 # ---------------------------------------------------------------- the walk
 
 
-def _driver_data(drive, v) -> bool:
-    """Whether `v` is read only as some nested driver's data (a `Start`)."""
-    return all(n in _problems(drive) for n in drive.subgraph.graph.readers.get(v, ()))
-
-
-def _problems(drive):
-    return {step.problem for step in _nested(drive.body)} | {drive.problem}
-
-
-def _nested(schedule):
-    """Every `Drive` inside `schedule`, at any depth, outermost first."""
-    for step in getattr(schedule, "steps", ()):
-        if isinstance(step, Drive):
+def _nested(graph):
+    """Every nested `Solve` step of `graph`, at any depth, outermost first."""
+    for step in graph.steps:
+        if isinstance(step, SolveStep):
             yield step
-            yield from _nested(step.body)
+            yield from _nested(step.interior)
 
 
-def _solvers(step, once, inner):
-    """The nonlinear and linear solver of a driven block, by what its statement is."""
+def _solvers(node, once, inner):
+    """The nonlinear and linear solver of a driven block, by what its problem is."""
     if once:
         return om.NonlinearRunOnce(), om.DirectSolver()
-    d = step.driver
+    d = node.implementation
     atol, rtol = getattr(d, "atol", 1e-10), getattr(d, "rtol", 1e-10)
     maxiter = int(getattr(d, "max_steps", 256))
     if inner is not None:
-        atol, rtol, maxiter = inner(step) if callable(inner) else inner
-    if is_fixed_point(step.statement):
+        atol, rtol, maxiter = inner(node) if callable(inner) else inner
+    if is_fixed_point(node.condition):
         nl = om.NonlinearBlockGS(maxiter=maxiter, atol=atol, rtol=rtol, iprint=-1, err_on_non_converge=False)
-    elif is_equalities(step.statement):
+    elif is_equalities(node.condition):
         nl = om.NewtonSolver(solve_subsystems=True, max_sub_solves=maxiter, maxiter=maxiter,
                              atol=atol, rtol=rtol, iprint=-1, err_on_non_converge=False)
     else:
-        raise NotImplementedError(f"{step.problem.spelling}: no OpenMDAO solver for {step.statement!r}")
+        raise NotImplementedError(f"no OpenMDAO solver for {node.condition!r}")
     return nl, om.DirectSolver()
 
 
-def _add_steps(group, prefix, body, conv, varying, once, inner, env):
-    steps = body.steps if isinstance(body, Schedule) else (body,)
-    for step in steps:
-        if isinstance(step, Drive):
+def _starts(node, env) -> tuple:
+    """Where the port's driver starts `node`'s unknowns: its `Start` data."""
+    if Start in node.driver.takes:
+        return tuple(env[p] for p in node.data[node.driver.takes.index(Start)])
+    return tuple(env[u] for u in node.unknowns)
+
+
+def _add_steps(group, prefix, graph, conv, varying, once, inner, env, read):
+    for step in graph.steps:
+        if isinstance(step, SolveStep):
+            node = graph[step.problem]
             sub = om.Group()
-            sub.nonlinear_solver, sub.linear_solver = _solvers(step, once, inner)
-            start = step.role_data(env).get(Start) if Start in step.driver.requires else None
-            if start is None:
-                start = tuple(env[u] for u in step.unknowns)
-            conv.starts.update(zip(step.unknowns, start, strict=True))
-            sub.add_subsystem(name(step.problem), Solve(statement=step.statement, values=conv.values, start=start),
-                              promotes=["*"])
+            sub.nonlinear_solver, sub.linear_solver = _solvers(node, once, inner)
+            start = _starts(node, env)
+            conv.starts.update(zip(node.unknowns, start, strict=True))
+            component = Solve(statement=node.condition, values=conv.values, start=start)
+            sub.add_subsystem(name(step.problem), component, promotes=["*"])
+            read.update(v for r in node.condition.relations for v in r.terms
+                        if v not in node.unknowns)
             path = f"{prefix}solve__{name(step.problem)}"
-            kind = "fixed point" if is_fixed_point(step.statement) else "root find"
+            kind = "fixed point" if is_fixed_point(node.condition) else "root find"
             conv.groups.append((path, kind, step.problem))
-            _add_steps(sub, f"{path}.", step.body, conv, varying, once, inner, env)
+            _add_steps(sub, f"{path}.", step.interior, conv, varying, once, inner, env, read)
             group.add_subsystem(path.rsplit(".", 1)[-1], sub, promotes=["*"])
-        elif isinstance(step, Call):
-            for n in step.subgraph.graph.topological_order:
-                group.add_subsystem(name(n), Model(node=step.subgraph[n], values=conv.values, varying=varying,
-                                                   record=conv), promotes=["*"])
-                conv.components += 1
+        elif isinstance(step, Run):
+            node = graph[step.node]
+            read.update(node.reads)
+            group.add_subsystem(name(step.node), Model(node=node, values=conv.values,
+                                                       varying=varying, record=conv),
+                                promotes=["*"])
+            conv.components += 1
         else:
             raise NotImplementedError(f"a {type(step).__name__} step")
 
 
-def to_openmdao(drive, values, *, bounds=None, once=False, inner=None, optimizer="SLSQP",
+def to_openmdao(graph, inputs, *, top=study.TOP, once=False, inner=None, optimizer="SLSQP",
                 tolerance=None, max_iter=None, hold_nonfinite_sinks=True) -> Conversion:
-    """`drive` -- the `Drive` of an `Optimise` statement, as a `Schedule` executes it --
-    as an OpenMDAO `Problem` on exactly its partition, set up and seeded.
+    """`top` -- the outermost optimiser of `graph`, as `study` builds it -- as an
+    OpenMDAO `Problem` on exactly its partition, set up and seeded.
 
-    `values` holds a value for every input of `drive` (`drive.inputs`: its context and
-    its driver's data, the starting design among it). The body is run once from there
-    (`drive.body`, jitted), which gives every other variable its starting value, its
+    `inputs` holds a value at every boundary input of `graph` (`study.assemble`'s). What
+    runs before `top` is run once and the problem posed (`study.posed`); the interior is
+    run once from its start, which gives every other variable its starting value, its
     shape and its dtype.
 
-    `bounds`: `((VarPath, lower, upper), ...)`, default the driver's own. `once`: every
-    solver `NonlinearRunOnce` -- one pass over the components, no block converged.
-    `inner`: `(atol, rtol, maxiter)` for every block instead of its driver's own.
-    `tolerance` / `max_iter`: the SQP's, default the driver's (`1e-8`, `100`).
+    `once`: every solver `NonlinearRunOnce` -- one pass over the components, no block
+    converged. `inner`: `(atol, rtol, maxiter)` for every block instead of its driver's
+    own. `tolerance` / `max_iter`: the SQP's, default the driver's (`1e-8`, `100`).
     `hold_nonfinite_sinks`: an output nothing reads that is not finite at the start (a
     tokamak quantity on a stellarator file) is held at zero, since OpenMDAO's
     convergence norms would read it and the port's never do.
     """
-    if not is_optimise(drive.statement):
-        raise ValueError(f"{drive.problem.spelling} states {drive.statement!r}, not an Optimise")
-    env = {v: jnp.asarray(values[v]) for v in drive.inputs}
-    start = drive.role_data(env).get(Start) if Start in drive.driver.requires else None
-    if start is None:
-        start = tuple(env[u] for u in drive.unknowns)
-    given = PathMap([*((v, env[v]) for v in drive.context), *zip(drive.unknowns, start, strict=True)])
-    ran = jax.jit(drive.body.run)(given) if isinstance(drive.body, Schedule) else drive.body(dict(given.items()))
-    env.update({v: jnp.asarray(x) for v, x in dict(ran.items()).items()})
-    conv = Conversion(problem=om.Problem(), drive=drive, values={v: np.asarray(x) for v, x in env.items()})
+    posed, context, data = study.posed(graph, inputs, top)
+    node, conditions = graph[top], posed.conditions
+    interior = conditions.interior
+    start = tuple(data[Start])
+    env = dict(zip(conditions.context_places, context, strict=True))
+    env.update(zip(node.unknowns, start, strict=True))
+    boundary = interior.graph.graph.boundary_inputs
+    ran = study.solve(interior.graph, OrderedMap((v, env[v]) for v in boundary))
+    env.update({v: jnp.asarray(x) for v, x in ran.items()})
+    conv = Conversion(problem=om.Problem(), interior=interior,
+                      values={v: np.asarray(x) for v, x in env.items()})
 
-    graph = drive.subgraph.graph
+    inner_graph = interior.graph.graph
     spelt: dict = {}
-    for v in graph.variables:
+    for v in (*inner_graph.variables, *node.condition.reads):
         if spelt.setdefault(name(v), v) != v:
             raise ValueError(f"{v.spelling} and {spelt[name(v)].spelling} spell the same OpenMDAO name {name(v)}")
 
-    design = tuple(drive.unknowns)
-    nested = [u for step in _nested(drive.body) for u in step.unknowns]
-    varying = set(design) | set(nested) | {o for n in graph.reach([*design, *nested]) for o in drive.subgraph[n].owns}
+    design = tuple(node.unknowns)
+    nested = [u for step in _nested(interior) for u in interior.graph[step.problem].unknowns]
+    varying = set(design) | set(nested) | {
+        o for n in inner_graph.reach([*design, *nested]) for o in interior.graph[n].owns}
     if hold_nonfinite_sinks:
-        conv.held = {o for o in graph.owned_variables
-                     if not graph.readers.get(o) and o in conv.values and not np.all(np.isfinite(conv.values[o]))}
+        conv.held = {o for o in inner_graph.owned_variables
+                     if not inner_graph.readers.get(o) and o not in node.condition.reads
+                     and o in conv.values and not np.all(np.isfinite(conv.values[o]))}
         for o in conv.held:
             conv.values[o] = np.zeros_like(np.asarray(conv.values[o], dtype=float))
 
     prob = conv.problem
-    top = prob.model
-    top.nonlinear_solver, top.linear_solver = om.NonlinearRunOnce(), om.LinearRunOnce()
-    _add_steps(top, "", drive.body, conv, varying, once, inner, env)
+    model = prob.model
+    model.nonlinear_solver, model.linear_solver = om.NonlinearRunOnce(), om.LinearRunOnce()
+    read: set = set()
+    _add_steps(model, "", interior, conv, varying, once, inner, env, read)
 
-    # The problem, as the driver reads it.
-    d = drive.driver
-    limits = {v: (lo, hi) for v, lo, hi in (getattr(d, "bounds", ()) if bounds is None else bounds)}
+    # The problem, as the driver reads it: the bounds are its box, the rest gaps.
+    d = node.implementation
+    gaps = Gaps(posed, context)
+    box = gaps.box(start)
     scaled = getattr(d, "scaled", True)
     by_place = {v: float(f) for v, f in getattr(d, "condition_scale", ())}
-    for u, first in zip(design, start, strict=True):
+    for u, first, lo, hi in zip(design, start, box.lower, box.upper, strict=True):
         x0 = np.asarray(first, dtype=float)
         ref = np.where(np.abs(x0) > 1e-12, x0, 1.0) if scaled else np.ones_like(x0)   # drivers.design_scale
         if np.any(ref < 0):
             raise NotImplementedError(f"{u.spelling} starts negative: the port swaps its bounds, OpenMDAO would not")
-        lo, hi = limits.get(u, (None, None))
-        top.add_design_var(name(u), lower=lo, upper=hi, ref=ref)
-    st = drive.statement
-    (objective,) = st.objectives
-    top.add_objective(name(objective), scaler=by_place.get(objective))
+        lower = None if lo is None else np.asarray(lo, dtype=float)
+        upper = None if hi is None else np.asarray(hi, dtype=float)
+        model.add_design_var(name(u), lower=lower, upper=upper, ref=ref)
+    (objective,) = node.condition.objectives
+    sign = -1.0 if objective.sense is Max else 1.0
+    model.add_objective(name(objective.place), scaler=sign * by_place.get(objective.place, 1.0))
+    read.add(objective.place)
     equalities, inequalities = [], []
-    for i, r in enumerate(st.relations):
+    for i, r in enumerate(gaps.relations):
         place = r.lhs if r.lhs is not None else r.rhs
+        read.update(r.terms)
         if r.rhs is None:
             response = name(r.lhs)
         else:
             response = f"gap{i}__{name(place)}"
-            top.add_subsystem(f"gap{i}", Gap(relation=(r.lhs, r.rhs), values=conv.values, out=response),
-                              promotes=["*"])
+            model.add_subsystem(f"gap{i}", Gap(relation=(r.lhs, r.rhs), values=conv.values, out=response),
+                                promotes=["*"])
         kind = {"upper": 0.0} if r.op is Le else {"equals": 0.0}
-        top.add_constraint(response, scaler=by_place.get(place), **kind)
+        model.add_constraint(response, scaler=by_place.get(place), **kind)
         (inequalities if "upper" in kind else equalities).append(response)
-    conv.design, conv.objective = tuple(name(u) for u in design), name(objective)
+    conv.design, conv.objective = tuple(name(u) for u in design), name(objective.place)
     conv.equalities, conv.inequalities = tuple(equalities), tuple(inequalities)
     prob.driver = om.ScipyOptimizeDriver(
         optimizer=optimizer,
@@ -565,10 +572,10 @@ def to_openmdao(drive, values, *, bounds=None, once=False, inner=None, optimizer
         disp=False,
     )
     prob.setup()
-    # The context OpenMDAO reads -- a nested driver's own start (`^guess.*`) is driver
-    # data the port reads and OpenMDAO does not: its solvers start from the outputs.
-    read = {v for n in graph.nodes for v in drive.subgraph[n].reads}
-    for v in (*drive.context, *design):
-        if v in read and not _driver_data(drive, v):
+    # The context OpenMDAO reads -- a nested driver's own start is driver data the port
+    # reads and OpenMDAO does not: its solvers start from the outputs.
+    produced = set(inner_graph.owned_variables)
+    for v in (*conditions.context_places, *design):
+        if v in read and v not in produced:
             prob.set_val(name(v), np.asarray(conv.values[v], dtype=float))
     return conv

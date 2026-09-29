@@ -8,11 +8,11 @@ directory once held (the census, timings, architectures, batching, close-conditi
 Sobol' and OUU studies and their outputs) was removed on 2026-09-20 and is in git
 history at `eae0ae45`.
 
-**The scripts are thin command-line drivers over the port.** The physics, the graph
-operations and the batched programs live in `functional_process/cottax/architectures/`
-(`session`, `closing`, `lift`, `stages`, `beliefs`, `ouu`) and
-`functional_process/configurations/kinds.py` (the decision kinds and the belief
-table); what lives here is the command line, the statistics, the figures, and the one
+**The scripts are thin command-line drivers over the port.** The physics and the
+problem live in `functional_process/cottax/` (`problem.py`: the file's problem;
+`study.py`: every architecture on a configuration, and the runs) and
+`functional_process/configurations/`; what lives here is the command line, the
+statistics, the figures, and the one
 thing the port deliberately does not carry -- PROCESS itself in the loop
 (`common.process_reference`: one converged VMCON run, cached under
 `~/.cache/functional_process/`, which is the deterministic design every study starts
@@ -28,29 +28,21 @@ from and is compared against).
 
 ```bash
 PY=~/miniconda3/envs/process_port/bin/python      # see ../CLAUDE.md for the env
-SC=<scratch>; mkdir -p $SC/cottax_head && git -C ~/jaxgraph archive 6b1d540 src | tar -x -C $SC/cottax_head
-export JAX_PLATFORMS=cpu PYTHONPATH=~/PROCESS:$SC/cottax_head/src:~/PROCESS/paper_tests
+SC=<scratch>; mkdir -p $SC/cottax_head && git -C ~/jaxgraph archive HEAD src | tar -x -C $SC/cottax_head
+export JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 PYTHONPATH=$SC/cottax_head/src:~/PROCESS
 cd ~/PROCESS
 ```
 
-The `PYTHONPATH` line pins cottax at the commit the port tracks (`6b1d540`);
-`~/jaxgraph`'s working tree has moved past it (`Schedule()` takes an
-`ExecutableGraph` there) and the editable install would pick that up.
+The `PYTHONPATH` line pins cottax at its last commit, not `~/jaxgraph`'s working tree.
 
 ## One dial in, one dial out (`one_dial.py`)
 
 ```bash
-PY=~/miniconda3/envs/process_port/bin/python
-export JAX_PLATFORMS=cpu PYTHONPATH=~/PROCESS:~/jaxgraph/src
-cd ~/PROCESS
 $PY paper_tests/one_dial.py                                   # both, ~5 min
 $PY paper_tests/one_dial.py --machine stellarator_helias      # ignited: the density absorbs
 $PY paper_tests/one_dial.py --machine low_aspect_ratio_DEMO   # driven: the heating absorbs
 ```
 
-**Not the `6b1d540` pin quoted above**: that commit predates `cottax.pytree`, which the
-port now imports. `one_dial.py` runs against `~/jaxgraph` at `6488a1c` or later -- the
-editable install, or a worktree of it where that repository is being edited elsewhere.
 Both machines in one process clears jax's caches between them; without that, two
 configurations' worth of jitted schedules is already tight on a 15 GB laptop.
 
@@ -59,7 +51,8 @@ reach the same place by different routes -- which is why both are shown. The rec
 four named procedures, each `Plan -> Plan`, each recording the graph operations it
 applied:
 
-0. **read the input file** -- PROCESS's question verbatim, no operation.
+0. **read the input file** -- PROCESS's question verbatim (`problem.problem_model`), no
+   operation.
 1. **make `hfact` a given** -- it leaves `chosen`. On `stellarator_helias` `hfact` is
    `ixc = 10`, active and converged to 1.056 *inside* its bound, so giving it away is
    what over-determines the problem and the graph refuses:
@@ -67,14 +60,15 @@ applied:
    driver can move it -- Determine it by a variable on its cycle, or drop it`. On
    `low_aspect_ratio_DEMO` `hfact` is fixed in the file at 1.1 and was never an `ixc`,
    so **this step is honestly a no-op** and says so; nothing refuses yet.
-2. **name what absorbs it** -- one `Insert(RootFind((c2,), (var,)))`, nested on its
-   cycle: the density on the ignited machine (a 23-node cycle) and the heating power on
+2. **name what absorbs it** -- one requirement `c2 = 0` `Determine`d by the variable,
+   the top of `cx.mdf` over the machine (`study.machine_model`), so every closure on its
+   cycle is nested in it: the density on the ignited machine (a 23-node cycle) and the heating power on
    the driven one (6 nodes, and never an `ixc` in any file -- PROCESS cannot be asked
    this without restating the problem). `CLOSURE` is that decision, per configuration,
    in a table a reader can argue with.
 3. **freeze the build** -- every design variable held at PROCESS's answer, and every
-   claimed build output still downstream of the dial (`stages.split` with `hfact` the
-   one varying leaf) `Cut` to `^built.*` and checked against what this world asks for.
+   claimed build output still downstream of the dial (`reach` from `hfact`) `Cut` to
+   `^built.*` and checked against what this world asks for.
    On `low_aspect_ratio_DEMO` **this** is the step that breaks the equation count, and
    it draws the same refusal there. That is the sharper form of the point: it is
    freezing the design, not the dial, that breaks the arithmetic a systems code rests
@@ -113,11 +107,11 @@ limit *by construction* the day it is frozen, so those are reported apart
 (`frozen_tight_by_construction`) rather than counted as tight conditions.
 
 Two things the sweep does not hide. The heating closure is answered by
-`closing.bracketed()` in `[-25, 1000]` MW rather than the default Newton, because a
+`BracketedRootDriver` in `[-25, 1000]` MW rather than the safeguarded Newton, because a
 Newton scales its step by the unknown it moves and a file may install no heating at all;
 the bracket's bottom is negative because the root is then *at* zero and a bracket has to
 contain it. And the control curve is one cold VMCON per point (warm-started from the
-last point that converged, as `Scan` does): on `low_aspect_ratio_DEMO` it converges only
+last point that converged, as `Scan` does; `study.study(..., "MDF")`): on `low_aspect_ratio_DEMO` it converges only
 down to `hfact = 1.089` and reports `no-step` below that, so the figure says where the
 control stops instead of drawing a curve that is not there.
 
