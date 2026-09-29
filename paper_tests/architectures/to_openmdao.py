@@ -27,7 +27,7 @@ The mapping, step by step:
 | what the interior reads from outside  | unconnected inputs (OpenMDAO's auto-IVC), set to the values handed in, never re-run |
 
 A fixed point's `Solve` sits first in its group and sets `u <- rhs`, so one Gauss-Seidel
-sweep of the group is one Picard iterate of the port's `PicardDriver` (`u_{k+1} =
+sweep of the group is one Picard iterate of cottax's `Picard` (`u_{k+1} =
 g(u_k)`, the body run once in its order). The tolerances are the port driver's own
 (`atol`, `rtol`, its step budget); the *norms* are OpenMDAO's (the 2-norm of the group's
 change, relative to its first sweep's), which is part of what is being compared.

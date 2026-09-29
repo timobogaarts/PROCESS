@@ -1,9 +1,6 @@
-"""Tests for `drivers.PicardDriver`.
-
-Two levels: a synthetic contraction mapping (exact, hand-computable fixed point --
-proves the iteration mechanics themselves, independent of any real node), and a fixed
-point declared through the model surface, driven end to end through cottax's `run`
-(proves genuine integration, not just the driver in isolation).
+"""The port's drivers: a fixed point declared through the model surface under the port's
+contract, answered by cottax's `Picard`, end to end through `run`; VMCON's design
+scaling; and the SQP drivers' refusal of an objective the design cannot move.
 """
 
 import cottax.interfaces as cx
@@ -13,6 +10,7 @@ import pytest
 from cottax.core.frozen import OrderedMap
 from cottax.core.plan import Plan
 from cottax.execution import CallableGraph, Inputs, run
+from cottax.jax_execution.solvers import Picard
 from cottax.interfaces import N, Scope, V
 from cottax.relational import Eq, Relation
 from jax.tree_util import GetAttrKey
@@ -21,59 +19,11 @@ from functional_process.cottax.architectures.contracts import (
     PortFixedPointIteration,
     Start,
 )
-from functional_process.cottax.architectures.drivers import (
-    PicardDriver,
-    _refuse_inert_objective,
-)
+from functional_process.cottax.architectures.drivers import _refuse_inert_objective
 
 toy = Scope(V.toy, GetAttrKey)
 """A synthetic area for the contraction toy problem -- not a `DataStructure` area, so
 it is a bare `Scope` rather than one off `functional_process.cottax.paths`."""
-
-
-class _Contraction:
-    """A minimal stand-in for the reading `PicardDriver.solve` is handed (a
-    `NextValues`): called at the unknowns it gives where each goes next, and `.unknowns`
-    is what the missing-`Start` message reads, so a plain callable with that much is
-    enough to test the iteration in isolation from any real graph.
-    """
-
-    unknowns = (toy.place("u"),)
-
-    def __call__(self, u):
-        # Fixed point at u = 6.0 (u = 0.5u + 3 => u = 6), |derivative| = 0.5 < 1, so
-        # Picard converges geometrically from any start.
-        return (0.5 * u + 3.0,)
-
-
-def test_picard_driver_converges_on_a_contraction_mapping():
-    """`u = 0.5u + 3` has the exact fixed point `u = 6`; Picard must find it."""
-    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_steps=100)
-    result, _steps = driver.solve(_Contraction(), {Start: (jnp.asarray(0.0),)})
-    assert float(result) == pytest.approx(6.0, abs=1e-8)
-
-
-def test_picard_driver_converges_regardless_of_starting_point():
-    """A genuine contraction (|derivative| < 1) reaches the same fixed point from
-    any starting guess, not just a convenient one.
-    """
-    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_steps=100)
-    for start in (0.0, 100.0, -50.0):
-        result, _steps = driver.solve(_Contraction(), {Start: (jnp.asarray(start),)})
-        assert float(result) == pytest.approx(6.0, abs=1e-8)
-
-
-def test_picard_driver_requires_a_start():
-    """Same requirement and same reasoning as `NewtonDriver`: no shape to guess a
-    pytree from, so a missing start is a clear error, not a silent default.
-
-    Spelled as an empty driver-data mapping: a run always supplies the contract's
-    `Start`, so the driver's own `solve` handed `{}` is the one path that still reaches
-    the refusal.
-    """
-    driver = PicardDriver()
-    with pytest.raises(ValueError, match="needs a starting value"):
-        driver.solve(_Contraction(), {})
 
 
 def relax(u, k):
@@ -102,7 +52,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     driven = (
         Plan(graph)
         + cx.assign(graph, problem, PortFixedPointIteration())
-        + cx.implement({problem: PicardDriver(rtol=1e-12, atol=1e-14)})
+        + cx.implement({problem: Picard(rtol=1e-12, atol=1e-14)})
     ).graph
     # The start is read at the problem's own `Start` place (`^start.toy.u`), not at the
     # unknown's name: writing the latter would be seeding the answer.

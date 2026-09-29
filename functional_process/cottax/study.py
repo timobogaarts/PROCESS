@@ -30,6 +30,7 @@ from cottax.core.plan import Plan, Rename
 from cottax.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
+from cottax.jax_execution.solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
     CloseFunctionalCycles,
@@ -53,8 +54,6 @@ from functional_process.cottax.architectures.contracts import (
 )
 from functional_process.cottax.architectures.drivers import (
     MdfNewtonDriver,
-    PicardDriver,
-    SeededNewtonDriver,
     SweepDriver,
     VmconDriver,
 )
@@ -102,7 +101,12 @@ def machine_model(configuration: Configuration):
 # ---------------------------------------------------------------- the drivers
 
 
-def drivers_for(graph, fixed_point=PicardDriver, skip=()):
+def picard():
+    """cottax's Picard at the port's tolerances."""
+    return Picard(rtol=1e-6, atol=1e-8)
+
+
+def drivers_for(graph, fixed_point=picard, skip=()):
     """`{problem: (contract, implementation)}` for every problem in `graph` not yet
     driven and not in `skip`, by its shape."""
     chosen = {}
@@ -112,7 +116,7 @@ def drivers_for(graph, fixed_point=PicardDriver, skip=()):
         if is_fixed_point(node):
             chosen[name] = (PortFixedPointIteration(), fixed_point())
         elif is_equalities(node):
-            chosen[name] = (PortRootFinding(), SeededNewtonDriver())
+            chosen[name] = (PortRootFinding(), Newton())
         else:
             raise TypeError(f"{name.spelling}: no default driver for {node!r}")
     return chosen
@@ -246,7 +250,7 @@ def cold_state(configuration: Configuration) -> dict:
     return {_place(k): v for k, v in out.items()}
 
 
-def mda_graph(model, rule=RULE, fixed_point=PicardDriver):
+def mda_graph(model, rule=RULE, fixed_point=picard):
     """`model` with every cycle closed by `rule` and every problem driven."""
     plan = Plan(model.graph) + cx.mda(rule)
     return driven(plan, drivers_for(plan.graph, fixed_point)).graph
