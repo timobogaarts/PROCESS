@@ -7,7 +7,8 @@ Converted from `tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` by
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem
+from cottax.interfaces import V, place
+from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailDisplacementsPerAtom,
 )
@@ -56,6 +57,34 @@ from functional_process.cottax.models.build import (
 )
 from functional_process.cottax.models.buildings.buildings import Bldgs, TfCoilEnvelope
 from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.constraints import (
+    Constraint1,
+    Constraint11,
+    Constraint13,
+    Constraint15,
+    Constraint16,
+    Constraint24ThermalBeta,
+    Constraint26,
+    Constraint27,
+    Constraint2HeatedCoreRadiation,
+    Constraint30,
+    Constraint31,
+    Constraint32,
+    Constraint33,
+    Constraint34,
+    Constraint35,
+    Constraint36,
+    Constraint5Greenwald,
+    Constraint60,
+    Constraint62,
+    Constraint65,
+    Constraint68FixedQ95,
+    Constraint72Free,
+    Constraint8,
+    Constraint81,
+    Constraint90BlanketCycles,
+    PulseLength,
+)
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
@@ -366,7 +395,6 @@ from functional_process.cottax.models.vacuum.vacuum import (
     VacuumOld,
     VacuumVesselEllipticalSingleNull,
 )
-from functional_process.vocabulary.enums import PFConductorModel
 
 machine = TokamakProcess(
     initialisation=Initialisation(
@@ -965,75 +993,53 @@ values = {
     },
 }
 
-problem = Problem(
-    ixc=(2, 3, 4, 5, 6, 13, 16, 18, 29, 37, 41, 44, 56, 57, 58, 59, 109, 122, 135),
-    icc=(
-        1,
-        2,
-        11,
-        30,
-        5,
-        8,
-        13,
-        15,
-        16,
-        24,
-        26,
-        27,
-        31,
-        32,
-        33,
-        34,
-        35,
-        36,
-        60,
-        62,
-        65,
-        68,
-        72,
-        81,
-        90,
+problem = Optimisation(
+    design={
+        place(V.physics.b_plasma_toroidal_on_axis): (0.01, 20.0),
+        place(V.physics.rmajor): (8.0, 8.6),
+        place(V.physics.temp_plasma_electron_vol_avg_kev): (5.0, 150.0),
+        place(V.physics.beta_total_vol_avg): (0.001, 1.0),
+        place(V.physics.nd_plasma_electrons_vol_avg): (2e19, 1e21),
+        place(V.build.dr_tf_inboard): (0.3, 5.0),
+        place(V.build.dr_cs): (0.1, 10.0),
+        place(V.physics.q95): (3.6, 50.0),
+        place(V.build.dr_bore): (0.1, 10.0),
+        place(V.pf_coil.j_cs_flat_top_end): (100000.0, 100000000.0),
+        place(V.pf_coil.f_j_cs_start_pulse_end_flat_top): (0.001, 1.0),
+        place(V.physics.f_c_plasma_non_inductive): (0.001, 1.0),
+        place(V.tfcoil.t_tf_superconductor_quench): (0.1, 100.0),
+        place(V.tfcoil.dr_tf_nose_case): (0.05, 1.0),
+        place(V.tfcoil.dx_tf_turn_steel): (0.008, 0.1),
+        place(V.tfcoil.f_a_tf_turn_cable_copper): (0.5, 0.94),
+        place(V.physics.f_nd_alpha_thermal_electron): (0.05, 0.15),
+        place(V.pf_coil.f_a_cs_turn_steel): (0.001, 0.95),
+        place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (1e-08, 0.01),
+    },
+    equalities=(Constraint1, Constraint2HeatedCoreRadiation, Constraint11, Constraint30),
+    inequalities=(
+        Constraint5Greenwald,
+        Constraint8,
+        Constraint13,
+        Constraint15,
+        Constraint16,
+        Constraint24ThermalBeta,
+        Constraint26,
+        Constraint27,
+        Constraint31,
+        Constraint32,
+        Constraint33,
+        Constraint34,
+        Constraint35,
+        Constraint36,
+        Constraint60,
+        Constraint62,
+        Constraint65,
+        Constraint68FixedQ95,
+        Constraint72Free,
+        Constraint81,
+        Constraint90BlanketCycles,
     ),
-    n_equality=4,
-    i_figure_merit=-14,
-    bounds={
-        2: (0.01, 20.0),
-        3: (8.0, 8.6),
-        4: (5.0, 150.0),
-        5: (0.001, 1.0),
-        6: (2e19, 1e21),
-        13: (0.3, 5.0),
-        16: (0.1, 10.0),
-        18: (3.6, 50.0),
-        29: (0.1, 10.0),
-        37: (100000.0, 100000000.0),
-        41: (0.001, 1.0),
-        44: (0.001, 1.0),
-        56: (0.1, 100.0),
-        57: (0.05, 1.0),
-        58: (0.008, 0.1),
-        59: (0.5, 0.94),
-        109: (0.05, 0.15),
-        122: (0.001, 0.95),
-        135: (1e-08, 0.01),
-    },
-    switches={
-        "bkt_life_csf": 1,
-        "i_beta_component": 1,
-        "i_cp_lifetime": 0,
-        "i_density_limit": 7,
-        "i_plant_availability": 0,
-        "i_plasma_ignited": 0,
-        "i_q95_fixed": 1,
-        "i_rad_loss": 1,
-        "i_tf_bucking": 1,
-        "i_tf_inside_cs": 0,
-        "i_tf_sup": 1,
-        "ibkt_life": 1,
-        "ireactor": 1,
-        "istell": 0,
-        "itart": 0,
-    },
+    maximise=PulseLength,
 )
 
 CONFIGURATION = Configuration(

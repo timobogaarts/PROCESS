@@ -61,7 +61,7 @@ DuctDiameterRootFind = vacuum.residual(_duct_diameter_root_find, "d_duct")
 
 
 # cottax node: the two inequality residuals, each held `<= 0`.
-DuctFeasibilityConditions = vacuum.inequality(
+DuctFeasibilityConditions = vacuum.inequality_constraint(
     calculate_duct_feasibility_conditions,
     "duct_fits_residual",
     "pumping_speed_floor_residual",

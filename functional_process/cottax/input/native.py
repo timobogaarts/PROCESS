@@ -1,9 +1,10 @@
 """The solve environment, built from a configuration alone -- no `DataStructure`.
 
 `state_of(configuration)` layers the configuration's own values over
-`configurations.defaults.VALUES` and applies `DERIVATIONS`, `init.py`'s own rules;
-`reference_of(configuration)` adds the problem. The `*_from_indat` route is the
-converter's: the same, read off an `IN.DAT` (`input.indat.configuration_from_indat`).
+`configurations.defaults.VALUES` and applies `DERIVATIONS`, `init.py`'s own rules. The
+`*_from_indat` route is the converter's: the same, read off an `IN.DAT`
+(`input.indat.configuration_from_indat`), and `problem_from_indat` the problem it
+states, where PROCESS's switches choose the constraint variants.
 """
 
 from __future__ import annotations
@@ -14,9 +15,26 @@ from typing import Any
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem, defaults
+from cottax.interfaces import to_graph
+from cottax.pytree.path import VarPath
+from jax.tree_util import GetAttrKey, SequenceKey
+
+from functional_process.configurations import (
+    Configuration,
+    Optimisation,
+    RootFinding,
+    defaults,
+)
 from functional_process.configurations.defaults import Full
 from functional_process.cottax.input.importer import ArrayInput, Imported, read_indat
+from functional_process.vocabulary import (
+    AvailabilityModel,
+    BetaComponentLimits,
+    DensityLimitModel,
+    FiguresOfMerit,
+    TFConductorModel,
+    TFCSRadialConfiguration,
+)
 from functional_process.vocabulary.iteration_variables import ITERATION_VARIABLES
 
 DATACLASS_DEFAULTS: dict[tuple[str, str], Any] = {
@@ -222,7 +240,7 @@ def stated_values(input_file: str | Imported) -> tuple[dict[str, dict[str, Any]]
     for (area, name), stated in imported.values.items():
         if area == "numerics":
             # The problem's, not the machine's: bounds, figure of merit, run mode,
-            # tolerances. `Problem` carries what a solve reads of it; no node does.
+            # tolerances. The problem carries what a solve reads of it; no node does.
             continue
         if isinstance(stated, ArrayInput):
             default = DATACLASS_DEFAULTS.get((area, name))
@@ -306,15 +324,24 @@ def _pedestal_temperature_bound(ixc, state, low: float, high: float):
     return (low, high) if low >= raised else (raised, max(high, raised))
 
 
-def native_bounds(ixc, imported, state=None):
-    """`((VarPath, lower, upper), ...)` -- `ReferenceRun.bounds`, from the file."""
-    from functional_process.cottax.problem import (
-        design_place,  # noqa: PLC0415
+def design_place(ixc_id: int) -> VarPath:
+    """Where PROCESS iteration variable `ixc_id` lives."""
+    variable = ITERATION_VARIABLES[ixc_id]
+    keys = (
+        GetAttrKey(variable.module),
+        GetAttrKey(variable.target_name or variable.name),
     )
+    if variable.array_index is not None:
+        keys = (*keys, SequenceKey(variable.array_index))
+    return VarPath(keys)
 
+
+def native_bounds(ixc, imported, state=None) -> dict:
+    """`{place: (lower, upper)}` per iteration variable, the file's own where it states
+    one."""
     lower = imported.get("numerics", "boundl")
     upper = imported.get("numerics", "boundu")
-    out = []
+    out = {}
     for i in ixc:
         variable = ITERATION_VARIABLES[int(i)]
         low, high = float(variable.lower_bound), float(variable.upper_bound)
@@ -324,52 +351,122 @@ def native_bounds(ixc, imported, state=None):
             high = float(upper.as_dict().get(int(i) - 1, high))
         if int(i) == 4 and state is not None:
             low, high = _pedestal_temperature_bound(ixc, state, low, high)
-        out.append((design_place(int(i)), low, high))
-    return tuple(out)
+        out[design_place(int(i))] = (low, high)
+    return out
 
 
-@dataclass
-class NativeReference:
-    """Everything a cold solve reads about the problem a file states -- `ixc`, `icc`, the
-    bounds, the figure of merit, the cold state -- with nothing from PROCESS in it.
+class NoVariant(ValueError):
+    """A switch value no declared variant answers."""
+
+
+def constraint_declaration(cid: int, switches):
+    """The declaration of PROCESS constraint `cid` that `switches` choose.
+
+    Raises
+    ------
+    NoVariant
+        If `cid` is not declared, or no declared variant answers `switches`.
     """
+    from functional_process.cottax.models import constraints  # noqa: PLC0415
 
-    data: object
-    cold: object
-    ixc: list
-    icc: list
-    n_equality: int
-    i_figure_merit: int
-    bounds: tuple
-    solver_iterations: int | None = None
-    convergence_parameter: float | None = None
-    solve_seconds: float = 0.0
+    heated = "Ignited" if switches["i_plasma_ignited"] != 0 else "Heated"
+    radiation = {0: "TotalRadiation", 1: "CoreRadiation"}
+    beta = {
+        BetaComponentLimits.TOTAL: "TotalBeta",
+        BetaComponentLimits.THERMAL: "ThermalBeta",
+        BetaComponentLimits.THERMAL_AND_BEAM: "ThermalAndBeamBeta",
+        BetaComponentLimits.TOROIDAL: "ToroidalBeta",
+    }
+    lifetime = {0: "Input", 1: "Divertor", 2: "Blanket", 3: "Plant"}
+    try:
+        suffix = {
+            2: lambda: heated + radiation[switches["i_rad_loss"]],
+            3: lambda: heated,
+            4: lambda: heated + radiation[switches["i_rad_loss"]],
+            5: lambda: (
+                "Greenwald"
+                if switches["i_density_limit"] == DensityLimitModel.GREENWALD
+                else "VolumeAverage"
+            ),
+            7: lambda: "" if heated == "Heated" else None,
+            17: lambda: "Stellarator" if switches["istell"] != 0 else "Tokamak",
+            24: lambda: (
+                "TotalBeta"
+                if switches["istell"] != 0
+                else beta[BetaComponentLimits(switches["i_beta_component"])]
+            ),
+            28: lambda: "" if heated == "Heated" else None,
+            43: lambda: (
+                "Copper"
+                if switches["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
+                else "Other"
+            ),
+            44: lambda: (
+                "Copper"
+                if switches["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
+                else "Other"
+            ),
+            45: lambda: "" if switches["itart"] != 0 else None,
+            46: lambda: "" if switches["itart"] != 0 else None,
+            68: lambda: "FixedQ95" if switches["i_q95_fixed"] == 1 else "ComputedQ95",
+            72: lambda: (
+                "Bucked"
+                if switches["i_tf_bucking"] >= 2
+                and switches["i_tf_inside_cs"] == TFCSRadialConfiguration.TF_OUTSIDE_CS
+                else "Free"
+            ),
+            85: lambda: lifetime[switches["i_cp_lifetime"]] + "Lifetime",
+            90: lambda: (
+                "BlanketCycles"
+                if switches["ibkt_life"] == 1 and switches["bkt_life_csf"] == 1
+                else "MinimumCycles"
+            ),
+            91: lambda: heated,
+        }.get(cid, lambda: "")()
+    except KeyError as e:
+        raise NoVariant(f"constraint {cid}: no declared variant for {e}") from None
+    name = None if suffix is None else f"Constraint{cid}{suffix}"
+    if name is None or not hasattr(constraints, name):
+        raise NoVariant(f"constraint {cid} has no declared variant for these switches")
+    return getattr(constraints, name)
 
 
-def reference_of(configuration: Configuration) -> NativeReference:
-    """Everything a cold solve needs for one configuration."""
-    from functional_process.cottax.problem import (
-        design_place,  # noqa: PLC0415
-    )
+def merit_declaration(i_figure_merit: int, switches):
+    """The declaration of the figure of merit `abs(i_figure_merit)` that `switches`
+    choose.
 
-    problem = configuration.problem
-    state = state_of(configuration)
-    return NativeReference(
-        data=state,
-        cold=state,
-        ixc=list(problem.ixc),
-        icc=list(problem.icc),
-        n_equality=int(problem.n_equality),
-        i_figure_merit=int(problem.i_figure_merit),
-        bounds=tuple(
-            (design_place(i), *problem.bounds[i]) for i in problem.ixc
-        ),
-    )
+    Raises
+    ------
+    NoVariant
+        If no declared variant answers `switches`.
+    """
+    from functional_process.cottax.models import constraints  # noqa: PLC0415
+
+    merit = FiguresOfMerit(abs(int(i_figure_merit)))
+    if merit is FiguresOfMerit.CAPITAL_COST:
+        name = "CapitalCostDirect" if switches["ireactor"] == 0 else "CapitalCostReactor"
+    elif merit is FiguresOfMerit.PLANT_AVAILABILITY_FACTOR:
+        if switches["i_plant_availability"] == AvailabilityModel.USER_INPUT:
+            raise NoVariant("the plant availability factor is an input here")
+        name = "PlantAvailabilityFactor"
+    else:
+        name = "".join(w.capitalize() for w in merit.name.split("_"))
+    return getattr(constraints, name)
 
 
-def problem_from_indat(input_file: str | Imported, switches: dict[str, int]) -> Problem:
-    """The `Problem` one file states: `ixc` sorted as PROCESS loads it, the
-    equalities counted, the bounds resolved (`native_bounds`), `switches` carried.
+def problem_from_indat(input_file: str | Imported, switches: dict[str, int], machine):
+    """The problem one file states over `machine`: an `Optimisation`, or a
+    `RootFinding` in PROCESS's evaluation mode. `ixc` in PROCESS's load order, the
+    first `neqns` of `icc` the equalities, the bounds resolved (`native_bounds`), and
+    every constraint and the merit the variant `switches` choose.
+
+    An inequality that reads nothing the design reaches is constant over it, so no
+    optimiser moves it: it is left out. An equality like it is refused.
+
+    Raises
+    ------
+    ValueError
+        If an equality reads nothing the design reaches, or a root find is not square.
     """
     from functional_process.cottax.input.indat import (  # noqa: PLC0415
         problem_from_indat as stated_problem,
@@ -382,31 +479,38 @@ def problem_from_indat(input_file: str | Imported, switches: dict[str, int]) -> 
     if n_equality is None:
         # `init.py`'s `-1` sentinel: the equalities are what is left over.
         n_equality = len(stated.icc) - (stated.n_inequality_constraints or 0)
-    state = native_state(imported)
-    bounds = {
-        int(i): (low, high)
-        for (_path, low, high), i in zip(
-            native_bounds(ixc, imported, state), ixc, strict=True
+    icc = tuple(int(i) for i in stated.icc)
+    declared = [constraint_declaration(c, switches) for c in icc]
+    equalities = tuple(declared[:n_equality])
+    inequalities = tuple(declared[n_equality:])
+    design = native_bounds(ixc, imported, native_state(imported))
+    if stated.is_evaluation:
+        if len(equalities) != len(design):
+            raise ValueError(
+                f"a root find needs one equality per iteration variable: "
+                f"{len(equalities)} against {len(design)}"
+            )
+        return RootFinding(tuple(design), equalities, inequalities)
+    graph = to_graph(machine).graph
+    reached = {p for n in graph.reach(tuple(design)) for p in graph[n].owns}
+    reached |= set(design)
+
+    def constant(c) -> bool:
+        return not reached & set(c.reads.values())
+
+    if refused := [c for c in equalities if constant(c)]:
+        raise ValueError(
+            f"equality constraint(s) {[c.fn.__name__ for c in refused]} read nothing "
+            f"the design reaches: leaving one out changes what feasible means"
         )
-    }
-    return Problem(
-        ixc=ixc,
-        icc=tuple(int(i) for i in stated.icc),
-        n_equality=int(n_equality),
-        i_figure_merit=int(stated.i_figure_merit or 7),
-        bounds=bounds,
-        switches=dict(switches),
-        root_find=stated.is_evaluation,
+    merit = merit_declaration(stated.i_figure_merit or 7, switches)
+    sense = "maximise" if (stated.i_figure_merit or 7) < 0 else "minimise"
+    return Optimisation(
+        design=design,
+        equalities=equalities,
+        inequalities=tuple(c for c in inequalities if not constant(c)),
+        **{sense: merit},
     )
-
-
-def native_reference(input_file: str) -> NativeReference:
-    """`reference_of`, read off an `IN.DAT` -- through the converter."""
-    from functional_process.cottax.input.indat import (  # noqa: PLC0415
-        configuration_from_indat,
-    )
-
-    return reference_of(configuration_from_indat(input_file))
 
 
 CONFIGURATIONS = (

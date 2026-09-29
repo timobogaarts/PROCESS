@@ -7,7 +7,8 @@ Converted from `tests/regression/input_files/spherical_tokamak_eval.IN.DAT` by
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem
+from cottax.interfaces import V, place
+from functional_process.configurations import Configuration, RootFinding
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
     CplifeAvailSuperconducting,
@@ -56,6 +57,26 @@ from functional_process.cottax.models.build import (
 )
 from functional_process.cottax.models.buildings.buildings import Bldgs, TfCoilEnvelope
 from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.constraints import (
+    Constraint1,
+    Constraint11,
+    Constraint15,
+    Constraint16,
+    Constraint17Tokamak,
+    Constraint24ToroidalBeta,
+    Constraint2HeatedCoreRadiation,
+    Constraint30,
+    Constraint31,
+    Constraint32,
+    Constraint33,
+    Constraint46,
+    Constraint56,
+    Constraint5Greenwald,
+    Constraint62,
+    Constraint67,
+    Constraint81,
+    Constraint9,
+)
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
@@ -368,7 +389,6 @@ from functional_process.cottax.models.vacuum.vacuum import (
     VacuumOld,
     VacuumVesselDShapedDoubleNull,
 )
-from functional_process.vocabulary.enums import PFConductorModel
 
 machine = TokamakProcess(
     initialisation=Initialisation(
@@ -891,34 +911,30 @@ values = {
     },
 }
 
-problem = Problem(
-    ixc=(4, 6, 29),
-    icc=(1, 2, 11, 9, 5, 24, 15, 62, 81, 17, 56, 33, 31, 32, 67, 30, 46, 16),
-    n_equality=3,
-    i_figure_merit=7,
-    bounds={
-        4: (5.0, 25.0),
-        6: (5e19, 5e20),
-        29: (0.1, 0.8),
-    },
-    switches={
-        "bkt_life_csf": 0,
-        "i_beta_component": 3,
-        "i_cp_lifetime": 0,
-        "i_density_limit": 7,
-        "i_plant_availability": 0,
-        "i_plasma_ignited": 0,
-        "i_q95_fixed": 0,
-        "i_rad_loss": 1,
-        "i_tf_bucking": 1,
-        "i_tf_inside_cs": 0,
-        "i_tf_sup": 1,
-        "ibkt_life": 0,
-        "ireactor": 1,
-        "istell": 0,
-        "itart": 1,
-    },
-    root_find=True,
+problem = RootFinding(
+    design=(
+        place(V.physics.temp_plasma_electron_vol_avg_kev),
+        place(V.physics.nd_plasma_electrons_vol_avg),
+        place(V.build.dr_bore),
+    ),
+    equalities=(Constraint1, Constraint2HeatedCoreRadiation, Constraint11),
+    evaluated=(
+        Constraint9,
+        Constraint5Greenwald,
+        Constraint24ToroidalBeta,
+        Constraint15,
+        Constraint62,
+        Constraint81,
+        Constraint17Tokamak,
+        Constraint56,
+        Constraint33,
+        Constraint31,
+        Constraint32,
+        Constraint67,
+        Constraint30,
+        Constraint46,
+        Constraint16,
+    ),
 )
 
 CONFIGURATION = Configuration(

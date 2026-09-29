@@ -7,13 +7,21 @@ Converted from `tests/regression/input_files/helias_5b.IN.DAT` by
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem
+from cottax.interfaces import V, place
+from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
 )
 from functional_process.cottax.models.availability.namespace import Availability
 from functional_process.cottax.models.buildings.buildings import Bldgs, TfCoilEnvelope
 from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.constraints import (
+    CapitalCostReactor,
+    Constraint16,
+    Constraint24TotalBeta,
+    Constraint2IgnitedCoreRadiation,
+    Constraint84,
+)
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
@@ -554,35 +562,20 @@ values = {
         "ucdiv": 500000.0,
         "ucme": 300000000.0,
     },
+    "stellarator_config": {
+        "machine_config": machine_config_for_istell(1),
+    },
 }
 
-problem = Problem(
-    ixc=(4, 6, 10),
-    icc=(2, 16, 84, 24),
-    n_equality=2,
-    i_figure_merit=7,
-    bounds={
-        4: (4.0, 25.0),
-        6: (3.005e19, 5.005e20),
-        10: (0.1, 2.0),
+problem = Optimisation(
+    design={
+        place(V.physics.temp_plasma_electron_vol_avg_kev): (4.0, 25.0),
+        place(V.physics.nd_plasma_electrons_vol_avg): (3.005e19, 5.005e20),
+        place(V.physics.hfact): (0.1, 2.0),
     },
-    switches={
-        "bkt_life_csf": 0,
-        "i_beta_component": 0,
-        "i_cp_lifetime": 0,
-        "i_density_limit": 8,
-        "i_plant_availability": 0,
-        "i_plasma_ignited": 1,
-        "i_q95_fixed": 0,
-        "i_rad_loss": 1,
-        "i_tf_bucking": 1,
-        "i_tf_inside_cs": 0,
-        "i_tf_sup": 1,
-        "ibkt_life": 0,
-        "ireactor": 1,
-        "istell": 1,
-        "itart": 0,
-    },
+    equalities=(Constraint2IgnitedCoreRadiation, Constraint16),
+    inequalities=(Constraint84, Constraint24TotalBeta),
+    minimise=CapitalCostReactor,
 )
 
 CONFIGURATION = Configuration(

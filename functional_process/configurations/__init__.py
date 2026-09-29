@@ -1,7 +1,8 @@
 """A configuration, stated: the machine, its values, and the problem it poses.
 
-PROCESS reads all three out of one `IN.DAT`: integer switches select the models, the
-numbers seed the boundary, and `ixc`/`icc`/`minmax` state the optimisation. Here each
+PROCESS reads all three out of one `IN.DAT`: integer switches select the models and
+the constraint variants, the numbers seed the boundary, and `ixc`/`icc`/`minmax` state
+the optimisation. Here each
 is a declared tree in a Python module beside this file:
 
 - **`machine`**: a `StellaratorProcess`/`TokamakProcess` with every slot's occupant
@@ -10,8 +11,9 @@ is a declared tree in a Python module beside this file:
   it does not state is `defaults.VALUES`, PROCESS's own dataclass defaults; the two
   layered, plus `init.py`'s derivation rules (`input.native.DERIVATIONS`), are the
   boundary a solve starts from (`input.native.state_of`).
-- **`problem`**: the design variables, the constraints, the figure of merit, the
-  bounds, and the static switch values the constraint nodes are bound with.
+- **`problem`**: an `Optimisation` or a `RootFinding` -- the design variables with
+  their bounds, the constraints held, and the figure of merit, each chosen directly by
+  name as the machine's models are; no switch.
 
 `input.indat.configuration_from_indat` converts an `IN.DAT` into one, and `spell`
 writes one back out as the module it is read from -- `tests/test_configurations.py`
@@ -24,12 +26,14 @@ from __future__ import annotations
 import dataclasses
 import enum
 import importlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import equinox as eqx
 import numpy as np
 from cottax.interfaces.pytree.wrappers import Wrapper
+from cottax.pytree.path import VarPath
+from jax.tree_util import GetAttrKey, SequenceKey
 
 NAMES = (
     "stellarator_helias",
@@ -45,26 +49,28 @@ NAMES = (
 
 
 @dataclass(frozen=True)
-class Problem:
-    """What a configuration asks to be solved, in PROCESS's own terms."""
+class Optimisation:
+    """An optimisation: `minimise` or `maximise` one figure of merit over `design`
+    within its bounds, every equality held `= 0` and every inequality `<= 0`. The
+    constraints and the merit are the declarations in `cottax.models.constraints`."""
 
-    ixc: tuple[int, ...]
-    """The design variables, as iteration-variable ids
-    (`vocabulary.iteration_variables.ITERATION_VARIABLES`), in PROCESS's order."""
-    icc: tuple[int, ...]
-    """The active constraints, as constraint ids -- the first `n_equality` are
-    equalities (`models.constraints`)."""
-    n_equality: int
-    i_figure_merit: int
-    """The figure of merit (`models.objectives`), negative to maximise."""
-    bounds: dict[int, tuple[float, float]]
-    """`ixc id -> (lower, upper)`, the file's own where it states one."""
-    switches: dict[str, int] = field(default_factory=dict)
-    """The static switch arguments the constraint and objective nodes are bound with
-    (`cottax.models.constraints.SWITCH_PARAMETER_NAMES`)."""
-    root_find: bool = False
-    """A root find over the equalities (`i_process_run_mode = -2`) rather than an
-    optimisation: no objective, the inequalities evaluated once at the answer."""
+    design: dict[Any, tuple[float, float]]
+    """Each design variable's place, and its `(lower, upper)` bounds."""
+    equalities: tuple[Wrapper, ...]
+    inequalities: tuple[Wrapper, ...]
+    minimise: Wrapper | None = None
+    maximise: Wrapper | None = None
+
+
+@dataclass(frozen=True)
+class RootFinding:
+    """A root find: every equality held `= 0` over `design`, one per variable; the
+    inequalities are computed, and held to nothing, as PROCESS evaluates them once at
+    the answer."""
+
+    design: tuple[Any, ...]
+    equalities: tuple[Wrapper, ...]
+    evaluated: tuple[Wrapper, ...]
 
 
 @dataclass(frozen=True)
@@ -74,7 +80,7 @@ class Configuration:
     name: str
     machine: eqx.Module
     values: dict[str, dict[str, Any]]
-    problem: Problem
+    problem: Optimisation | RootFinding
 
 
 def load(name: str) -> Configuration:
@@ -126,6 +132,19 @@ class Speller:
         self.imports.setdefault(cls.__module__, set()).add(cls.__name__)
         return cls.__name__
 
+    def place(self, path: VarPath) -> str:
+        """`path` as `place(V...)`, its imports recorded."""
+        self.imports.setdefault("cottax.interfaces", set()).update({"V", "place"})
+        keys = []
+        for key in path.segments:
+            if isinstance(key, GetAttrKey):
+                keys.append(f".{key.name}")
+            elif isinstance(key, SequenceKey):
+                keys.append(f"[{key.idx}]")
+            else:
+                raise TypeError(f"no spelling for the key {key!r} of {path!r}")
+        return f"place(V{''.join(keys)})"
+
     def variant(self, wrapper: Wrapper) -> str:
         """The name a declared node is bound at in its module, its import recorded."""
         import sys  # noqa: PLC0415
@@ -152,6 +171,8 @@ class Speller:
             return value.text
         if isinstance(value, Wrapper):
             return self.variant(value)
+        if isinstance(value, VarPath):
+            return self.place(value)
         if isinstance(value, enum.Enum):
             return f"{self.name(value)}.{value.name}"
         if isinstance(value, str):

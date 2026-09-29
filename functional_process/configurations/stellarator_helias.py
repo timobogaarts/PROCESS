@@ -7,13 +7,31 @@ Converted from `tests/regression/input_files/stellarator_helias.IN.DAT` by
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem
+from cottax.interfaces import V, place
+from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
 )
 from functional_process.cottax.models.availability.namespace import Availability
 from functional_process.cottax.models.buildings.buildings import Bldgs, TfCoilEnvelope
 from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.constraints import (
+    Constraint16,
+    Constraint17Stellarator,
+    Constraint18,
+    Constraint24TotalBeta,
+    Constraint2IgnitedCoreRadiation,
+    Constraint32,
+    Constraint34,
+    Constraint35,
+    Constraint62,
+    Constraint65,
+    Constraint67,
+    Constraint8,
+    Constraint82,
+    Constraint83,
+    CostOfElectricity,
+)
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
@@ -571,40 +589,41 @@ values = {
         "ucdiv": 500000.0,
         "ucme": 300000000.0,
     },
+    "stellarator_config": {
+        "machine_config": machine_config_for_istell(
+            6,
+            config_file="tests/regression/input_files/stellarator_helias.stella_conf.json",
+        ),
+    },
 }
 
-problem = Problem(
-    ixc=(2, 3, 4, 6, 10, 56, 59, 109),
-    icc=(2, 16, 24, 8, 17, 18, 67, 82, 83, 62, 32, 34, 35, 65),
-    n_equality=2,
-    i_figure_merit=6,
-    bounds={
-        2: (4.0, 10.0),
-        3: (10.0, 30.0),
-        4: (3.0, 15.0),
-        6: (3e19, 3e20),
-        10: (0.1, 1.2),
-        56: (1.0, 50.0),
-        59: (0.3, 0.9),
-        109: (0.0001, 0.4),
+problem = Optimisation(
+    design={
+        place(V.physics.b_plasma_toroidal_on_axis): (4.0, 10.0),
+        place(V.physics.rmajor): (10.0, 30.0),
+        place(V.physics.temp_plasma_electron_vol_avg_kev): (3.0, 15.0),
+        place(V.physics.nd_plasma_electrons_vol_avg): (3e19, 3e20),
+        place(V.physics.hfact): (0.1, 1.2),
+        place(V.tfcoil.t_tf_superconductor_quench): (1.0, 50.0),
+        place(V.tfcoil.f_a_tf_turn_cable_copper): (0.3, 0.9),
+        place(V.physics.f_nd_alpha_thermal_electron): (0.0001, 0.4),
     },
-    switches={
-        "bkt_life_csf": 0,
-        "i_beta_component": 0,
-        "i_cp_lifetime": 0,
-        "i_density_limit": 8,
-        "i_plant_availability": 0,
-        "i_plasma_ignited": 1,
-        "i_q95_fixed": 0,
-        "i_rad_loss": 1,
-        "i_tf_bucking": 1,
-        "i_tf_inside_cs": 0,
-        "i_tf_sup": 1,
-        "ibkt_life": 0,
-        "ireactor": 1,
-        "istell": 6,
-        "itart": 0,
-    },
+    equalities=(Constraint2IgnitedCoreRadiation, Constraint16),
+    inequalities=(
+        Constraint24TotalBeta,
+        Constraint8,
+        Constraint17Stellarator,
+        Constraint18,
+        Constraint67,
+        Constraint82,
+        Constraint83,
+        Constraint62,
+        Constraint32,
+        Constraint34,
+        Constraint35,
+        Constraint65,
+    ),
+    minimise=CostOfElectricity,
 )
 
 CONFIGURATION = Configuration(

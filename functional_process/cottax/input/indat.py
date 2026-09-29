@@ -3435,11 +3435,12 @@ SWITCH_VALUE_DEFAULTS = {
     "istell": 0,  # `stellarator_variables.py:46`
     "itart": 0,  # `physics_variables.py:994`
 }
-"""`models.constraints.SWITCH_PARAMETER_NAMES` -> PROCESS's own `DataStructure` default."""
+"""Each switch choosing a constraint or merit variant -> PROCESS's own `DataStructure`
+default."""
 
 
 def switch_values_from_indat(input_file):
-    """`sand`'s static switch arguments for one run, read from the **file**."""
+    """The switches choosing the constraint and merit variants, read from the **file**."""
     imported = _as_imported(input_file)
     values = {
         name: int(imported.get(INPUT_VARIABLES[name].module, name, default))
@@ -4668,11 +4669,12 @@ def configuration_from_indat(input_file, stella_conf=None) -> Configuration:
                 else stella_conf,
             )
         )
+    machine = machine_from_indat(imported, stella_conf)
     return Configuration(
         name=native.stem(imported.path),
-        machine=machine_from_indat(imported, stella_conf),
+        machine=machine,
         values=values,
-        problem=native.problem_from_indat(imported, switches),
+        problem=native.problem_from_indat(imported, switches, machine),
     )
 
 

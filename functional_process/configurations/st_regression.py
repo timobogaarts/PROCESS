@@ -7,7 +7,8 @@ Converted from `tests/regression/input_files/st_regression.IN.DAT` by
 
 import numpy as np
 
-from functional_process.configurations import Configuration, Problem
+from cottax.interfaces import V, place
+from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
     CplifeAvailSuperconducting,
@@ -56,6 +57,27 @@ from functional_process.cottax.models.build import (
 )
 from functional_process.cottax.models.buildings.buildings import Bldgs, TfCoilEnvelope
 from functional_process.cottax.models.buildings.namespace import Buildings
+from functional_process.cottax.models.constraints import (
+    Constraint1,
+    Constraint11,
+    Constraint15,
+    Constraint16,
+    Constraint17Tokamak,
+    Constraint24ToroidalBeta,
+    Constraint2HeatedCoreRadiation,
+    Constraint30,
+    Constraint31,
+    Constraint32,
+    Constraint33,
+    Constraint46,
+    Constraint56,
+    Constraint5Greenwald,
+    Constraint62,
+    Constraint67,
+    Constraint81,
+    Constraint9,
+    FusionGainQ,
+)
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
@@ -368,7 +390,6 @@ from functional_process.cottax.models.vacuum.vacuum import (
     VacuumOld,
     VacuumVesselDShapedDoubleNull,
 )
-from functional_process.vocabulary.enums import PFConductorModel
 
 machine = TokamakProcess(
     initialisation=Initialisation(
@@ -892,44 +913,42 @@ values = {
     },
 }
 
-problem = Problem(
-    ixc=(4, 5, 6, 10, 16, 18, 29, 57, 93, 109, 135, 140, 145, 152),
-    icc=(1, 2, 11, 9, 16, 5, 24, 15, 62, 81, 17, 56, 33, 31, 32, 67, 30, 46),
-    n_equality=3,
-    i_figure_merit=-5,
-    bounds={
-        4: (5.0, 25.0),
-        5: (0.01, 1.0),
-        6: (5e19, 5e20),
-        10: (0.8, 1.2),
-        16: (0.03, 0.5),
-        18: (3.0, 20.0),
-        29: (0.1, 0.8),
-        57: (0.01, 0.5),
-        93: (0.01, 1.0),
-        109: (0.001, 1.0),
-        135: (1e-08, 0.01),
-        140: (0.4, 0.8),
-        145: (0.1, 1.0),
-        152: (0.001, 0.1),
+problem = Optimisation(
+    design={
+        place(V.physics.temp_plasma_electron_vol_avg_kev): (5.0, 25.0),
+        place(V.physics.beta_total_vol_avg): (0.01, 1.0),
+        place(V.physics.nd_plasma_electrons_vol_avg): (5e19, 5e20),
+        place(V.physics.hfact): (0.8, 1.2),
+        place(V.build.dr_cs): (0.03, 0.5),
+        place(V.physics.q95): (3.0, 20.0),
+        place(V.build.dr_bore): (0.1, 0.8),
+        place(V.tfcoil.dr_tf_nose_case): (0.01, 0.5),
+        place(V.build.dr_shld_inboard): (0.01, 1.0),
+        place(V.physics.f_nd_alpha_thermal_electron): (0.001, 1.0),
+        place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (1e-08, 0.01),
+        place(V.tfcoil.dr_tf_wp_with_insulation): (0.4, 0.8),
+        place(V.physics.f_nd_plasma_pedestal_greenwald): (0.1, 1.0),
+        place(V.physics.f_nd_plasma_separatrix_greenwald): (0.001, 0.1),
     },
-    switches={
-        "bkt_life_csf": 0,
-        "i_beta_component": 3,
-        "i_cp_lifetime": 0,
-        "i_density_limit": 7,
-        "i_plant_availability": 0,
-        "i_plasma_ignited": 0,
-        "i_q95_fixed": 0,
-        "i_rad_loss": 1,
-        "i_tf_bucking": 1,
-        "i_tf_inside_cs": 0,
-        "i_tf_sup": 1,
-        "ibkt_life": 0,
-        "ireactor": 1,
-        "istell": 0,
-        "itart": 1,
-    },
+    equalities=(Constraint1, Constraint2HeatedCoreRadiation, Constraint11),
+    inequalities=(
+        Constraint9,
+        Constraint16,
+        Constraint5Greenwald,
+        Constraint24ToroidalBeta,
+        Constraint15,
+        Constraint62,
+        Constraint81,
+        Constraint17Tokamak,
+        Constraint56,
+        Constraint33,
+        Constraint31,
+        Constraint32,
+        Constraint67,
+        Constraint30,
+        Constraint46,
+    ),
+    maximise=FusionGainQ,
 )
 
 CONFIGURATION = Configuration(

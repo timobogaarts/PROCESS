@@ -1,17 +1,21 @@
-"""PROCESS's constraints and figures of merit as model bodies.
+"""PROCESS's constraints and figures of merit, declared.
 
 A `constraint_<id>` or `objective_metric_<id>` in `functional_process.models` is a
-ported function like any other; this is the thin cottax layer over it. A **switch** is
-never read: it picks which function is the model (`VARIANTS`, the switched functions
-split into one per branch), and where a switch only chose which quantity a formula
-reads, it picks the place instead. Every other parameter is read at the place its name
-lives (`area_of`: PROCESS's declared inputs, and `NON_INPUT_FIELDS` for what a model
-computes).
+ported function like any other; each is declared here once, by name. A function
+PROCESS switches is split into one per branch (`constraint_17_tokamak`, ...), and where
+a switch only chose which quantity a formula reads, each choice is its own declaration
+reading its own place (`Constraint5Greenwald` reads the line-averaged density,
+`Constraint5VolumeAverage` the volume-averaged one). No switch is read: the IN.DAT
+converter picks the declarations, and a configuration names them.
+
+Every other parameter is read at the place its name lives (`area_of`: PROCESS's
+declared inputs, and `NON_INPUT_FIELDS` for what a model computes).
 
 A constraint's body owns its four values, `c<id>_residual`, `c<id>` (the normalised
-residual, the one held), `c<id>_value` and `c<id>_bound`. Whether `c<id>` is held `= 0`
-or `<= 0` is not the constraint's: PROCESS holds the first `neqns` of `icc` as
-equalities, whatever the function's own sense, so `problem.py` decides.
+residual, `held`), `c<id>_value` and `c<id>_bound`; whether `c<id>` is held `= 0` or
+`<= 0` is the problem's. A figure of merit owns `MERIT`; its direction is the problem's.
+Constraint 76 is not declared: it reads `nd_plasma_electron_max_array_7`, which no
+model computes and no input states.
 """
 
 import inspect
@@ -19,48 +23,18 @@ import inspect
 from cottax.interfaces import Scope, V
 from jax.tree_util import GetAttrKey
 
-from functional_process.models import constraints as ported_constraints
-from functional_process.models import objectives as ported_objectives
-from functional_process.vocabulary.enums import FiguresOfMerit
-from functional_process.vocabulary import (
-    AvailabilityModel,
-    BetaComponentLimits,
-    DensityLimitModel,
-    TFConductorModel,
-    TFCSRadialConfiguration,
-)
+from functional_process.models import constraints as C
+from functional_process.models import objectives as O
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
 CONSTRAINTS = Scope(V.constraints, GetAttrKey)
-"""Where a constraint's value is computed: `.constraints.c<id>`, beside the limits
-PROCESS already keeps in that area."""
+"""Where a constraint's values are computed: `.constraints.c<id>...`, beside the
+limits PROCESS already keeps in that area."""
 
 NUMERICS = Scope(V.numerics, GetAttrKey)
-"""Where the figure of merit is computed: `.numerics.objf`."""
 
-
-SWITCH_PARAMETER_NAMES = (
-    "bkt_life_csf",
-    "i_beta_component",
-    "i_cp_lifetime",
-    "i_density_limit",
-    "i_plant_availability",
-    "i_plasma_ignited",
-    "i_q95_fixed",
-    "i_rad_loss",
-    "i_tf_bucking",
-    "i_tf_inside_cs",
-    "i_tf_sup",
-    "ibkt_life",
-    "ireactor",
-    "istell",
-    "itart",
-)
-"""Every parameter name that is a **switch** anywhere in the ported constraint/objective
-surface -- the union of the `static_argnames` the `Tier1Contract`s in
-`functional_process/tests/cottax/core/solver/test_constraints.py` and
-`test_objectives.py` declare.
-"""
+MERIT = NUMERICS.place("merit")
+"""Where the figure of merit is computed."""
 
 
 NON_INPUT_FIELDS = {
@@ -199,170 +173,11 @@ def area_of(name: str) -> Scope:
     return Scope(getattr(V, area), GetAttrKey)
 
 
-class NoVariant(ValueError):
-    """A switch value no ported branch answers."""
-
-
-def _at(name: str):
-    """Where `name` lives: the place a variant reads in its parameter's stead."""
-    return area_of(name).place(name)
-
-
-def _ignited(switches) -> bool:
-    return switches["i_plasma_ignited"] != 0
-
-
-def _radiated(switches):
-    """The radiated power `i_rad_loss` counts: a place, as a read of the variant."""
-    i_rad_loss = switches["i_rad_loss"]
-    if i_rad_loss == 0:
-        return {"pden_plasma_radiated_mw": _at("pden_plasma_rad_mw")}
-    if i_rad_loss == 1:
-        return {"pden_plasma_radiated_mw": _at("pden_plasma_core_rad_mw")}
-    raise NoVariant(f"i_rad_loss={i_rad_loss} (no radiated loss) has no ported variant")
-
-
-def _only(fn, condition: bool, why: str, reads=None):
-    if not condition:
-        raise NoVariant(why)
-    return fn, reads or {}
-
-
-C, O = ported_constraints, ported_objectives
-
-VARIANTS = {
-    "constraint_2": lambda s: (
-        C.constraint_2_ignited if _ignited(s) else C.constraint_2_non_ignited,
-        _radiated(s),
-    ),
-    "constraint_3": lambda s: (
-        C.constraint_3_ignited if _ignited(s) else C.constraint_3_non_ignited,
-        {},
-    ),
-    "constraint_4": lambda s: (
-        C.constraint_4_ignited if _ignited(s) else C.constraint_4_non_ignited,
-        _radiated(s),
-    ),
-    "constraint_5": lambda s: (
-        C.constraint_5_density_limit,
-        {
-            "nd_plasma_electron_limited": _at(
-                "nd_plasma_electron_line"
-                if s["i_density_limit"] == DensityLimitModel.GREENWALD
-                else "nd_plasma_electrons_vol_avg",
-            )
-        },
-    ),
-    "constraint_7": lambda s: _only(
-        C.constraint_7_non_ignited, not _ignited(s), "constraint 7: ignited"
-    ),
-    "constraint_17": lambda s: (
-        C.constraint_17_stellarator if s["istell"] != 0 else C.constraint_17_tokamak,
-        {},
-    ),
-    "constraint_24": lambda s: _beta_limit(s),
-    "constraint_28": lambda s: _only(
-        C.constraint_28_non_ignited, not _ignited(s), "constraint 28: ignited"
-    ),
-    "constraint_43": lambda s: (
-        C.constraint_43_copper
-        if s["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
-        else C.constraint_43_other,
-        {},
-    ),
-    "constraint_44": lambda s: (
-        C.constraint_44_copper
-        if s["i_tf_sup"] == TFConductorModel.WATER_COOLED_COPPER
-        else C.constraint_44_other,
-        {},
-    ),
-    "constraint_45": lambda s: _only(
-        C.constraint_45_tart, s["itart"] != 0, "constraint 45: not a TART"
-    ),
-    "constraint_46": lambda s: _only(
-        C.constraint_46_tart, s["itart"] != 0, "constraint 46: not a TART"
-    ),
-    "constraint_68": lambda s: (
-        C.constraint_68_fixed_q95
-        if s["i_q95_fixed"] == 1
-        else C.constraint_68_computed_q95,
-        {},
-    ),
-    "constraint_72": lambda s: (
-        C.constraint_72_bucked
-        if s["i_tf_bucking"] >= 2
-        and s["i_tf_inside_cs"] == TFCSRadialConfiguration.TF_OUTSIDE_CS
-        else C.constraint_72_free,
-        {},
-    ),
-    "constraint_85": lambda s: _cp_lifetime(s),
-    "constraint_90": lambda s: (
-        C.constraint_90_cycles,
-        {
-            "n_cycle_bound": _at("bktcycles")
-            if s["ibkt_life"] == 1 and s["bkt_life_csf"] == 1
-            else _at("n_cycle_min")
-        },
-    ),
-    "constraint_91": lambda s: (
-        C.constraint_91_ignited if _ignited(s) else C.constraint_91_non_ignited,
-        {},
-    ),
-    "objective_metric_7": lambda s: (
-        O.objective_metric_7_direct
-        if s["ireactor"] == 0
-        else O.objective_metric_7_reactor,
-        {},
-    ),
-    "objective_metric_15": lambda s: _only(
-        O.objective_metric_15_modelled,
-        s["i_plant_availability"] != AvailabilityModel.USER_INPUT,
-        "objective 15: the availability is an input",
-    ),
-}
-"""A switched function's name -> `switches -> (the variant, {parameter: place})`:
-which function is the model, and the places it reads that are not read by name. These
-run once, where the problem is stated; the graph holds only the variant."""
-
-
-def _beta_limit(s):
-    if (
-        s["i_beta_component"] == BetaComponentLimits.THERMAL_AND_BEAM
-        and s["istell"] == 0
-    ):
-        return C.constraint_24_thermal_and_beam, {}
-    limited = {
-        BetaComponentLimits.TOTAL: "beta_total_vol_avg",
-        BetaComponentLimits.THERMAL: "beta_thermal_vol_avg",
-        BetaComponentLimits.TOROIDAL: "beta_toroidal_vol_avg",
-    }
-    component = (
-        BetaComponentLimits.TOTAL
-        if s["istell"] != 0
-        else BetaComponentLimits(s["i_beta_component"])
-    )
-    return C.constraint_24_beta_limit, {"beta_limited": _at(limited[component])}
-
-
-def _cp_lifetime(s):
-    bound = {0: "cplife_input", 1: "life_div_fpy", 2: "life_blkt_fpy", 3: "life_plant"}
-    if s["i_cp_lifetime"] not in bound:
-        raise NoVariant(f"i_cp_lifetime={s['i_cp_lifetime']} is not in {{0, 1, 2, 3}}")
-    return C.constraint_85_lifetime, {"cplife_bound": _at(bound[s["i_cp_lifetime"]])}
-
-
-def variant(fn, switches):
-    """`(function, reads)` for ported `fn` under `switches`: `fn` itself where it takes
-    no switch."""
-    choose = VARIANTS.get(fn.__name__)
-    if choose is None:
-        return fn, {}
-    return choose(switches)
-
-
 def _reads(fn, chosen) -> dict:
+    """Each parameter of `fn` at the place its name lives, or at the place `chosen`
+    names for it."""
     return {
-        p: chosen[p] if p in chosen else area_of(p)
+        p: area_of(chosen[p]).place(chosen[p]) if p in chosen else area_of(p)
         for p in inspect.signature(fn).parameters
     }
 
@@ -376,35 +191,181 @@ def constraint_places(cid: int) -> tuple:
     )
 
 
-def constraint_place(cid: int):
-    """Where constraint `cid`'s normalised residual is computed: `.constraints.c<id>`."""
-    return constraint_places(cid)[1]
+def held(constraint):
+    """The value a constraint declaration's requirement holds: its normalised
+    residual."""
+    return constraint.outputs[1]
 
 
-def constraint(cid: int, switches):
-    """The body of PROCESS constraint `cid`, the variant `switches` pick, owning its
-    four values (`constraint_places`).
-
-    Raises
-    ------
-    ValueError
-        If no `constraint_<id>` is ported, no variant answers `switches`, or a
-        parameter has no place.
-    """
-    fn = getattr(ported_constraints, f"constraint_{cid}", None)
-    if fn is None:
-        raise ValueError(f"constraint {cid}: `models/constraints.py` ports no such one")
-    fn, chosen = variant(fn, switches)
+def _constraint(cid: int, fn, **chosen):
     return CONSTRAINTS.function(fn, *constraint_places(cid), reads=_reads(fn, chosen))
 
 
-MERIT = NUMERICS.place("merit")
-"""Where the figure of merit is computed, before its direction is applied."""
+def _merit(fn):
+    return NUMERICS.function(fn, MERIT, reads=_reads(fn, {}))
 
 
-def merit(i_figure_merit: int, switches):
-    """The body of PROCESS's figure of merit `abs(i_figure_merit)`, the variant
-    `switches` pick, owning `MERIT`."""
-    fn = ported_objectives.OBJECTIVE_METRICS[FiguresOfMerit(abs(i_figure_merit))]
-    fn, chosen = variant(fn, switches)
-    return NUMERICS.function(fn, MERIT, reads=_reads(fn, chosen))
+# ---------------------------------------------------------------- the constraints
+
+Constraint1 = _constraint(1, C.constraint_1)
+Constraint6 = _constraint(6, C.constraint_6)
+Constraint8 = _constraint(8, C.constraint_8)
+Constraint9 = _constraint(9, C.constraint_9)
+Constraint11 = _constraint(11, C.constraint_11)
+Constraint12 = _constraint(12, C.constraint_12)
+Constraint13 = _constraint(13, C.constraint_13)
+Constraint14 = _constraint(14, C.constraint_14)
+Constraint15 = _constraint(15, C.constraint_15)
+Constraint16 = _constraint(16, C.constraint_16)
+Constraint18 = _constraint(18, C.constraint_18)
+Constraint19 = _constraint(19, C.constraint_19)
+Constraint20 = _constraint(20, C.constraint_20)
+Constraint21 = _constraint(21, C.constraint_21)
+Constraint22 = _constraint(22, C.constraint_22)
+Constraint23 = _constraint(23, C.constraint_23)
+Constraint25 = _constraint(25, C.constraint_25)
+Constraint26 = _constraint(26, C.constraint_26)
+Constraint27 = _constraint(27, C.constraint_27)
+Constraint29 = _constraint(29, C.constraint_29)
+Constraint30 = _constraint(30, C.constraint_30)
+Constraint31 = _constraint(31, C.constraint_31)
+Constraint32 = _constraint(32, C.constraint_32)
+Constraint33 = _constraint(33, C.constraint_33)
+Constraint34 = _constraint(34, C.constraint_34)
+Constraint35 = _constraint(35, C.constraint_35)
+Constraint36 = _constraint(36, C.constraint_36)
+Constraint37 = _constraint(37, C.constraint_37)
+Constraint39 = _constraint(39, C.constraint_39)
+Constraint40 = _constraint(40, C.constraint_40)
+Constraint41 = _constraint(41, C.constraint_41)
+Constraint42 = _constraint(42, C.constraint_42)
+Constraint48 = _constraint(48, C.constraint_48)
+Constraint51 = _constraint(51, C.constraint_51)
+Constraint53 = _constraint(53, C.constraint_53)
+Constraint54 = _constraint(54, C.constraint_54)
+Constraint56 = _constraint(56, C.constraint_56)
+Constraint59 = _constraint(59, C.constraint_59)
+Constraint60 = _constraint(60, C.constraint_60)
+Constraint61 = _constraint(61, C.constraint_61)
+Constraint62 = _constraint(62, C.constraint_62)
+Constraint63 = _constraint(63, C.constraint_63)
+Constraint64 = _constraint(64, C.constraint_64)
+Constraint65 = _constraint(65, C.constraint_65)
+Constraint66 = _constraint(66, C.constraint_66)
+Constraint67 = _constraint(67, C.constraint_67)
+Constraint73 = _constraint(73, C.constraint_73)
+Constraint74 = _constraint(74, C.constraint_74)
+Constraint75 = _constraint(75, C.constraint_75)
+Constraint77 = _constraint(77, C.constraint_77)
+Constraint78 = _constraint(78, C.constraint_78)
+Constraint79 = _constraint(79, C.constraint_79)
+Constraint80 = _constraint(80, C.constraint_80)
+Constraint81 = _constraint(81, C.constraint_81)
+Constraint82 = _constraint(82, C.constraint_82)
+Constraint83 = _constraint(83, C.constraint_83)
+Constraint84 = _constraint(84, C.constraint_84)
+Constraint86 = _constraint(86, C.constraint_86)
+Constraint87 = _constraint(87, C.constraint_87)
+Constraint88 = _constraint(88, C.constraint_88)
+Constraint89 = _constraint(89, C.constraint_89)
+Constraint92 = _constraint(92, C.constraint_92)
+
+Constraint2HeatedTotalRadiation = _constraint(
+    2, C.constraint_2_non_ignited, pden_plasma_radiated_mw="pden_plasma_rad_mw"
+)
+Constraint2HeatedCoreRadiation = _constraint(
+    2, C.constraint_2_non_ignited, pden_plasma_radiated_mw="pden_plasma_core_rad_mw"
+)
+Constraint2IgnitedTotalRadiation = _constraint(
+    2, C.constraint_2_ignited, pden_plasma_radiated_mw="pden_plasma_rad_mw"
+)
+Constraint2IgnitedCoreRadiation = _constraint(
+    2, C.constraint_2_ignited, pden_plasma_radiated_mw="pden_plasma_core_rad_mw"
+)
+Constraint3Heated = _constraint(3, C.constraint_3_non_ignited)
+Constraint3Ignited = _constraint(3, C.constraint_3_ignited)
+Constraint4HeatedTotalRadiation = _constraint(
+    4, C.constraint_4_non_ignited, pden_plasma_radiated_mw="pden_plasma_rad_mw"
+)
+Constraint4HeatedCoreRadiation = _constraint(
+    4, C.constraint_4_non_ignited, pden_plasma_radiated_mw="pden_plasma_core_rad_mw"
+)
+Constraint4IgnitedTotalRadiation = _constraint(
+    4, C.constraint_4_ignited, pden_plasma_radiated_mw="pden_plasma_rad_mw"
+)
+Constraint4IgnitedCoreRadiation = _constraint(
+    4, C.constraint_4_ignited, pden_plasma_radiated_mw="pden_plasma_core_rad_mw"
+)
+Constraint5Greenwald = _constraint(
+    5, C.constraint_5_density_limit, nd_plasma_electron_limited="nd_plasma_electron_line"
+)
+Constraint5VolumeAverage = _constraint(
+    5,
+    C.constraint_5_density_limit,
+    nd_plasma_electron_limited="nd_plasma_electrons_vol_avg",
+)
+Constraint7 = _constraint(7, C.constraint_7_non_ignited)
+Constraint17Tokamak = _constraint(17, C.constraint_17_tokamak)
+Constraint17Stellarator = _constraint(17, C.constraint_17_stellarator)
+Constraint24TotalBeta = _constraint(
+    24, C.constraint_24_beta_limit, beta_limited="beta_total_vol_avg"
+)
+Constraint24ThermalBeta = _constraint(
+    24, C.constraint_24_beta_limit, beta_limited="beta_thermal_vol_avg"
+)
+Constraint24ToroidalBeta = _constraint(
+    24, C.constraint_24_beta_limit, beta_limited="beta_toroidal_vol_avg"
+)
+Constraint24ThermalAndBeamBeta = _constraint(24, C.constraint_24_thermal_and_beam)
+Constraint28 = _constraint(28, C.constraint_28_non_ignited)
+Constraint43Copper = _constraint(43, C.constraint_43_copper)
+Constraint43Other = _constraint(43, C.constraint_43_other)
+Constraint44Copper = _constraint(44, C.constraint_44_copper)
+Constraint44Other = _constraint(44, C.constraint_44_other)
+Constraint45 = _constraint(45, C.constraint_45_tart)
+Constraint46 = _constraint(46, C.constraint_46_tart)
+Constraint68FixedQ95 = _constraint(68, C.constraint_68_fixed_q95)
+Constraint68ComputedQ95 = _constraint(68, C.constraint_68_computed_q95)
+Constraint72Bucked = _constraint(72, C.constraint_72_bucked)
+Constraint72Free = _constraint(72, C.constraint_72_free)
+Constraint85InputLifetime = _constraint(
+    85, C.constraint_85_lifetime, cplife_bound="cplife_input"
+)
+Constraint85DivertorLifetime = _constraint(
+    85, C.constraint_85_lifetime, cplife_bound="life_div_fpy"
+)
+Constraint85BlanketLifetime = _constraint(
+    85, C.constraint_85_lifetime, cplife_bound="life_blkt_fpy"
+)
+Constraint85PlantLifetime = _constraint(
+    85, C.constraint_85_lifetime, cplife_bound="life_plant"
+)
+Constraint90BlanketCycles = _constraint(
+    90, C.constraint_90_cycles, n_cycle_bound="bktcycles"
+)
+Constraint90MinimumCycles = _constraint(
+    90, C.constraint_90_cycles, n_cycle_bound="n_cycle_min"
+)
+Constraint91Heated = _constraint(91, C.constraint_91_non_ignited)
+Constraint91Ignited = _constraint(91, C.constraint_91_ignited)
+
+
+# ---------------------------------------------------------------- the figures of merit
+
+MajorRadius = _merit(O.objective_metric_1)
+NeutronWallLoad = _merit(O.objective_metric_3)
+PTfPlusPPf = _merit(O.objective_metric_4)
+FusionGainQ = _merit(O.objective_metric_5)
+CostOfElectricity = _merit(O.objective_metric_6)
+CapitalCostDirect = _merit(O.objective_metric_7_direct)
+CapitalCostReactor = _merit(O.objective_metric_7_reactor)
+AspectRatio = _merit(O.objective_metric_8)
+DivertorHeatLoad = _merit(O.objective_metric_9)
+ToroidalField = _merit(O.objective_metric_10)
+TotalInjectedPower = _merit(O.objective_metric_11)
+PulseLength = _merit(O.objective_metric_14)
+PlantAvailabilityFactor = _merit(O.objective_metric_15_modelled)
+MinR0MaxTauBurn = _merit(O.objective_metric_16)
+NetElectricalOutput = _merit(O.objective_metric_17)
+NullFigureOfMerit = _merit(O.objective_metric_18)
+MaxQMaxTPlantPulseBurn = _merit(O.objective_metric_19)
