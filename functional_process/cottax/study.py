@@ -333,8 +333,15 @@ def condition_scale(node, env, floor=1e-12) -> tuple:
     return tuple(scales)
 
 
-def block_graph(configuration: Configuration, arm: str, env, trace: list, rule=RULE,
-                optimiser=VmconDriver, reports=True):
+def block_graph(
+    configuration: Configuration,
+    arm: str,
+    env,
+    trace: list,
+    rule=RULE,
+    optimiser=VmconDriver,
+    reports=True,
+):
     """The problem under `arm`, every cycle cut by `rule` and every problem driven: the
     top by `optimiser` (or, for a root find, `MdfNewtonDriver`), recording its iterates
     into `trace`. `optimiser` is a driver class, or a partial of one, taking VMCON's
@@ -361,8 +368,10 @@ def block_graph(configuration: Configuration, arm: str, env, trace: list, rule=R
             ),
         )
     else:
-        chosen[TOP] = (PortRootFinding(reports=(Steps, Converged) if reports else ()),
-                       MdfNewtonDriver())
+        chosen[TOP] = (
+            PortRootFinding(reports=(Steps, Converged) if reports else ()),
+            MdfNewtonDriver(),
+        )
     return model, driven(plan, chosen).graph
 
 
@@ -429,8 +438,15 @@ class Assembled:
     solve (an optimising arm's)."""
 
 
-def assemble(configuration: Configuration, arm: str, cold=None, *, rule=RULE,
-             optimiser=VmconDriver, state=None) -> Assembled:
+def assemble(
+    configuration: Configuration,
+    arm: str,
+    cold=None,
+    *,
+    rule=RULE,
+    optimiser=VmconDriver,
+    state=None,
+) -> Assembled:
     """`arm` of `configuration` built, every cycle cut by `rule`, the top answered by
     `optimiser`, and valued from `state` (default the configuration's) over `cold`:
     the MDA solved once, the block not yet."""
@@ -447,7 +463,11 @@ def assemble(configuration: Configuration, arm: str, cold=None, *, rule=RULE,
     trace: list = []
     block_model, graph = block_graph(configuration, arm, env, trace, rule, optimiser)
     inputs = block_values(
-        graph, state, block_model.given, env, set(configuration.problem.design),
+        graph,
+        state,
+        block_model.given,
+        env,
+        set(configuration.problem.design),
         nested_given=arm in ("MDF", "IDF"),
     )
     return Assembled(arm, graph, inputs, env, trace)
@@ -530,18 +550,77 @@ def posed(graph, inputs, problem=TOP) -> tuple:
     env = dict(inputs)
     if before:
         upstream = graph.subgraph(before)
-        env.update(solve(upstream, OrderedMap(
-            (v, inputs[v]) for v in upstream.graph.boundary_inputs)))
-    interior = next(s.interior for s in proved(graph).steps
-                    if isinstance(s, Solve) and s.problem == problem)
+        env.update(
+            solve(
+                upstream,
+                OrderedMap((v, inputs[v]) for v in upstream.graph.boundary_inputs),
+            )
+        )
+    interior = next(
+        s.interior
+        for s in proved(graph).steps
+        if isinstance(s, Solve) and s.problem == problem
+    )
     node = graph[problem]
     produced = set(interior.graph.graph.owned_variables)
-    fixed = tuple(dict.fromkeys(
-        p for p in (*interior.graph.graph.boundary_inputs, *node.condition.reads)
-        if p not in node.unknowns and p not in produced))
-    conditions_ = InteriorConditionMap(interior, node.unknowns, fixed,
-                                       node.condition.reads)
-    data = {role: tuple(env[p] for p in slot)
-            for role, slot in zip(node.driver.takes, node.data, strict=True)}
-    return (Posed(node.condition, node.driver.reports, conditions_),
-            tuple(env[p] for p in fixed), data)
+    fixed = tuple(
+        dict.fromkeys(
+            p
+            for p in (*interior.graph.graph.boundary_inputs, *node.condition.reads)
+            if p not in node.unknowns and p not in produced
+        )
+    )
+    conditions_ = InteriorConditionMap(
+        interior, node.unknowns, fixed, node.condition.reads
+    )
+    data = {
+        role: tuple(env[p] for p in slot)
+        for role, slot in zip(node.driver.takes, node.data, strict=True)
+    }
+    return (
+        Posed(node.condition, node.driver.reports, conditions_),
+        tuple(env[p] for p in fixed),
+        data,
+    )
+
+
+# ---------------------------------------------------------------- OpenMDAO
+
+
+def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=RULE):
+    """`arm` of `configuration` as cottax's OpenMDAO export: the same graph and values
+    `assemble` builds, the top answered by OpenMDAO's SLSQP in units of its design's
+    starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or Gauss-Seidel.
+    `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it back."""
+    from cottax.driver_contracts import ConstrainedMinimiser  # noqa: PLC0415
+    from cottax.export.openmdao import (  # noqa: PLC0415
+        DEFAULT_SOLVERS,
+        OMSLSQP,
+        OpenMDAOExport,
+        OpenMDAOGraph,
+    )
+    from cottax.pytree.codec import PytreeCodec  # noqa: PLC0415
+
+    if arm not in arms(configuration) or arm == "MDA":
+        raise ValueError(f"{configuration.name}: no {arm} arm to export")
+    cold = cold_state(configuration) if cold is None else cold
+    state = state_of(configuration)
+    model = machine_model(configuration)
+    mda = mda_graph(model, rule)
+    env = solve(mda, values(mda, state, model.given, cold))
+    block_model, graph = block_graph(configuration, arm, env, [], rule, reports=False)
+    inputs = block_values(
+        graph,
+        state,
+        block_model.given,
+        env,
+        set(configuration.problem.design),
+        nested_given=arm in ("MDF", "IDF"),
+    )
+    solvers = OrderedMap({
+        **dict(DEFAULT_SOLVERS),
+        ConstrainedMinimiser: OMSLSQP(scaled=True),
+    })
+    return OpenMDAOExport(
+        Inputs(OpenMDAOGraph(graph), inputs), PytreeCodec(), solvers=solvers
+    )
