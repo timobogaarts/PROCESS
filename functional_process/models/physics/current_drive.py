@@ -11,7 +11,7 @@ from functional_process.vocabulary import PlasmaIgnitionModel, constants
 
 
 def user_input_electron_cyclotron_efficiency(
-    *, eta_cd_norm_ecrh, nd_plasma_electrons_vol_avg, rmajor
+    eta_cd_norm_ecrh, nd_plasma_electrons_vol_avg, rmajor
 ):
     """ECRH current drive efficiency from a user-supplied normalised gamma.
 
@@ -131,7 +131,7 @@ def freethy_electron_cyclotron_efficiency(
 
 
 def hcd_secondary_driven_current(
-    *, eta_cd_hcd_secondary, p_hcd_secondary_injected_mw, plasma_current
+    eta_cd_hcd_secondary, p_hcd_secondary_injected_mw, plasma_current
 ):
     """Current driven by the secondary system, and its share of the plasma current.
 
@@ -151,7 +151,6 @@ def hcd_secondary_driven_current(
 
 
 def hcd_primary_injected_power_mw(
-    *,
     f_c_plasma_auxiliary,
     f_c_plasma_hcd_secondary,
     plasma_current,
@@ -215,7 +214,6 @@ def electron_cyclotron_primary_powers(
 
 
 def hcd_injected_power_total_mw(
-    *,
     p_hcd_primary_injected_mw,
     p_hcd_primary_extra_heat_mw,
     p_hcd_secondary_injected_mw,
@@ -254,7 +252,6 @@ def hcd_electric_total_mw(
 
 
 def fusion_gain(
-    *,
     p_fusion_total_mw,
     p_hcd_injected_total_mw,
     p_beam_orbit_loss_mw,

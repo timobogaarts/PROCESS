@@ -2,17 +2,10 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from cottax.interfaces import Explicit, Implicit
 
 from functional_process.cottax.models.stellarator.build import (
-    AFwTotalNoPowerflow,
-    AFwTotalWithPowerflow,
-    # `BlktmodelBlanketThickness` deliberately NOT imported/registered here any more --
-    # see the comment next to `Build` below, and `unit_registry.md` row 2: PROCESS's
-    # own default is `blktmodel = 0`, under which this node's own docstring says it must
-    # not be instantiated at all (`conditional-ownership-by-run-config`, same shape as
-    # `.physics.aspect`). Unconditional registration was a real bug, the same class
-    # already fixed once for `EcrhDensityLimit` -- found and fixed this pass.
     Build,
 )
 from functional_process.cottax.models.stellarator.coils.calculate import (
@@ -31,7 +24,6 @@ from functional_process.cottax.models.stellarator.coils.calculate import (
     TfCryoArea,
     VerticalPorts,
     WindingPackGeometry,
-    WindingPackIntersectInputs,
     WindingPackTotalSizePost,
     ZTfInsideHalf,
 )
@@ -40,7 +32,6 @@ from functional_process.cottax.models.stellarator.coils.forces import (
     MaxForceDensity,
     MaximumStress,
 )
-from functional_process.cottax.models.stellarator.coils.mass import CoilsMass
 from functional_process.cottax.models.stellarator.coils.quench import QuenchProtection
 from functional_process.cottax.models.stellarator.density_limits import (
     SudoDensityLimit,
@@ -53,10 +44,8 @@ from functional_process.cottax.models.stellarator.geometry import (
 )
 from functional_process.cottax.models.stellarator.heating import (
     BeamCurrent,
-    EcrhHeating,
     FusionGain,
     InjectedPowerTotal,
-    LowhybHeating,
 )
 from functional_process.cottax.models.stellarator.initialization import PulseDurations
 from functional_process.cottax.models.stellarator.neoclassics import (
@@ -65,31 +54,22 @@ from functional_process.cottax.models.stellarator.neoclassics import (
 )
 from functional_process.cottax.models.stellarator.plasma_physics import (
     ClippedRadiationPowers,
-    HeatingAndRadiationPower,
-    NeutronWallLoad,
     PoloidalFieldFromRotationalTransform,
-    RadiatedWallLoadAndFraction,
     StellaratorBetaAndStoredEnergy,
     ThermalEnergyTotals,
     TotalField,
-)
-from functional_process.cottax.models.stellarator.preset_config import (
-    StellaratorMachineConfig,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s1_s5 import (
     CryostatAndVvGeometry,
     FwBlanketShieldGeometry,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s2 import (
-    DetailedPowerflowBlanketShieldPower,
-    DetailedPowerflowBlanketShieldPowerUserInputPumping,
     ExponentialAttenuationBlanketShieldPower,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s3 import (
     DivertorPlateMass,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s4 import (
-    BlanketComponentMasses,
     ShieldMass,
 )
 from functional_process.cottax.models.stellarator.structure import (
@@ -100,13 +80,15 @@ from functional_process.cottax.models.stellarator.tf_nuclear_heating import (
 )
 
 
-class BlanketShieldPowerExponential(ModelNamespace):
+class BlanketShieldPowerExponential(eqx.Module):
     """Exponential-attenuation blanket/shield power: `blktmodel == 0 & ipowerflow == 0`."""
 
     # Over the line length and left that way -- see `Physics`'s own note: the slot
     # name and the occupant class are both this long and `ruff format` strips
     # parentheses from around an annotation.
-    exponential_attenuation_blanket_shield_power: ExponentialAttenuationBlanketShieldPower = ExponentialAttenuationBlanketShieldPower()  # noqa: E501
+    exponential_attenuation_blanket_shield_power: Explicit = (
+        ExponentialAttenuationBlanketShieldPower  # noqa: E501
+    )
     # `ScTfCoilNuclearHeating` moved here from the unswitched part -- this arm is
     # its one genuine caller that keeps its `p_tf_nuclear_heat_mw`
     # output (`stellarator.py:727-728`); the `blktmodel == 1` arm calls
@@ -118,29 +100,29 @@ class BlanketShieldPowerExponential(ModelNamespace):
     # default configuration lands in arm 2, not this one, so the
     # old unconditional placement was computing SC-coil TF nuclear
     # heating via the wrong formula for the default `GRAPH`.
-    sc_tf_coil_nuclear_heating: ScTfCoilNuclearHeating = ScTfCoilNuclearHeating()
+    sc_tf_coil_nuclear_heating: Explicit = ScTfCoilNuclearHeating
 
 
-class StellaratorCoils(ModelNamespace):
+class StellaratorCoils(eqx.Module):
     """The modular-coil set: geometry, current, casing, ports, structure, cryogenics."""
 
     # unit #9, coils/calculate.py
-    coil_toroidal_thickness: CoilToroidalThickness = CoilToroidalThickness()
-    coil_radial_thickness: CoilRadialThickness = CoilRadialThickness()
-    coil_cross_sectional_area: CoilCrossSectionalArea = CoilCrossSectionalArea()
-    coil_half_widths: CoilHalfWidths = CoilHalfWidths()
-    plasma_facing_coil_area: PlasmaFacingCoilArea = PlasmaFacingCoilArea()
-    coil_coil_toroidal_gap: CoilCoilToroidalGap = CoilCoilToroidalGap()
-    coils_summary_variables: CoilsSummaryVariables = CoilsSummaryVariables()
-    stored_magnetic_energy: StoredMagneticEnergy = StoredMagneticEnergy()
-    winding_pack_geometry: WindingPackGeometry = WindingPackGeometry()
-    coil_current: CoilCurrent = CoilCurrent()
-    coil_casing: CoilCasing = CoilCasing()
-    vertical_ports: VerticalPorts = VerticalPorts()
-    horizontal_ports: HorizontalPorts = HorizontalPorts()
+    coil_toroidal_thickness: Explicit = CoilToroidalThickness
+    coil_radial_thickness: Explicit = CoilRadialThickness
+    coil_cross_sectional_area: Explicit = CoilCrossSectionalArea
+    coil_half_widths: Explicit = CoilHalfWidths
+    plasma_facing_coil_area: Explicit = PlasmaFacingCoilArea
+    coil_coil_toroidal_gap: Explicit = CoilCoilToroidalGap
+    coils_summary_variables: Explicit = CoilsSummaryVariables
+    stored_magnetic_energy: Explicit = StoredMagneticEnergy
+    winding_pack_geometry: Explicit = WindingPackGeometry
+    coil_current: Explicit = CoilCurrent
+    coil_casing: Explicit = CoilCasing
+    vertical_ports: Explicit = VerticalPorts
+    horizontal_ports: Explicit = HorizontalPorts
     # `st_coil`'s formula for `.build.z_tf_inside_half` -- see `Build`'s own comment
     # above (unit #2, build.py) for why this one, not `Build`'s, owns the field.
-    z_tf_inside_half: ZTfInsideHalf = ZTfInsideHalf()
+    z_tf_inside_half: Explicit = ZTfInsideHalf
     # `.tfcoil.tfcryoarea`, carved out of the same inline `st_coil` geometry block as
     # `ZTfInsideHalf` and for the same reason (the eager `st_coil` orchestrator is not
     # registered, so anything only it computes has no owner). Prerequisite for
@@ -148,7 +130,7 @@ class StellaratorCoils(ModelNamespace):
     # two boundary inputs for one new one (`_audit/boundary_inputs_audit.md` §4c (c1)'s
     # sibling gap, §7 items 4 and 7). Of its two neighbours in that block,
     # `min_bending_radius` still stays unported for want of any reader.
-    tf_cryo_area: TfCryoArea = TfCryoArea()
+    tf_cryo_area: Explicit = TfCryoArea
     # `.tfcoil.len_tf_coil`, the third formula from that same block, and the one held
     # back longest: four registered nodes read it (`StructureMasses`,
     # `PlasmaFacingCoilArea`, `CoilsMass`, `TfMagnetCostSuperconducting`) while it had
@@ -160,17 +142,17 @@ class StellaratorCoils(ModelNamespace):
     # `degenerate_fixed_points` deletes on sight. See `LenTfCoil`'s own docstring for
     # the full argument and the one honest caveat. This also closes the cold-start
     # `nan` in `.costs.c22211`/`.c2221` (`costs.md`).
-    len_tf_coil: LenTfCoil = LenTfCoil()
+    len_tf_coil: Explicit = LenTfCoil
     # unit #12, coils/mass.py
-    coils_mass: CoilsMass = dataclasses.field(kw_only=True)
+    coils_mass: Explicit = dataclasses.field(kw_only=True)
     """The TF coil masses -- one occupant per `.tfcoil.i_tf_sc_mat` value, keyed by
     `indat.COILS_MASS_MATERIAL`.
     """
     # unit #11, coils/forces.py
-    max_force_density: MaxForceDensity = MaxForceDensity()
-    maximum_stress: MaximumStress = MaximumStress()
+    max_force_density: Explicit = MaxForceDensity
+    maximum_stress: Explicit = MaximumStress
     # unit #14, coils/quench.py
-    quench_protection: QuenchProtection = QuenchProtection()
+    quench_protection: Explicit = QuenchProtection
     # `coils/calculate.py`'s `winding_pack_total_size` (unit #9's remaining tier-2 gap),
     # now the full three-piece split: `winding_pack_intersect_inputs` (pre-`intersect`,
     # a **slot**, mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` and
@@ -196,37 +178,31 @@ class StellaratorCoils(ModelNamespace):
     # `Intersect` (like every other undriven declared node in this graph) needs no
     # production driver to be registered here -- structural admission only, driving
     # deferred, per `_audit/next_steps.md` §5.
-    winding_pack_intersect_inputs: WindingPackIntersectInputs = dataclasses.field(
-        kw_only=True
-    )
+    winding_pack_intersect_inputs: Explicit = dataclasses.field(kw_only=True)
     """The pre-`intersect` curves, on `.tfcoil.i_tf_sc_mat` -- one occupant per
     superconductor, `WINDING_PACK_MATERIAL` in `indat.py`.
     """
-    intersect: Intersect = Intersect()
-    winding_pack_total_size_post: WindingPackTotalSizePost = WindingPackTotalSizePost()
+    intersect: Implicit = Intersect
+    winding_pack_total_size_post: Explicit = WindingPackTotalSizePost
 
 
-class StellaratorFwbs(ModelNamespace):
+class StellaratorFwbs(eqx.Module):
     """First wall, blanket and shield -- the `st_fwbs` chunk's registered nodes."""
 
-    blanket_shield_power: (
-        BlanketShieldPowerExponential
-        | DetailedPowerflowBlanketShieldPower
-        | DetailedPowerflowBlanketShieldPowerUserInputPumping
-    ) = dataclasses.field(kw_only=True)
+    blanket_shield_power: Explicit = dataclasses.field(kw_only=True)
     """Blanket/shield power deposition, on `.fwbs.blktmodel` x `.heat_transport.
     ipowerflow` x `.fwbs.i_p_coolant_pumping` jointly -- one slot, three integers,
     resolved by `_blanket_shield_power_arm` in `machine_from_indat`.
     """
 
-    blanket_masses: BlanketComponentMasses = dataclasses.field(kw_only=True)
+    blanket_masses: Explicit = dataclasses.field(kw_only=True)
     """Blanket component masses, on `.fwbs.blktmodel` x `.fwbs.blkttype` jointly,
     resolved by `_blanket_mass_arm`.
     """
 
     # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`), portable now, no blocker.
-    fw_blanket_shield_geometry: FwBlanketShieldGeometry = FwBlanketShieldGeometry()
-    cryostat_and_vv_geometry: CryostatAndVvGeometry = CryostatAndVvGeometry()
+    fw_blanket_shield_geometry: Explicit = FwBlanketShieldGeometry
+    cryostat_and_vv_geometry: Explicit = CryostatAndVvGeometry
     # `st_fwbs` S3 (`stellarator_fwbs_s3.md`). Reads `.divertor.a_div_surface_total`,
     # which `Divertor` owns -- an ordinary acyclic edge, not a cycle: `Divertor`'s own
     # inputs have no dependency back on anything `st_fwbs`/`DivertorPlateMass` produces
@@ -236,7 +212,7 @@ class StellaratorFwbs(ModelNamespace):
     # Registering this the ordinary way (`Divertor` before `DivertorPlateMass` in
     # topological order) is strictly more self-consistent than PROCESS's own lagged
     # read -- confirmed by the build below staying at the same SCC count.
-    divertor_plate_mass: DivertorPlateMass = DivertorPlateMass()
+    divertor_plate_mass: Explicit = DivertorPlateMass
     # `st_fwbs` S4's shield-mass block (`stellarator_fwbs_s4.md`). Unswitched, not
     # behind a `Switch` because `stellarator.py:1195-1206` is outside every branch in
     # `st_fwbs` -- no `blktmodel`, `blkttype` or `ipowerflow` guard -- so both outputs
@@ -244,21 +220,19 @@ class StellaratorFwbs(ModelNamespace):
     # see `TOPOLOGY_SWITCHES`'s `.fwbs.blktmodel,.fwbs.blkttype` entry. Closes
     # `_audit/boundary_inputs_audit.md` § 4c (b5)/(b6): `Bldgs` and `ShieldCost` were
     # reading `.fwbs.whtshld`, and `ShieldCost` `.fwbs.wpenshld`, as boundary inputs.
-    shield_mass: ShieldMass = ShieldMass()
+    shield_mass: Explicit = ShieldMass
 
 
-class Stellarator(ModelNamespace):
+class Stellarator(eqx.Module):
     """Everything device-specific: the machine's own geometry, coils, and FWBS."""
 
-    machine_config: StellaratorMachineConfig = dataclasses.field(kw_only=True)
+    machine_config: Explicit = dataclasses.field(kw_only=True)
     """The 34 `.stellarator_config.stella_config_*` fields, for whichever machine."""
 
-    heating: EcrhHeating | LowhybHeating = dataclasses.field(kw_only=True)
+    heating: Explicit = dataclasses.field(kw_only=True)
     """Which auxiliary heating model runs (`.stellarator.isthtr`, default 1 = ECRH)."""
 
-    fw_area: AFwTotalNoPowerflow | AFwTotalWithPowerflow = dataclasses.field(
-        kw_only=True
-    )
+    fw_area: Explicit = dataclasses.field(kw_only=True)
     """First-wall area (`.heat_transport.ipowerflow`, default 1)."""
 
     coils: StellaratorCoils = dataclasses.field(kw_only=True)
@@ -267,10 +241,10 @@ class Stellarator(ModelNamespace):
     fwbs: StellaratorFwbs = dataclasses.field(kw_only=True)
 
     # unit #1 chunks
-    sudo_density_limit: SudoDensityLimit = SudoDensityLimit()
+    sudo_density_limit: Explicit = SudoDensityLimit
     # EcrhDensityLimit moved to TOPOLOGY_SWITCHES's `i_plasma_pedestal` switch -- its
     # static kwarg is no longer independent of that switch's value, see there.
-    structure_masses: StructureMasses = StructureMasses()
+    structure_masses: Explicit = StructureMasses
     # ScTfCoilNuclearHeating moved to TOPOLOGY_SWITCHES's new joint `blktmodel`/
     # `ipowerflow` switch (value=1 arm) -- see that switch's own comment. Unconditional
     # placement here was a real bug: PROCESS's own default configuration lands in the
@@ -287,20 +261,18 @@ class Stellarator(ModelNamespace):
     # transient one, not the one that survives a real run's final report pass. See
     # `build.py`'s `calculate_build` docstring and `ZTfInsideHalf`'s own for the full
     # account.
-    build: Build = Build()
+    build: Explicit = Build
     # unit #4, divertor.py
-    divertor: Divertor = Divertor()
+    divertor: Explicit = Divertor
     # unit #5, heating.py
-    injected_power_total: InjectedPowerTotal = InjectedPowerTotal()
-    beam_current: BeamCurrent = BeamCurrent()
-    fusion_gain: FusionGain = FusionGain()
+    injected_power_total: Explicit = InjectedPowerTotal
+    beam_current: Explicit = BeamCurrent
+    fusion_gain: Explicit = FusionGain
     # unit #6, initialization.py
-    pulse_durations: PulseDurations = PulseDurations()
+    pulse_durations: Explicit = PulseDurations
     # unit #7, neoclassics.py (scalar-argument functions only, see module docstring)
-    profile_values: ProfileValues = ProfileValues()
-    effective_thermal_diffusivity: EffectiveThermalDiffusivity = (
-        EffectiveThermalDiffusivity()
-    )
+    profile_values: Explicit = ProfileValues
+    effective_thermal_diffusivity: Explicit = EffectiveThermalDiffusivity
     # `plasma_physics.py` (chunk 1B of unit #1). `StellaratorBetaAndRhoStar` is
     # still NOT registered: its `.physics.rho_star` output is algebraically identical to
     # `DimensionlessPlasmaParameters`'s own `rho_star` formula above (same inputs, same
@@ -317,13 +289,11 @@ class Stellarator(ModelNamespace):
     # constraint 24's only argument, one of the 14 active constraints of the reference
     # run, so this is what makes that constraint assemblable at all -- see that class's
     # own docstring.
-    stellarator_beta_and_stored_energy: StellaratorBetaAndStoredEnergy = (
-        StellaratorBetaAndStoredEnergy()
+    stellarator_beta_and_stored_energy: Explicit = StellaratorBetaAndStoredEnergy
+    poloidal_field_from_rotational_transform: Explicit = (
+        PoloidalFieldFromRotationalTransform
     )
-    poloidal_field_from_rotational_transform: PoloidalFieldFromRotationalTransform = (
-        PoloidalFieldFromRotationalTransform()
-    )
-    total_field: TotalField = TotalField()
+    total_field: Explicit = TotalField
     # `stellarator.py:2152-2166`: `st_phys`'s two zero-clips on the radiation power
     # densities and the two total powers formed from them. Owns the real
     # `.physics.pden_plasma_*_rad_mw` fields, which `PlasmaRadiationPowers` now mints
@@ -331,24 +301,20 @@ class Stellarator(ModelNamespace):
     # belongs to this caller, not to `calculate_radiation_powers`. Also gives
     # `.physics.p_plasma_inner_rad_mw` (read by `StellaratorConfinementTime`) its first
     # producer -- `_audit/boundary_inputs_audit.md` §7 item 6.
-    clipped_radiation_powers: ClippedRadiationPowers = ClippedRadiationPowers()
-    neutron_wall_load: NeutronWallLoad = dataclasses.field(kw_only=True)
+    clipped_radiation_powers: Explicit = ClippedRadiationPowers
+    neutron_wall_load: Explicit = dataclasses.field(kw_only=True)
     """Neutron wall load -- one occupant per arm of `.physics.i_pflux_fw_neutron` x
     `.heat_transport.ipowerflow` (`indat.py`'s `_wall_load_arm`).
     """
-    heating_and_radiation_power: HeatingAndRadiationPower = dataclasses.field(
-        kw_only=True
-    )
+    heating_and_radiation_power: Explicit = dataclasses.field(kw_only=True)
     """Heating power, SOL radiation split and alpha power to the wall -- one occupant
     per `.physics.i_plasma_ignited` value.
     """
-    radiated_wall_load_and_fraction: RadiatedWallLoadAndFraction = dataclasses.field(
-        kw_only=True
-    )
+    radiated_wall_load_and_fraction: Explicit = dataclasses.field(kw_only=True)
     """Radiated wall load and radiation fraction -- the same three arms as
     `neutron_wall_load` above, from the same `_wall_load_arm` dispatch.
     """
-    thermal_energy_totals: ThermalEnergyTotals = ThermalEnergyTotals()
+    thermal_energy_totals: Explicit = ThermalEnergyTotals
     # `geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
     # `1 not in data.numerics.ixc` conditional-ownership case (module docstring): the
     # bare `NumericsData` dataclass default (`ixc = [0, 0, ...]`, no real iteration-
@@ -358,6 +324,6 @@ class Stellarator(ModelNamespace):
     # `StellaratorScalingFactors` takes `aspect` as a plain `FromExactly` regardless of source
     # (this node's own output, when active, or an external iteration-variable value
     # otherwise), so no further wiring decision is needed here.
-    default_aspect_ratio: DefaultAspectRatio = DefaultAspectRatio()
-    stellarator_scaling_factors: StellaratorScalingFactors = StellaratorScalingFactors()
-    stellarator_plasma_geometry: StellaratorPlasmaGeometry = StellaratorPlasmaGeometry()
+    default_aspect_ratio: Explicit = DefaultAspectRatio
+    stellarator_scaling_factors: Explicit = StellaratorScalingFactors
+    stellarator_plasma_geometry: Explicit = StellaratorPlasmaGeometry

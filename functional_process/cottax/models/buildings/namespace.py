@@ -2,19 +2,16 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from cottax.interfaces import Explicit
 
-from functional_process.cottax.models.buildings.buildings import (
-    Bldgs,
-    BldgsSizesBase,
-    TfCoilEnvelope,
-)
+from functional_process.cottax.models.buildings.buildings import TfCoilEnvelope
 
 
-class Buildings(ModelNamespace):
+class Buildings(eqx.Module):
     """Plant buildings."""
 
-    sizing: Bldgs | BldgsSizesBase = dataclasses.field(kw_only=True)
+    sizing: Explicit = dataclasses.field(kw_only=True)
     """Which building-size model runs (`.buildings.i_bldgs_size`, default 0 = ITER
     1992) -- `BldgsSizesBase`'s occupant further depends on
     `.current_drive.i_hcd_primary`'s method (`BldgsSizesNeutralBeam`/
@@ -22,4 +19,4 @@ class Buildings(ModelNamespace):
     """
 
     # unit #15, buildings.py -- unconditional preamble, feeds both `i_bldgs_size` arms
-    tf_coil_envelope: TfCoilEnvelope = TfCoilEnvelope()
+    tf_coil_envelope: Explicit = TfCoilEnvelope

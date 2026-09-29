@@ -1,11 +1,12 @@
 """The vacuum subsystem's namespace."""
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 from functional_process.cottax.models.vacuum.vacuum import VacuumOld
 
 
-class Vacuum(ModelNamespace):
+class Vacuum(eqx.Module):
     """Vacuum pumping and the duct sizing problem."""
 
     # unit #16, vacuum.py -- `"old"` branch only, matching PROCESS's own default
@@ -14,7 +15,7 @@ class Vacuum(ModelNamespace):
     # output, so this switch fails `check_arms_are_exclusive` -- see
     # `TOPOLOGY_SWITCHES`'s docstring above. `VacuumPumpingSimple` stays
     # ported-but-unregistered.
-    vacuum_old: VacuumOld = VacuumOld()
+    vacuum_old: Explicit = VacuumOld
     # `DuctDiameterRootFind` is **not registered**, and that is the point of it.
     # Every `VarPath` it reads or owns is minted and unique to it
     # (`.vacuum.d_duct`/`l1`/`l2`/`l3`/`xmult_i`/`ceff_i`), so registering it put an

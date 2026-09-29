@@ -67,6 +67,9 @@ from process.models.tfcoil.superconducting import (
     vv_stress_on_quench as process_vv_stress_on_quench,
 )
 
+# The reference tokamak (run from the repository root, as the regression inputs are).
+TOKAMAK_INPUT_FILE = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
+
 _RECTANGULAR = 0
 _DOUBLE_RECTANGULAR = 1
 _TRAPEZOIDAL = 2
@@ -1595,8 +1598,6 @@ def test_i_str_wp_zero_is_refused_end_to_end(tmp_path):
     # `large_tokamak_eval.IN.DAT` with the one switch flipped: the least an IN.DAT
     # must say for `machine_from_indat` to build a tokamak, and a real file says it.
     import pathlib  # noqa: PLC0415
-
-    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE  # noqa: PLC0415
 
     indat = tmp_path / "TOK.DAT"
     lines = [

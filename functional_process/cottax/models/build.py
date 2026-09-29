@@ -3,10 +3,8 @@ vertical build.
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.paths import build, divertor, physics, tfcoil
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,
@@ -39,389 +37,248 @@ from functional_process.models.build import (
 )
 from functional_process.models.safe_math import safe_sqrt  # noqa: F401
 
-
-class PlasmaXpointHeights(WrapsFunction):
-    """cottax node: `calculate_z_plasma_xpoint`. No switch."""
-
-    fn = calculate_z_plasma_xpoint
-
-    rminor = From(physics)
-    kappa = From(physics)
-
-    z_plasma_xpoint_upper = OutputInto(build)
-    z_plasma_xpoint_lower = OutputInto(build)
-
-
-class DzBlktUpper(WrapsFunction):
-    """cottax node: `calculate_dz_blkt_upper`, owning `.build.dz_blkt_upper`."""
-
-    fn = calculate_dz_blkt_upper
-
-    dr_blkt_inboard = From(build)
-    dr_blkt_outboard = From(build)
-
-    dz_blkt_upper = OutputInto(build)
-
-
-class DivertorGeometryConventional(WrapsFunction):
-    """cottax node: `calculate_divertor_geometry_conventional`."""
-
-    fn = calculate_divertor_geometry_conventional
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    kappa = From(physics)
-    triang = From(physics)
-    plsepi = From(build)
-    plsepo = From(build)
-    plleni = From(build)
-    plleno = From(build)
-    betai = From(divertor)
-    betao = From(divertor)
-
-    dz_xpoint_divertor = OutputInto(build)
-    rspo = OutputInto(build)
-
-
-class DivertorGeometrySphericalTokamak(WrapsFunction):
-    """cottax node: `calculate_divertor_geometry_spherical_tokamak`."""
-
-    fn = calculate_divertor_geometry_spherical_tokamak
-
-    rminor = From(physics)
-
-    dz_xpoint_divertor = OutputInto(build)
-
-
-class ZTfInsideHalf(WrapsFunction):
-    """cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`."""
-
-    fn = calculate_z_tf_inside_half
-
-    z_plasma_xpoint_upper = From(build)
-    dz_xpoint_divertor = From(build)
-    dz_divertor = From(divertor)
-    dz_shld_lower = From(build)
-    dz_vv_lower = From(build)
-    dz_shld_vv_gap = From(build)
-    dz_shld_thermal = From(build)
-    dr_tf_shld_gap = From(build)
-
-    z_tf_inside_half = OutputInto(build)
-
-
-class TfTopHeight(ExplicitFunction):
-    """The family that owns `.build.z_tf_top` and `.build.dz_tf_upper_lower_midplane`."""
-
-
-class TfTopHeightSingleNull(TfTopHeight, WrapsFunction):
-    """cottax node: `calculate_tf_top_height_single_null`."""
-
-    fn = calculate_tf_top_height_single_null
-
-    z_tf_inside_half = From(build)
-    dr_tf_inboard = From(build)
-    dr_tf_shld_gap = From(build)
-    dz_shld_thermal = From(build)
-    dz_shld_vv_gap = From(build)
-    dz_vv_upper = From(build)
-    dz_shld_upper = From(build)
-    dr_shld_blkt_gap = From(build)
-    dz_blkt_upper = From(build)
-    dr_fw_inboard = From(build)
-    dr_fw_outboard = From(build)
-    dz_fw_plasma_gap = From(build)
-    z_plasma_xpoint_upper = From(build)
-
-    z_tf_top = OutputInto(build)
-    dz_tf_upper_lower_midplane = OutputInto(build)
-
-
-class TfTopHeightDoubleNull(TfTopHeight, WrapsFunction):
-    """cottax node: `calculate_tf_top_height_double_null`."""
-
-    fn = calculate_tf_top_height_double_null
-
-    z_tf_inside_half = From(build)
-    dr_tf_inboard = From(build)
-
-    z_tf_top = OutputInto(build)
-    dz_tf_upper_lower_midplane = OutputInto(build)
-
-
-class BlktUpperThickness(WrapsFunction):
-    """cottax node: `calculate_dz_blkt_upper`."""
-
-    fn = calculate_dz_blkt_upper
-
-    dr_blkt_inboard = From(build)
-    dr_blkt_outboard = From(build)
-
-    dz_blkt_upper = OutputInto(build)
-
-
-class DrTfInboardFromWindingPack(WrapsFunction):
-    """cottax node: `calculate_dr_tf_inboard`."""
-
-    fn = calculate_dr_tf_inboard
-
-    dr_tf_wp_with_insulation = From(tfcoil)
-    dr_tf_plasma_case = From(tfcoil)
-    dr_tf_nose_case = From(tfcoil)
-
-    dr_tf_inboard = OutputInto(build)
-
-
-class DrTfWpWithInsulationFromInboardBuild(WrapsFunction):
-    """cottax node: `calculate_dr_tf_wp_with_insulation`."""
-
-    fn = calculate_dr_tf_wp_with_insulation
-
-    dr_tf_inboard = From(build)
-    dr_tf_plasma_case = From(tfcoil)
-    dr_tf_nose_case = From(tfcoil)
-
-    dr_tf_wp_with_insulation = OutputInto(tfcoil)
-
-
-class TfInboardRadiiTfOutsideCs(WrapsFunction):
-    """cottax node: `calculate_r_tf_inboard_radii_tf_outside_cs`."""
-
-    fn = calculate_r_tf_inboard_radii_tf_outside_cs
-
-    dr_bore = From(build)
-    dr_cs = From(build)
-    fseppc = From(build)
-    fcspc = From(build)
-    sigallpc = From(build)
-    dr_cs_tf_gap = From(build)
-    dr_tf_inboard = From(build)
-
-    dr_cs_bore = OutputInto(build)
-    dr_cs_precomp = OutputInto(build)
-    r_tf_inboard_in = OutputInto(build)
-    r_tf_inboard_mid = OutputInto(build)
-    r_tf_inboard_out = OutputInto(build)
-
-
-class TfInboardRadiiNoCsPrecomp(WrapsFunction):
-    """cottax node: `calculate_r_tf_inboard_radii_no_cs_precomp`."""
-
-    fn = calculate_r_tf_inboard_radii_no_cs_precomp
-
-    dr_bore = From(build)
-    dr_cs = From(build)
-    dr_cs_tf_gap = From(build)
-    dr_tf_inboard = From(build)
-
-    dr_cs_bore = OutputInto(build)
-    dr_cs_precomp = OutputInto(build)
-    r_tf_inboard_in = OutputInto(build)
-    r_tf_inboard_mid = OutputInto(build)
-    r_tf_inboard_out = OutputInto(build)
-
-
-class ShldInboardInnerRadius(WrapsFunction):
-    """cottax node: `calculate_r_shld_inboard_inner`. No switch."""
-
-    fn = calculate_r_shld_inboard_inner
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    dr_fw_plasma_gap_inboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_blkt_inboard = From(build)
-    dr_shld_inboard = From(build)
-
-    r_shld_inboard_inner = OutputInto(build)
-
-
-class ShldOutboardOuterRadius(WrapsFunction):
-    """cottax node: `calculate_r_shld_outboard_outer`. No switch."""
-
-    fn = calculate_r_shld_outboard_outer
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    dr_fw_plasma_gap_outboard = From(build)
-    dr_fw_outboard = From(build)
-    dr_blkt_outboard = From(build)
-    dr_shld_outboard = From(build)
-
-    r_shld_outboard_outer = OutputInto(build)
-
-
-class DrTfOutboardSuperconducting(WrapsFunction):
-    """cottax node: `calculate_dr_tf_outboard_superconducting`."""
-
-    fn = calculate_dr_tf_outboard_superconducting
-
-    dr_tf_inboard = From(build)
-
-    dr_tf_outboard = OutputInto(build)
-
-
-class WpConductorMaxWidthSuperconducting(WrapsFunction):
-    """cottax node: `calculate_dx_tf_wp_conductor_max_superconducting`."""
-
-    fn = calculate_dx_tf_wp_conductor_max_superconducting
-
-    dx_tf_wp_primary_toroidal = From(tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-    dx_tf_wp_insertion_gap = From(tfcoil)
-
-    dx_tf_wp_conductor_max = OutputInto(tfcoil)
-
-
-class TfOutboardMidUnrippled(WrapsFunction):
-    """cottax node: `calculate_r_tf_outboard_mid_unrippled`."""
-
-    fn = calculate_r_tf_outboard_mid_unrippled
-
-    r_shld_outboard_outer = From(build)
-    dr_shld_blkt_gap = From(build)
-    dr_vv_outboard = From(build)
-    gapomin = From(build)
-    dr_shld_thermal_outboard = From(build)
-    dr_tf_shld_gap = From(build)
-    dr_tf_outboard = From(build)
-
-    r_tf_outboard_mid_unrippled = OutputInto(build)
-
-
-class TfOutboardMidDShape(WrapsFunction):
-    """cottax node: `calculate_r_tf_outboard_mid_dshape`, the ripple constraint on the
-    outboard TF leg.
-    """
-
-    fn = calculate_r_tf_outboard_mid_dshape
-
-    r_tf_outboard_mid_unrippled = From(build)
-    ripple_b_tf_plasma_edge_max = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    rmajor = From(physics)
-    rminor = From(physics)
-    dx_tf_wp_conductor_max = From(tfcoil)
-
-    r_tf_outboard_mid = OutputInto(build)
-
-
-class TfOutboardEdgeRipple(WrapsFunction):
-    """cottax node: `calculate_ripple_b_tf_plasma_edge_fitted` --
-    `plasma_outboard_edge_toroidal_ripple_fitted`, evaluated at the final leg radius.
-    """
-
-    fn = calculate_ripple_b_tf_plasma_edge_fitted
-
-    r_tf_outboard_mid = From(build)
-    ripple_b_tf_plasma_edge_max = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    rmajor = From(physics)
-    rminor = From(physics)
-    dx_tf_wp_conductor_max = From(tfcoil)
-
-    ripple_b_tf_plasma_edge = OutputInto(tfcoil)
-
-
-class TfOutboardMidPictureFrame(WrapsFunction):
-    """cottax node: `calculate_r_tf_outboard_mid_picture_frame`, the ripple constraint
-    on the outboard TF leg.
-    """
-
-    fn = calculate_r_tf_outboard_mid_picture_frame
-
-    r_tf_outboard_mid_unrippled = From(build)
-    ripple_b_tf_plasma_edge_max = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    rmajor = From(physics)
-    rminor = From(physics)
-
-    r_tf_outboard_mid = OutputInto(build)
-
-
-class TfOutboardEdgeRipplePictureFrame(WrapsFunction):
-    """cottax node: `calculate_ripple_b_tf_plasma_edge_picture_frame` --
-    `plasma_outboard_edge_toroidal_ripple_picture_frame`, evaluated at the final leg
-    radius.
-    """
-
-    fn = calculate_ripple_b_tf_plasma_edge_picture_frame
-
-    r_tf_outboard_mid = From(build)
-    ripple_b_tf_plasma_edge_max = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    rmajor = From(physics)
-    rminor = From(physics)
-
-    ripple_b_tf_plasma_edge = OutputInto(tfcoil)
-
-
-class ShldVvGapOutboard(WrapsFunction):
-    """cottax node: `calculate_dr_shld_vv_gap_outboard`."""
-
-    fn = calculate_dr_shld_vv_gap_outboard
-
-    r_tf_outboard_mid = From(build)
-    dr_tf_outboard = From(build)
-    dr_vv_outboard = From(build)
-    r_shld_outboard_outer = From(build)
-    dr_shld_thermal_outboard = From(build)
-    dr_tf_shld_gap = From(build)
-    dr_shld_blkt_gap = From(build)
-
-    dr_shld_vv_gap_outboard = OutputInto(build)
-
-
-class TfInnerBore(WrapsFunction):
-    """cottax node: `calculate_dr_tf_inner_bore`."""
-
-    fn = calculate_dr_tf_inner_bore
-
-    r_tf_outboard_mid = From(build)
-    dr_tf_outboard = From(build)
-    r_tf_inboard_mid = From(build)
-    dr_tf_inboard = From(build)
-
-    dr_tf_inner_bore = OutputInto(build)
-
-
-class VacuumVesselAndShieldRadiiTfOutsideCs(WrapsFunction):
-    """cottax node: `calculate_vacuum_vessel_and_shield_radii`."""
-
-    fn = calculate_vacuum_vessel_and_shield_radii
-
-    r_tf_inboard_out = From(build)
-    dr_tf_shld_gap = From(build)
-    dr_shld_thermal_inboard = From(build)
-    dr_shld_vv_gap_inboard = From(build)
-    dr_vv_inboard = From(build)
-    dr_shld_inboard = From(build)
-
-    r_vv_inboard_out = OutputInto(build)
-    r_sh_inboard_in = OutputInto(build)
-    r_sh_inboard_out = OutputInto(build)
-
-
-class RadialBuildToPlasmaCentre(WrapsFunction):
-    """cottax node: `calculate_rbld`."""
-
-    fn = calculate_rbld
-
-    r_sh_inboard_out = From(build)
-    dr_shld_blkt_gap = From(build)
-    dr_blkt_inboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_fw_plasma_gap_inboard = From(build)
-    rminor = From(physics)
-
-    rbld = OutputInto(build)
-
-
-class RCpTopFromTfInboardOut(WrapsFunction):
-    """cottax node: `calculate_r_cp_top_from_tf_inboard_out`, ports declared."""
-
-    fn = calculate_r_cp_top_from_tf_inboard_out
-
-    r_tf_inboard_out = From(build)
-
-    r_cp_top = OutputInto(build)
+# cottax node: `calculate_z_plasma_xpoint`. No switch.
+PlasmaXpointHeights = build.function(
+    calculate_z_plasma_xpoint,
+    "z_plasma_xpoint_upper",
+    "z_plasma_xpoint_lower",
+    reads={
+        "rminor": physics,
+        "kappa": physics,
+    },
+)
+
+
+# cottax node: `calculate_dz_blkt_upper`, owning `.build.dz_blkt_upper`.
+DzBlktUpper = build.function(calculate_dz_blkt_upper, "dz_blkt_upper")
+
+
+# cottax node: `calculate_divertor_geometry_conventional`.
+DivertorGeometryConventional = build.function(
+    calculate_divertor_geometry_conventional,
+    "dz_xpoint_divertor",
+    "rspo",
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+        "kappa": physics,
+        "triang": physics,
+        "betai": divertor,
+        "betao": divertor,
+    },
+)
+
+
+# cottax node: `calculate_divertor_geometry_spherical_tokamak`.
+DivertorGeometrySphericalTokamak = build.function(
+    calculate_divertor_geometry_spherical_tokamak,
+    "dz_xpoint_divertor",
+    reads={
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`.
+ZTfInsideHalf = build.function(
+    calculate_z_tf_inside_half,
+    "z_tf_inside_half",
+    reads={
+        "dz_divertor": divertor,
+    },
+)
+
+
+# The TfTopHeight family:
+# The family that owns `.build.z_tf_top` and `.build.dz_tf_upper_lower_midplane`.
+
+
+# cottax node: `calculate_tf_top_height_single_null`.
+TfTopHeightSingleNull = build.function(
+    calculate_tf_top_height_single_null, "z_tf_top", "dz_tf_upper_lower_midplane"
+)
+
+
+# cottax node: `calculate_tf_top_height_double_null`.
+TfTopHeightDoubleNull = build.function(
+    calculate_tf_top_height_double_null, "z_tf_top", "dz_tf_upper_lower_midplane"
+)
+
+
+# cottax node: `calculate_dz_blkt_upper`.
+BlktUpperThickness = build.function(calculate_dz_blkt_upper, "dz_blkt_upper")
+
+
+# cottax node: `calculate_dr_tf_inboard`.
+DrTfInboardFromWindingPack = build.function(
+    calculate_dr_tf_inboard,
+    "dr_tf_inboard",
+    reads={
+        "dr_tf_wp_with_insulation": tfcoil,
+        "dr_tf_plasma_case": tfcoil,
+        "dr_tf_nose_case": tfcoil,
+    },
+)
+
+
+# cottax node: `calculate_dr_tf_wp_with_insulation`.
+DrTfWpWithInsulationFromInboardBuild = tfcoil.function(
+    calculate_dr_tf_wp_with_insulation,
+    "dr_tf_wp_with_insulation",
+    reads={
+        "dr_tf_inboard": build,
+    },
+)
+
+
+# cottax node: `calculate_r_tf_inboard_radii_tf_outside_cs`.
+TfInboardRadiiTfOutsideCs = build.function(
+    calculate_r_tf_inboard_radii_tf_outside_cs,
+    "dr_cs_bore",
+    "dr_cs_precomp",
+    "r_tf_inboard_in",
+    "r_tf_inboard_mid",
+    "r_tf_inboard_out",
+)
+
+
+# cottax node: `calculate_r_tf_inboard_radii_no_cs_precomp`.
+TfInboardRadiiNoCsPrecomp = build.function(
+    calculate_r_tf_inboard_radii_no_cs_precomp,
+    "dr_cs_bore",
+    "dr_cs_precomp",
+    "r_tf_inboard_in",
+    "r_tf_inboard_mid",
+    "r_tf_inboard_out",
+)
+
+
+# cottax node: `calculate_r_shld_inboard_inner`. No switch.
+ShldInboardInnerRadius = build.function(
+    calculate_r_shld_inboard_inner,
+    "r_shld_inboard_inner",
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_r_shld_outboard_outer`. No switch.
+ShldOutboardOuterRadius = build.function(
+    calculate_r_shld_outboard_outer,
+    "r_shld_outboard_outer",
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_dr_tf_outboard_superconducting`.
+DrTfOutboardSuperconducting = build.function(
+    calculate_dr_tf_outboard_superconducting, "dr_tf_outboard"
+)
+
+
+# cottax node: `calculate_dx_tf_wp_conductor_max_superconducting`.
+WpConductorMaxWidthSuperconducting = tfcoil.function(
+    calculate_dx_tf_wp_conductor_max_superconducting, "dx_tf_wp_conductor_max"
+)
+
+
+# cottax node: `calculate_r_tf_outboard_mid_unrippled`.
+TfOutboardMidUnrippled = build.function(
+    calculate_r_tf_outboard_mid_unrippled, "r_tf_outboard_mid_unrippled"
+)
+
+
+# cottax node: `calculate_r_tf_outboard_mid_dshape`, the ripple constraint on the
+# outboard TF leg.
+TfOutboardMidDShape = build.function(
+    calculate_r_tf_outboard_mid_dshape,
+    "r_tf_outboard_mid",
+    reads={
+        "ripple_b_tf_plasma_edge_max": tfcoil,
+        "n_tf_coils": tfcoil,
+        "rmajor": physics,
+        "rminor": physics,
+        "dx_tf_wp_conductor_max": tfcoil,
+    },
+)
+
+
+# cottax node: `calculate_ripple_b_tf_plasma_edge_fitted` --
+# `plasma_outboard_edge_toroidal_ripple_fitted`, evaluated at the final leg radius.
+TfOutboardEdgeRipple = tfcoil.function(
+    calculate_ripple_b_tf_plasma_edge_fitted,
+    "ripple_b_tf_plasma_edge",
+    reads={
+        "r_tf_outboard_mid": build,
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_r_tf_outboard_mid_picture_frame`, the ripple constraint
+# on the outboard TF leg.
+TfOutboardMidPictureFrame = build.function(
+    calculate_r_tf_outboard_mid_picture_frame,
+    "r_tf_outboard_mid",
+    reads={
+        "ripple_b_tf_plasma_edge_max": tfcoil,
+        "n_tf_coils": tfcoil,
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_ripple_b_tf_plasma_edge_picture_frame` --
+# `plasma_outboard_edge_toroidal_ripple_picture_frame`, evaluated at the final leg
+# radius.
+TfOutboardEdgeRipplePictureFrame = tfcoil.function(
+    calculate_ripple_b_tf_plasma_edge_picture_frame,
+    "ripple_b_tf_plasma_edge",
+    reads={
+        "r_tf_outboard_mid": build,
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_dr_shld_vv_gap_outboard`.
+ShldVvGapOutboard = build.function(
+    calculate_dr_shld_vv_gap_outboard, "dr_shld_vv_gap_outboard"
+)
+
+
+# cottax node: `calculate_dr_tf_inner_bore`.
+TfInnerBore = build.function(calculate_dr_tf_inner_bore, "dr_tf_inner_bore")
+
+
+# cottax node: `calculate_vacuum_vessel_and_shield_radii`.
+VacuumVesselAndShieldRadiiTfOutsideCs = build.function(
+    calculate_vacuum_vessel_and_shield_radii,
+    "r_vv_inboard_out",
+    "r_sh_inboard_in",
+    "r_sh_inboard_out",
+)
+
+
+# cottax node: `calculate_rbld`.
+RadialBuildToPlasmaCentre = build.function(
+    calculate_rbld,
+    "rbld",
+    reads={
+        "rminor": physics,
+    },
+)
+
+
+# cottax node: `calculate_r_cp_top_from_tf_inboard_out`, ports declared.
+RCpTopFromTfInboardOut = build.function(
+    calculate_r_cp_top_from_tf_inboard_out, "r_cp_top"
+)

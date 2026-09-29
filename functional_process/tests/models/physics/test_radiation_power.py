@@ -20,8 +20,7 @@ would otherwise overwrite the profile arrays a case needs to control.
 """
 
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.path import VarPath
+from cottax.interfaces import V, place, to_graph
 
 from functional_process.cottax.models.physics.radiation_power import (
     ImpurityRadiationTotals,
@@ -442,19 +441,20 @@ class TestRadiationPowers(Tier1Contract):
 # ---------------------------------------------------- ImpurityRadiationTotals's node
 #
 # `calculate_impurity_radiation_totals` (the pure function, tested above) is unchanged.
-# What changes here is only `ImpurityRadiationTotals.__call__`'s *signature*:
+# What changes here is only `ImpurityRadiationTotals`'s function's *signature*:
 # `.impurity_radiation.f_nd_impurity_electron_array` is now fourteen individually
 # `SequenceKey`-addressed reads (one per species index) instead of one whole-array
 # read, matching `composition.py`'s identical treatment of the same field.
-# `imp_indices` still selects a static gather over them before forwarding to the pure
-# function -- these checks confirm the node still assembles and still computes the
-# identical answer, not just that the signature changed shape.
+# `imp_indices` (a read, at `.impurity_radiation.imp_indices`) still selects a gather
+# over them before forwarding to the pure function -- these checks confirm the node
+# still assembles and still computes the identical answer, not just that the signature
+# changed shape.
 
 
-def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
+def _node_kwargs_from_totals_kwargs(kwargs, full_fractions, imp_indices):
     """Pack/unpack adapter: `calculate_impurity_radiation_totals`'s pre-selected,
-    already-gathered array kwargs -> `ImpurityRadiationTotals.__call__`'s fourteen
-    individual per-index kwargs plus the two whole (unselected) 14-row tables.
+    already-gathered array kwargs -> `ImpurityRadiationTotals`'s fourteen individual
+    per-index kwargs plus the two whole (unselected) 14-row tables and `imp_indices`.
 
     `full_fractions` supplies all fourteen species' fractions (only `imp_indices`'
     positions need to agree with `kwargs["f_nd_impurity_electron_array"]`, which is
@@ -463,6 +463,7 @@ def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
     `coils/calculate.py`'s `coilcurrent` precedent.
     """
     node_kwargs = {
+        "imp_indices": imp_indices,
         "radius_plasma_profile_norm": kwargs["profile_x"],
         "nd_plasma_electron_profile": kwargs["nd_electron_profile"],
         "temp_plasma_electron_profile_kev": kwargs["temp_electron_profile_kev"],
@@ -481,19 +482,17 @@ def test_impurity_radiation_totals_assembles_alone():
     signature -- fourteen per-index reads of `f_nd_impurity_electron_array`, none of
     them the whole-array `VarPath`.
     """
-    node = ImpurityRadiationTotals(imp_indices=(_HYDROGEN, _ARGON))
+    node = ImpurityRadiationTotals
     graph = to_graph(node)
     assert graph.definitions
 
-    read = {inp for inp in node.inputs}
+    read = set(node.reads.values())
     for i in range(14):
-        idx_path = resolve(
-            lambda s, i=i: s.impurity_radiation.f_nd_impurity_electron_array[i],
-            VarPath,
-        )
+        idx_path = place(V.impurity_radiation.f_nd_impurity_electron_array[i])
         assert idx_path in read
-    whole_array_path = resolve(impurity_radiation.f_nd_impurity_electron_array, VarPath)
+    whole_array_path = impurity_radiation.place("f_nd_impurity_electron_array")
     assert whole_array_path not in read
+    assert impurity_radiation.place("imp_indices") in read
 
 
 def test_impurity_radiation_totals_assembles_with_all_three_nodes():
@@ -503,9 +502,9 @@ def test_impurity_radiation_totals_assembles_with_all_three_nodes():
     a later consolidation pass would register.
     """
     graph = to_graph(
-        SynchrotronRadiationPower(),
-        ImpurityRadiationTotals(imp_indices=(_HYDROGEN, _ARGON)),
-        PlasmaRadiationPowers(),
+        SynchrotronRadiationPower,
+        ImpurityRadiationTotals,
+        PlasmaRadiationPowers,
     )
     assert graph.definitions
     assert len(graph.definitions) == 3
@@ -529,9 +528,10 @@ def test_impurity_radiation_totals_node_matches_pure_function():
 
     want = calculate_impurity_radiation_totals(**kwargs)
 
-    node = ImpurityRadiationTotals(imp_indices=(_HYDROGEN, _ARGON))
-    node_kwargs = _node_kwargs_from_totals_kwargs(kwargs, full_fractions)
-    got = node(**node_kwargs)
+    node_kwargs = _node_kwargs_from_totals_kwargs(
+        kwargs, full_fractions, imp_indices=(_HYDROGEN, _ARGON)
+    )
+    got = ImpurityRadiationTotals(**node_kwargs)
 
     assert len(got) == len(want) == 2
     for g, e in zip(got, want, strict=True):

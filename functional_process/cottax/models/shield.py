@@ -2,15 +2,10 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    ModelNamespace,
-    OutputInto,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit, V
 
 from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
@@ -30,113 +25,106 @@ from functional_process.models.shield import (
 # ---------------------------------------------------------------------------
 
 
-class ShieldHalfHeight(ExplicitFunction):
-    """The family that owns `.blanket.dz_shld_half`: one occupant per `n_divertors`
-    branch of `Shield.calculate_shield_half_height`.
-    """
+# The ShieldHalfHeight family:
+# The family that owns `.blanket.dz_shld_half`: one occupant per `n_divertors`
+# branch of `Shield.calculate_shield_half_height`.
 
 
-class DoubleNullShieldHalfHeight(ShieldHalfHeight, WrapsFunction):
-    """`n_divertors == 2`. Not live on `large_tokamak_eval.IN.DAT` (`n_divertors=1`)."""
-
-    fn = calculate_shield_half_height_double_null
-
-    z_plasma_xpoint_lower = From(build)
-    dz_xpoint_divertor = From(build)
-    dz_divertor = From(divertor)
-
-    dz_shld_half = OutputInto(blanket)
-
-
-class SingleNullShieldHalfHeight(ShieldHalfHeight, WrapsFunction):
-    """`n_divertors != 2` -- the arm `large_tokamak_eval.IN.DAT` takes
-    (`n_divertors=1`).
-    """
-
-    fn = calculate_shield_half_height_single_null
-
-    z_plasma_xpoint_lower = From(build)
-    dz_xpoint_divertor = From(build)
-    dz_divertor = From(divertor)
-    z_plasma_xpoint_upper = From(build)
-    dr_fw_plasma_gap_inboard = From(build)
-    dr_fw_plasma_gap_outboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_fw_outboard = From(build)
-    dz_blkt_upper = From(build)
-
-    dz_shld_half = OutputInto(blanket)
+# `n_divertors == 2`. Not live on `large_tokamak_eval.IN.DAT` (`n_divertors=1`).
+DoubleNullShieldHalfHeight = blanket.function(
+    calculate_shield_half_height_double_null,
+    "dz_shld_half",
+    reads={
+        "z_plasma_xpoint_lower": build,
+        "dz_xpoint_divertor": build,
+        "dz_divertor": divertor,
+    },
+)
 
 
-class ShieldVolumes(ExplicitFunction):
-    """The family that owns `.blanket.vol_shld_inboard`/`.blanket.vol_shld_outboard`/
-    `.fwbs.vol_shld_total`: one occupant per arm of the compound switch `itart == 1 or
-    i_fw_blkt_vv_shape == D_SHAPED` (`process/models/shield.py:48-51`).
-    """
+# `n_divertors != 2` -- the arm `large_tokamak_eval.IN.DAT` takes
+# (`n_divertors=1`).
+SingleNullShieldHalfHeight = blanket.function(
+    calculate_shield_half_height_single_null,
+    "dz_shld_half",
+    reads={
+        "z_plasma_xpoint_lower": build,
+        "dz_xpoint_divertor": build,
+        "dz_divertor": divertor,
+        "z_plasma_xpoint_upper": build,
+        "dr_fw_plasma_gap_inboard": build,
+        "dr_fw_plasma_gap_outboard": build,
+        "dr_fw_inboard": build,
+        "dr_fw_outboard": build,
+        "dz_blkt_upper": build,
+    },
+)
 
 
-class EllipticalShieldVolumes(ShieldVolumes, WrapsFunction):
-    """`itart != 1 and i_fw_blkt_vv_shape != D_SHAPED` -- the arm
-    `large_tokamak_eval.IN.DAT` takes.
-    """
-
-    fn = calculate_shield_volumes_elliptical
-
-    r_shld_inboard_inner = From(build)
-    r_shld_outboard_outer = From(build)
-    rmajor = From(physics)
-    triang = From(physics)
-    dr_shld_inboard = From(build)
-    rminor = From(physics)
-    dz_shld_half = From(blanket)
-    dr_shld_outboard = From(build)
-    dz_shld_upper = From(build)
-    fvolsi = From(fwbs)
-    fvolso = From(fwbs)
-
-    vol_shld_inboard = OutputInto(blanket)
-    vol_shld_outboard = OutputInto(blanket)
-    vol_shld_total = OutputInto(fwbs)
+# The ShieldVolumes family:
+# The family that owns `.blanket.vol_shld_inboard`/`.blanket.vol_shld_outboard`/
+# `.fwbs.vol_shld_total`: one occupant per arm of the compound switch `itart == 1 or
+# i_fw_blkt_vv_shape == D_SHAPED` (`process/models/shield.py:48-51`).
 
 
-class DShapedShieldVolumes(ShieldVolumes, WrapsFunction):
-    """`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` -- the arm
-    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` take, both of them twice
-    over (`itart = 1` **and** `i_fw_blkt_vv_shape = 1`).
-    """
-
-    fn = calculate_shield_volumes_dshaped
-
-    r_shld_inboard_inner = From(build)
-    dr_shld_inboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_fw_plasma_gap_inboard = From(build)
-    rminor = From(physics)
-    dr_fw_plasma_gap_outboard = From(build)
-    dr_fw_outboard = From(build)
-    dr_blkt_inboard = From(build)
-    dr_blkt_outboard = From(build)
-    dz_shld_half = From(blanket)
-    dr_shld_outboard = From(build)
-    dz_shld_upper = From(build)
-    fvolsi = From(fwbs)
-    fvolso = From(fwbs)
-
-    vol_shld_inboard = OutputInto(blanket)
-    vol_shld_outboard = OutputInto(blanket)
-    vol_shld_total = OutputInto(fwbs)
+# `itart != 1 and i_fw_blkt_vv_shape != D_SHAPED` -- the arm
+# `large_tokamak_eval.IN.DAT` takes.
+EllipticalShieldVolumes = blanket.function(
+    calculate_shield_volumes_elliptical,
+    "vol_shld_inboard",
+    "vol_shld_outboard",
+    V.fwbs.vol_shld_total,
+    reads={
+        "r_shld_inboard_inner": build,
+        "r_shld_outboard_outer": build,
+        "rmajor": physics,
+        "triang": physics,
+        "dr_shld_inboard": build,
+        "rminor": physics,
+        "dr_shld_outboard": build,
+        "dz_shld_upper": build,
+        "fvolsi": fwbs,
+        "fvolso": fwbs,
+    },
+)
 
 
-class TokamakShield(ModelNamespace):
+# `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` -- the arm
+# `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` take, both of them twice
+# over (`itart = 1` **and** `i_fw_blkt_vv_shape = 1`).
+DShapedShieldVolumes = blanket.function(
+    calculate_shield_volumes_dshaped,
+    "vol_shld_inboard",
+    "vol_shld_outboard",
+    V.fwbs.vol_shld_total,
+    reads={
+        "r_shld_inboard_inner": build,
+        "dr_shld_inboard": build,
+        "dr_fw_inboard": build,
+        "dr_fw_plasma_gap_inboard": build,
+        "rminor": physics,
+        "dr_fw_plasma_gap_outboard": build,
+        "dr_fw_outboard": build,
+        "dr_blkt_inboard": build,
+        "dr_blkt_outboard": build,
+        "dr_shld_outboard": build,
+        "dz_shld_upper": build,
+        "fvolsi": fwbs,
+        "fvolso": fwbs,
+    },
+)
+
+
+class TokamakShield(eqx.Module):
     """`.tokamak.shield` -- two slots, both switched."""
 
-    half_height: ShieldHalfHeight = dataclasses.field(kw_only=True)
+    half_height: Explicit = dataclasses.field(kw_only=True)
     """`.divertor.n_divertors` (derived from `i_single_null` by `indat._n_divertors`) --
     both values of this binary switch have written occupants, `1` (single null, live)
     and `2` (double null).
     """
 
-    volumes: ShieldVolumes = dataclasses.field(kw_only=True)
+    volumes: Explicit = dataclasses.field(kw_only=True)
     """`_fw_blkt_vv_shape_arm` -- **both** arms written (2026-08-27): the elliptical arm
     (`1`) since wave 1, the D-shaped arm (`0`) since the D-shaped wave.
     """

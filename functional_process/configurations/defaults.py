@@ -395,6 +395,7 @@ VALUES: dict[str, dict[str, object]] = {
         "n_equality_constraints": -1,
     },
     "pf_coil": {
+        "n_cs_pf_coils": 0,
         "alfapf": 5e-10,
         "c_pf_coil_turn_peak_input": Full(40000.0, (22,)),
         "dr_pf_tf_outboard_out_offset": 1.5,
@@ -441,6 +442,7 @@ VALUES: dict[str, dict[str, object]] = {
         "srcktpm": 0.0,
     },
     "physics": {
+        "n_plasma_profile_elements": 201,
         "alphaj": 1.0,
         "alphan": 0.25,
         "alphat": 0.5,
@@ -560,6 +562,8 @@ VALUES: dict[str, dict[str, object]] = {
         "i_tf_turn_type": 1,
     },
     "tfcoil": {
+        "temp_tf_conductor_quench_max": 150.0,
+        "n_tf_graded_layers": 1,
         "a_tf_wp_coolant_channels": 0.0,
         "c_tf_turn": 70000.0,
         "casths_fraction": 0.06,

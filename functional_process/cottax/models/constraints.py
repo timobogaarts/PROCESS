@@ -23,12 +23,8 @@ import functools
 import inspect
 
 from cottax.interfaces import Le, Minted
-from cottax.interfaces.pytree_namespace_module import (
-    Area,
-    ConstraintFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import Area, ConstraintFunction
+from cottax.pytree.mint import Minted
 from cottax.pytree.path import DictKey, GetAttrKey, NodePath, SequenceKey, VarPath
 
 from functional_process.models import constraints as ported_constraints

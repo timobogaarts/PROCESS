@@ -1,15 +1,13 @@
 """Where the CS and the PF coils are: cross-sections, filament placement, coil centres."""
 
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     build,
-    cs_fatigue,
     pf_coil,
     physics,
     superconducting_tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.geometry import (
     calculate_cs_geometry,  # noqa: F401 -- re-exported for tests
     calculate_cs_geometry_ports,
@@ -26,116 +24,99 @@ from functional_process.models.pfcoil.geometry import (
     place_cs_filaments,  # noqa: F401 -- re-exported for currents.py / tests
 )
 
-
-class CSCoilGeometry(WrapsFunction):
-    """cottax node: `.tokamak.cs_coil.geometry`.
-
-    `CSGeometry.r_cs_coil_middle` is dropped: it is bit-for-bit `r_cs_middle`
-    (`pfcoil.py:3030`, `:3042`) and `DataStructure`'s `PfCoilVariables` has no field of
-    that name -- PROCESS stores it only into `r_pf_coil_middle[n_cs_pf_coils - 1]`,
-    which `PFCoilPositions` owns. Owning it here would mint a `VarPath` that names no
-    place.
-    """
-
-    fn = calculate_cs_geometry_ports
-
-    z_tf_inside_half = From(build)
-    f_z_cs_tf_internal = From(pf_coil)
-    dr_cs = From(build)
-    dr_cs_bore = From(build)
-
-    z_cs_upper = OutputInto(pf_coil)
-    z_cs_lower = OutputInto(pf_coil)
-    r_cs_middle = OutputInto(pf_coil)
-    z_cs_middle = OutputInto(pf_coil)
-    r_cs_outer = OutputInto(pf_coil)
-    r_cs_inner = OutputInto(pf_coil)
-    a_cs_poloidal = OutputInto(pf_coil)
-    a_cs_toroidal = OutputInto(pf_coil)
-    dz_cs_full = OutputInto(pf_coil)
-    dr_cs_full = OutputInto(pf_coil)
+# cottax node: `.tokamak.cs_coil.geometry`.
+#
+# `CSGeometry.r_cs_coil_middle` is dropped: it is bit-for-bit `r_cs_middle`
+# (`pfcoil.py:3030`, `:3042`) and `DataStructure`'s `PfCoilVariables` has no field of
+# that name -- PROCESS stores it only into `r_pf_coil_middle[n_cs_pf_coils - 1]`,
+# which `PFCoilPositions` owns. Owning it here would mint a `VarPath` that names no
+# place.
+CSCoilGeometry = pf_coil.function(
+    calculate_cs_geometry_ports,
+    "z_cs_upper",
+    "z_cs_lower",
+    "r_cs_middle",
+    "z_cs_middle",
+    "r_cs_outer",
+    "r_cs_inner",
+    "a_cs_poloidal",
+    "a_cs_toroidal",
+    "dz_cs_full",
+    "dr_cs_full",
+    reads={
+        "z_tf_inside_half": build,
+        "dr_cs": build,
+        "dr_cs_bore": build,
+    },
+)
 
 
-class CSCoilTurnGeometry(WrapsFunction):
-    """cottax node: `.tokamak.cs_coil.turn_geometry`."""
-
-    fn = calculate_cs_turn_geometry_eu_demo_from_turns
-
-    a_cs_poloidal = From(pf_coil)
-    n_pf_coil_turns = From(pf_coil)
-    f_dr_dz_cs_turn = From(pf_coil)
-    radius_cs_turn_corners = From(pf_coil)
-    f_a_cs_turn_steel = From(pf_coil)
-
-    a_cs_turn = OutputInto(pf_coil)
-    dz_cs_turn = OutputInto(pf_coil)
-    dr_cs_turn = OutputInto(pf_coil)
-    radius_cs_turn_cable_space = OutputInto(pf_coil)
-    dr_cs_turn_conduit = OutputInto(cs_fatigue)
-    dz_cs_turn_conduit = OutputInto(cs_fatigue)
+# cottax node: `.tokamak.cs_coil.turn_geometry`.
+CSCoilTurnGeometry = pf_coil.function(
+    calculate_cs_turn_geometry_eu_demo_from_turns,
+    "a_cs_turn",
+    "dz_cs_turn",
+    "dr_cs_turn",
+    "radius_cs_turn_cable_space",
+    V.cs_fatigue.dr_cs_turn_conduit,
+    V.cs_fatigue.dz_cs_turn_conduit,
+)
 
 
-class PFCoilPlacement(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.placement`."""
-
-    fn = calculate_pf_coil_placement_reference
-
-    r_tf_outboard_out = From(superconducting_tfcoil)
-    dr_pf_tf_outboard_out_offset = From(pf_coil)
-    rmajor = From(physics)
-    rminor = From(physics)
-    triang = From(physics)
-    rpf2 = From(pf_coil)
-    z_tf_top = From(build)
-    dz_tf_upper_lower_midplane = From(build)
-    zref = From(pf_coil)
-
-    r_pf_outside_tf_midplane = OutputInto(pf_coil)
-    r_pf_coil_middle_group_array = OutputInto(pf_coil)
-    z_pf_coil_middle_group_array = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.placement`.
+PFCoilPlacement = pf_coil.function(
+    calculate_pf_coil_placement_reference,
+    "r_pf_outside_tf_midplane",
+    "r_pf_coil_middle_group_array",
+    "z_pf_coil_middle_group_array",
+    reads={
+        "r_tf_outboard_out": superconducting_tfcoil,
+        "rmajor": physics,
+        "rminor": physics,
+        "triang": physics,
+        "z_tf_top": build,
+        "dz_tf_upper_lower_midplane": build,
+    },
+)
 
 
-class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
-    """cottax node: `.tokamak.pf_coil.placement`, the spherical tokamaks' occupant.
-
-    Reads everything `PFCoilPlacement` does, plus `rref` -- the `GENERALLY_PLACED`
-    group's radial placement ratio, which `REFERENCE_TOPOLOGY` never has and this
-    topology does. A strict superset, so this stays the inheriting arm: it adds the one
-    extra read and overrides `fn` to the topology/`r_pf_outside_tf_is_constant`-bound
-    counterpart.
-    """
-
-    fn = calculate_pf_coil_placement_no_central_solenoid
-
-    rref = From(pf_coil)
-
-
-class PFCoilPositions(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.positions`.
-
-    Which slot each coil occupies, and whether there is a CS slot at all, is fixed by
-    `fn` (`calculate_pf_coil_positions_from_elements`, for `REFERENCE_TOPOLOGY`) rather
-    than carried as a static field here -- see `PFCoilPositionsNoCentralSolenoid` for
-    the other arm.
-    """
-
-    fn = calculate_pf_coil_positions_from_elements
-
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-    r_cs_middle = From(pf_coil)
-
-    r_pf_coil_middle = OutputInto(pf_coil)
-    z_pf_coil_middle = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.placement`, the spherical tokamaks' occupant.
+#
+# Reads everything `PFCoilPlacement` does, plus `rref` -- the `GENERALLY_PLACED`
+# group's radial placement ratio, which `REFERENCE_TOPOLOGY` never has and this
+# topology does. A strict superset, so this stays the inheriting arm: it adds the one
+# extra read and overrides `fn` to the topology/`r_pf_outside_tf_is_constant`-bound
+# counterpart.
+PFCoilPlacementSphericalTokamak = pf_coil.function(
+    calculate_pf_coil_placement_no_central_solenoid,
+    "r_pf_outside_tf_midplane",
+    "r_pf_coil_middle_group_array",
+    "z_pf_coil_middle_group_array",
+    reads={
+        "r_tf_outboard_out": superconducting_tfcoil,
+        "rmajor": physics,
+        "rminor": physics,
+        "triang": physics,
+        "z_tf_top": build,
+        "dz_tf_upper_lower_midplane": build,
+    },
+)
 
 
-class PFCoilPositionsNoCentralSolenoid(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant."""
+# cottax node: `.tokamak.pf_coil.positions`.
+#
+# Which slot each coil occupies, and whether there is a CS slot at all, is fixed by
+# `fn` (`calculate_pf_coil_positions_from_elements`, for `REFERENCE_TOPOLOGY`) rather
+# than carried as a static field here -- see `PFCoilPositionsNoCentralSolenoid` for
+# the other arm.
+PFCoilPositions = pf_coil.function(
+    calculate_pf_coil_positions_from_elements, "r_pf_coil_middle", "z_pf_coil_middle"
+)
 
-    fn = calculate_pf_coil_positions_no_central_solenoid
 
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-
-    r_pf_coil_middle = OutputInto(pf_coil)
-    z_pf_coil_middle = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant.
+PFCoilPositionsNoCentralSolenoid = pf_coil.function(
+    calculate_pf_coil_positions_no_central_solenoid,
+    "r_pf_coil_middle",
+    "z_pf_coil_middle",
+)

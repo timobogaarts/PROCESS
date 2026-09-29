@@ -4,11 +4,7 @@
 into (`process/models/tfcoil/quench.py`).
 """
 
-import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
-
 from functional_process.cottax.paths import constraints, superconducting_tfcoil, tfcoil
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,  # noqa: F401 -- re-exported for tests
     calculate_quench_protection_current_density,  # noqa: F401 -- re-exported for tests
@@ -27,77 +23,25 @@ from functional_process.models.tfcoil.quench import (
     v_tf_coil_dump_quench_kv,
 )
 
-
-class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
-    """cottax node: `.tfcoil.j_tf_wp_quench_heat_max`, constraint 35's read."""
-
-    tftmp: float = eqx.field(static=True)
-    """The helium peak-field temperature, as a static value rather than a read."""
-
-    temp_tf_conductor_quench_max: float = eqx.field(static=True)
-    """The hotspot temperature limit. See `tftmp`, including on the naming."""
-
-    den_helium_at_nodes: tuple = eqx.field(static=True)
-    """Helium density at `quench_quadrature_temperatures(...)`, from
-    `helium_properties_at_quench_nodes`.
-    """
-
-    cp_helium_at_nodes: tuple = eqx.field(static=True)
-    """Helium isobaric specific heat at the same nodes."""
-
-    j_tf_wp_quench_heat_max = OutputInto(tfcoil)
-
-    @classmethod
-    def at(cls, tftmp: float, temp_tf_conductor_quench_max: float):
-        """The occupant for these two temperatures, its helium table computed here --
-        the one CoolProp call of the tokamak scope, made while the machine is stated.
-        """
-        den_helium, cp_helium = helium_properties_at_quench_nodes(
-            temp_he_peak=tftmp, temp_quench_max=temp_tf_conductor_quench_max
-        )
-        return cls(
-            tftmp=tftmp,
-            temp_tf_conductor_quench_max=temp_tf_conductor_quench_max,
-            den_helium_at_nodes=den_helium,
-            cp_helium_at_nodes=cp_helium,
-        )
-
-    def __call__(
-        self,
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        a_tf_turn=From(tfcoil),
-        t_tf_superconductor_quench=From(tfcoil),
-        b_tf_inboard_peak_with_ripple=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_cooling=From(superconducting_tfcoil),
-        rrr_tf_cu=From(tfcoil),
-        t_tf_quench_detection=From(tfcoil),
-        flu_tf_neutron_fast_max=From(constraints),
-    ):
-        return calculate_tf_coil_quench_heat_current_density(
-            a_tf_turn_cable_space_no_void,
-            a_tf_turn,
-            t_tf_superconductor_quench,
-            b_tf_inboard_peak_with_ripple,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_cooling,
-            self.tftmp,
-            self.temp_tf_conductor_quench_max,
-            rrr_tf_cu,
-            t_tf_quench_detection,
-            flu_tf_neutron_fast_max,
-            self.den_helium_at_nodes,
-            self.cp_helium_at_nodes,
-        )
+# cottax node: `.tfcoil.j_tf_wp_quench_heat_max`, constraint 35's read.
+#
+# `tftmp` (the helium peak-field temperature) and `temp_tf_conductor_quench_max` (the
+# hotspot temperature limit) are read at their PROCESS inputs. The helium density and
+# isobaric specific heat at `quench_quadrature_temperatures(...)` are read at
+# `.tfcoil.den_helium_at_nodes` / `.tfcoil.cp_helium_at_nodes`: tuples of floats from
+# `helium_properties_at_quench_nodes`, the one CoolProp call of the tokamak scope, made
+# while the machine is stated (static under jit, a non-array leaf).
+TfCoilQuenchHeatCurrentDensity = tfcoil.function(
+    calculate_tf_coil_quench_heat_current_density,
+    "j_tf_wp_quench_heat_max",
+    reads={
+        "f_a_tf_turn_cable_space_cooling": superconducting_tfcoil,
+        "flu_tf_neutron_fast_max": constraints,
+    },
+)
 
 
-class TfCoilDumpQuenchVoltage(WrapsFunction):
-    """cottax node: `.tfcoil.v_tf_coil_dump_quench_kv`, one of the slot's ten reads."""
-
-    fn = v_tf_coil_dump_quench_kv
-
-    e_tf_coil_magnetic_stored = From(tfcoil)
-    t_tf_superconductor_quench = From(tfcoil)
-    c_tf_turn = From(tfcoil)
-
-    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)
+# cottax node: `.tfcoil.v_tf_coil_dump_quench_kv`, one of the slot's ten reads.
+TfCoilDumpQuenchVoltage = tfcoil.function(
+    v_tf_coil_dump_quench_kv, "v_tf_coil_dump_quench_kv"
+)

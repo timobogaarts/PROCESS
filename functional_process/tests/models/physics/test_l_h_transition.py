@@ -14,7 +14,7 @@ what needs checking is that the wrapping is correct, not the formula underneath 
 same reasoning `test_confinement_time.py` applies to `Iss04ConfinementTime`/
 `IterIpb98y2ConfinementTime`. `test_martin_family_occupants_match_process` checks each
 occupant reproduces its pure function's own value at a shared point; the
-`test_*_reads` functions check the declared `.inputs` are exactly what the audit record
+`test_*_reads` functions check the declared `.reads` are exactly what the audit record
 says each arm reads (in particular, that only the aspect-corrected trio reads
 `.physics.aspect`).
 """
@@ -349,13 +349,13 @@ def test_non_aspect_arms_do_not_read_aspect():
         Martin08UpperLHThresholdPower,
         Martin08LowerLHThresholdPower,
     ):
-        reads = {i.spelling for i in cls().inputs}
+        reads = {i.spelling for i in cls.reads.values()}
         assert reads == {
             ".physics.nd_plasma_electron_line",
             ".physics.b_plasma_toroidal_on_axis",
             ".physics.a_plasma_surface",
             ".physics.m_ions_total_amu",
-        }, f"{cls.__name__} reads {reads}"
+        }, f"{cls.fn.__name__} reads {reads}"
 
 
 def test_aspect_corrected_arms_read_one_more_field():
@@ -368,14 +368,14 @@ def test_aspect_corrected_arms_read_one_more_field():
         Martin08AspectUpperLHThresholdPower,
         Martin08AspectLowerLHThresholdPower,
     ):
-        reads = {i.spelling for i in cls().inputs}
+        reads = {i.spelling for i in cls.reads.values()}
         assert reads == {
             ".physics.nd_plasma_electron_line",
             ".physics.b_plasma_toroidal_on_axis",
             ".physics.a_plasma_surface",
             ".physics.m_ions_total_amu",
             ".physics.aspect",
-        }, f"{cls.__name__} reads {reads}"
+        }, f"{cls.fn.__name__} reads {reads}"
 
 
 def test_every_martin_occupant_owns_p_l_h_threshold_mw():
@@ -388,8 +388,10 @@ def test_every_martin_occupant_owns_p_l_h_threshold_mw():
         Martin08AspectUpperLHThresholdPower,
         Martin08AspectLowerLHThresholdPower,
     ):
-        outputs = {o.spelling for o in cls().outputs}
-        assert outputs == {".physics.p_l_h_threshold_mw"}, f"{cls.__name__}: {outputs}"
+        outputs = {o.spelling for o in cls.outputs}
+        assert outputs == {".physics.p_l_h_threshold_mw"}, (
+            f"{cls.fn.__name__}: {outputs}"
+        )
 
 
 def test_martin_family_occupants_match_process():
@@ -473,7 +475,7 @@ def test_martin_family_occupants_match_process():
     ]
 
     for cls, kwargs, expected in cases:
-        actual = cls()(**kwargs)
+        actual = cls(**kwargs)
         assert float(actual) == pytest.approx(expected, rel=1e-14, abs=0.0), (
-            f"{cls.__name__}: {actual} != {expected}"
+            f"{cls.fn.__name__}: {actual} != {expected}"
         )

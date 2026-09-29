@@ -837,7 +837,6 @@ def _layer_peak_indices(s_shear_tf, n_tf_layer, n_radial_array):
 
 
 def tf_field_and_force_clamped_joints(
-    *,
     r_tf_wp_inboard_outer,
     r_tf_wp_inboard_inner,
     r_tf_outboard_in,

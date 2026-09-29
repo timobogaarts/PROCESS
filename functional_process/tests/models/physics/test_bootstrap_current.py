@@ -52,8 +52,7 @@ non-finite, which the check steps aside for.
 
 import numpy as np
 import pytest
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.path import VarPath
+from cottax.interfaces import to_graph
 
 from functional_process.cottax.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
@@ -75,6 +74,7 @@ from functional_process.cottax.models.physics.bootstrap_current import (
     ps_fraction_scene,
 )
 from functional_process.cottax.paths import physics
+from functional_process.cottax.stated import STATED
 from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
@@ -1004,21 +1004,22 @@ def test_nodes_assemble_and_the_sauter_arm_does_not_read_triangularity():
     *declare* it -- which is what removes the edge from the graph rather than merely
     leaving it inert.
     """
-    node = SauterBootstrapCurrentFraction(n_plasma_profile_elements=_N_POINTS)
-    graph = to_graph(
-        node,
-        NoDiamagneticCurrent(),
-        NoPfirschSchluterCurrent(),
-        PlasmaCurrentFractions(),
-    )
+    node = SauterBootstrapCurrentFraction
+    graph = to_graph({
+        "sauter": node,
+        "no_diamagnetic": NoDiamagneticCurrent,
+        "no_pfirsch_schluter": NoPfirschSchluterCurrent,
+        "fractions": PlasmaCurrentFractions,
+    })
     assert len(graph.definitions) == 4
 
-    read = {inp for inp in node.inputs}
-    assert resolve(physics.triang, VarPath) not in read
-    assert resolve(physics.rminor, VarPath) in read
+    read = set(node.reads.values())
+    assert physics.place("triang") not in read
+    assert physics.place("rminor") in read
+    assert physics.place("n_plasma_profile_elements") in read
 
 
-def test_zero_arms_own_their_fields_and_state_them(reads_only_its_own_statement):
+def test_zero_arms_own_their_fields_and_state_them():
     """`NoDiamagneticCurrent`/`NoPfirschSchluterCurrent` are source nodes stating zero.
 
     They exist because PROCESS leaves both fields at their `current_drive_variables.py`
@@ -1027,6 +1028,6 @@ def test_zero_arms_own_their_fields_and_state_them(reads_only_its_own_statement)
     shape is a declared zero rather than a boundary input standing for "PROCESS did not
     run this code".
     """
-    for node in (NoDiamagneticCurrent(), NoPfirschSchluterCurrent()):
-        reads_only_its_own_statement(node)
+    for node in (NoDiamagneticCurrent, NoPfirschSchluterCurrent):
+        assert list(node.reads.values()) == [STATED(out) for out in node.outputs]
         assert float(node(0.0)) == pytest.approx(0.0, abs=0.0)

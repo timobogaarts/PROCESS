@@ -27,6 +27,16 @@ DATACLASS_DEFAULTS: dict[tuple[str, str], Any] = {
 """`configurations.defaults.VALUES`, keyed `(area, field)`."""
 
 
+PORT_CONSTANTS: dict[tuple[str, str], Any] = {
+    ("impurity_radiation", "imp_indices"): tuple(range(14)),
+    ("neoclassics", "rho"): 0.6,
+}
+"""Places the port reads that PROCESS does not hold as fields: which of the 14 impurity
+species the radiation totals sum over (all of them, in every configuration), and the
+normalised radius the neoclassical profiles are evaluated at (PROCESS's own literal at
+its one call site)."""
+
+
 def _expand(value):
     """A `Full` as its array; anything else unchanged."""
     return (
@@ -164,11 +174,39 @@ def _deprecated_temperature_margin_alias(values: _Places, out: _Places) -> None:
     out["tfcoil", "temp_cs_superconductor_margin_min"] = float(tmargmin)
 
 
+def _pf_coil_counts(values: _Places, out: _Places) -> None:
+    """`.pf_coil.n_cs_pf_coils`: the coil count of the PF topology `.build.iohcl` selects,
+    which the PF magnet cost reads."""
+    from functional_process.cottax.input.indat import _pf_coil_topology  # noqa: PLC0415
+
+    out["pf_coil", "n_cs_pf_coils"] = _pf_coil_topology(
+        values.get(("build", "iohcl"), 1)
+    ).n_cs_pf_coils
+
+
+def _quench_helium_tables(values: _Places, out: _Places) -> None:
+    """The helium density and specific heat at the quench integral's 75 nodes, from
+    `.tfcoil.tftmp` and `.tfcoil.temp_tf_conductor_quench_max`: CoolProp, which runs
+    before the run and never inside it."""
+    from functional_process.models.tfcoil.quench import (  # noqa: PLC0415
+        helium_properties_at_quench_nodes,
+    )
+
+    den, cp = helium_properties_at_quench_nodes(
+        temp_he_peak=float(values["tfcoil", "tftmp"]),
+        temp_quench_max=float(values["tfcoil", "temp_tf_conductor_quench_max"]),
+    )
+    out["tfcoil", "den_helium_at_nodes"] = den
+    out["tfcoil", "cp_helium_at_nodes"] = cp
+
+
 DERIVATIONS = (
     _initialise_imprad,
     _alias_impurity_fractions,
     _single_or_double_null,
     _deprecated_temperature_margin_alias,
+    _pf_coil_counts,
+    _quench_helium_tables,
 )
 """The rules a native state applies over the file's own values, in PROCESS's own order.
 """
@@ -202,7 +240,7 @@ def layered_values(stated: dict[str, dict[str, Any]]) -> tuple[dict, dict]:
     """`(values, sources)`: the defaults, then `stated`, then `DERIVATIONS`."""
     values: dict[tuple[str, str], Any] = {}
     sources: dict[tuple[str, str], str] = {}
-    for place, default in DATACLASS_DEFAULTS.items():
+    for place, default in (DATACLASS_DEFAULTS | PORT_CONSTANTS).items():
         values[place] = _expand(default)
         sources[place] = "defaults"
     for area, fields in stated.items():
@@ -248,8 +286,7 @@ def native_state(input_file: str | Imported) -> NativeState:
 
 
 def _pedestal_temperature_bound(ixc, state, low: float, high: float):
-    """`init.py:444-459` -- iteration variable 4's lower bound, raised off the pedestal.
-    """
+    """`init.py:444-459` -- iteration variable 4's lower bound, raised off the pedestal."""
     from functional_process.cottax.input.indat import (
         ST_INIT_I_PLASMA_PEDESTAL,
     )

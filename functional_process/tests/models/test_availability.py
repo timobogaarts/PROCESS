@@ -18,8 +18,9 @@ regression in its output would show up as a value mismatch downstream.
 import functools
 
 import pytest
-from cottax.interfaces import Implemented, is_fixed_point
-from cottax.interfaces.pytree_namespace_module import Output, to_graph
+from cottax.interfaces import N, node, problem, to_graph
+from cottax.realisation import Implemented
+from cottax.relational import is_fixed_point
 
 from functional_process.cottax.models.availability.availability import (
     Avail2NeutronFluenceSphericalTokamak,
@@ -1043,8 +1044,13 @@ def test_cplife_avail_st_next_matches_avail_st(i_tf_sup, itart):
 # classes, standalone and (for one representative pair each) combined.
 # ---------------------------------------------------------------------------
 
-CPLIFE_VAR = Output(costs.cplife).place()
+CPLIFE_VAR = costs.place("cplife")
 """`.costs.cplife` as a `VarPath`, for the assembly assertions below."""
+
+
+def _name(wrapper):
+    """Where `to_graph` binds a loose wrapper: its function's name."""
+    return node(N[wrapper.fn.__name__])
 
 
 @pytest.mark.parametrize(
@@ -1062,12 +1068,12 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
 
     The old assertion was `not graph.is_acyclic`; it is the opposite now, deliberately.
     """
-    node = occupant()
+    node = occupant
     graph = to_graph(node)
-    body = graph[node.name]
+    body = graph[_name(node)]
     assert isinstance(body, Implemented)
     assert set(node.outputs) == {CPLIFE_VAR}
-    assert CPLIFE_VAR not in set(node.inputs)
+    assert CPLIFE_VAR not in set(node.reads.values())
     assert graph.graph.is_acyclic
 
 
@@ -1077,24 +1083,22 @@ def test_cplife_avail_st_to_graph_assembles():
     docstring), so the resulting body+problem pair is acyclic: a degenerate `FixedPoint`
     that converges in one iteration regardless of its starting guess.
     """
-    graph = to_graph(CplifeAvailStSuperconductingAdjusted())
-    node = CplifeAvailStSuperconductingAdjusted()
-    body, problem = graph[node.name], graph[node.problem_name]
+    graph = to_graph(CplifeAvailStSuperconductingAdjusted)
+    node = CplifeAvailStSuperconductingAdjusted
+    body, solved = graph[_name(node)], graph[problem(_name(node))]
     assert isinstance(body, Implemented)
-    assert is_fixed_point(problem)
-    assert problem.owns == (CPLIFE_VAR,)
+    assert is_fixed_point(solved)
+    assert solved.owns == (CPLIFE_VAR,)
     assert graph.graph.is_acyclic
 
 
 @pytest.mark.parametrize(
     "node",
     [
-        AvailNeutronFluence(),
-        AvailDisplacementsPerAtom(),
-        Avail2NeutronFluenceSphericalTokamak(n_vac_pumps_high=10, redun_vac=2),
-        AvailStNeutronFluenceSphericalTokamakSuperconducting(
-            n_vac_pumps_high=10, redun_vac=2
-        ),
+        AvailNeutronFluence,
+        AvailDisplacementsPerAtom,
+        Avail2NeutronFluenceSphericalTokamak,
+        AvailStNeutronFluenceSphericalTokamakSuperconducting,
     ],
     ids=["avail-neutron-fluence", "avail-dpa", "avail2", "avail-st"],
 )
@@ -1103,16 +1107,16 @@ def test_branch_node_to_graph_assembles(node):
     standalone, no longer raises the pre-split `reads [...], which it also owns` error.
     """
     graph = to_graph(node)
-    assert isinstance(graph[node.name], Implemented)
+    assert isinstance(graph[_name(node)], Implemented)
 
 
 def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     """The intended full wiring, and what the switch split changed about it."""
-    cplife_node = CplifeAvailSuperconducting()
-    avail_node = AvailNeutronFluence()
+    cplife_node = CplifeAvailSuperconducting
+    avail_node = AvailNeutronFluence
     graph = to_graph(cplife_node, avail_node)
-    assert isinstance(graph[avail_node.name], Implemented)
-    assert CPLIFE_VAR not in set(avail_node.inputs)
+    assert isinstance(graph[_name(avail_node)], Implemented)
+    assert CPLIFE_VAR not in set(avail_node.reads.values())
     assert graph.graph.is_acyclic
 
 
@@ -1120,10 +1124,8 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
     """Same wiring check for the `AvailSt` pair -- and here the combination is fully
     acyclic, since `CplifeAvailSt` alone already is.
     """
-    cplife_node = CplifeAvailStSuperconductingAdjusted()
-    avail_st_node = AvailStNeutronFluenceSphericalTokamakSuperconducting(
-        n_vac_pumps_high=10, redun_vac=2
-    )
+    cplife_node = CplifeAvailStSuperconductingAdjusted
+    avail_st_node = AvailStNeutronFluenceSphericalTokamakSuperconducting
     graph = to_graph(cplife_node, avail_st_node)
-    assert isinstance(graph[avail_st_node.name], Implemented)
+    assert isinstance(graph[_name(avail_st_node)], Implemented)
     assert graph.graph.is_acyclic

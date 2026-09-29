@@ -60,9 +60,7 @@ def objective_node(graph_variables, selection, switches=None, label: str = ""):
     optimisers, say.
     """
     switches = REFERENCE_SWITCH_VALUES if switches is None else switches
-    static, read, reads = bind(
-        selection.metric, Resolver(graph_variables), switches
-    )
+    static, read, reads = bind(selection.metric, Resolver(graph_variables), switches)
     return (
         NodePath((GetAttrKey(f"Objective{label}"),)),
         Implemented(

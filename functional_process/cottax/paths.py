@@ -1,9 +1,11 @@
-"""Where the port's variables live: `data.<area>.<field>`, the way PROCESS spells it."""
+"""Where the port's variables live: `.<area>.<field>`, the way PROCESS spells it. Each
+area is a cottax `Scope`: `physics.function(fn, 'rminor')` writes `.physics.rminor`, and a
+parameter reads its own name under the scope unless `reads=` says otherwise."""
 
 import difflib
 from collections.abc import Iterable
 
-from cottax.interfaces.pytree_namespace_module import Area
+from cottax.interfaces import Scope, V
 from jax.tree_util import GetAttrKey
 
 # `AREAS` -- every area PROCESS has, 36 of them. Was
@@ -16,7 +18,8 @@ from functional_process.vocabulary import AREAS
 
 
 class _Root:
-    """The areas of a `DataStructure`, as something whole paths hang off."""
+    """The areas of a `DataStructure`, each a `Scope`; an area PROCESS does not have is
+    refused, with the closest it does."""
 
     __slots__ = ("_names",)
 
@@ -35,16 +38,14 @@ class _Root:
             raise AttributeError(
                 f"{name!r} is not an area of this data structure.{hint}"
             )
-        return Area((GetAttrKey(name),))
+        return Scope(getattr(V, name), GetAttrKey)
 
     def __repr__(self):
         return f"<PROCESS data structure: {len(self._names)} areas>"
 
 
 data = _Root(AREAS)
-"""The whole namespace, for the escape hatch:
-`FromExactly(data.impurity_radiation.arr[2])`.
-"""
+"""Every area, by name."""
 
 globals().update({name: getattr(data, name) for name in AREAS})
 

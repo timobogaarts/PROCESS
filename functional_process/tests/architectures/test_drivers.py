@@ -11,14 +11,8 @@ import numpy as np
 import pytest
 from cottax.execution.drivers.kinds import Start
 from cottax.interfaces import Assign, Eq, RunnableGraph, Schedule
-from cottax.interfaces.pytree_namespace_module import (
-    FixedPointFunction,
-    From,
-    OutputInto,
-    area,
-    resolve,
-    to_graph,
-)
+from cottax.interfaces.pytree_namespace_module import area, resolve
+from cottax.interfaces import to_graph
 from cottax.pytree.path import PathMap, VarPath
 
 from functional_process.cottax.architectures.drivers import (

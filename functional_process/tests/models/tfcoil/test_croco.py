@@ -55,6 +55,9 @@ from process.models.superconductors import (
 )
 from process.models.tfcoil.superconducting import CROCOSuperconductingTFCoil
 
+# The reference tokamak (run from the repository root, as the regression inputs are).
+TOKAMAK_INPUT_FILE = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
+
 _HAZELTON_ZHAI_REBCO = 9
 
 
@@ -472,8 +475,6 @@ def test_a_croco_machine_refuses_an_unwritten_tape_material(tmp_path):
     are the ones a CroCo machine consults rather than the cable-in-conduit slot's
     `_SC_TAPE_REASON` catching the file by accident.
     """
-    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
-
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
         "i_tf_sc_mat = 8" if line.startswith("i_tf_sc_mat") else line
@@ -511,8 +512,6 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
     ST files still do not assemble -- they refuse on the PF coil system and on
     `i_tf_stress_model`, neither of which is anything to do with the turn.
     """
-    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
-
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
         "i_tf_sc_mat = 9" if line.startswith("i_tf_sc_mat") else line
@@ -542,7 +541,6 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
 def test_croco_nodes_own_the_tape_stack(tmp_path):
     """The CroCo nodes produce the `*croco*`/`*hts_tape*` fields, not read them."""
     from functional_process.cottax.input.indat import graph_for
-    from functional_process.cottax.visualization.render_xdsm import TOKAMAK_INPUT_FILE
 
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(

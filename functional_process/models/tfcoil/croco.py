@@ -21,7 +21,6 @@ in PROCESS and a module constant here -- it is a count, not a switch."""
 
 
 def croco_averaged_turn_geometry_from_current_per_turn(
-    *,
     j_tf_wp,
     c_tf_turn,
     dx_tf_turn_steel,
@@ -87,7 +86,7 @@ def croco_averaged_turn_geometry_from_current_per_turn(
     )
 
 
-def croco_cable_space_properties(*, dx_tf_turn_conduit_full_average, dx_tf_turn_steel):
+def croco_cable_space_properties(dx_tf_turn_conduit_full_average, dx_tf_turn_steel):
     """The cable space of one CroCo turn: seven strands in a `3 x 3`-diameter square.
 
     Ports `process/models/tfcoil/superconducting.py:4581-4607`. The geometry is a
@@ -133,7 +132,6 @@ def croco_cable_space_properties(*, dx_tf_turn_conduit_full_average, dx_tf_turn_
 
 
 def croco_cable_geometry(
-    *,
     dia_croco_strand,
     dx_croco_strand_copper,
     dx_hts_tape_rebco,
@@ -240,7 +238,6 @@ def croco_turn_cable_space_extra_void():
 
 
 def croco_inboard_areas_and_fractions(
-    *,
     a_tf_turn_cable_space_no_void,
     n_tf_coil_turns,
     f_a_tf_turn_cable_space_extra_void,
@@ -319,7 +316,7 @@ def croco_inboard_areas_and_fractions(
 
 
 def croco_turn_cable_space_cooling_fraction(
-    *, a_tf_turn_cable_space_no_void, a_tf_croco_strand
+    a_tf_turn_cable_space_no_void, a_tf_croco_strand
 ):
     """The fraction of the cable space left for coolant.
 
@@ -396,7 +393,6 @@ def _croco_superconductor_properties(
 
 
 def croco_superconductor_properties_hijc_rebco(
-    *,
     a_tf_turn,
     b_tf_inboard_peak,
     cur_tf_turn,

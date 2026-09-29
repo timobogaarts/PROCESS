@@ -1,10 +1,6 @@
 """Pure-functional port of `Stellarator.sc_tf_coil_nuclear_heating_iter90` (chunk 1F)."""
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    OutputInto,
-)
 
 from functional_process.cottax.paths import (
     build,
@@ -13,39 +9,37 @@ from functional_process.cottax.paths import (
     physics,
     tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.stellarator.tf_nuclear_heating import (
     calculate_sc_tf_coil_nuclear_heating,
 )
 
-
-class ScTfCoilNuclearHeating(WrapsFunction):
-    """cottax node: `calculate_sc_tf_coil_nuclear_heating`, unchanged, ports declared."""
-
-    fn = calculate_sc_tf_coil_nuclear_heating
-
-    dr_shld_inboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_blkt_inboard = From(build)
-    dr_shld_outboard = From(build)
-    dr_fw_outboard = From(build)
-    dr_blkt_outboard = From(build)
-    dr_tf_wp_with_insulation = From(tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-    pflux_fw_neutron_mw = From(physics)
-    tfsai = From(tfcoil)
-    tfsao = From(tfcoil)
-    dr_tf_plasma_case = From(tfcoil)
-    f_t_plant_available = From(costs)
-    life_plant = From(costs)
-
-    coilhtmx = OutputInto(fwbs)
-    dpacop = OutputInto(fwbs)
-    htheci = OutputInto(fwbs)
-    flu_tf_neutron_fast_peak = OutputInto(fwbs)
-    pheci = OutputInto(fwbs)
-    pheco = OutputInto(fwbs)
-    ptfiwp = OutputInto(fwbs)
-    ptfowp = OutputInto(fwbs)
-    raddose = OutputInto(fwbs)
-    p_tf_nuclear_heat_mw = OutputInto(fwbs)
+# cottax node: `calculate_sc_tf_coil_nuclear_heating`, unchanged, ports declared.
+ScTfCoilNuclearHeating = fwbs.function(
+    calculate_sc_tf_coil_nuclear_heating,
+    "coilhtmx",
+    "dpacop",
+    "htheci",
+    "flu_tf_neutron_fast_peak",
+    "pheci",
+    "pheco",
+    "ptfiwp",
+    "ptfowp",
+    "raddose",
+    "p_tf_nuclear_heat_mw",
+    reads={
+        "dr_shld_inboard": build,
+        "dr_fw_inboard": build,
+        "dr_blkt_inboard": build,
+        "dr_shld_outboard": build,
+        "dr_fw_outboard": build,
+        "dr_blkt_outboard": build,
+        "dr_tf_wp_with_insulation": tfcoil,
+        "dx_tf_wp_insulation": tfcoil,
+        "pflux_fw_neutron_mw": physics,
+        "tfsai": tfcoil,
+        "tfsao": tfcoil,
+        "dr_tf_plasma_case": tfcoil,
+        "f_t_plant_available": costs,
+        "life_plant": costs,
+    },
+)

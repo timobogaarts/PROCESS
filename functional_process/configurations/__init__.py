@@ -27,8 +27,9 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any
 
+import equinox as eqx
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+from cottax.interfaces.pytree.wrappers import Wrapper
 
 NAMES = (
     "stellarator_helias",
@@ -71,7 +72,7 @@ class Configuration:
     """One machine, its values, and its problem."""
 
     name: str
-    machine: ModelNamespace
+    machine: eqx.Module
     values: dict[str, dict[str, Any]]
     problem: Problem
 
@@ -125,6 +126,18 @@ class Speller:
         self.imports.setdefault(cls.__module__, set()).add(cls.__name__)
         return cls.__name__
 
+    def variant(self, wrapper: Wrapper) -> str:
+        """The name a declared node is bound at in its module, its import recorded."""
+        import sys  # noqa: PLC0415
+
+        for module_name, module in list(sys.modules.items()):
+            if module_name.startswith("functional_process.cottax.models"):
+                for name, bound in vars(module).items():
+                    if bound is wrapper and not name.startswith("_"):
+                        self.imports.setdefault(module_name, set()).add(name)
+                        return name
+        raise TypeError(f"{wrapper!r} is bound at no name in the port's models")
+
     def spell(self, value, depth=0) -> str:  # noqa: PLR0911
         """`value` as source at `depth` levels of indentation.
 
@@ -134,6 +147,11 @@ class Speller:
             If `value` is of a kind this has no spelling for.
         """
         pad, inner = _INDENT * depth, _INDENT * (depth + 1)
+        if isinstance(value, _Source):
+            self.imports.setdefault(value.module, set()).update(value.names)
+            return value.text
+        if isinstance(value, Wrapper):
+            return self.variant(value)
         if isinstance(value, enum.Enum):
             return f"{self.name(value)}.{value.name}"
         if isinstance(value, str):
@@ -154,9 +172,6 @@ class Speller:
                 for k, v in value.items()
             ]
             return "{\n" + "\n".join(lines) + f"\n{pad}}}"
-        special = _SPECIAL.get(type(value).__name__)
-        if special is not None:
-            return special(self, value, depth)
         if dataclasses.is_dataclass(value):
             return self._dataclass(value, depth)
         raise TypeError(f"no spelling for {type(value).__name__}: {value!r}")
@@ -173,12 +188,12 @@ class Speller:
                 # An empty slot, stated as such where the namespace has no default
                 # for it: the tree says which slots this device leaves empty.
                 if (
-                    isinstance(value, ModelNamespace)
+                    isinstance(value, eqx.Module)
                     and _default_of(f) is dataclasses.MISSING
                 ):
                     parts.append(f"{inner}{f.name}=None,")
                 continue
-            if not isinstance(value, ModelNamespace) and _same(got, _default_of(f)):
+            if not isinstance(value, eqx.Module) and _same(got, _default_of(f)):
                 continue
             parts.append(f"{inner}{f.name}={self.spell(got, depth + 1)},")
         if not parts:
@@ -196,17 +211,18 @@ class Speller:
         return "\n".join(lines)
 
 
-def _spell_quench(speller: Speller, value, depth) -> str:
-    """`TfCoilQuenchHeatCurrentDensity.at(...)`: the helium table from its two inputs."""
-    name = speller.name(value)
-    return (
-        f"{name}.at(tftmp={value.tftmp!r}, "
-        f"temp_tf_conductor_quench_max={value.temp_tf_conductor_quench_max!r})"
-    )
+@dataclass(frozen=True)
+class _Source:
+    """A value spelled as the call that makes it, with what the call imports."""
+
+    text: str
+    module: str
+    names: tuple[str, ...]
 
 
-def _spell_machine_config(speller: Speller, value, depth) -> str:
-    """`StellaratorMachineConfig(machine_config=machine_config_for_istell(...))`.
+def _machine_config_source(machine_config, context) -> _Source:
+    """`.stellarator_config.machine_config` as the `machine_config_for_istell(...)` call
+    that makes it: a preset by its number, or the `stella_conf` file in `context`.
 
     Raises
     ------
@@ -217,39 +233,40 @@ def _spell_machine_config(speller: Speller, value, depth) -> str:
         machine_config_for_istell,
     )
 
-    name = speller.name(value)
-    speller.imports.setdefault(machine_config_for_istell.__module__, set()).add(
-        "machine_config_for_istell"
+    call = _Source(
+        "", machine_config_for_istell.__module__, ("machine_config_for_istell",)
     )
     for istell in range(1, 6):
-        if machine_config_for_istell(istell) == value.machine_config:
-            return f"{name}(machine_config=machine_config_for_istell({istell}))"
-    config_file = speller.context.get("stella_conf")
+        if machine_config_for_istell(istell) == machine_config:
+            return dataclasses.replace(call, text=f"machine_config_for_istell({istell})")
+    config_file = context.get("stella_conf")
     if config_file is None or (
-        machine_config_for_istell(6, config_file=config_file) != value.machine_config
+        machine_config_for_istell(6, config_file=config_file) != machine_config
     ):
         raise ValueError(
             "a stellarator machine config that is no preset and not the `stella_conf` "
             "file the speller was told about -- pass `context={'stella_conf': path}`"
         )
-    return (
-        f"{name}(\n{_INDENT * (depth + 1)}machine_config=machine_config_for_istell("
-        f"6, config_file={speller.spell(config_file)})\n{_INDENT * depth})"
+    return dataclasses.replace(
+        call, text=f'machine_config_for_istell(6, config_file="{config_file}")'
     )
-
-
-_SPECIAL = {
-    "TfCoilQuenchHeatCurrentDensity": _spell_quench,
-    "StellaratorMachineConfig": _spell_machine_config,
-}
-"""Occupants whose state is data made from a few inputs: spelled as the call."""
 
 
 def spell(configuration: Configuration, source: str = "", context=None) -> str:
     """`configuration` as the module `load` reads it back from."""
     speller = Speller(context)
     machine = speller.spell(configuration.machine)
-    values = speller.spell(configuration.values)
+    stated = configuration.values
+    if "machine_config" in stated.get("stellarator_config", {}):
+        stated = stated | {
+            "stellarator_config": stated["stellarator_config"]
+            | {
+                "machine_config": _machine_config_source(
+                    stated["stellarator_config"]["machine_config"], speller.context
+                )
+            }
+        }
+    values = speller.spell(stated)
     problem = speller.spell(configuration.problem)
     speller.name(Configuration)
     origin = (

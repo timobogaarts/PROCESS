@@ -2,40 +2,20 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
-
-from functional_process.cottax.models.power.electric_production import (
-    Acpow,
-)
-from functional_process.cottax.models.power.pf_coil_power import PfCoilPowerSupplies
-from functional_process.cottax.models.power.tf_coil_power import (
-    TfPowerResistive,
-    TfPowerSuperconducting,
-)
-from functional_process.cottax.models.power.thermal_cryo import (
-    ComponentThermalPowers,
-    CryoLoads,
-    CryoQLoads,
-    CryoQNuc,
-    DeltaEtaStep,
-    EtathLiq,
-    EtaTurbine,
-    PFwBlktCoolantPumpMw,
-    PFwDivHeatDepositedMw,
-    TempTurbineCoolantIn,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 
-class Power(ModelNamespace):
+class Power(eqx.Module):
     """Thermal and electric power flows, cryogenics, and the plant's own consumption."""
 
-    pf_coil_power: PfCoilPowerSupplies | None = dataclasses.field(kw_only=True)
+    pf_coil_power: Explicit | None = dataclasses.field(kw_only=True)
     """`Power.pfpwr` -- **the one subsystem of `power.py` a tokamak has and a
     stellarator does not**, so the one slot in this namespace that can be honestly
     absent.
     """
 
-    tf_power: TfPowerResistive | TfPowerSuperconducting = dataclasses.field(kw_only=True)
+    tf_power: Explicit = dataclasses.field(kw_only=True)
     """TF-coil power supplies (`.tfcoil.i_tf_sup`, default 1 = superconducting)."""
 
     # `tf_coil_power.py` (unit #14 chunk A). `TfPowerResistive`/
@@ -58,35 +38,29 @@ class Power(ModelNamespace):
     # `i_blkt_dual_coolant` here -- only `calculate_p_fw_blkt_heat_deposited_mw`'s `in
     # (1, 2)` guard reads it) from a registry, instead of the switch ever being carried
     # as a static kwarg into a node body.
-    component_thermal_powers: ComponentThermalPowers = dataclasses.field(kw_only=True)
-    delta_eta_step: DeltaEtaStep = dataclasses.field(kw_only=True)
-    eta_turbine: EtaTurbine | None = dataclasses.field(kw_only=True)
+    component_thermal_powers: Explicit = dataclasses.field(kw_only=True)
+    delta_eta_step: Explicit = dataclasses.field(kw_only=True)
+    eta_turbine: Explicit | None = dataclasses.field(kw_only=True)
     """`.heat_transport.eta_turbine` -- **or nothing, which is what the reference run
     gets.** This was `eta_turbine_step`, a `FixedPointFunction` carrying
     `i_thermal_electric_conversion` and `i_blanket_type`.
     """
-    etath_liq: EtathLiq | None = dataclasses.field(kw_only=True)
+    etath_liq: Explicit | None = dataclasses.field(kw_only=True)
     """`.heat_transport.etath_liq` -- the same shape as `eta_turbine`, on
     `.fwbs.secondary_cycle_liq`.
     """
-    temp_turbine_coolant_in: TempTurbineCoolantIn | None = dataclasses.field(
-        kw_only=True
-    )
+    temp_turbine_coolant_in: Explicit | None = dataclasses.field(kw_only=True)
     """`.heat_transport.temp_turbine_coolant_in` -- three arms of
     `i_thermal_electric_conversion` x `i_blanket_type` x `secondary_cycle_liq`, one of
     them absent.
     """
-    p_fw_div_heat_deposited_mw: PFwDivHeatDepositedMw | None = dataclasses.field(
-        kw_only=True
-    )
+    p_fw_div_heat_deposited_mw: Explicit | None = dataclasses.field(kw_only=True)
     """`.heat_transport.p_fw_div_heat_deposited_mw` -- owned on every
     `i_p_coolant_pumping` value except `MECHANICAL_WITH_PRESSURE_DROP`, where PROCESS
     passes the entering value through and the field's only other producer is
     `models/ife.py`, out of scope.
     """
-    p_fw_blkt_coolant_pump_mw: PFwBlktCoolantPumpMw | None = dataclasses.field(
-        kw_only=True
-    )
+    p_fw_blkt_coolant_pump_mw: Explicit | None = dataclasses.field(kw_only=True)
     """`.primary_pumping.p_fw_blkt_coolant_pump_mw` -- **owned here on two of
     `i_p_coolant_pumping`'s four values and by the blanket on the other two.** This
     node's own docstring already called the field *"a conditional-ownership
@@ -106,7 +80,7 @@ class Power(ModelNamespace):
     # `Power.calculate_cryo_loads` (`_audit/boundary_inputs_audit.md` §7 item 7) is the
     # second wave of exactly that Shape-B gap, and it is now split the same way. Its
     # raw node `Cryo` stays NOT registered for the same reason
-    # `PlantThermalEfficiency` does -- `to_graph(Cryo())` raises `ValueError: reads
+    # `PlantThermalEfficiency` does -- `to_graph(Cryo)` raises `ValueError: reads
     # ['.fwbs.qnuc'], which it also owns` on every one of its three arms, deliberately
     # (`Cryo`'s own docstring) -- and the three families below replace it for real use:
     #   * `CryoQNuc` owns `.fwbs.qnuc`, conditionally written by PROCESS under
@@ -127,23 +101,23 @@ class Power(ModelNamespace):
     # `pfcoil_variables.py:230`'s defaults, neither set by `REFERENCE_INPUT_FILE`;
     # `i_tf_sup=1` is `tfcoil_variables.py:261`'s, likewise unset -- the same value the
     # rest of this file's TF-coil registrations already carry.
-    cryo_q_nuc: CryoQNuc | None = dataclasses.field(kw_only=True)
+    cryo_q_nuc: Explicit | None = dataclasses.field(kw_only=True)
     """`.fwbs.qnuc` -- **and the slot is empty when PROCESS takes it as an input.**
     `inuclear` was a static kwarg on a `FixedPointFunction` here.
     """
 
-    cryo_q_loads: CryoQLoads | None = dataclasses.field(kw_only=True)
+    cryo_q_loads: Explicit | None = dataclasses.field(kw_only=True)
     """`.power.qss`/`qac`/`qcl`/`qmisc` -- **or nothing**, when PROCESS never calls
     `Power.cryo`.
     """
 
-    cryo_loads: CryoLoads = dataclasses.field(kw_only=True)
+    cryo_loads: Explicit = dataclasses.field(kw_only=True)
     """The unconditionally-owned cryogenic loads -- one occupant per arm of the same two
     switches.
     """
     # `electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
     # matches `pf_power_variables.py:18`'s default.
-    acpow: Acpow = dataclasses.field(kw_only=True)
+    acpow: Explicit = dataclasses.field(kw_only=True)
     """Plant AC power requirement -- one occupant per
     `.pf_power.i_pf_energy_storage_source` value.
     """

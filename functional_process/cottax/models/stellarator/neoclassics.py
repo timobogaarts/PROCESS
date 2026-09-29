@@ -2,14 +2,8 @@
 #7).
 """
 
-import equinox as eqx
 import jax.numpy as jnp  # noqa: F401
 import numpy as np  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    OutputInto,
-)
 
 from functional_process.cottax.paths import (
     impurity_radiation,
@@ -18,7 +12,6 @@ from functional_process.cottax.paths import (
     stellarator,
     stellarator_config,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.safe_math import (
     safe_sqrt,  # noqa: F401
 )
@@ -44,65 +37,47 @@ from functional_process.vocabulary import (
     constants,  # noqa: F401
 )
 
-
-class ProfileValues(ExplicitFunction):
-    """cottax node: `calculate_profile_values`, unchanged, ports declared."""
-
-    rho: float = eqx.field(static=True, default=0.6)
-    """Normalised radius the neoclassical profiles are evaluated at -- PROCESS's own
-    literal at its one call site, hoisted to a graph-assembly-time fact.
-    """
-
-    densities = OutputInto(neoclassics)
-    temperatures = OutputInto(neoclassics)
-    dr_densities = OutputInto(neoclassics)
-    dr_temperatures = OutputInto(neoclassics)
-
-    def __call__(
-        self,
-        temp_plasma_electron_on_axis_kev=From(physics),
-        temp_plasma_ion_on_axis_kev=From(physics),
-        alphat=From(physics),
-        nd_plasma_electron_on_axis=From(physics),
-        f_plasma_fuel_deuterium=From(physics),
-        nd_plasma_ions_on_axis=From(physics),
-        nd_plasma_alphas_thermal_vol_avg=From(physics),
-        alphan=From(physics),
-        rminor=From(physics),
-    ):
-        return calculate_profile_values(
-            self.rho,
-            temp_plasma_electron_on_axis_kev,
-            temp_plasma_ion_on_axis_kev,
-            alphat,
-            nd_plasma_electron_on_axis,
-            f_plasma_fuel_deuterium,
-            nd_plasma_ions_on_axis,
-            nd_plasma_alphas_thermal_vol_avg,
-            alphan,
-            rminor,
-        )
+# cottax node: `calculate_profile_values`, unchanged, ports declared.
+# `.neoclassics.rho` is the normalised radius the neoclassical profiles are evaluated at
+# -- PROCESS's own literal (0.6) at its one call site, read as a setting.
+ProfileValues = neoclassics.function(
+    calculate_profile_values,
+    "densities",
+    "temperatures",
+    "dr_densities",
+    "dr_temperatures",
+    reads={
+        "temp_plasma_electron_on_axis_kev": physics,
+        "temp_plasma_ion_on_axis_kev": physics,
+        "alphat": physics,
+        "nd_plasma_electron_on_axis": physics,
+        "f_plasma_fuel_deuterium": physics,
+        "nd_plasma_ions_on_axis": physics,
+        "nd_plasma_alphas_thermal_vol_avg": physics,
+        "alphan": physics,
+        "rminor": physics,
+    },
+)
 
 
-class EffectiveThermalDiffusivity(WrapsFunction):
-    """cottax node: `calculate_effective_thermal_diffusivity`, unchanged, ports
-    declared.
-    """
-
-    fn = calculate_effective_thermal_diffusivity
-
-    vol_plasma = From(physics)
-    f_st_rmajor = From(stellarator)
-    radius_plasma_core_norm = From(impurity_radiation)
-    rminor = From(physics)
-    stella_config_rminor_ref = From(stellarator_config)
-    a_plasma_surface = From(physics)
-    f_p_alpha_plasma_deposited = From(physics)
-    pden_alpha_total_mw = From(physics)
-    pden_plasma_core_rad_mw = From(physics)
-    nd_plasma_electron_on_axis = From(physics)
-    temp_plasma_electron_on_axis_kev = From(physics)
-    alphat = From(physics)
-    alphan = From(physics)
-
-    chi_process_e = OutputInto(neoclassics)
+# cottax node: `calculate_effective_thermal_diffusivity`, unchanged, ports
+# declared.
+EffectiveThermalDiffusivity = neoclassics.function(
+    calculate_effective_thermal_diffusivity,
+    "chi_process_e",
+    reads={
+        "vol_plasma": physics,
+        "f_st_rmajor": stellarator,
+        "radius_plasma_core_norm": impurity_radiation,
+        "rminor": physics,
+        "stella_config_rminor_ref": stellarator_config,
+        "a_plasma_surface": physics,
+        "f_p_alpha_plasma_deposited": physics,
+        "pden_alpha_total_mw": physics,
+        "pden_plasma_core_rad_mw": physics,
+        "nd_plasma_electron_on_axis": physics,
+        "temp_plasma_electron_on_axis_kev": physics,
+        "alphat": physics,
+        "alphan": physics,
+    },
+)

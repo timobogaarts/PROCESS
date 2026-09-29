@@ -39,8 +39,8 @@ from cottax.interfaces import (
     is_optimise,
     is_problem,
     requirements,
+    to_graph,
 )
-from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.interfaces.statements import Optimise
 from cottax.mdao_architectures import SAND
 from cottax.pytree.mint import unminted

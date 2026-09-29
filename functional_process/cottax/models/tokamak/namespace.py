@@ -2,25 +2,19 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from functional_process.cottax.models.namespace import Build, Divertor
+from cottax.interfaces import Explicit
 
 from functional_process.cottax.models.blankets.namespace import CcfeHcpb
 from functional_process.cottax.models.cryostat import Cryostat
 from functional_process.cottax.models.cs_fatigue import CsFatigue
-from functional_process.cottax.models.fw import (
-    FirstWall,
-    FirstWallGeometry,
-    RadiatedWallLoad,
-)
+from functional_process.cottax.models.fw import FirstWallGeometry, RadiatedWallLoad
 from functional_process.cottax.models.pfcoil.namespace import CSCoil, PFCoil
 from functional_process.cottax.models.physics.bootstrap_current import (
-    BootstrapCurrentFractionScaling,
     PlasmaCurrentFractions,
-    PlasmaDiamagneticCurrentFraction,
-    PlasmaPfirschSchluterCurrentFraction,
 )
 from functional_process.cottax.models.physics.density_limit import TokamakDensityLimit
-from functional_process.cottax.models.physics.l_h_transition import LHThresholdPower
 from functional_process.cottax.models.physics.plasma_current import TokamakPlasmaCurrent
 from functional_process.cottax.models.physics.plasma_fields import PlasmaFields
 from functional_process.cottax.models.physics.plasma_inductance import (
@@ -37,13 +31,10 @@ from functional_process.cottax.models.physics.tokamak_namespace import (
     TokamakPulse,
 )
 from functional_process.cottax.models.shield import TokamakShield
-from functional_process.cottax.models.structure import Structure
 from functional_process.cottax.models.tfcoil.namespace import CiccSuperconductingTfCoil
-from functional_process.cottax.models.vacuum.vacuum import VacuumVesselElliptical
-from functional_process.cottax.models.namespace import Build, Divertor
 
 
-class Tokamak(ModelNamespace):
+class Tokamak(eqx.Module):
     """Everything a conventional tokamak has and a stellarator does not."""
 
     # ---- plasma geometry and the tokamak arm of the shared physics body -------------
@@ -72,16 +63,12 @@ class Tokamak(ModelNamespace):
     entered functions, 296 entered LOC, none shared.
     """
 
-    bootstrap_current: BootstrapCurrentFractionScaling | None = dataclasses.field(
-        kw_only=True
-    )
+    bootstrap_current: Explicit | None = dataclasses.field(kw_only=True)
     """`physics/bootstrap_current.py::PlasmaBootstrapCurrent`, §A row 2.5
     (`physics.py:543`) -- 14 entered functions, 1228 entered LOC.
     """
 
-    diamagnetic_current: PlasmaDiamagneticCurrentFraction = dataclasses.field(
-        kw_only=True
-    )
+    diamagnetic_current: Explicit = dataclasses.field(kw_only=True)
     """`physics/plasma_current.py::PlasmaDiamagneticCurrent` (`physics.py:527`) -- **a
     new slot, not one of the traced twenty-five**: `tokamak_boundary.md` folded it into
     `plasma_current`, whose record then declared it out of scope, so
@@ -89,20 +76,18 @@ class Tokamak(ModelNamespace):
     consumer (`current_fractions` below).
     """
 
-    pfirsch_schluter_current: PlasmaPfirschSchluterCurrentFraction = dataclasses.field(
-        kw_only=True
-    )
+    pfirsch_schluter_current: Explicit = dataclasses.field(kw_only=True)
     """`physics.py:534-541`'s Pfirsch-Schluter fraction -- a new slot on the same
     grounds as `diamagnetic_current`.
     """
 
-    current_fractions: PlasmaCurrentFractions = PlasmaCurrentFractions()
+    current_fractions: Explicit = PlasmaCurrentFractions
     """`Physics.calculate_plasma_current_fractions` (`physics.py:558-591`) -- sums the
     bootstrap, diamagnetic and Pfirsch-Schluter fractions into the inductive and
     auxiliary ones.
     """
 
-    l_h_transition: LHThresholdPower = dataclasses.field(kw_only=True)
+    l_h_transition: Explicit = dataclasses.field(kw_only=True)
     """`physics/l_h_transition.py::PlasmaConfinementTransition`, §A row 2.6
     (`physics.py:788`) -- 23 entered functions, 1124 entered LOC.
     """
@@ -153,7 +138,7 @@ class Tokamak(ModelNamespace):
     cs_coil: CSCoil | None = dataclasses.field(kw_only=True)
     """`pfcoil.py::CSCoil`, injected at `main.py:652` -- seven slots."""
 
-    cs_fatigue: CsFatigue = CsFatigue()
+    cs_fatigue: Explicit = CsFatigue
     """`cs_fatigue.py::CsFatigue`, injected at `main.py:652` and reached through
     `pfcoil.py:3492` -- 1 entered function (`ncycle`), 93 entered LOC.
     """
@@ -168,12 +153,12 @@ class Tokamak(ModelNamespace):
     entered LOC, unported.
     """
 
-    first_wall: FirstWall = dataclasses.field(kw_only=True)
+    first_wall: Explicit = dataclasses.field(kw_only=True)
     """`fw.py::FirstWall`, §A row 7 (`caller.py:327`) -- 6 entered functions, 299
     entered LOC, unported.
     """
 
-    first_wall_geometry: FirstWallGeometry = FirstWallGeometry()
+    first_wall_geometry: Explicit = FirstWallGeometry
     """`fw.py::FirstWall.set_fw_geometry` (`fw.py:347-352`) -- **a new slot, not one of
     the traced twenty-five**, on the same grounds as `diamagnetic_current`:
     `tokamak_boundary.md` folded it into `first_wall`, whose record then declared it out
@@ -182,7 +167,7 @@ class Tokamak(ModelNamespace):
     the boundary zeros behind 7 of the 11 non-finite roots.
     """
 
-    radiated_wall_load: RadiatedWallLoad = RadiatedWallLoad()
+    radiated_wall_load: Explicit = RadiatedWallLoad
     """`fw.py:130-144` -- `.physics.pflux_fw_rad_mw` and
     `.constraints.pflux_fw_rad_max_mw`.
     """
@@ -192,7 +177,7 @@ class Tokamak(ModelNamespace):
     entered LOC.
     """
 
-    vacuum_vessel: VacuumVesselElliptical = dataclasses.field(kw_only=True)
+    vacuum_vessel: Explicit = dataclasses.field(kw_only=True)
     """`vacuum.py::VacuumVessel`, §A row 9 (`caller.py:331`) -- 3 entered functions."""
 
     ccfe_hcpb: CcfeHcpb = dataclasses.field(kw_only=True)
@@ -202,17 +187,17 @@ class Tokamak(ModelNamespace):
     call in `caller.py`.
     """
 
-    cryostat: Cryostat = Cryostat()
+    cryostat: Explicit = Cryostat
     """`cryostat.py::Cryostat`, §A row 11 (`caller.py:351`) -- 2 entered functions, 69
     entered LOC).
     """
 
-    structure: Structure = dataclasses.field(kw_only=True)
+    structure: Explicit = dataclasses.field(kw_only=True)
     """`structure.py::Structure`, §A row 12 (`caller.py:354`) -- 2 entered functions,
     200 entered LOC.
     """
 
-    water_use: ModelNamespace | None = None
+    water_use: eqx.Module | None = None
     """`water_use.py::WaterUse`, §A row 19 (`caller.py:385`) -- 7 entered functions, 265
     entered LOC, unported and not reached by the stellarator at all.
     """

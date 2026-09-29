@@ -1,11 +1,9 @@
 """Pure-functional port of `process/models/cs_fatigue.py` (partial -- see "not ported")."""
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
 from jax import lax  # noqa: F401
 
 from functional_process.cottax.paths import cs_fatigue, pf_coil, physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.cs_fatigue import (
     calculate_n_cycle,
     surface_stress_intensity_factor,  # noqa: F401
@@ -52,23 +50,12 @@ def calculate_cs_fatigue_n_cycle_gated(
     )
 
 
-class CsFatigue(WrapsFunction):
-    """cottax node: `.tokamak.cs_fatigue`."""
-
-    fn = calculate_cs_fatigue_n_cycle_gated
-
-    f_c_plasma_inductive = From(physics)
-    stress_hoop_cs_inner = From(pf_coil)
-    residual_sig_hoop = From(cs_fatigue)
-    t_crack_vertical = From(cs_fatigue)
-    dz_cs_turn_conduit = From(cs_fatigue)
-    dr_cs_turn_conduit = From(cs_fatigue)
-    paris_coefficient = From(cs_fatigue)
-    paris_power_law = From(cs_fatigue)
-    walker_coefficient = From(cs_fatigue)
-    sf_vertical_crack = From(cs_fatigue)
-    sf_radial_crack = From(cs_fatigue)
-    fracture_toughness = From(cs_fatigue)
-    sf_fast_fracture = From(cs_fatigue)
-
-    n_cycle = OutputInto(cs_fatigue)
+# cottax node: `.tokamak.cs_fatigue`.
+CsFatigue = cs_fatigue.function(
+    calculate_cs_fatigue_n_cycle_gated,
+    "n_cycle",
+    reads={
+        "f_c_plasma_inductive": physics,
+        "stress_hoop_cs_inner": pf_coil,
+    },
+)

@@ -1,15 +1,8 @@
 """The coils' superconductor properties -- `superconpf`'s ITER Nb3Sn and NbTi arms."""
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces import V
 
-from functional_process.cottax.models.pfcoil import N_PF_COILS
 from functional_process.cottax.paths import pf_coil, superconducting_tfcoil, tfcoil
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.superconductor import (
     calculate_cs_critical_current_densities,
     calculate_cs_critical_current_density_iter_nb3sn,
@@ -25,114 +18,211 @@ from functional_process.models.pfcoil.superconductor import (
 )
 
 
-class CSCriticalCurrentDensitiesIterNb3Sn(ExplicitFunction):
-    """cottax node: `.tokamak.cs_coil.critical_current`, `i_cs_superconductor == 1`."""
-
-    j_cs_critical_flat_top_end = OutputInto(pf_coil)
-    j_cs_critical_pulse_start = OutputInto(pf_coil)
-    j_cs_conductor_critical_flat_top_end = OutputInto(pf_coil)
-    j_cs_conductor_critical_pulse_start = OutputInto(pf_coil)
-    j_crit_str_cs = OutputInto(pf_coil)
-
-    _critical_surface = staticmethod(calculate_cs_critical_current_density_iter_nb3sn)
-    """The arm's critical-current function."""
-
-    def __call__(
-        self,
-        b_cs_peak_flat_top_end=From(pf_coil),
-        b_cs_peak_pulse_start=From(pf_coil),
-        f_a_cs_void=From(pf_coil),
-        fcuohsu=From(pf_coil),
-        str_cs_con_res=From(tfcoil),
-        temp_cs_superconductor_operating=From(pf_coil),
-        a_cs_cable_space=From(pf_coil),
-        a_cs_poloidal=From(pf_coil),
-    ):
-        return calculate_cs_critical_current_densities(
-            critical_surface=self._critical_surface,
-            b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
-            b_cs_peak_pulse_start=b_cs_peak_pulse_start,
-            f_a_cs_void=f_a_cs_void,
-            fcuohsu=fcuohsu,
-            str_cs_con_res=str_cs_con_res,
-            temp_cs_superconductor_operating=temp_cs_superconductor_operating,
-            a_cs_cable_space=a_cs_cable_space,
-            a_cs_poloidal=a_cs_poloidal,
-        )
+def _cs_critical_current_densities(
+    critical_surface,
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+    a_cs_cable_space,
+    a_cs_poloidal,
+):
+    return calculate_cs_critical_current_densities(
+        critical_surface=critical_surface,
+        b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start=b_cs_peak_pulse_start,
+        f_a_cs_void=f_a_cs_void,
+        fcuohsu=fcuohsu,
+        str_cs_con_res=str_cs_con_res,
+        temp_cs_superconductor_operating=temp_cs_superconductor_operating,
+        a_cs_cable_space=a_cs_cable_space,
+        a_cs_poloidal=a_cs_poloidal,
+    )
 
 
-class CSCriticalCurrentDensitiesWstNb3Sn(CSCriticalCurrentDensitiesIterNb3Sn):
-    """cottax node: `.tokamak.cs_coil.critical_current`, `i_cs_superconductor == 5`."""
-
-    _critical_surface = staticmethod(calculate_cs_critical_current_density_wst_nb3sn)
-
-
-class CSTemperatureMarginIterNb3Sn(ExplicitFunction):
-    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 1`."""
-
-    temp_cs_superconductor_margin = OutputInto(pf_coil)
-
-    _critical_surface = staticmethod(calculate_cs_temperature_margin_iter_nb3sn)
-
-    def __call__(
-        self,
-        b_cs_peak_flat_top_end=From(pf_coil),
-        b_cs_peak_pulse_start=From(pf_coil),
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        a_cs_cable_space=From(pf_coil),
-        f_a_cs_void=From(pf_coil),
-        fcuohsu=From(pf_coil),
-        str_cs_con_res=From(tfcoil),
-        temp_cs_superconductor_operating=From(pf_coil),
-    ):
-        return calculate_cs_temperature_margin_from_full_width_current(
-            critical_surface=self._critical_surface,
-            b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
-            b_cs_peak_pulse_start=b_cs_peak_pulse_start,
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
-            a_cs_cable_space=a_cs_cable_space,
-            f_a_cs_void=f_a_cs_void,
-            fcuohsu=fcuohsu,
-            str_cs_con_res=str_cs_con_res,
-            temp_cs_superconductor_operating=temp_cs_superconductor_operating,
-        )
+def _cs_critical_current_densities_iter_nb3sn(
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+    a_cs_cable_space,
+    a_cs_poloidal,
+):
+    return _cs_critical_current_densities(
+        calculate_cs_critical_current_density_iter_nb3sn,
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        f_a_cs_void,
+        fcuohsu,
+        str_cs_con_res,
+        temp_cs_superconductor_operating,
+        a_cs_cable_space,
+        a_cs_poloidal,
+    )
 
 
-class CSTemperatureMarginWstNb3Sn(CSTemperatureMarginIterNb3Sn):
-    """cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 5`."""
+def _cs_critical_current_densities_wst_nb3sn(
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+    a_cs_cable_space,
+    a_cs_poloidal,
+):
+    return _cs_critical_current_densities(
+        calculate_cs_critical_current_density_wst_nb3sn,
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        f_a_cs_void,
+        fcuohsu,
+        str_cs_con_res,
+        temp_cs_superconductor_operating,
+        a_cs_cable_space,
+        a_cs_poloidal,
+    )
 
-    _critical_surface = staticmethod(calculate_cs_temperature_margin_wst_nb3sn)
+
+_CS_CRITICAL_CURRENT_DENSITIES = (
+    "j_cs_critical_flat_top_end",
+    "j_cs_critical_pulse_start",
+    "j_cs_conductor_critical_flat_top_end",
+    "j_cs_conductor_critical_pulse_start",
+    "j_crit_str_cs",
+)
 
 
-class PFStrandCriticalCurrentDensity(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.strand_critical_current`."""
-
-    fn = calculate_pf_strand_critical_current_density
-
-    b_pf_coil_peak = FromExactly(pf_coil.b_pf_coil_peak[N_PF_COILS - 1])
-    bpf2 = FromExactly(pf_coil.bpf2[N_PF_COILS - 1])
-    temp_pf_peak_field = FromExactly(tfcoil.tftmp)
-    fcupfsu = From(pf_coil)
-
-    j_crit_str_pf = OutputInto(pf_coil)
+# cottax node: `.tokamak.cs_coil.critical_current`, `i_cs_superconductor == 1`.
+CSCriticalCurrentDensitiesIterNb3Sn = pf_coil.function(
+    _cs_critical_current_densities_iter_nb3sn,
+    *_CS_CRITICAL_CURRENT_DENSITIES,
+    reads={"str_cs_con_res": tfcoil},
+)
 
 
-class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.strand_critical_current`, `i_pf_superconductor ==
-    9`.
-    """
+# cottax node: `.tokamak.cs_coil.critical_current`, `i_cs_superconductor == 5`.
+CSCriticalCurrentDensitiesWstNb3Sn = pf_coil.function(
+    _cs_critical_current_densities_wst_nb3sn,
+    *_CS_CRITICAL_CURRENT_DENSITIES,
+    reads={"str_cs_con_res": tfcoil},
+)
 
-    fn = calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound
 
-    b_pf_coil_peak = From(pf_coil)
-    bpf2 = From(pf_coil)
-    tftmp = From(tfcoil)
-    fcupfsu = From(pf_coil)
-    dr_tf_hts_tape = From(superconducting_tfcoil)
-    dx_tf_hts_tape_rebco = From(superconducting_tfcoil)
-    dx_tf_hts_tape_total = From(superconducting_tfcoil)
+def _cs_temperature_margin(
+    critical_surface,
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    c_pf_cs_coils_peak_ma,
+    a_cs_cable_space,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+):
+    return calculate_cs_temperature_margin_from_full_width_current(
+        critical_surface=critical_surface,
+        b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start=b_cs_peak_pulse_start,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        a_cs_cable_space=a_cs_cable_space,
+        f_a_cs_void=f_a_cs_void,
+        fcuohsu=fcuohsu,
+        str_cs_con_res=str_cs_con_res,
+        temp_cs_superconductor_operating=temp_cs_superconductor_operating,
+    )
 
-    j_crit_str_pf = OutputInto(pf_coil)
+
+def _cs_temperature_margin_iter_nb3sn(
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    c_pf_cs_coils_peak_ma,
+    a_cs_cable_space,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+):
+    return _cs_temperature_margin(
+        calculate_cs_temperature_margin_iter_nb3sn,
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        c_pf_cs_coils_peak_ma,
+        a_cs_cable_space,
+        f_a_cs_void,
+        fcuohsu,
+        str_cs_con_res,
+        temp_cs_superconductor_operating,
+    )
+
+
+def _cs_temperature_margin_wst_nb3sn(
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    c_pf_cs_coils_peak_ma,
+    a_cs_cable_space,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+):
+    return _cs_temperature_margin(
+        calculate_cs_temperature_margin_wst_nb3sn,
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        c_pf_cs_coils_peak_ma,
+        a_cs_cable_space,
+        f_a_cs_void,
+        fcuohsu,
+        str_cs_con_res,
+        temp_cs_superconductor_operating,
+    )
+
+
+# cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 1`.
+CSTemperatureMarginIterNb3Sn = pf_coil.function(
+    _cs_temperature_margin_iter_nb3sn,
+    "temp_cs_superconductor_margin",
+    reads={"str_cs_con_res": tfcoil},
+)
+
+
+# cottax node: `.tokamak.cs_coil.temperature_margin`, `i_cs_superconductor == 5`.
+CSTemperatureMarginWstNb3Sn = pf_coil.function(
+    _cs_temperature_margin_wst_nb3sn,
+    "temp_cs_superconductor_margin",
+    reads={"str_cs_con_res": tfcoil},
+)
+
+
+# cottax node: `.tokamak.pf_coil.strand_critical_current`.
+PFStrandCriticalCurrentDensity = pf_coil.function(
+    calculate_pf_strand_critical_current_density,
+    "j_crit_str_pf",
+    reads={
+        "b_pf_coil_peak": V.pf_coil.b_pf_coil_peak[5],
+        "bpf2": V.pf_coil.bpf2[5],
+        "temp_pf_peak_field": V.tfcoil.tftmp,
+    },
+)
+
+
+# cottax node: `.tokamak.pf_coil.strand_critical_current`, `i_pf_superconductor ==
+# 9`.
+PFStrandCriticalCurrentDensityHazeltonZhaiRebco = pf_coil.function(
+    calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound,
+    "j_crit_str_pf",
+    reads={
+        "tftmp": tfcoil,
+        "dr_tf_hts_tape": superconducting_tfcoil,
+        "dx_tf_hts_tape_rebco": superconducting_tfcoil,
+        "dx_tf_hts_tape_total": superconducting_tfcoil,
+    },
+)
 
 
 # `.pf_coil.j_pf_wp_critical` -- left unowned, and named here so a reader who greps for

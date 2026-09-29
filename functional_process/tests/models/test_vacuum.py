@@ -37,8 +37,8 @@ from cottax.interfaces import (
     body_of,
     is_feasibility,
     is_root_find,
+    to_graph,
 )
-from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.pytree.path import NodePath, PathMap
 from jax.tree_util import DictKey
 
@@ -264,7 +264,7 @@ def test_duct_diameter_root_find_builds_cleanly():
     `ImplicitFunction`'s docstring promises: the problem owns the unknown and reads
     exactly what the body owns (its residual).
     """
-    d = DuctDiameterRootFind()
+    d = DuctDiameterRootFind
     g = to_graph(DuctDiameterRootFind)
 
     assert set(g.nodes) == {d.name, d.problem_name}
@@ -289,11 +289,9 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
     `TestSolveDuctDiameter` exercises (the 24 fuzzed geometries plus the
     `test_old_model` legacy point).
     """
-    d = DuctDiameterRootFind()
+    d = DuctDiameterRootFind
     schedule = Schedule(
-        RunnableGraph(
-            Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
-        )
+        RunnableGraph(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
     )
 
     for sample in _duct_diameter_samples():
@@ -312,11 +310,9 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
     residual-based pass criterion `Tier2Contract` uses, checked directly here since
     this is not a contract case.
     """
-    d = DuctDiameterRootFind()
+    d = DuctDiameterRootFind
     schedule = Schedule(
-        RunnableGraph(
-            Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
-        )
+        RunnableGraph(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
     )
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
@@ -344,8 +340,8 @@ def _duct_feasibility_graph():
     docstring.
     """
     return to_graph(
-        DuctFeasibilityConditions(),
-        DuctDiameterRootFind(),
+        DuctFeasibilityConditions,
+        DuctDiameterRootFind,
         {"DuctFeasibility": DuctFeasibility},
     )
 
@@ -380,7 +376,7 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     tests alone, since this is the first real (non-toy) instance of that join in this
     codebase.
     """
-    root_find_problem = _duct_feasibility_graph()[DuctDiameterRootFind().problem_name]
+    root_find_problem = _duct_feasibility_graph()[DuctDiameterRootFind.problem_name]
     assert is_root_find(root_find_problem)
 
     joined = DuctFeasibility + root_find_problem
@@ -465,7 +461,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
 
     graph = _duct_feasibility_graph()
     name = NodePath((DictKey("DuctFeasibility"),))
-    root_find_problem = graph[DuctDiameterRootFind().problem_name]
+    root_find_problem = graph[DuctDiameterRootFind.problem_name]
     joined = DuctFeasibility + root_find_problem
 
     body = body_of(graph)  # every plain node, problem nodes dropped

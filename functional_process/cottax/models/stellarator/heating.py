@@ -1,17 +1,12 @@
 """Pure-functional port of `process/models/stellarator/heating.py` (registry unit #5)."""
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     current_drive,
-    heat_transport,
     physics,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.stellarator.heating import (
     calculate_beam_current,
     calculate_ecrh_heating,
@@ -20,67 +15,44 @@ from functional_process.models.stellarator.heating import (
     calculate_lowhyb_heating,
 )
 
-
-class EcrhHeating(WrapsFunction):
-    """cottax node: `calculate_ecrh_heating`, unchanged, ports declared."""
-
-    fn = calculate_ecrh_heating
-
-    p_hcd_primary_extra_heat_mw = From(current_drive)
-    eta_ecrh_injector_wall_plug = From(current_drive)
-
-    p_hcd_ecrh_injected_total_mw = OutputInto(current_drive)
-    p_hcd_injected_ions_mw = OutputInto(current_drive)
-    p_hcd_injected_electrons_mw = OutputInto(current_drive)
-    eta_hcd_primary_injector_wall_plug = OutputInto(current_drive)
-    p_hcd_electric_total_mw = OutputInto(heat_transport)
+# cottax node: `calculate_ecrh_heating`, unchanged, ports declared.
+EcrhHeating = current_drive.function(
+    calculate_ecrh_heating,
+    "p_hcd_ecrh_injected_total_mw",
+    "p_hcd_injected_ions_mw",
+    "p_hcd_injected_electrons_mw",
+    "eta_hcd_primary_injector_wall_plug",
+    V.heat_transport.p_hcd_electric_total_mw,
+)
 
 
-class LowhybHeating(WrapsFunction):
-    """cottax node: `calculate_lowhyb_heating`, unchanged, ports declared."""
-
-    fn = calculate_lowhyb_heating
-
-    p_hcd_primary_extra_heat_mw = From(current_drive)
-    eta_lowhyb_injector_wall_plug = From(current_drive)
-
-    p_hcd_lowhyb_injected_total_mw = OutputInto(current_drive)
-    p_hcd_injected_ions_mw = OutputInto(current_drive)
-    p_hcd_injected_electrons_mw = OutputInto(current_drive)
-    eta_hcd_primary_injector_wall_plug = OutputInto(current_drive)
-    p_hcd_electric_total_mw = OutputInto(heat_transport)
+# cottax node: `calculate_lowhyb_heating`, unchanged, ports declared.
+LowhybHeating = current_drive.function(
+    calculate_lowhyb_heating,
+    "p_hcd_lowhyb_injected_total_mw",
+    "p_hcd_injected_ions_mw",
+    "p_hcd_injected_electrons_mw",
+    "eta_hcd_primary_injector_wall_plug",
+    V.heat_transport.p_hcd_electric_total_mw,
+)
 
 
-class InjectedPowerTotal(WrapsFunction):
-    """cottax node: `calculate_injected_power_total`, unchanged, ports declared."""
-
-    fn = calculate_injected_power_total
-
-    p_hcd_injected_electrons_mw = From(current_drive)
-    p_hcd_injected_ions_mw = From(current_drive)
-
-    p_hcd_injected_total_mw = OutputInto(current_drive)
+# cottax node: `calculate_injected_power_total`, unchanged, ports declared.
+InjectedPowerTotal = current_drive.function(
+    calculate_injected_power_total, "p_hcd_injected_total_mw"
+)
 
 
-class BeamCurrent(WrapsFunction):
-    """cottax node: `calculate_beam_current`, unchanged, ports declared."""
-
-    fn = calculate_beam_current
-
-    p_hcd_beam_injected_total_mw = From(current_drive)
-    e_beam_kev = From(current_drive)
-
-    c_beam_total = OutputInto(current_drive)
+# cottax node: `calculate_beam_current`, unchanged, ports declared.
+BeamCurrent = current_drive.function(calculate_beam_current, "c_beam_total")
 
 
-class FusionGain(WrapsFunction):
-    """cottax node: `calculate_fusion_gain`, unchanged, ports declared."""
-
-    fn = calculate_fusion_gain
-
-    p_fusion_total_mw = From(physics)
-    p_hcd_injected_total_mw = From(current_drive)
-    p_beam_orbit_loss_mw = From(current_drive)
-    p_plasma_ohmic_mw = From(physics)
-
-    big_q_plasma = OutputInto(current_drive)
+# cottax node: `calculate_fusion_gain`, unchanged, ports declared.
+FusionGain = current_drive.function(
+    calculate_fusion_gain,
+    "big_q_plasma",
+    reads={
+        "p_fusion_total_mw": physics,
+        "p_plasma_ohmic_mw": physics,
+    },
+)

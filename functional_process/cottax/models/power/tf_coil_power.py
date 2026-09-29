@@ -4,10 +4,9 @@
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import buildings, heat_transport, physics, tfcoil
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,
@@ -42,48 +41,32 @@ __all__ = [
 ]
 
 
-class TfPowerResistive(WrapsFunction):
-    """cottax node: `calculate_tf_power_resistive`."""
-
-    fn = calculate_tf_power_resistive
-
-    c_tf_turn = From(tfcoil)
-    j_tf_bus = From(tfcoil)
-    rho_tf_bus = From(tfcoil)
-    len_tf_bus = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    res_tf_leg = From(tfcoil)
-    p_cp_resistive = From(tfcoil)
-    c_tf_total = From(tfcoil)
-    p_tf_joints_resistive = From(tfcoil)
-    p_tf_leg_resistive = From(tfcoil)
-    etatf = From(heat_transport)
-
-    m_tf_bus = OutputInto(tfcoil)
-    vtfkv = OutputInto(tfcoil)
-    p_cp_resistive_mw = OutputInto(tfcoil)
-    p_tf_leg_resistive_mw = OutputInto(tfcoil)
-    p_tf_joints_resistive_mw = OutputInto(tfcoil)
-    tfcmw = OutputInto(tfcoil)
-    p_tf_electric_supplies_mw = OutputInto(heat_transport)
+# cottax node: `calculate_tf_power_resistive`.
+TfPowerResistive = tfcoil.function(
+    calculate_tf_power_resistive,
+    "m_tf_bus",
+    "vtfkv",
+    "p_cp_resistive_mw",
+    "p_tf_leg_resistive_mw",
+    "p_tf_joints_resistive_mw",
+    "tfcmw",
+    V.heat_transport.p_tf_electric_supplies_mw,
+    reads={
+        "etatf": heat_transport,
+    },
+)
 
 
-class TfPowerSuperconducting(WrapsFunction):
-    """cottax node: `calculate_tf_power_superconducting`."""
-
-    fn = calculate_tf_power_superconducting
-
-    c_tf_turn = From(tfcoil)
-    e_tf_magnetic_stored_total_gj = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    rmajor = From(physics)
-    v_tf_coil_dump_quench_kv = From(tfcoil)
-    res_tf_leg = From(tfcoil)
-    rho_tf_bus = From(tfcoil)
-    etatf = From(heat_transport)
-
-    tfckw = OutputInto(tfcoil)
-    len_tf_bus = OutputInto(tfcoil)
-    drarea = OutputInto(tfcoil)
-    tfcbv = OutputInto(buildings)
-    p_tf_electric_supplies_mw = OutputInto(heat_transport)
+# cottax node: `calculate_tf_power_superconducting`.
+TfPowerSuperconducting = tfcoil.function(
+    calculate_tf_power_superconducting,
+    "tfckw",
+    "len_tf_bus",
+    "drarea",
+    V.buildings.tfcbv,
+    V.heat_transport.p_tf_electric_supplies_mw,
+    reads={
+        "rmajor": physics,
+        "etatf": heat_transport,
+    },
+)

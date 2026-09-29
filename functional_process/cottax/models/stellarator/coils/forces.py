@@ -3,17 +3,11 @@
 Registry #11.
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    OutputInto,
-)
-
 from functional_process.cottax.paths import (
     stellarator,
     stellarator_config,
     tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.stellarator.coils.forces import (
     calculate_centering_force_avg_mn,  # noqa: F401
     calculate_centering_force_max_mn,  # noqa: F401
@@ -25,29 +19,19 @@ from functional_process.models.stellarator.coils.forces import (
     calculate_maximum_stress,
 )
 
-
-class MaxForceDensity(WrapsFunction):
-    """cottax node: `calculate_max_force_density`."""
-
-    fn = calculate_max_force_density
-
-    a_tf_wp_no_insulation = From(tfcoil)
-    stella_config_max_force_density = From(stellarator_config)
-    f_st_i_total = From(stellarator)
-    f_st_n_coils = From(stellarator)
-    b_tf_inboard_peak_symmetric = From(tfcoil)
-    stella_config_wp_bmax = From(stellarator_config)
-    stella_config_wp_area = From(stellarator_config)
-
-    max_force_density = OutputInto(tfcoil)
+# cottax node: `calculate_max_force_density`.
+MaxForceDensity = tfcoil.function(
+    calculate_max_force_density,
+    "max_force_density",
+    reads={
+        "stella_config_max_force_density": stellarator_config,
+        "f_st_i_total": stellarator,
+        "f_st_n_coils": stellarator,
+        "stella_config_wp_bmax": stellarator_config,
+        "stella_config_wp_area": stellarator_config,
+    },
+)
 
 
-class MaximumStress(WrapsFunction):
-    """cottax node: `calculate_maximum_stress`."""
-
-    fn = calculate_maximum_stress
-
-    max_force_density = From(tfcoil)
-    dr_tf_wp_with_insulation = From(tfcoil)
-
-    sig_tf_wp = OutputInto(tfcoil)
+# cottax node: `calculate_maximum_stress`.
+MaximumStress = tfcoil.function(calculate_maximum_stress, "sig_tf_wp")

@@ -263,9 +263,7 @@ class TestCurrentDriveFreethyEcrhPrimaryNoSecondary(Tier1Contract):
 
 
 def _paths(node):
-    return [i.spelling for i in node.inputs], [
-        o.spelling for o in node.outputs
-    ]
+    return [i.spelling for i in node.reads.values()], [o.spelling for o in node.outputs]
 
 
 def test_the_ecrh_efficiency_occupant_reads_three_variables():
@@ -278,7 +276,7 @@ def test_the_ecrh_efficiency_occupant_reads_three_variables():
     `i_ecrh_wave_mode`, `xi_ebw`, `feffcd`, `b_plasma_toroidal_on_axis`, and the
     temperatures each of them takes. The occupant declares three.
     """
-    inputs, outputs = _paths(HcdPrimaryEfficiencyUserInputEcrh())
+    inputs, outputs = _paths(HcdPrimaryEfficiencyUserInputEcrh)
 
     assert set(inputs) == {
         ".current_drive.eta_cd_norm_ecrh",
@@ -302,7 +300,7 @@ def test_the_freethy_efficiency_occupant_reads_seven_variables():
     Two occupants of one family with a 2-of-8 overlap (`nd_plasma_electrons_vol_avg`,
     `rmajor`) is the reads-differ evidence for splitting `i_hcd_primary` per value.
     """
-    inputs, outputs = _paths(HcdPrimaryEfficiencyFreethyEcrhOMode())
+    inputs, outputs = _paths(HcdPrimaryEfficiencyFreethyEcrhOMode)
 
     assert set(inputs) == {
         ".physics.temp_plasma_electron_vol_avg_kev",
@@ -357,7 +355,7 @@ def test_the_wave_mode_switch_is_static_with_identical_reads():
         freethy_electron_cyclotron_efficiency(**kwargs, i_ecrh_wave_mode=2)
 
     # The occupant pins O-mode: its answer is the mode-0 branch of the pure function.
-    assert float(HcdPrimaryEfficiencyFreethyEcrhOMode()(**kwargs)) == pytest.approx(
+    assert float(HcdPrimaryEfficiencyFreethyEcrhOMode(**kwargs)) == pytest.approx(
         o_mode, rel=0.0
     )
 
@@ -370,8 +368,8 @@ def test_the_ignition_switch_removes_two_reads_from_the_electric_total():
     branching internally would declare both reads on both arms; two occupants declare
     them where they are made.
     """
-    non_ignited_inputs, non_ignited_outputs = _paths(HcdElectricTotalNonIgnited())
-    ignited_inputs, ignited_outputs = _paths(HcdElectricTotalIgnited())
+    non_ignited_inputs, non_ignited_outputs = _paths(HcdElectricTotalNonIgnited)
+    ignited_inputs, ignited_outputs = _paths(HcdElectricTotalIgnited)
 
     assert set(non_ignited_inputs) == {
         ".heat_transport.p_hcd_primary_electric_mw",
@@ -384,8 +382,8 @@ def test_the_ignition_switch_removes_two_reads_from_the_electric_total():
         == [".heat_transport.p_hcd_electric_total_mw"]
     )
 
-    assert HcdElectricTotalIgnited()() == pytest.approx(0.0, abs=0.0)
-    assert HcdElectricTotalNonIgnited()(
+    assert HcdElectricTotalIgnited() == pytest.approx(0.0, abs=0.0)
+    assert HcdElectricTotalNonIgnited(
         p_hcd_primary_electric_mw=219.12, p_hcd_secondary_electric_mw=0.0
     ) == pytest.approx(219.12, rel=0.0)
 
@@ -402,7 +400,7 @@ def test_the_no_secondary_occupant_declares_the_three_zeros(
     computed quantities off the boundary -- see the class docstring for why that is the
     right call rather than a convenience.
     """
-    node = reads_only_its_own_statement(HcdSecondaryHeatingNone())
+    node = reads_only_its_own_statement(HcdSecondaryHeatingNone)
     inputs, outputs = _paths(node)
 
     assert inputs == [
@@ -415,7 +413,7 @@ def test_the_no_secondary_occupant_declares_the_three_zeros(
         ".current_drive.p_hcd_secondary_extra_heat_mw",
         ".heat_transport.p_hcd_secondary_electric_mw",
     }
-    assert HcdSecondaryHeatingNone()(0.0, 0.0, 0.0) == (0.0, 0.0, 0.0)
+    assert HcdSecondaryHeatingNone(0.0, 0.0, 0.0) == (0.0, 0.0, 0.0)
 
     # The defaults the node is asserting. If PROCESS ever changes one, this fails here
     # rather than silently shifting a run's answer.
@@ -431,7 +429,7 @@ def test_the_ecrh_primary_block_does_not_read_the_other_injectors():
     reading its own `eta_*_injector_wall_plug` and the neutral-beam one reading four more
     fields besides. The occupant for the ECRH block reads one of the five.
     """
-    inputs, outputs = _paths(HcdPrimaryPowersElectronCyclotronNoSecondary())
+    inputs, outputs = _paths(HcdPrimaryPowersElectronCyclotronNoSecondary)
 
     assert set(inputs) == {
         ".current_drive.p_hcd_primary_injected_mw",
@@ -468,11 +466,11 @@ def test_the_three_boundary_reads_are_produced():
     """
     owned = set()
     for node in (
-        HcdPrimaryEfficiencyUserInputEcrh(),
-        HcdSecondaryHeatingNone(),
-        HcdPrimaryPowersElectronCyclotronNoSecondary(),
-        HcdInjectedPowerTotal(),
-        HcdElectricTotalNonIgnited(),
+        HcdPrimaryEfficiencyUserInputEcrh,
+        HcdSecondaryHeatingNone,
+        HcdPrimaryPowersElectronCyclotronNoSecondary,
+        HcdInjectedPowerTotal,
+        HcdElectricTotalNonIgnited,
     ):
         owned.update(o.spelling for o in node.outputs)
 
@@ -492,18 +490,18 @@ def test_no_node_reads_what_it_owns():
     and not a read at all.
     """
     for node in (
-        HcdPrimaryEfficiencyUserInputEcrh(),
-        HcdPrimaryEfficiencyFreethyEcrhOMode(),
-        HcdSecondaryHeatingNone(),
-        HcdSecondaryDrivenCurrent(),
-        HcdPrimaryInjectedPower(),
-        HcdPrimaryPowersElectronCyclotronNoSecondary(),
-        HcdInjectedPowerTotal(),
-        HcdElectricTotalNonIgnited(),
-        HcdElectricTotalIgnited(),
+        HcdPrimaryEfficiencyUserInputEcrh,
+        HcdPrimaryEfficiencyFreethyEcrhOMode,
+        HcdSecondaryHeatingNone,
+        HcdSecondaryDrivenCurrent,
+        HcdPrimaryInjectedPower,
+        HcdPrimaryPowersElectronCyclotronNoSecondary,
+        HcdInjectedPowerTotal,
+        HcdElectricTotalNonIgnited,
+        HcdElectricTotalIgnited,
     ):
         inputs, outputs = _paths(node)
-        assert not set(inputs) & set(outputs), type(node).__name__
+        assert not set(inputs) & set(outputs), node.fn.__name__
 
 
 @pytest.mark.parametrize("i_plasma_ignited", [0, 1])
@@ -517,7 +515,7 @@ def test_the_nodes_compose_to_the_composite(i_plasma_ignited):
     """
     kwargs = _point(i_plasma_ignited=i_plasma_ignited, p_hcd_secondary_injected_mw=30.0)
 
-    eta_cd_hcd_primary = HcdPrimaryEfficiencyUserInputEcrh()(
+    eta_cd_hcd_primary = HcdPrimaryEfficiencyUserInputEcrh(
         eta_cd_norm_ecrh=kwargs["eta_cd_norm_ecrh"],
         nd_plasma_electrons_vol_avg=kwargs["nd_plasma_electrons_vol_avg"],
         rmajor=kwargs["rmajor"],
@@ -526,13 +524,13 @@ def test_the_nodes_compose_to_the_composite(i_plasma_ignited):
         eta_cd_hcd_secondary,
         p_hcd_secondary_extra_heat_mw,
         p_hcd_secondary_electric_mw,
-    ) = HcdSecondaryHeatingNone()(0.0, 0.0, 0.0)
-    _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent()(
+    ) = HcdSecondaryHeatingNone(0.0, 0.0, 0.0)
+    _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent(
         eta_cd_hcd_secondary=eta_cd_hcd_secondary,
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],
         plasma_current=kwargs["plasma_current"],
     )
-    p_hcd_primary_injected_mw = HcdPrimaryInjectedPower()(
+    p_hcd_primary_injected_mw = HcdPrimaryInjectedPower(
         f_c_plasma_auxiliary=kwargs["f_c_plasma_auxiliary"],
         f_c_plasma_hcd_secondary=f_c_plasma_hcd_secondary,
         plasma_current=kwargs["plasma_current"],
@@ -543,24 +541,24 @@ def test_the_nodes_compose_to_the_composite(i_plasma_ignited):
         _,
         _,
         p_hcd_primary_electric_mw,
-    ) = HcdPrimaryPowersElectronCyclotronNoSecondary()(
+    ) = HcdPrimaryPowersElectronCyclotronNoSecondary(
         p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
         p_hcd_primary_extra_heat_mw=kwargs["p_hcd_primary_extra_heat_mw"],
         eta_ecrh_injector_wall_plug=kwargs["eta_ecrh_injector_wall_plug"],
     )
-    p_hcd_injected_total_mw = HcdInjectedPowerTotal()(
+    p_hcd_injected_total_mw = HcdInjectedPowerTotal(
         p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
         p_hcd_primary_extra_heat_mw=kwargs["p_hcd_primary_extra_heat_mw"],
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],
         p_hcd_secondary_extra_heat_mw=p_hcd_secondary_extra_heat_mw,
     )
     if i_plasma_ignited == 0:
-        p_hcd_electric_total_mw = HcdElectricTotalNonIgnited()(
+        p_hcd_electric_total_mw = HcdElectricTotalNonIgnited(
             p_hcd_primary_electric_mw=p_hcd_primary_electric_mw,
             p_hcd_secondary_electric_mw=p_hcd_secondary_electric_mw,
         )
     else:
-        p_hcd_electric_total_mw = HcdElectricTotalIgnited()()
+        p_hcd_electric_total_mw = HcdElectricTotalIgnited()
 
     composite = calculate_current_drive_ecrh_primary_no_secondary(**kwargs)
 
@@ -584,7 +582,7 @@ def test_the_freethy_nodes_compose_to_the_composite():
     """
     kwargs = _freethy_point(p_hcd_secondary_injected_mw=30.0)
 
-    eta_cd_hcd_primary = HcdPrimaryEfficiencyFreethyEcrhOMode()(
+    eta_cd_hcd_primary = HcdPrimaryEfficiencyFreethyEcrhOMode(
         temp_plasma_electron_vol_avg_kev=kwargs["temp_plasma_electron_vol_avg_kev"],
         n_charge_plasma_effective_vol_avg=kwargs["n_charge_plasma_effective_vol_avg"],
         rmajor=kwargs["rmajor"],
@@ -597,13 +595,13 @@ def test_the_freethy_nodes_compose_to_the_composite():
         eta_cd_hcd_secondary,
         p_hcd_secondary_extra_heat_mw,
         p_hcd_secondary_electric_mw,
-    ) = HcdSecondaryHeatingNone()(0.0, 0.0, 0.0)
-    _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent()(
+    ) = HcdSecondaryHeatingNone(0.0, 0.0, 0.0)
+    _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent(
         eta_cd_hcd_secondary=eta_cd_hcd_secondary,
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],
         plasma_current=kwargs["plasma_current"],
     )
-    p_hcd_primary_injected_mw = HcdPrimaryInjectedPower()(
+    p_hcd_primary_injected_mw = HcdPrimaryInjectedPower(
         f_c_plasma_auxiliary=kwargs["f_c_plasma_auxiliary"],
         f_c_plasma_hcd_secondary=f_c_plasma_hcd_secondary,
         plasma_current=kwargs["plasma_current"],
@@ -614,18 +612,18 @@ def test_the_freethy_nodes_compose_to_the_composite():
         _,
         _,
         p_hcd_primary_electric_mw,
-    ) = HcdPrimaryPowersElectronCyclotronNoSecondary()(
+    ) = HcdPrimaryPowersElectronCyclotronNoSecondary(
         p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
         p_hcd_primary_extra_heat_mw=kwargs["p_hcd_primary_extra_heat_mw"],
         eta_ecrh_injector_wall_plug=kwargs["eta_ecrh_injector_wall_plug"],
     )
-    p_hcd_injected_total_mw = HcdInjectedPowerTotal()(
+    p_hcd_injected_total_mw = HcdInjectedPowerTotal(
         p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
         p_hcd_primary_extra_heat_mw=kwargs["p_hcd_primary_extra_heat_mw"],
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],
         p_hcd_secondary_extra_heat_mw=p_hcd_secondary_extra_heat_mw,
     )
-    p_hcd_electric_total_mw = HcdElectricTotalNonIgnited()(
+    p_hcd_electric_total_mw = HcdElectricTotalNonIgnited(
         p_hcd_primary_electric_mw=p_hcd_primary_electric_mw,
         p_hcd_secondary_electric_mw=p_hcd_secondary_electric_mw,
     )

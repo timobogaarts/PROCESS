@@ -2,7 +2,7 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
 
 from functional_process.cottax.models.availability.namespace import Availability
 from functional_process.cottax.models.buildings.namespace import Buildings
@@ -15,7 +15,7 @@ from functional_process.cottax.models.tokamak.namespace import Tokamak
 from functional_process.cottax.models.vacuum.namespace import Vacuum
 
 
-class StellaratorProcess(ModelNamespace):
+class StellaratorProcess(eqx.Module):
     """One device, configured whole: every slot in this port, and what fills it."""
 
     initialisation: Initialisation = dataclasses.field(kw_only=True)
@@ -41,7 +41,7 @@ class StellaratorProcess(ModelNamespace):
     availability: Availability = dataclasses.field(kw_only=True)
 
 
-class TokamakProcess(ModelNamespace):
+class TokamakProcess(eqx.Module):
     """A conventional tokamak: the shared subsystems, and one empty device slot."""
 
     initialisation: Initialisation = dataclasses.field(kw_only=True)

@@ -1,10 +1,9 @@
 """What current each PF coil group carries, at each of the three time points."""
 
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
+from cottax.interfaces import V
 
 from functional_process.cottax.models.pfcoil import REFERENCE_TOPOLOGY, PFLocation
 from functional_process.cottax.paths import build, pf_coil, physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.currents import (
     calculate_cs_flux_swing,  # noqa: F401 -- re-exported for tests
     calculate_cs_flux_swing_for_topology,  # noqa: F401 -- re-exported for tests
@@ -41,148 +40,116 @@ for, in `pcls0`'s order (`pfcoil.py:519-532`).
 """
 
 
-class CSCurrentDensityPulseStart(WrapsFunction):
-    """cottax node: `.tokamak.cs_coil.current_density_pulse_start`."""
-
-    fn = calculate_j_cs_pulse_start
-
-    j_cs_flat_top_end = From(pf_coil)
-    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
-
-    j_cs_pulse_start = OutputInto(pf_coil)
+# cottax node: `.tokamak.cs_coil.current_density_pulse_start`.
+CSCurrentDensityPulseStart = pf_coil.function(
+    calculate_j_cs_pulse_start, "j_cs_pulse_start"
+)
 
 
-class PFCoilInitiationCurrents(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.initiation_currents`."""
-
-    fn = calculate_plasma_initiation_currents_reference
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-    r_cs_middle = From(pf_coil)
-    dz_cs_full = From(pf_coil)
-    a_cs_poloidal = From(pf_coil)
-    j_cs_flat_top_end = From(pf_coil)
-    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
-    alfapf = From(pf_coil)
-
-    ssq0 = OutputInto(pf_coil)
-    ccl0 = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.initiation_currents`.
+PFCoilInitiationCurrents = pf_coil.function(
+    calculate_plasma_initiation_currents_reference,
+    "ssq0",
+    "ccl0",
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
 
 
-class PFCoilInitiationCurrentsNoCentralSolenoid(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.initiation_currents`, the `iohcl = 0` occupant.
-
-    Not a subclass of `PFCoilInitiationCurrents`: this occupant's read set is a strict
-    subset (no CS to place a filament at), and `WrapsFunction` reads accumulate over the
-    MRO rather than being retractable, so sharing the base would leave four reads
-    declared that `fn` no longer takes.
-    """
-
-    fn = calculate_plasma_initiation_currents_no_central_solenoid_bound
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-    alfapf = From(pf_coil)
-
-    ssq0 = OutputInto(pf_coil)
-    ccl0 = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.initiation_currents`, the `iohcl = 0` occupant.
+#
+# Not a subclass of `PFCoilInitiationCurrents`: this occupant's read set is a strict
+# subset (no CS to place a filament at), and `WrapsFunction` reads accumulate over the
+# MRO rather than being retractable, so sharing the base would leave four reads
+# declared that `fn` no longer takes.
+PFCoilInitiationCurrentsNoCentralSolenoid = pf_coil.function(
+    calculate_plasma_initiation_currents_no_central_solenoid_bound,
+    "ssq0",
+    "ccl0",
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+    },
+)
 
 
-class PFCoilEquilibriumCurrents(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.equilibrium_currents`."""
-
-    fn = calculate_equilibrium_currents_reference
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    kappa = From(physics)
-    aspect = From(physics)
-    plasma_current = From(physics)
-    beta_poloidal_vol_avg = From(physics)
-    ind_plasma_internal_norm = From(physics)
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-    alfapf = From(pf_coil)
-
-    ccls = OutputInto(pf_coil)
-    b_plasma_vertical_required = OutputInto(physics)
+# cottax node: `.tokamak.pf_coil.equilibrium_currents`.
+PFCoilEquilibriumCurrents = pf_coil.function(
+    calculate_equilibrium_currents_reference,
+    "ccls",
+    V.physics.b_plasma_vertical_required,
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+        "kappa": physics,
+        "aspect": physics,
+        "plasma_current": physics,
+        "beta_poloidal_vol_avg": physics,
+        "ind_plasma_internal_norm": physics,
+    },
+)
 
 
-class PFCoilEquilibriumCurrentsNoCentralSolenoid(PFCoilEquilibriumCurrents):
-    """cottax node: `.tokamak.pf_coil.equilibrium_currents`, the `iohcl = 0` occupant.
-
-    Same reads and outputs as `PFCoilEquilibriumCurrents` -- only `fn`'s baked topology
-    differs -- so this is the inheriting arm rather than a standalone declaration.
-    """
-
-    fn = calculate_equilibrium_currents_no_central_solenoid
-
-
-class CSFluxSwing(WrapsFunction):
-    """cottax node: `.tokamak.cs_coil.flux_swing`.
-
-    Necessarily a topology *with* a central solenoid -- this node is the solenoid's
-    flux-swing balance, and `iohcl = 0` deletes it rather than changing it, so `fn` is
-    bound to `REFERENCE_TOPOLOGY` unconditionally with no second arm.
-    """
-
-    fn = calculate_cs_flux_swing_reference
-
-    ccls = From(pf_coil)
-    ind_pf_cs_plasma_mutual = From(pf_coil)
-    n_pf_coil_turns = From(pf_coil)
-    vs_plasma_ramp_required = From(physics)
-    dr_cs_bore = From(build)
-    dr_cs = From(build)
-    dz_cs_full = From(pf_coil)
-    a_cs_poloidal = From(pf_coil)
-    j_cs_flat_top_end = From(pf_coil)
-    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
-
-    f_j_cs_start_end_flat_top = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.equilibrium_currents`, the `iohcl = 0` occupant.
+#
+# Same reads and outputs as `PFCoilEquilibriumCurrents` -- only `fn`'s baked topology
+# differs -- so this is the inheriting arm rather than a standalone declaration.
+PFCoilEquilibriumCurrentsNoCentralSolenoid = pf_coil.function(
+    calculate_equilibrium_currents_no_central_solenoid,
+    "ccls",
+    V.physics.b_plasma_vertical_required,
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+        "kappa": physics,
+        "aspect": physics,
+        "plasma_current": physics,
+        "beta_poloidal_vol_avg": physics,
+        "ind_plasma_internal_norm": physics,
+    },
+)
 
 
-class PFCoilTimePointCurrents(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.time_point_currents`."""
-
-    fn = calculate_time_point_currents_reference
-
-    ccl0 = From(pf_coil)
-    ccls = From(pf_coil)
-    a_cs_poloidal = From(pf_coil)
-    j_cs_flat_top_end = From(pf_coil)
-    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
-    f_j_cs_start_end_flat_top = From(pf_coil)
-
-    c_pf_cs_coil_pulse_start_ma = OutputInto(pf_coil)
-    c_pf_cs_coil_flat_top_ma = OutputInto(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = OutputInto(pf_coil)
-    ccl0_ma = OutputInto(pf_coil)
-    ccls_ma = OutputInto(pf_coil)
+# cottax node: `.tokamak.cs_coil.flux_swing`.
+#
+# Necessarily a topology *with* a central solenoid -- this node is the solenoid's
+# flux-swing balance, and `iohcl = 0` deletes it rather than changing it, so `fn` is
+# bound to `REFERENCE_TOPOLOGY` unconditionally with no second arm.
+CSFluxSwing = pf_coil.function(
+    calculate_cs_flux_swing_reference,
+    "f_j_cs_start_end_flat_top",
+    reads={
+        "vs_plasma_ramp_required": physics,
+        "dr_cs_bore": build,
+        "dr_cs": build,
+    },
+)
 
 
-class PFCoilTimePointCurrentsNoCentralSolenoid(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.time_point_currents`, the `iohcl = 0` occupant.
+# cottax node: `.tokamak.pf_coil.time_point_currents`.
+PFCoilTimePointCurrents = pf_coil.function(
+    calculate_time_point_currents_reference,
+    "c_pf_cs_coil_pulse_start_ma",
+    "c_pf_cs_coil_flat_top_ma",
+    "c_pf_cs_coil_pulse_end_ma",
+    "ccl0_ma",
+    "ccls_ma",
+)
 
-    Not a subclass of `PFCoilTimePointCurrents`: this occupant reads three of its six
-    inputs (no `f_j_cs_start_end_flat_top` in -- it is this occupant's own output, not a
-    read) and `WrapsFunction` reads cannot be retracted by inheritance.
-    """
 
-    fn = calculate_time_point_currents_no_central_solenoid_bound
-
-    ccl0 = From(pf_coil)
-    ccls = From(pf_coil)
-    f_j_cs_start_pulse_end_flat_top = From(pf_coil)
-
-    c_pf_cs_coil_pulse_start_ma = OutputInto(pf_coil)
-    c_pf_cs_coil_flat_top_ma = OutputInto(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = OutputInto(pf_coil)
-    ccl0_ma = OutputInto(pf_coil)
-    ccls_ma = OutputInto(pf_coil)
-    f_j_cs_start_end_flat_top = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.time_point_currents`, the `iohcl = 0` occupant.
+#
+# Not a subclass of `PFCoilTimePointCurrents`: this occupant reads three of its six
+# inputs (no `f_j_cs_start_end_flat_top` in -- it is this occupant's own output, not a
+# read) and `WrapsFunction` reads cannot be retracted by inheritance.
+PFCoilTimePointCurrentsNoCentralSolenoid = pf_coil.function(
+    calculate_time_point_currents_no_central_solenoid_bound,
+    "c_pf_cs_coil_pulse_start_ma",
+    "c_pf_cs_coil_flat_top_ma",
+    "c_pf_cs_coil_pulse_end_ma",
+    "ccl0_ma",
+    "ccls_ma",
+    "f_j_cs_start_end_flat_top",
+)

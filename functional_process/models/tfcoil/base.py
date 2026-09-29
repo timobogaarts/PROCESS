@@ -127,7 +127,6 @@ def a_tf_inboard_total_straight_case(*, n_tf_coils, r_tf_inboard_out, r_tf_inboa
 
 
 def calculate_tf_global_geometry_circular_case(
-    *,
     n_tf_coils,
     r_tf_inboard_out,
     r_tf_inboard_in,
@@ -148,7 +147,6 @@ def calculate_tf_global_geometry_circular_case(
 
 
 def calculate_tf_global_geometry_straight_case(
-    *,
     n_tf_coils,
     r_tf_inboard_out,
     r_tf_inboard_in,
@@ -200,7 +198,7 @@ def dr_tf_plasma_case_from_input(
 
 
 def dr_tf_plasma_case_from_fraction(
-    *, f_dr_tf_plasma_case, dr_tf_inboard, r_tf_inboard_in, n_tf_coils
+    f_dr_tf_plasma_case, dr_tf_inboard, r_tf_inboard_in, n_tf_coils
 ):
     """`i_f_dr_tf_plasma_case == True`: a fraction of the inboard thickness, clamped.
 
@@ -218,7 +216,7 @@ def dr_tf_plasma_case_from_fraction(
 
 
 def dx_tf_side_case_min_from_fraction(
-    *, casths_fraction, r_tf_inboard_in, dr_tf_nose_case, n_tf_coils
+    casths_fraction, r_tf_inboard_in, dr_tf_nose_case, n_tf_coils
 ):
     """`tfc_sidewall_is_fraction == True`. `process/models/tfcoil/base.py:352-356`."""
     return (
@@ -229,7 +227,6 @@ def dx_tf_side_case_min_from_fraction(
 
 
 def calculate_r_b_tf_inboard_peak(
-    *,
     r_tf_inboard_out,
     dr_tf_plasma_case,
     dx_tf_wp_insulation,
@@ -251,7 +248,6 @@ def calculate_r_b_tf_inboard_peak(
 
 
 def tf_current(
-    *,
     n_tf_coils,
     b_plasma_toroidal_on_axis,
     rmajor,
@@ -301,7 +297,6 @@ def _d_shape_length_and_arcs(*, r_tf_arc, z_tf_arc, dr_tf_inboard):
 
 
 def tf_coil_shape_inner_d_shape_single_null(
-    *,
     r_tf_inboard_out,
     rmajor,
     rminor,
@@ -346,7 +341,6 @@ def tf_coil_shape_inner_d_shape_single_null(
 
 
 def tf_coil_shape_inner_d_shape_double_null(
-    *,
     r_tf_inboard_out,
     rmajor,
     rminor,
@@ -384,7 +378,6 @@ def tf_coil_shape_inner_d_shape_double_null(
 
 
 def tf_coil_shape_inner_picture_frame_tart(
-    *,
     r_cp_top,
     r_tf_outboard_in,
     z_tf_inside_half,
@@ -499,7 +492,7 @@ def _inductance_arc_sum(*, x0, y0, ai, bi, ao, bo, z_straight, outward):
     return total
 
 
-def tf_coil_self_inductance_d_shape(*, dr_tf_inboard, r_tf_arc, z_tf_arc):
+def tf_coil_self_inductance_d_shape(dr_tf_inboard, r_tf_arc, z_tf_arc):
     """`itart == 0` and `i_tf_shape == 1`: the two-sweep numerical integration.
 
     Ports `process/models/tfcoil/base.py:2120-2181`. This arm reads **only** the coil
@@ -547,7 +540,7 @@ def tf_coil_self_inductance_d_shape(*, dr_tf_inboard, r_tf_arc, z_tf_arc):
 
 
 def tf_coil_self_inductance_picture_frame(
-    *, z_tf_inside_half, dr_tf_outboard, r_tf_outboard_mid, r_tf_inboard_mid
+    z_tf_inside_half, dr_tf_outboard, r_tf_outboard_mid, r_tf_inboard_mid
 ):
     """Everything that is not (`itart == 0` and `i_tf_shape == 1`): the closed form.
 
@@ -563,7 +556,7 @@ def tf_coil_self_inductance_picture_frame(
     )
 
 
-def tf_stored_magnetic_energy(*, ind_tf_coil, c_tf_total, n_tf_coils):
+def tf_stored_magnetic_energy(ind_tf_coil, c_tf_total, n_tf_coils):
     """Stored magnetic energy of the TF coil set. Unchanged.
 
     Ports `TFCoil.tf_stored_magnetic_energy`, `process/models/tfcoil/base.py:582-634`.
@@ -587,7 +580,6 @@ def tf_stored_magnetic_energy(*, ind_tf_coil, c_tf_total, n_tf_coils):
 
 
 def generic_tf_coil_area_and_masses(
-    *,
     r_tf_inboard_out,
     r_tf_inboard_in,
     rad_tf_coil_inboard_toroidal_half,

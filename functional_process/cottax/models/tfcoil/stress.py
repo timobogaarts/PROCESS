@@ -4,13 +4,7 @@
 solver `stresscl` calls (`:3659-3717`, `:4236-4670`).
 """
 
-import equinox as eqx
-
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     build,
@@ -18,7 +12,6 @@ from functional_process.cottax.paths import (
     superconducting_tfcoil,
     tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.tfcoil.stress import (
     extended_plane_strain,  # noqa: F401 -- re-exported for tests/.../test_stress.py
     eyoung_parallel,  # noqa: F401 -- re-exported for tests/.../test_stress.py
@@ -36,312 +29,357 @@ from functional_process.models.tfcoil.stress import (
 # ---------------------------------------------------------------------------
 
 
-class TfFieldAndForce(ExplicitFunction):
-    """The family that owns the TF coil's in-plane force and vertical tension."""
+# The TfFieldAndForce family:
+# The family that owns the TF coil's in-plane force and vertical tension.
 
 
-class TfFieldAndForceClampedJoints(TfFieldAndForce, WrapsFunction):
-    """No sliding centrepost joints -- every superconducting coil unless an input file
-    sets `i_cp_joints = 1` alongside `itart = 1`.
-    """
-
-    fn = tf_field_and_force_clamped_joints
-
-    r_tf_wp_inboard_outer = From(superconducting_tfcoil)
-    r_tf_wp_inboard_inner = From(superconducting_tfcoil)
-    r_tf_outboard_in = From(superconducting_tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-    dx_tf_wp_insertion_gap = From(tfcoil)
-    b_tf_inboard_peak_symmetric = From(tfcoil)
-    c_tf_total = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    dr_tf_plasma_case = From(tfcoil)
-    rmajor = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    f_vforce_inboard = From(tfcoil)
-
-    cforce = OutputInto(tfcoil)
-    vforce = OutputInto(tfcoil)
-    vforce_outboard = OutputInto(tfcoil)
-    vforce_inboard_tot = OutputInto(superconducting_tfcoil)
+# No sliding centrepost joints -- every superconducting coil unless an input file
+# sets `i_cp_joints = 1` alongside `itart = 1`.
+TfFieldAndForceClampedJoints = tfcoil.function(
+    tf_field_and_force_clamped_joints,
+    "cforce",
+    "vforce",
+    "vforce_outboard",
+    V.superconducting_tfcoil.vforce_inboard_tot,
+    reads={
+        "r_tf_wp_inboard_outer": superconducting_tfcoil,
+        "r_tf_wp_inboard_inner": superconducting_tfcoil,
+        "r_tf_outboard_in": superconducting_tfcoil,
+        "rmajor": physics,
+        "b_plasma_toroidal_on_axis": physics,
+    },
+)
 
 
-class TfStress(ExplicitFunction):
-    """The family that owns the TF coil's peak stresses and strains."""
+# The TfStress family:
+# The family that owns the TF coil's peak stresses and strains.
 
 
-class TfStressPlaneStressBuckedCase(TfStress):
-    """`i_tf_stress_model == 1` (generalised plane stress) with `i_tf_bucking == 1`."""
-
-    n_tf_graded_layers: int = eqx.field(static=True, default=1)
-
-    sig_tf_wp = OutputInto(tfcoil)
-    sig_tf_case = OutputInto(tfcoil)
-    str_wp = OutputInto(tfcoil)
-    casestr = OutputInto(tfcoil)
-    insstrain = OutputInto(tfcoil)
+# The TfStressPlaneStressBuckedCase family:
+# `i_tf_stress_model == 1` (generalised plane stress) with `i_tf_bucking == 1`.
+#
+# Every variant reads `.tfcoil.n_tf_graded_layers`, the PROCESS input (default 1).
 
 
-class TfStressPlaneStressBuckedCaseAveragedTurn(TfStressPlaneStressBuckedCase):
-    """`i_tf_turns_integer == 0` -- the turn is described by one averaged cable-space
-    width, `.superconducting_tfcoil.dx_tf_turn_cable_space_average`
-    (`base.py:2745-2749`).
-    """
-
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
-        a_tf_plasma_case=From(superconducting_tfcoil),
-        a_tf_coil_nose_case=From(superconducting_tfcoil),
-        eyoung_steel=From(tfcoil),
-        poisson_steel=From(tfcoil),
-        eyoung_cond_axial=From(tfcoil),
-        poisson_cond_axial=From(tfcoil),
-        eyoung_cond_trans=From(tfcoil),
-        poisson_cond_trans=From(tfcoil),
-        eyoung_ins=From(tfcoil),
-        poisson_ins=From(tfcoil),
-        eyoung_copper=From(tfcoil),
-        poisson_copper=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        dx_tf_turn_cable_space_average=From(superconducting_tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_side_case_average=From(superconducting_tfcoil),
-        dx_tf_wp_toroidal_average=From(superconducting_tfcoil),
-        a_tf_coil_inboard_insulation=From(superconducting_tfcoil),
-        a_tf_wp_steel=From(tfcoil),
-        a_tf_wp_conductor=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        c_tf_total=From(tfcoil),
-        vforce=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        a_tf_turn_steel=From(tfcoil),
-    ):
-        return tf_stress_plane_stress_bucked_case(
-            r_tf_inboard_in=r_tf_inboard_in,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            tan_theta_coil=tan_theta_coil,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
-            a_tf_plasma_case=a_tf_plasma_case,
-            a_tf_coil_nose_case=a_tf_coil_nose_case,
-            eyoung_steel=eyoung_steel,
-            poisson_steel=poisson_steel,
-            eyoung_cond_axial=eyoung_cond_axial,
-            poisson_cond_axial=poisson_cond_axial,
-            eyoung_cond_trans=eyoung_cond_trans,
-            poisson_cond_trans=poisson_cond_trans,
-            eyoung_ins=eyoung_ins,
-            poisson_ins=poisson_ins,
-            eyoung_copper=eyoung_copper,
-            poisson_copper=poisson_copper,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            n_tf_coil_turns=n_tf_coil_turns,
-            dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_average,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_side_case_average=dx_tf_side_case_average,
-            dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
-            a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
-            a_tf_wp_steel=a_tf_wp_steel,
-            a_tf_wp_conductor=a_tf_wp_conductor,
-            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
-            c_tf_total=c_tf_total,
-            vforce=vforce,
-            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
-            a_tf_turn_steel=a_tf_turn_steel,
-            n_tf_graded_layers=self.n_tf_graded_layers,
-        )
+def _tf_stress_plane_stress_bucked_case_averaged_turn(
+    r_tf_inboard_in,
+    r_tf_wp_inboard_inner,
+    r_tf_wp_inboard_outer,
+    tan_theta_coil,
+    rad_tf_coil_inboard_toroidal_half,
+    dr_tf_plasma_case,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    eyoung_steel,
+    poisson_steel,
+    eyoung_cond_axial,
+    poisson_cond_axial,
+    eyoung_cond_trans,
+    poisson_cond_trans,
+    eyoung_ins,
+    poisson_ins,
+    eyoung_copper,
+    poisson_copper,
+    dx_tf_turn_insulation,
+    dx_tf_wp_insertion_gap,
+    dx_tf_wp_insulation,
+    n_tf_coil_turns,
+    dx_tf_turn_cable_space_average,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_copper,
+    dx_tf_turn_steel,
+    dx_tf_side_case_average,
+    dx_tf_wp_toroidal_average,
+    a_tf_coil_inboard_insulation,
+    a_tf_wp_steel,
+    a_tf_wp_conductor,
+    a_tf_wp_with_insulation,
+    c_tf_total,
+    vforce,
+    a_tf_coil_inboard_case,
+    a_tf_turn_steel,
+    n_tf_graded_layers,
+):
+    return tf_stress_plane_stress_bucked_case(
+        r_tf_inboard_in=r_tf_inboard_in,
+        r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
+        r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
+        tan_theta_coil=tan_theta_coil,
+        rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
+        dr_tf_plasma_case=dr_tf_plasma_case,
+        a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+        a_tf_plasma_case=a_tf_plasma_case,
+        a_tf_coil_nose_case=a_tf_coil_nose_case,
+        eyoung_steel=eyoung_steel,
+        poisson_steel=poisson_steel,
+        eyoung_cond_axial=eyoung_cond_axial,
+        poisson_cond_axial=poisson_cond_axial,
+        eyoung_cond_trans=eyoung_cond_trans,
+        poisson_cond_trans=poisson_cond_trans,
+        eyoung_ins=eyoung_ins,
+        poisson_ins=poisson_ins,
+        eyoung_copper=eyoung_copper,
+        poisson_copper=poisson_copper,
+        dx_tf_turn_insulation=dx_tf_turn_insulation,
+        dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+        dx_tf_wp_insulation=dx_tf_wp_insulation,
+        n_tf_coil_turns=n_tf_coil_turns,
+        dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_average,
+        dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        dx_tf_turn_steel=dx_tf_turn_steel,
+        dx_tf_side_case_average=dx_tf_side_case_average,
+        dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
+        a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
+        a_tf_wp_steel=a_tf_wp_steel,
+        a_tf_wp_conductor=a_tf_wp_conductor,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+        c_tf_total=c_tf_total,
+        vforce=vforce,
+        a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+        a_tf_turn_steel=a_tf_turn_steel,
+        n_tf_graded_layers=n_tf_graded_layers,
+    )
 
 
-class TfStressPlaneStressBuckedCaseIntegerTurn(TfStressPlaneStressBuckedCase):
-    """`i_tf_turns_integer == 1` -- rectangular turns on a fixed layers x pancakes grid,
-    so the smearing uses the *radial* cable-space dimension
-    `.superconducting_tfcoil.dr_tf_turn_cable_space` instead (`base.py:2745-2749`).
-    """
-
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
-        a_tf_plasma_case=From(superconducting_tfcoil),
-        a_tf_coil_nose_case=From(superconducting_tfcoil),
-        eyoung_steel=From(tfcoil),
-        poisson_steel=From(tfcoil),
-        eyoung_cond_axial=From(tfcoil),
-        poisson_cond_axial=From(tfcoil),
-        eyoung_cond_trans=From(tfcoil),
-        poisson_cond_trans=From(tfcoil),
-        eyoung_ins=From(tfcoil),
-        poisson_ins=From(tfcoil),
-        eyoung_copper=From(tfcoil),
-        poisson_copper=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        dr_tf_turn_cable_space=From(superconducting_tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_side_case_average=From(superconducting_tfcoil),
-        dx_tf_wp_toroidal_average=From(superconducting_tfcoil),
-        a_tf_coil_inboard_insulation=From(superconducting_tfcoil),
-        a_tf_wp_steel=From(tfcoil),
-        a_tf_wp_conductor=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        c_tf_total=From(tfcoil),
-        vforce=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        a_tf_turn_steel=From(tfcoil),
-    ):
-        return tf_stress_plane_stress_bucked_case(
-            r_tf_inboard_in=r_tf_inboard_in,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            tan_theta_coil=tan_theta_coil,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
-            a_tf_plasma_case=a_tf_plasma_case,
-            a_tf_coil_nose_case=a_tf_coil_nose_case,
-            eyoung_steel=eyoung_steel,
-            poisson_steel=poisson_steel,
-            eyoung_cond_axial=eyoung_cond_axial,
-            poisson_cond_axial=poisson_cond_axial,
-            eyoung_cond_trans=eyoung_cond_trans,
-            poisson_cond_trans=poisson_cond_trans,
-            eyoung_ins=eyoung_ins,
-            poisson_ins=poisson_ins,
-            eyoung_copper=eyoung_copper,
-            poisson_copper=poisson_copper,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            n_tf_coil_turns=n_tf_coil_turns,
-            dx_tf_turn_cable_space_eyoung=dr_tf_turn_cable_space,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_side_case_average=dx_tf_side_case_average,
-            dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
-            a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
-            a_tf_wp_steel=a_tf_wp_steel,
-            a_tf_wp_conductor=a_tf_wp_conductor,
-            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
-            c_tf_total=c_tf_total,
-            vforce=vforce,
-            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
-            a_tf_turn_steel=a_tf_turn_steel,
-            n_tf_graded_layers=self.n_tf_graded_layers,
-        )
+# `i_tf_turns_integer == 0` -- the turn is described by one averaged cable-space
+# width, `.superconducting_tfcoil.dx_tf_turn_cable_space_average`
+# (`base.py:2745-2749`).
+TfStressPlaneStressBuckedCaseAveragedTurn = tfcoil.function(
+    _tf_stress_plane_stress_bucked_case_averaged_turn,
+    "sig_tf_wp",
+    "sig_tf_case",
+    "str_wp",
+    "casestr",
+    "insstrain",
+    reads={
+        "r_tf_inboard_in": build,
+        "r_tf_wp_inboard_inner": superconducting_tfcoil,
+        "r_tf_wp_inboard_outer": superconducting_tfcoil,
+        "tan_theta_coil": superconducting_tfcoil,
+        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
+        "a_tf_coil_inboard_steel": superconducting_tfcoil,
+        "a_tf_plasma_case": superconducting_tfcoil,
+        "a_tf_coil_nose_case": superconducting_tfcoil,
+        "dx_tf_turn_cable_space_average": superconducting_tfcoil,
+        "dx_tf_side_case_average": superconducting_tfcoil,
+        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
+        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
+        "a_tf_wp_with_insulation": superconducting_tfcoil,
+    },
+)
 
 
-class TfStressExtendedPlaneStrainBuckedCaseAveragedTurn(TfStress):
-    """`i_tf_stress_model == 0` (extended plane strain) with `i_tf_bucking == 1` and
-    `i_tf_turns_integer == 0`.
-    """
+def _tf_stress_plane_stress_bucked_case_integer_turn(
+    r_tf_inboard_in,
+    r_tf_wp_inboard_inner,
+    r_tf_wp_inboard_outer,
+    tan_theta_coil,
+    rad_tf_coil_inboard_toroidal_half,
+    dr_tf_plasma_case,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    eyoung_steel,
+    poisson_steel,
+    eyoung_cond_axial,
+    poisson_cond_axial,
+    eyoung_cond_trans,
+    poisson_cond_trans,
+    eyoung_ins,
+    poisson_ins,
+    eyoung_copper,
+    poisson_copper,
+    dx_tf_turn_insulation,
+    dx_tf_wp_insertion_gap,
+    dx_tf_wp_insulation,
+    n_tf_coil_turns,
+    dr_tf_turn_cable_space,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_copper,
+    dx_tf_turn_steel,
+    dx_tf_side_case_average,
+    dx_tf_wp_toroidal_average,
+    a_tf_coil_inboard_insulation,
+    a_tf_wp_steel,
+    a_tf_wp_conductor,
+    a_tf_wp_with_insulation,
+    c_tf_total,
+    vforce,
+    a_tf_coil_inboard_case,
+    a_tf_turn_steel,
+    n_tf_graded_layers,
+):
+    return tf_stress_plane_stress_bucked_case(
+        r_tf_inboard_in=r_tf_inboard_in,
+        r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
+        r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
+        tan_theta_coil=tan_theta_coil,
+        rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
+        dr_tf_plasma_case=dr_tf_plasma_case,
+        a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+        a_tf_plasma_case=a_tf_plasma_case,
+        a_tf_coil_nose_case=a_tf_coil_nose_case,
+        eyoung_steel=eyoung_steel,
+        poisson_steel=poisson_steel,
+        eyoung_cond_axial=eyoung_cond_axial,
+        poisson_cond_axial=poisson_cond_axial,
+        eyoung_cond_trans=eyoung_cond_trans,
+        poisson_cond_trans=poisson_cond_trans,
+        eyoung_ins=eyoung_ins,
+        poisson_ins=poisson_ins,
+        eyoung_copper=eyoung_copper,
+        poisson_copper=poisson_copper,
+        dx_tf_turn_insulation=dx_tf_turn_insulation,
+        dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+        dx_tf_wp_insulation=dx_tf_wp_insulation,
+        n_tf_coil_turns=n_tf_coil_turns,
+        dx_tf_turn_cable_space_eyoung=dr_tf_turn_cable_space,
+        dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        dx_tf_turn_steel=dx_tf_turn_steel,
+        dx_tf_side_case_average=dx_tf_side_case_average,
+        dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
+        a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
+        a_tf_wp_steel=a_tf_wp_steel,
+        a_tf_wp_conductor=a_tf_wp_conductor,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+        c_tf_total=c_tf_total,
+        vforce=vforce,
+        a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+        a_tf_turn_steel=a_tf_turn_steel,
+        n_tf_graded_layers=n_tf_graded_layers,
+    )
 
-    n_tf_graded_layers: int = eqx.field(static=True, default=1)
 
-    sig_tf_wp = OutputInto(tfcoil)
-    sig_tf_case = OutputInto(tfcoil)
-    str_wp = OutputInto(tfcoil)
+# `i_tf_turns_integer == 1` -- rectangular turns on a fixed layers x pancakes grid,
+# so the smearing uses the *radial* cable-space dimension
+# `.superconducting_tfcoil.dr_tf_turn_cable_space` instead (`base.py:2745-2749`).
+TfStressPlaneStressBuckedCaseIntegerTurn = tfcoil.function(
+    _tf_stress_plane_stress_bucked_case_integer_turn,
+    "sig_tf_wp",
+    "sig_tf_case",
+    "str_wp",
+    "casestr",
+    "insstrain",
+    reads={
+        "r_tf_inboard_in": build,
+        "r_tf_wp_inboard_inner": superconducting_tfcoil,
+        "r_tf_wp_inboard_outer": superconducting_tfcoil,
+        "tan_theta_coil": superconducting_tfcoil,
+        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
+        "a_tf_coil_inboard_steel": superconducting_tfcoil,
+        "a_tf_plasma_case": superconducting_tfcoil,
+        "a_tf_coil_nose_case": superconducting_tfcoil,
+        "dr_tf_turn_cable_space": superconducting_tfcoil,
+        "dx_tf_side_case_average": superconducting_tfcoil,
+        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
+        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
+        "a_tf_wp_with_insulation": superconducting_tfcoil,
+    },
+)
 
-    def __call__(
-        self,
-        r_tf_inboard_in=From(build),
-        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
-        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
-        tan_theta_coil=From(superconducting_tfcoil),
-        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
-        dr_tf_plasma_case=From(tfcoil),
-        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
-        a_tf_plasma_case=From(superconducting_tfcoil),
-        a_tf_coil_nose_case=From(superconducting_tfcoil),
-        eyoung_steel=From(tfcoil),
-        poisson_steel=From(tfcoil),
-        eyoung_cond_axial=From(tfcoil),
-        poisson_cond_axial=From(tfcoil),
-        eyoung_cond_trans=From(tfcoil),
-        poisson_cond_trans=From(tfcoil),
-        eyoung_ins=From(tfcoil),
-        poisson_ins=From(tfcoil),
-        eyoung_copper=From(tfcoil),
-        poisson_copper=From(tfcoil),
-        dx_tf_turn_insulation=From(tfcoil),
-        dx_tf_wp_insertion_gap=From(tfcoil),
-        dx_tf_wp_insulation=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        dx_tf_turn_cable_space_average=From(superconducting_tfcoil),
-        dia_tf_turn_coolant_channel=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        dx_tf_turn_steel=From(tfcoil),
-        dx_tf_side_case_average=From(superconducting_tfcoil),
-        dx_tf_wp_toroidal_average=From(superconducting_tfcoil),
-        a_tf_coil_inboard_insulation=From(superconducting_tfcoil),
-        a_tf_wp_steel=From(tfcoil),
-        a_tf_wp_conductor=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        c_tf_total=From(tfcoil),
-        vforce_inboard_tot=From(superconducting_tfcoil),
-    ):
-        return tf_stress_extended_plane_strain_bucked_case(
-            r_tf_inboard_in=r_tf_inboard_in,
-            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
-            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
-            tan_theta_coil=tan_theta_coil,
-            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
-            dr_tf_plasma_case=dr_tf_plasma_case,
-            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
-            a_tf_plasma_case=a_tf_plasma_case,
-            a_tf_coil_nose_case=a_tf_coil_nose_case,
-            eyoung_steel=eyoung_steel,
-            poisson_steel=poisson_steel,
-            eyoung_cond_axial=eyoung_cond_axial,
-            poisson_cond_axial=poisson_cond_axial,
-            eyoung_cond_trans=eyoung_cond_trans,
-            poisson_cond_trans=poisson_cond_trans,
-            eyoung_ins=eyoung_ins,
-            poisson_ins=poisson_ins,
-            eyoung_copper=eyoung_copper,
-            poisson_copper=poisson_copper,
-            dx_tf_turn_insulation=dx_tf_turn_insulation,
-            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
-            dx_tf_wp_insulation=dx_tf_wp_insulation,
-            n_tf_coil_turns=n_tf_coil_turns,
-            dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_average,
-            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
-            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
-            dx_tf_turn_steel=dx_tf_turn_steel,
-            dx_tf_side_case_average=dx_tf_side_case_average,
-            dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
-            a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
-            a_tf_wp_steel=a_tf_wp_steel,
-            a_tf_wp_conductor=a_tf_wp_conductor,
-            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
-            c_tf_total=c_tf_total,
-            vforce_inboard_tot=vforce_inboard_tot,
-            n_tf_graded_layers=self.n_tf_graded_layers,
-        )
+
+def _tf_stress_extended_plane_strain_bucked_case_averaged_turn(
+    r_tf_inboard_in,
+    r_tf_wp_inboard_inner,
+    r_tf_wp_inboard_outer,
+    tan_theta_coil,
+    rad_tf_coil_inboard_toroidal_half,
+    dr_tf_plasma_case,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    eyoung_steel,
+    poisson_steel,
+    eyoung_cond_axial,
+    poisson_cond_axial,
+    eyoung_cond_trans,
+    poisson_cond_trans,
+    eyoung_ins,
+    poisson_ins,
+    eyoung_copper,
+    poisson_copper,
+    dx_tf_turn_insulation,
+    dx_tf_wp_insertion_gap,
+    dx_tf_wp_insulation,
+    n_tf_coil_turns,
+    dx_tf_turn_cable_space_average,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_copper,
+    dx_tf_turn_steel,
+    dx_tf_side_case_average,
+    dx_tf_wp_toroidal_average,
+    a_tf_coil_inboard_insulation,
+    a_tf_wp_steel,
+    a_tf_wp_conductor,
+    a_tf_wp_with_insulation,
+    c_tf_total,
+    vforce_inboard_tot,
+    n_tf_graded_layers,
+):
+    return tf_stress_extended_plane_strain_bucked_case(
+        r_tf_inboard_in=r_tf_inboard_in,
+        r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
+        r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
+        tan_theta_coil=tan_theta_coil,
+        rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
+        dr_tf_plasma_case=dr_tf_plasma_case,
+        a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+        a_tf_plasma_case=a_tf_plasma_case,
+        a_tf_coil_nose_case=a_tf_coil_nose_case,
+        eyoung_steel=eyoung_steel,
+        poisson_steel=poisson_steel,
+        eyoung_cond_axial=eyoung_cond_axial,
+        poisson_cond_axial=poisson_cond_axial,
+        eyoung_cond_trans=eyoung_cond_trans,
+        poisson_cond_trans=poisson_cond_trans,
+        eyoung_ins=eyoung_ins,
+        poisson_ins=poisson_ins,
+        eyoung_copper=eyoung_copper,
+        poisson_copper=poisson_copper,
+        dx_tf_turn_insulation=dx_tf_turn_insulation,
+        dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+        dx_tf_wp_insulation=dx_tf_wp_insulation,
+        n_tf_coil_turns=n_tf_coil_turns,
+        dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_average,
+        dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        dx_tf_turn_steel=dx_tf_turn_steel,
+        dx_tf_side_case_average=dx_tf_side_case_average,
+        dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
+        a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
+        a_tf_wp_steel=a_tf_wp_steel,
+        a_tf_wp_conductor=a_tf_wp_conductor,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+        c_tf_total=c_tf_total,
+        vforce_inboard_tot=vforce_inboard_tot,
+        n_tf_graded_layers=n_tf_graded_layers,
+    )
+
+
+# `i_tf_stress_model == 0` (extended plane strain) with `i_tf_bucking == 1` and
+# `i_tf_turns_integer == 0`.
+TfStressExtendedPlaneStrainBuckedCaseAveragedTurn = tfcoil.function(
+    _tf_stress_extended_plane_strain_bucked_case_averaged_turn,
+    "sig_tf_wp",
+    "sig_tf_case",
+    "str_wp",
+    reads={
+        "r_tf_inboard_in": build,
+        "r_tf_wp_inboard_inner": superconducting_tfcoil,
+        "r_tf_wp_inboard_outer": superconducting_tfcoil,
+        "tan_theta_coil": superconducting_tfcoil,
+        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
+        "a_tf_coil_inboard_steel": superconducting_tfcoil,
+        "a_tf_plasma_case": superconducting_tfcoil,
+        "a_tf_coil_nose_case": superconducting_tfcoil,
+        "dx_tf_turn_cable_space_average": superconducting_tfcoil,
+        "dx_tf_side_case_average": superconducting_tfcoil,
+        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
+        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
+        "a_tf_wp_with_insulation": superconducting_tfcoil,
+        "vforce_inboard_tot": superconducting_tfcoil,
+    },
+)

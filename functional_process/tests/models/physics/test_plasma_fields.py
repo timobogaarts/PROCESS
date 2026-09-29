@@ -102,8 +102,8 @@ def test_inboard_toroidal_field_node_reads_and_writes():
     `rmajor`, `rminor` and owns exactly `.physics.b_plasma_inboard_toroidal` --
     pinned so a future edit cannot silently rebind either side.
     """
-    node = PlasmaInboardToroidalField()
-    reads = {i.spelling for i in node.inputs}
+    node = PlasmaInboardToroidalField
+    reads = {i.spelling for i in node.reads.values()}
     writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_toroidal_on_axis",
@@ -115,8 +115,8 @@ def test_inboard_toroidal_field_node_reads_and_writes():
 
 def test_outboard_toroidal_field_node_reads_and_writes():
     """`PlasmaOutboardToroidalField`'s counterpart to the test above."""
-    node = PlasmaOutboardToroidalField()
-    reads = {i.spelling for i in node.inputs}
+    node = PlasmaOutboardToroidalField
+    reads = {i.spelling for i in node.reads.values()}
     writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_toroidal_on_axis",
@@ -133,8 +133,8 @@ def test_total_magnetic_field_inboard_reads_the_inboard_toroidal_component():
     easy to make by accident (three near-identical total-field call sites in
     `physics.py`, one toroidal-field argument differing between them).
     """
-    node = TotalMagneticFieldInboard()
-    reads = {i.spelling for i in node.inputs}
+    node = TotalMagneticFieldInboard
+    reads = {i.spelling for i in node.reads.values()}
     writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_inboard_toroidal",
@@ -149,8 +149,8 @@ def test_total_magnetic_field_outboard_reads_the_outboard_toroidal_component():
     and `UpstreamSOLOutboardEich13ParallelArea` both declare a read of
     `.physics.b_plasma_outboard_total` with no other producer.
     """
-    node = TotalMagneticFieldOutboard()
-    reads = {i.spelling for i in node.inputs}
+    node = TotalMagneticFieldOutboard
+    reads = {i.spelling for i in node.reads.values()}
     writes = {o.spelling for o in node.outputs}
     assert reads == {
         ".physics.b_plasma_outboard_toroidal",

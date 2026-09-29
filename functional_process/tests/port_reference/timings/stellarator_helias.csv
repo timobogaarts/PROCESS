@@ -1,0 +1,3 @@
+# timings.py, 2026-09-29, PC-Timo (x86_64), PROCESS 70776c0a, cottax ea3abbe
+configuration,evaluate_ms,serial_us,jacobian_ms,serial_jacobian_us,compile_s,unknowns,block_nodes
+stellarator_helias,6.857663000118919,nan,nan,nan,3.1644907129993953,0,152

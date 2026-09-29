@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.execution.drivers.kinds import Start
-from cottax.interfaces import Assign, RunnableGraph, Schedule
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
+from cottax.interfaces import Assign, RunnableGraph, Schedule, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.pytree.path import PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
 
@@ -467,7 +467,7 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     `residual` body (a `ImplementedFunction`) and the `RootFind` problem it feeds -- the pair
     `ImplicitFunction.node_definitions_and_names` documents.
     """
-    node = Intersect()
+    node = Intersect
     graph = to_graph(node)
     assert len(graph.definitions) == 2
     assert not graph.graph.is_acyclic
@@ -481,7 +481,7 @@ def test_intersect_body_reads_the_unknown_back_without_owning_it():
     *reads* the real path and *writes* the minted `^cond` copy; the separate `RootFind`
     problem node is the one that actually owns `.stellarator.wp_width_r_min`.
     """
-    node = Intersect()
+    node = Intersect
     body, problem = node.node_definitions
     unknown = resolve(stellarator.wp_width_r_min, VarPath)
     assert unknown in body.reads
@@ -496,7 +496,7 @@ def test_intersect_has_no_port_for_xin():
     fewer than `intersect`'s own 5-argument signature -- confirming `coils.md`'s open
     question 2 directly rather than merely asserting it.
     """
-    node = Intersect()
+    node = Intersect
     assert len(node.inputs) == 4
     assert intersect.__code__.co_argcount == 5
 
@@ -512,7 +512,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     this is checking the *port's own* two ways of getting an answer agree, not a fresh
     correctness claim about `intersect` itself.
     """
-    node = Intersect()
+    node = Intersect
     # `Initialise` declares the problem's `Start` port, which is where the driver now
     # reads its guess from; without it `Drive` refuses the pair, and seeding the
     # unknown's own name would silently fall back to the median instead (a different

@@ -1,9 +1,6 @@
 """Pure-functional port of `process/models/physics/l_h_transition.py`."""
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
-
 from functional_process.cottax.paths import physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.l_h_transition import (
     calculate_hubbard2012_lower,
     calculate_hubbard2012_nominal,
@@ -59,86 +56,41 @@ __all__ = [
 ]
 
 
-class LHThresholdPower(ExplicitFunction):
-    """The family that owns `.physics.p_l_h_threshold_mw`: one occupant per arm."""
+# The LHThresholdPower family:
+# The family that owns `.physics.p_l_h_threshold_mw`: one occupant per arm.
 
 
-class Martin08NominalLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 6`."""
-
-    fn = calculate_martin08_nominal_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 6`.
+Martin08NominalLHThresholdPower = physics.function(
+    calculate_martin08_nominal_threshold_power, "p_l_h_threshold_mw"
+)
 
 
-class Martin08UpperLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 7`."""
-
-    fn = calculate_martin08_upper_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 7`.
+Martin08UpperLHThresholdPower = physics.function(
+    calculate_martin08_upper_threshold_power, "p_l_h_threshold_mw"
+)
 
 
-class Martin08LowerLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 8`."""
-
-    fn = calculate_martin08_lower_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 8`.
+Martin08LowerLHThresholdPower = physics.function(
+    calculate_martin08_lower_threshold_power, "p_l_h_threshold_mw"
+)
 
 
-class Martin08AspectNominalLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 19` -- the reference arm on `large_tokamak_eval.IN.DAT`."""
-
-    fn = calculate_martin08_aspect_nominal_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-    aspect = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 19` -- the reference arm on `large_tokamak_eval.IN.DAT`.
+Martin08AspectNominalLHThresholdPower = physics.function(
+    calculate_martin08_aspect_nominal_threshold_power, "p_l_h_threshold_mw"
+)
 
 
-class Martin08AspectUpperLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 20`."""
-
-    fn = calculate_martin08_aspect_upper_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-    aspect = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 20`.
+Martin08AspectUpperLHThresholdPower = physics.function(
+    calculate_martin08_aspect_upper_threshold_power, "p_l_h_threshold_mw"
+)
 
 
-class Martin08AspectLowerLHThresholdPower(LHThresholdPower, WrapsFunction):
-    """`i_l_h_threshold == 21`."""
-
-    fn = calculate_martin08_aspect_lower_threshold_power
-
-    nd_plasma_electron_line = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-    a_plasma_surface = From(physics)
-    m_ions_total_amu = From(physics)
-    aspect = From(physics)
-
-    p_l_h_threshold_mw = OutputInto(physics)
+# `i_l_h_threshold == 21`.
+Martin08AspectLowerLHThresholdPower = physics.function(
+    calculate_martin08_aspect_lower_threshold_power, "p_l_h_threshold_mw"
+)

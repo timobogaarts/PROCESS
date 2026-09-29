@@ -58,7 +58,6 @@ def _wp_common_geometry(
 
 
 def superconducting_tf_wp_geometry_rectangular(
-    *,
     r_tf_inboard_in,
     dr_tf_nose_case,
     dr_tf_wp_with_insulation,
@@ -127,7 +126,6 @@ def superconducting_tf_wp_geometry_rectangular(
 
 
 def superconducting_tf_wp_geometry_double_rectangular(
-    *,
     r_tf_inboard_in,
     dr_tf_nose_case,
     dr_tf_wp_with_insulation,
@@ -208,7 +206,6 @@ def superconducting_tf_wp_geometry_double_rectangular(
 
 
 def superconducting_tf_wp_geometry_trapezoidal(
-    *,
     r_tf_inboard_in,
     dr_tf_nose_case,
     dr_tf_wp_with_insulation,
@@ -321,7 +318,6 @@ def _tf_case_areas(
 
 
 def tf_case_areas_circular_front(
-    *,
     a_tf_inboard_total,
     n_tf_coils,
     a_tf_wp_with_insulation,
@@ -362,7 +358,6 @@ def tf_case_areas_circular_front(
 
 
 def tf_case_areas_straight_front(
-    *,
     a_tf_inboard_total,
     n_tf_coils,
     a_tf_wp_with_insulation,
@@ -395,7 +390,7 @@ def tf_case_areas_straight_front(
 
 
 def dx_tf_side_case_rectangular(
-    *, dx_tf_side_case_min, tan_theta_coil, dr_tf_wp_with_insulation
+    dx_tf_side_case_min, tan_theta_coil, dr_tf_wp_with_insulation
 ):
     """`i_tf_wp_geom == RECTANGULAR (0)`. `superconducting.py:1906-1908,1931-1933`.
 
@@ -408,7 +403,7 @@ def dx_tf_side_case_rectangular(
 
 
 def dx_tf_side_case_double_rectangular(
-    *, dx_tf_side_case_min, tan_theta_coil, dr_tf_wp_with_insulation
+    dx_tf_side_case_min, tan_theta_coil, dr_tf_wp_with_insulation
 ):
     """`i_tf_wp_geom == DOUBLE_RECTANGULAR (1)` -- the reference arm.
 
@@ -420,7 +415,7 @@ def dx_tf_side_case_double_rectangular(
     )
 
 
-def dx_tf_side_case_trapezoidal(*, dx_tf_side_case_min):
+def dx_tf_side_case_trapezoidal(dx_tf_side_case_min):
     """`i_tf_wp_geom == TRAPEZOIDAL (2)`: constant thickness, so peak == average.
 
     `superconducting.py:1918,1943`. Reads one variable where the other two arms read
@@ -429,7 +424,7 @@ def dx_tf_side_case_trapezoidal(*, dx_tf_side_case_min):
     return dx_tf_side_case_min, dx_tf_side_case_min
 
 
-def tf_wp_currents(*, c_tf_total, n_tf_coils, a_tf_wp_no_insulation):
+def tf_wp_currents(c_tf_total, n_tf_coils, a_tf_wp_no_insulation):
     """Winding-pack engineering current density (A/m2), floored at 1.
 
     Ports `tf_wp_currents`, `process/models/tfcoil/superconducting.py:1958-1970`.
@@ -488,7 +483,7 @@ def peak_b_tf_inboard_with_ripple_kovari(
     )
 
 
-def peak_b_tf_inboard_with_ripple_flat(*, b_tf_inboard_peak_symmetric):
+def peak_b_tf_inboard_with_ripple_flat(b_tf_inboard_peak_symmetric):
     """Every coil count outside {16, 18, 20}: a flat 9 % ripple allowance.
 
     Ports `process/models/tfcoil/superconducting.py:1518-1519`. Reads exactly one
@@ -585,7 +580,6 @@ def _cicc_averaged_turn_geometry_from_turn_area(
 
 
 def cicc_averaged_turn_geometry_from_current_per_turn(
-    *,
     j_tf_wp,
     c_tf_turn,
     dx_tf_turn_steel,
@@ -628,7 +622,6 @@ def cicc_averaged_turn_geometry_from_current_per_turn(
 
 
 def cicc_integer_turn_geometry(
-    *,
     dr_tf_wp_with_insulation,
     dx_tf_wp_insulation,
     dx_tf_wp_insertion_gap,
@@ -763,7 +756,6 @@ def cicc_integer_turn_geometry(
 
 
 def tf_cicc_inboard_areas_and_fractions(
-    *,
     n_tf_coil_turns,
     dia_tf_turn_coolant_channel,
     a_tf_turn_cable_space_no_void,
@@ -831,7 +823,7 @@ def tf_cicc_inboard_areas_and_fractions(
     )
 
 
-def calculate_a_tf_turn(*, c_tf_total, j_tf_wp, n_tf_coils, n_tf_coil_turns):
+def calculate_a_tf_turn(c_tf_total, j_tf_wp, n_tf_coils, n_tf_coil_turns):
     """Cross-sectional area per turn (m2). `superconducting.py:2700-2704`, inline in
     `run`.
     """
@@ -1592,7 +1584,6 @@ def cicc_superconductor_properties_itersc(
 
 
 def cicc_superconductor_properties_wst_nb3sn(
-    *,
     a_tf_turn_cable_space_effective,
     a_tf_turn,
     b_tf_inboard_peak,

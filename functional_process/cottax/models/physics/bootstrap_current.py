@@ -1,16 +1,9 @@
 """Pure-functional port of the tokamak bootstrap-current chain."""
 
-import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import current_drive, physics
-from functional_process.cottax.stated import StatesValues
-from functional_process.cottax.wraps import WrapsFunction
+from functional_process.cottax.stated import states
 from functional_process.models.physics.bootstrap_current import (
     _beta_poloidal_sauter,
     _beta_poloidal_total_sauter,
@@ -42,129 +35,120 @@ __all__ = [
 ]
 
 
-class BootstrapCurrentFractionScaling(ExplicitFunction):
-    """The family that owns `.current_drive.f_c_plasma_bootstrap` under
-    `i_bootstrap_current` (`bootstrap_current.py:250-262`, `:264-298`).
-    """
+# The BootstrapCurrentFractionScaling family:
+# The family that owns `.current_drive.f_c_plasma_bootstrap` under
+# `i_bootstrap_current` (`bootstrap_current.py:250-262`, `:264-298`).
 
 
-class SauterBootstrapCurrentFraction(BootstrapCurrentFractionScaling):
-    """`i_bootstrap_current == SAUTER` (4) -- the arm `large_tokamak_eval` takes."""
-
-    n_plasma_profile_elements: int = eqx.field(static=True)
-
-    f_c_plasma_bootstrap_sauter = OutputInto(current_drive)
-    j_plasma_bootstrap_sauter_profile = OutputInto(physics)
-    f_c_plasma_bootstrap = OutputInto(current_drive)
-
-    def __call__(
-        self,
-        radius_plasma_profile_norm=From(physics),
-        nd_plasma_electron_profile=From(physics),
-        temp_plasma_electron_profile_kev=From(physics),
-        a_plasma_poloidal=From(physics),
-        rminor=From(physics),
-        rmajor=From(physics),
-        nd_plasma_ions_total_vol_avg=From(physics),
-        nd_plasma_electrons_vol_avg=From(physics),
-        temp_plasma_ion_vol_avg_kev=From(physics),
-        temp_plasma_electron_vol_avg_kev=From(physics),
-        n_charge_plasma_effective_vol_avg=From(physics),
-        q0=From(physics),
-        q95=From(physics),
-        m_ions_total_amu=From(physics),
-        f_plasma_fuel_helium3=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        plasma_current=From(physics),
-        cboot=From(current_drive),
-        f_c_plasma_bootstrap_max=From(current_drive),
-    ):
-        return sauter_bootstrap_current_fraction(
-            n_plasma_profile_elements=self.n_plasma_profile_elements,
-            radius_plasma_profile_norm=radius_plasma_profile_norm,
-            nd_plasma_electron_profile=nd_plasma_electron_profile,
-            temp_plasma_electron_profile_kev=temp_plasma_electron_profile_kev,
-            a_plasma_poloidal=a_plasma_poloidal,
-            rminor=rminor,
-            rmajor=rmajor,
-            nd_plasma_ions_total_vol_avg=nd_plasma_ions_total_vol_avg,
-            nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
-            temp_plasma_ion_vol_avg_kev=temp_plasma_ion_vol_avg_kev,
-            temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
-            n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
-            q0=q0,
-            q95=q95,
-            m_ions_total_amu=m_ions_total_amu,
-            f_plasma_fuel_helium3=f_plasma_fuel_helium3,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-            plasma_current=plasma_current,
-            cboot=cboot,
-            f_c_plasma_bootstrap_max=f_c_plasma_bootstrap_max,
-        )
+# `i_bootstrap_current == SAUTER` (4) -- the arm `large_tokamak_eval` takes.
+# `n_plasma_profile_elements`: the profile grid's resolution, read at
+# `.physics.n_plasma_profile_elements` (PROCESS's own field, 201).
+def _sauter_bootstrap_current_fraction(
+    n_plasma_profile_elements,
+    radius_plasma_profile_norm,
+    nd_plasma_electron_profile,
+    temp_plasma_electron_profile_kev,
+    a_plasma_poloidal,
+    rminor,
+    rmajor,
+    nd_plasma_ions_total_vol_avg,
+    nd_plasma_electrons_vol_avg,
+    temp_plasma_ion_vol_avg_kev,
+    temp_plasma_electron_vol_avg_kev,
+    n_charge_plasma_effective_vol_avg,
+    q0,
+    q95,
+    m_ions_total_amu,
+    f_plasma_fuel_helium3,
+    b_plasma_toroidal_on_axis,
+    plasma_current,
+    cboot,
+    f_c_plasma_bootstrap_max,
+):
+    return sauter_bootstrap_current_fraction(
+        n_plasma_profile_elements=n_plasma_profile_elements,
+        radius_plasma_profile_norm=radius_plasma_profile_norm,
+        nd_plasma_electron_profile=nd_plasma_electron_profile,
+        temp_plasma_electron_profile_kev=temp_plasma_electron_profile_kev,
+        a_plasma_poloidal=a_plasma_poloidal,
+        rminor=rminor,
+        rmajor=rmajor,
+        nd_plasma_ions_total_vol_avg=nd_plasma_ions_total_vol_avg,
+        nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
+        temp_plasma_ion_vol_avg_kev=temp_plasma_ion_vol_avg_kev,
+        temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
+        n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
+        q0=q0,
+        q95=q95,
+        m_ions_total_amu=m_ions_total_amu,
+        f_plasma_fuel_helium3=f_plasma_fuel_helium3,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        plasma_current=plasma_current,
+        cboot=cboot,
+        f_c_plasma_bootstrap_max=f_c_plasma_bootstrap_max,
+    )
 
 
-class PlasmaDiamagneticCurrentFraction(ExplicitFunction):
-    """The family that owns `.current_drive.f_c_plasma_diamagnetic` under
-    `i_diamagnetic_current` (`plasma_current.py:1081-1094`).
-    """
+SauterBootstrapCurrentFraction = physics.function(
+    _sauter_bootstrap_current_fraction,
+    V.current_drive.f_c_plasma_bootstrap_sauter,
+    "j_plasma_bootstrap_sauter_profile",
+    V.current_drive.f_c_plasma_bootstrap,
+    reads={"cboot": current_drive, "f_c_plasma_bootstrap_max": current_drive},
+)
 
 
-class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, StatesValues):
-    """`i_diamagnetic_current == NONE` (0) -- the default, and this input's value."""
-
-    f_c_plasma_diamagnetic = OutputInto(current_drive)
-    """The diamagnetic current fraction PROCESS never assigns on this arm, read at
-    `^stated.current_drive.f_c_plasma_diamagnetic`.
-    """
+# The PlasmaDiamagneticCurrentFraction family:
+# The family that owns `.current_drive.f_c_plasma_diamagnetic` under
+# `i_diamagnetic_current` (`plasma_current.py:1081-1094`).
 
 
-class SceneDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, WrapsFunction):
-    """`i_diamagnetic_current == SCENE_FIT` (2) -- both tracked spherical tokamaks."""
-
-    fn = diamagnetic_fraction_scene
-
-    beta = FromExactly(physics.beta_total_vol_avg)
-    q95 = From(physics)
-    q0 = From(physics)
-
-    f_c_plasma_diamagnetic = OutputInto(current_drive)
+# `i_diamagnetic_current == NONE` (0) -- the default, and this input's value.
+# `f_c_plasma_diamagnetic`: the diamagnetic current fraction PROCESS never assigns on
+# this arm, read at `^stated.current_drive.f_c_plasma_diamagnetic`.
+NoDiamagneticCurrent = states(current_drive, "f_c_plasma_diamagnetic")
 
 
-class PlasmaPfirschSchluterCurrentFraction(ExplicitFunction):
-    """The family that owns `.current_drive.f_c_plasma_pfirsch_schluter` under
-    `i_pfirsch_schluter_current` (`physics.py:538-541`).
-    """
+# `i_diamagnetic_current == SCENE_FIT` (2) -- both tracked spherical tokamaks.
+SceneDiamagneticCurrent = current_drive.function(
+    diamagnetic_fraction_scene,
+    "f_c_plasma_diamagnetic",
+    reads={
+        "beta": V.physics.beta_total_vol_avg,
+        "q95": physics,
+        "q0": physics,
+    },
+)
 
 
-class NoPfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction, StatesValues):
-    """`i_pfirsch_schluter_current == 0` -- the default, and this input's value."""
-
-    f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
-    """The Pfirsch-Schluter current fraction PROCESS never assigns on this arm, read at
-    `^stated.current_drive.f_c_plasma_pfirsch_schluter`.
-    """
+# The PlasmaPfirschSchluterCurrentFraction family:
+# The family that owns `.current_drive.f_c_plasma_pfirsch_schluter` under
+# `i_pfirsch_schluter_current` (`physics.py:538-541`).
 
 
-class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction, WrapsFunction):
-    """`i_pfirsch_schluter_current == 1` -- both tracked spherical tokamaks."""
-
-    fn = ps_fraction_scene
-
-    beta = FromExactly(physics.beta_total_vol_avg)
-
-    f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
+# `i_pfirsch_schluter_current == 0` -- the default, and this input's value.
+# `f_c_plasma_pfirsch_schluter`: the Pfirsch-Schluter current fraction PROCESS never
+# assigns on this arm, read at `^stated.current_drive.f_c_plasma_pfirsch_schluter`.
+NoPfirschSchluterCurrent = states(current_drive, "f_c_plasma_pfirsch_schluter")
 
 
-class PlasmaCurrentFractions(WrapsFunction):
-    """cottax node: `calculate_plasma_current_fractions`, ports declared."""
+# `i_pfirsch_schluter_current == 1` -- both tracked spherical tokamaks.
+ScenePfirschSchluterCurrent = current_drive.function(
+    ps_fraction_scene,
+    "f_c_plasma_pfirsch_schluter",
+    reads={
+        "beta": V.physics.beta_total_vol_avg,
+    },
+)
 
-    fn = calculate_plasma_current_fractions
 
-    f_c_plasma_bootstrap = From(current_drive)
-    f_c_plasma_diamagnetic = From(current_drive)
-    f_c_plasma_pfirsch_schluter = From(current_drive)
-    f_c_plasma_non_inductive = From(physics)
-
-    f_c_plasma_internal = OutputInto(current_drive)
-    f_c_plasma_auxiliary = OutputInto(physics)
-    f_c_plasma_inductive = OutputInto(physics)
+# cottax node: `calculate_plasma_current_fractions`, ports declared.
+PlasmaCurrentFractions = current_drive.function(
+    calculate_plasma_current_fractions,
+    "f_c_plasma_internal",
+    V.physics.f_c_plasma_auxiliary,
+    V.physics.f_c_plasma_inductive,
+    reads={
+        "f_c_plasma_non_inductive": physics,
+    },
+)

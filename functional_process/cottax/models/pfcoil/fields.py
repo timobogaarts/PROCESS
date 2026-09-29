@@ -2,11 +2,9 @@
 coil's inner/outer edge.
 """
 
-from cottax.interfaces.pytree_namespace_module import From, Output, OutputInto
+from cottax.interfaces import V
 
-from functional_process.cottax.models.pfcoil import CS_INDEX
 from functional_process.cottax.paths import pf_coil, physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.fields import (
     calculate_b_field_at_point,  # noqa: F401 -- re-exported for inductance.py / tests
     calculate_coil_current_waveform,  # noqa: F401 -- re-exported for tests
@@ -24,87 +22,57 @@ from functional_process.models.pfcoil.fields import (
     calculate_pf_coil_peak_fields_reference_arm,
 )
 
-
-class PFCoilPeakField(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.peak_field`."""
-
-    fn = calculate_pf_coil_peak_fields_reference_arm
-
-    c_pf_cs_coil_pulse_start_ma = From(pf_coil)
-    c_pf_cs_coil_flat_top_ma = From(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
-    r_pf_coil_middle = From(pf_coil)
-    z_pf_coil_middle = From(pf_coil)
-    r_pf_coil_inner = From(pf_coil)
-    r_pf_coil_outer = From(pf_coil)
-    z_pf_coil_upper = From(pf_coil)
-    z_pf_coil_lower = From(pf_coil)
-    r_pf_coil_middle_group_array = From(pf_coil)
-    z_pf_coil_middle_group_array = From(pf_coil)
-    r_cs_middle = From(pf_coil)
-    dz_cs_full = From(pf_coil)
-    a_cs_poloidal = From(pf_coil)
-    j_cs_pulse_start = From(pf_coil)
-    j_cs_flat_top_end = From(pf_coil)
-    rmajor = From(physics)
-    plasma_current = From(physics)
-
-    b_pf_coil_peak_0 = Output(pf_coil.b_pf_coil_peak[0])
-    b_pf_coil_peak_1 = Output(pf_coil.b_pf_coil_peak[1])
-    b_pf_coil_peak_2 = Output(pf_coil.b_pf_coil_peak[2])
-    b_pf_coil_peak_3 = Output(pf_coil.b_pf_coil_peak[3])
-    b_pf_coil_peak_4 = Output(pf_coil.b_pf_coil_peak[4])
-    b_pf_coil_peak_5 = Output(pf_coil.b_pf_coil_peak[5])
-    bpf2_0 = Output(pf_coil.bpf2[0])
-    bpf2_1 = Output(pf_coil.bpf2[1])
-    bpf2_2 = Output(pf_coil.bpf2[2])
-    bpf2_3 = Output(pf_coil.bpf2[3])
-    bpf2_4 = Output(pf_coil.bpf2[4])
-    bpf2_5 = Output(pf_coil.bpf2[5])
+# cottax node: `.tokamak.pf_coil.peak_field`.
+PFCoilPeakField = pf_coil.function(
+    calculate_pf_coil_peak_fields_reference_arm,
+    V.pf_coil.b_pf_coil_peak[0],
+    V.pf_coil.b_pf_coil_peak[1],
+    V.pf_coil.b_pf_coil_peak[2],
+    V.pf_coil.b_pf_coil_peak[3],
+    V.pf_coil.b_pf_coil_peak[4],
+    V.pf_coil.b_pf_coil_peak[5],
+    V.pf_coil.bpf2[0],
+    V.pf_coil.bpf2[1],
+    V.pf_coil.bpf2[2],
+    V.pf_coil.bpf2[3],
+    V.pf_coil.bpf2[4],
+    V.pf_coil.bpf2[5],
+    reads={
+        "rmajor": physics,
+        "plasma_current": physics,
+    },
+)
 
 
-class PFCoilPeakFieldNoCentralSolenoid(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.peak_field`, the `iohcl = 0` occupant."""
-
-    fn = calculate_pf_coil_peak_fields_no_central_solenoid_bound
-
-    c_pf_cs_coil_pulse_start_ma = From(pf_coil)
-    c_pf_cs_coil_flat_top_ma = From(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
-    r_pf_coil_middle = From(pf_coil)
-    z_pf_coil_middle = From(pf_coil)
-    r_pf_coil_inner = From(pf_coil)
-    r_pf_coil_outer = From(pf_coil)
-    z_pf_coil_upper = From(pf_coil)
-    z_pf_coil_lower = From(pf_coil)
-    rmajor = From(physics)
-    plasma_current = From(physics)
-
-    b_pf_coil_peak = OutputInto(pf_coil)
-    bpf2 = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.peak_field`, the `iohcl = 0` occupant.
+PFCoilPeakFieldNoCentralSolenoid = pf_coil.function(
+    calculate_pf_coil_peak_fields_no_central_solenoid_bound,
+    "b_pf_coil_peak",
+    "bpf2",
+    reads={
+        "rmajor": physics,
+        "plasma_current": physics,
+    },
+)
 
 
-class PFCoilCurrentWaveform(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.waveform`."""
-
-    fn = calculate_coil_current_waveform_reference
-
-    c_pf_cs_coil_pulse_start_ma = From(pf_coil)
-    c_pf_cs_coil_flat_top_ma = From(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
-
-    c_pf_cs_coils_peak_ma = OutputInto(pf_coil)
-    f_c_pf_cs_peak_time_array = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.waveform`.
+PFCoilCurrentWaveform = pf_coil.function(
+    calculate_coil_current_waveform_reference,
+    "c_pf_cs_coils_peak_ma",
+    "f_c_pf_cs_peak_time_array",
+)
 
 
-class PFCoilCurrentWaveformNoCentralSolenoid(PFCoilCurrentWaveform):
-    """cottax node: `.tokamak.pf_coil.waveform`, the `iohcl = 0` occupant.
-
-    Same reads and outputs as `PFCoilCurrentWaveform` -- only `fn`'s baked topology
-    differs.
-    """
-
-    fn = calculate_coil_current_waveform_no_central_solenoid
+# cottax node: `.tokamak.pf_coil.waveform`, the `iohcl = 0` occupant.
+#
+# Same reads and outputs as `PFCoilCurrentWaveform` -- only `fn`'s baked topology
+# differs.
+PFCoilCurrentWaveformNoCentralSolenoid = pf_coil.function(
+    calculate_coil_current_waveform_no_central_solenoid,
+    "c_pf_cs_coils_peak_ma",
+    "f_c_pf_cs_peak_time_array",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -119,27 +87,16 @@ class PFCoilCurrentWaveformNoCentralSolenoid(PFCoilCurrentWaveform):
 # ---------------------------------------------------------------------------
 
 
-class CSCoilPeakField(WrapsFunction):
-    """cottax node: `.tokamak.cs_coil.peak_field`."""
-
-    fn = calculate_cs_peak_fields_reference_widths
-
-    c_pf_cs_coil_pulse_start_ma = From(pf_coil)
-    c_pf_cs_coil_flat_top_ma = From(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
-    r_pf_coil_middle = From(pf_coil)
-    z_pf_coil_middle = From(pf_coil)
-    r_cs_inner = From(pf_coil)
-    r_cs_outer = From(pf_coil)
-    z_cs_middle = From(pf_coil)
-    z_cs_upper = From(pf_coil)
-    j_cs_flat_top_end = From(pf_coil)
-    j_cs_pulse_start = From(pf_coil)
-    rmajor = From(physics)
-    plasma_current = From(physics)
-
-    b_cs_peak_flat_top_end = OutputInto(pf_coil)
-    b_cs_peak_pulse_start = OutputInto(pf_coil)
-    b_cs_self_outer_midplane = OutputInto(pf_coil)
-    b_pf_coil_peak_cs = Output(pf_coil.b_pf_coil_peak[CS_INDEX])
-    bpf2_cs = Output(pf_coil.bpf2[CS_INDEX])
+# cottax node: `.tokamak.cs_coil.peak_field`.
+CSCoilPeakField = pf_coil.function(
+    calculate_cs_peak_fields_reference_widths,
+    "b_cs_peak_flat_top_end",
+    "b_cs_peak_pulse_start",
+    "b_cs_self_outer_midplane",
+    V.pf_coil.b_pf_coil_peak[6],
+    V.pf_coil.bpf2[6],
+    reads={
+        "rmajor": physics,
+        "plasma_current": physics,
+    },
+)

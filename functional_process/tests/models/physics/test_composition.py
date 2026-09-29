@@ -14,8 +14,7 @@ disagree.
 import inspect
 
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.path import VarPath
+from cottax.interfaces import V, place, to_graph
 
 from functional_process.cottax.input.indat import PLASMA_COMPOSITION
 from functional_process.cottax.models.physics.composition import (
@@ -24,7 +23,6 @@ from functional_process.cottax.models.physics.composition import (
     calculate_effective_charge_ionisation_profiles,
     plasma_composition,
 )
-from functional_process.cottax.paths import impurity_radiation
 from functional_process.tests._harness import Tier1Contract, legacy_sample
 from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
@@ -419,8 +417,8 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
 
 def _pure_function_kwargs_to_node_kwargs(kwargs):
     """Pack/unpack adapter: `plasma_composition`'s one-array-argument kwargs ->
-    `PlasmaComposition.__call__`'s fourteen-individual-index kwargs (minus
-    `i_plasma_ignited`, which is the node's static field, not a port).
+    the node function's fourteen-individual-index kwargs (minus
+    `i_plasma_ignited`, which picks the occupant rather than being read).
 
     Same idiom `coils/calculate.py`'s minted `coilcurrent` adapters use elsewhere in this
     codebase: a small, explicit translation between the pure function's array-shaped
@@ -441,35 +439,32 @@ def test_plasma_composition_owns_h_and_he_fractions():
     checking exactly which `VarPath`s are owned/read is the other half (a node could
     assemble while silently reading or owning the wrong indices).
     """
-    node = PlasmaCompositionNonIgnited()
+    node = PlasmaCompositionNonIgnited
     graph = to_graph(node)
     assert graph.definitions
 
-    owned = {out for out in node.outputs}
-    read = {inp for inp in node.inputs}
+    owned = set(node.outputs)
+    read = set(node.reads.values())
 
-    h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
-    he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)
+    h_path = place(V.impurity_radiation.f_nd_impurity_electron_array[0])
+    he_path = place(V.impurity_radiation.f_nd_impurity_electron_array[1])
     assert h_path in owned
     assert he_path in owned
     assert h_path not in read
     assert he_path not in read
 
     for i in range(2, 14):
-        idx_path = resolve(
-            lambda s, i=i: s.impurity_radiation.f_nd_impurity_electron_array[i],
-            VarPath,
-        )
+        idx_path = place(V.impurity_radiation.f_nd_impurity_electron_array[i])
         assert idx_path in read
         assert idx_path not in owned
 
 
 def test_calculate_effective_charge_ionisation_profiles_assembles_alone():
     """`CalculateEffectiveChargeIonisationProfiles` reads all fourteen indices as
-    individual `FromExactly`s (no whole-array read left anywhere in this file) and must still
+    individual reads (no whole-array read left anywhere in this file) and must still
     assemble on its own.
     """
-    graph = to_graph(CalculateEffectiveChargeIonisationProfiles())
+    graph = to_graph(CalculateEffectiveChargeIonisationProfiles)
     assert graph.definitions
 
 
@@ -481,14 +476,14 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
     has alone (12 fewer than the naive count, since indices 0/1 move from "both
     boundary" to "one boundary, one produced").
     """
-    plasma_composition_node = PlasmaCompositionNonIgnited()
-    profiles_node = CalculateEffectiveChargeIonisationProfiles()
+    plasma_composition_node = PlasmaCompositionNonIgnited
+    profiles_node = CalculateEffectiveChargeIonisationProfiles
     graph = to_graph(plasma_composition_node, profiles_node)
     assert graph.definitions
     assert len(graph.definitions) == 2
 
-    h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
-    he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)
+    h_path = place(V.impurity_radiation.f_nd_impurity_electron_array[0])
+    he_path = place(V.impurity_radiation.f_nd_impurity_electron_array[1])
     boundary_inputs = set(graph.graph.boundary_inputs)
     assert h_path not in boundary_inputs
     assert he_path not in boundary_inputs
@@ -512,18 +507,18 @@ def test_plasma_composition_node_matches_pure_function():
             i_plasma_ignited=i_plasma_ignited,
         )
 
-        node = PLASMA_COMPOSITION[PlasmaIgnitionModel(int(i_plasma_ignited))]()
+        node = PLASMA_COMPOSITION[PlasmaIgnitionModel(int(i_plasma_ignited))]
         node_kwargs = _pure_function_kwargs_to_node_kwargs(kwargs)
         # The ignited occupant does not declare `.physics.f_nd_beam_electron` at all --
         # that is the read the split removed -- so the shared kwarg dict is filtered by
         # the occupant's own signature rather than by a hardcoded name list.
-        declared = inspect.signature(type(node).__call__).parameters
+        declared = inspect.signature(node.fn).parameters
         got = node(**{k: v for k, v in node_kwargs.items() if k in declared})
 
         # `want` is the pure function's 17-tuple in its own order: results[:4],
         # results[4] (the full post-update array -- index into it for H_/He_),
         # results[5:] (12 more). Splitting index 4 into two elements makes `expected`
-        # 18 long, matching the node's 18 `Output`s.
+        # 18 long, matching the node's 18 outputs.
         expected = (
             *want[:4],
             want[4][0],

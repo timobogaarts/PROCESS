@@ -1,11 +1,6 @@
 """Pure-functional port of `process/models/physics/confinement_time.py`."""
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import current_drive, physics, stellarator
 from functional_process.models.physics.confinement_time import (
@@ -124,207 +119,207 @@ __all__ = [
 ]
 
 
-class IterPhysicsBasisElongation(ExplicitFunction):
-    """cottax node: `calculate_iter_physics_basis_elongation`, ports declared."""
-
-    kappa_ipb = OutputInto(physics)
-
-    def __call__(
-        self,
-        vol_plasma=From(physics),
-        rmajor=From(physics),
-        rminor=From(physics),
-    ):
-        return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
+# cottax node: `calculate_iter_physics_basis_elongation`, ports declared.
+def _iter_physics_basis_elongation(vol_plasma, rmajor, rminor):
+    return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
 
 
-class ConfinementScalingInputs(ExplicitFunction):
-    """The unit conversions every scaling law takes as arguments."""
-
-    nd_plasma_electron_line_19 = OutputInto(physics)
-    cur_plasma_ma = OutputInto(physics)
-
-    def __call__(
-        self,
-        nd_plasma_electron_line=From(physics),
-        plasma_current=From(physics),
-    ):
-        return confinement_scaling_inputs(nd_plasma_electron_line, plasma_current)
+IterPhysicsBasisElongation = physics.function(
+    _iter_physics_basis_elongation, "kappa_ipb"
+)
 
 
-class PlasmaPowerLoss(ExplicitFunction):
-    """The family that owns `.physics.p_plasma_loss_mw`: the head, one occupant per arm."""
+# The unit conversions every scaling law takes as arguments.
+def _confinement_scaling_inputs(nd_plasma_electron_line, plasma_current):
+    return confinement_scaling_inputs(nd_plasma_electron_line, plasma_current)
 
 
-class PlasmaPowerLossIgnitedCoreRadiation(PlasmaPowerLoss):
-    """`i_plasma_ignited == IGNITED` and `i_rad_loss == CORE_ONLY` -- both runs' arm."""
-
-    p_plasma_loss_mw = OutputInto(physics)
-
-    def __call__(
-        self,
-        f_p_alpha_plasma_deposited=From(physics),
-        p_alpha_total_mw=From(physics),
-        p_non_alpha_charged_mw=From(physics),
-        p_plasma_ohmic_mw=From(physics),
-        pden_plasma_core_rad_mw=From(physics),
-        vol_plasma=From(physics),
-    ):
-        return plasma_power_loss_mw(
-            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
-            p_alpha_total_mw=p_alpha_total_mw,
-            p_non_alpha_charged_mw=p_non_alpha_charged_mw,
-            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
-            p_hcd_injected_total_mw=0.0,
-            pden_plasma_rad_mw=0.0,
-            pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
-            vol_plasma=vol_plasma,
-            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
-            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-        )
+ConfinementScalingInputs = physics.function(
+    _confinement_scaling_inputs, "nd_plasma_electron_line_19", "cur_plasma_ma"
+)
 
 
-class PlasmaPowerLossNonIgnitedCoreRadiation(PlasmaPowerLoss):
-    """`i_plasma_ignited == NON_IGNITED` and `i_rad_loss == CORE_ONLY`."""
-
-    p_plasma_loss_mw = OutputInto(physics)
-
-    def __call__(
-        self,
-        f_p_alpha_plasma_deposited=From(physics),
-        p_alpha_total_mw=From(physics),
-        p_non_alpha_charged_mw=From(physics),
-        p_plasma_ohmic_mw=From(physics),
-        p_hcd_injected_total_mw=From(current_drive),
-        pden_plasma_core_rad_mw=From(physics),
-        vol_plasma=From(physics),
-    ):
-        return plasma_power_loss_mw(
-            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
-            p_alpha_total_mw=p_alpha_total_mw,
-            p_non_alpha_charged_mw=p_non_alpha_charged_mw,
-            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
-            p_hcd_injected_total_mw=p_hcd_injected_total_mw,
-            pden_plasma_rad_mw=0.0,
-            pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
-            vol_plasma=vol_plasma,
-            i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
-            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-        )
+# The PlasmaPowerLoss family:
+# The family that owns `.physics.p_plasma_loss_mw`: the head, one occupant per arm.
 
 
-class ConfinementTimeScaling(ExplicitFunction):
-    """The family that owns `.physics.t_electron_confinement`: one occupant per law."""
+# `i_plasma_ignited == IGNITED` and `i_rad_loss == CORE_ONLY` -- both runs' arm.
+def _plasma_power_loss_ignited_core_radiation(
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    pden_plasma_core_rad_mw,
+    vol_plasma,
+):
+    return plasma_power_loss_mw(
+        f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+        p_alpha_total_mw=p_alpha_total_mw,
+        p_non_alpha_charged_mw=p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw=0.0,
+        pden_plasma_rad_mw=0.0,
+        pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
+        vol_plasma=vol_plasma,
+        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+    )
 
 
-class Iss04ConfinementTime(ConfinementTimeScaling):
-    """ISS04 stellarator scaling. `ConfinementTimeModel.ISS04_STELLARATOR` (38)."""
-
-    t_electron_confinement = OutputInto(physics)
-
-    def __call__(
-        self,
-        rminor=From(physics),
-        rmajor=From(physics),
-        nd_plasma_electron_line_19=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        p_plasma_loss_mw=From(physics),
-        iotabar=FromExactly(stellarator.iotabar),
-    ):
-        return iss04_stellarator_confinement_time(
-            rminor,
-            rmajor,
-            nd_plasma_electron_line_19,
-            b_plasma_toroidal_on_axis,
-            p_plasma_loss_mw,
-            iotabar,
-        )
+PlasmaPowerLossIgnitedCoreRadiation = physics.function(
+    _plasma_power_loss_ignited_core_radiation, "p_plasma_loss_mw"
+)
 
 
-class IterIpb98y2ConfinementTime(ConfinementTimeScaling):
-    """IPB98(y,2) ELMy H-mode scaling."""
-
-    t_electron_confinement = OutputInto(physics)
-
-    def __call__(
-        self,
-        cur_plasma_ma=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        nd_plasma_electron_line_19=From(physics),
-        p_plasma_loss_mw=From(physics),
-        rmajor=From(physics),
-        kappa_ipb=From(physics),
-        aspect=From(physics),
-        afuel=FromExactly(physics.m_fuel_amu),
-    ):
-        return iter_ipb98y2_confinement_time(
-            cur_plasma_ma,
-            b_plasma_toroidal_on_axis,
-            nd_plasma_electron_line_19,
-            p_plasma_loss_mw,
-            rmajor,
-            kappa_ipb,
-            aspect,
-            afuel,
-        )
+# `i_plasma_ignited == NON_IGNITED` and `i_rad_loss == CORE_ONLY`.
+def _plasma_power_loss_non_ignited_core_radiation(
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+    pden_plasma_core_rad_mw,
+    vol_plasma,
+):
+    return plasma_power_loss_mw(
+        f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+        p_alpha_total_mw=p_alpha_total_mw,
+        p_non_alpha_charged_mw=p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw=p_hcd_injected_total_mw,
+        pden_plasma_rad_mw=0.0,
+        pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
+        vol_plasma=vol_plasma,
+        i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
+        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+    )
 
 
-class ConfinementTail(ExplicitFunction):
-    """The family that owns everything downstream of the chosen law."""
+PlasmaPowerLossNonIgnitedCoreRadiation = physics.function(
+    _plasma_power_loss_non_ignited_core_radiation,
+    "p_plasma_loss_mw",
+    reads={
+        "p_hcd_injected_total_mw": current_drive,
+    },
+)
 
 
-class ConfinementTailCoreRadiation(ConfinementTail):
-    """`i_rad_loss == CORE_ONLY`: `hstar` degrades on synchrotron plus inner radiation."""
-
-    pden_electron_transport_loss_mw = OutputInto(physics)
-    pden_ion_transport_loss_mw = OutputInto(physics)
-    t_electron_energy_confinement = OutputInto(physics)
-    t_ion_energy_confinement = OutputInto(physics)
-    t_energy_confinement = OutputInto(physics)
-    hstar = OutputInto(physics)
-    t_energy_confinement_beta = OutputInto(physics)
-
-    def __call__(
-        self,
-        t_electron_confinement=From(physics),
-        hfact=From(physics),
-        p_plasma_loss_mw=From(physics),
-        pden_plasma_sync_mw=From(physics),
-        p_plasma_inner_rad_mw=From(physics),
-        vol_plasma=From(physics),
-        eden_plasma_ions_thermal_vol_avg=From(physics),
-        eden_plasma_electrons_thermal_vol_avg=From(physics),
-        e_plasma_beta=From(physics),
-    ):
-        return confinement_from_scaling(
-            t_electron_confinement=t_electron_confinement,
-            hfact=hfact,
-            p_plasma_loss_mw=p_plasma_loss_mw,
-            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-            pden_plasma_sync_mw=pden_plasma_sync_mw,
-            p_plasma_inner_rad_mw=p_plasma_inner_rad_mw,
-            pden_plasma_rad_mw=0.0,
-            vol_plasma=vol_plasma,
-            eden_plasma_ions_thermal_vol_avg=eden_plasma_ions_thermal_vol_avg,
-            eden_plasma_electrons_thermal_vol_avg=eden_plasma_electrons_thermal_vol_avg,
-            e_plasma_beta=e_plasma_beta,
-        )
+# The ConfinementTimeScaling family:
+# The family that owns `.physics.t_electron_confinement`: one occupant per law.
 
 
-class DoubleAndTripleProduct(ExplicitFunction):
-    """cottax node: `calculate_double_and_triple_product`, ports declared."""
+# ISS04 stellarator scaling. `ConfinementTimeModel.ISS04_STELLARATOR` (38).
+def _iss04_confinement_time(
+    rminor,
+    rmajor,
+    nd_plasma_electron_line_19,
+    b_plasma_toroidal_on_axis,
+    p_plasma_loss_mw,
+    iotabar,
+):
+    return iss04_stellarator_confinement_time(
+        rminor,
+        rmajor,
+        nd_plasma_electron_line_19,
+        b_plasma_toroidal_on_axis,
+        p_plasma_loss_mw,
+        iotabar,
+    )
 
-    ntau = OutputInto(physics)
-    nTtau = OutputInto(physics)
 
-    def __call__(
-        self,
-        nd_plasma_electrons_vol_avg=From(physics),
-        temp_plasma_electron_vol_avg_kev=From(physics),
-        t_energy_confinement=From(physics),
-    ):
-        return calculate_double_and_triple_product(
-            nd_plasma_electrons_vol_avg,
-            temp_plasma_electron_vol_avg_kev,
-            t_energy_confinement,
-        )
+Iss04ConfinementTime = physics.function(
+    _iss04_confinement_time,
+    "t_electron_confinement",
+    reads={
+        "iotabar": stellarator,
+    },
+)
+
+
+# IPB98(y,2) ELMy H-mode scaling.
+def _iter_ipb98y2_confinement_time(
+    cur_plasma_ma,
+    b_plasma_toroidal_on_axis,
+    nd_plasma_electron_line_19,
+    p_plasma_loss_mw,
+    rmajor,
+    kappa_ipb,
+    aspect,
+    afuel,
+):
+    return iter_ipb98y2_confinement_time(
+        cur_plasma_ma,
+        b_plasma_toroidal_on_axis,
+        nd_plasma_electron_line_19,
+        p_plasma_loss_mw,
+        rmajor,
+        kappa_ipb,
+        aspect,
+        afuel,
+    )
+
+
+IterIpb98y2ConfinementTime = physics.function(
+    _iter_ipb98y2_confinement_time,
+    "t_electron_confinement",
+    reads={
+        "afuel": V.physics.m_fuel_amu,
+    },
+)
+
+
+# The ConfinementTail family:
+# The family that owns everything downstream of the chosen law.
+
+
+# `i_rad_loss == CORE_ONLY`: `hstar` degrades on synchrotron plus inner radiation.
+def _confinement_tail_core_radiation(
+    t_electron_confinement,
+    hfact,
+    p_plasma_loss_mw,
+    pden_plasma_sync_mw,
+    p_plasma_inner_rad_mw,
+    vol_plasma,
+    eden_plasma_ions_thermal_vol_avg,
+    eden_plasma_electrons_thermal_vol_avg,
+    e_plasma_beta,
+):
+    return confinement_from_scaling(
+        t_electron_confinement=t_electron_confinement,
+        hfact=hfact,
+        p_plasma_loss_mw=p_plasma_loss_mw,
+        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+        pden_plasma_sync_mw=pden_plasma_sync_mw,
+        p_plasma_inner_rad_mw=p_plasma_inner_rad_mw,
+        pden_plasma_rad_mw=0.0,
+        vol_plasma=vol_plasma,
+        eden_plasma_ions_thermal_vol_avg=eden_plasma_ions_thermal_vol_avg,
+        eden_plasma_electrons_thermal_vol_avg=eden_plasma_electrons_thermal_vol_avg,
+        e_plasma_beta=e_plasma_beta,
+    )
+
+
+ConfinementTailCoreRadiation = physics.function(
+    _confinement_tail_core_radiation,
+    "pden_electron_transport_loss_mw",
+    "pden_ion_transport_loss_mw",
+    "t_electron_energy_confinement",
+    "t_ion_energy_confinement",
+    "t_energy_confinement",
+    "hstar",
+    "t_energy_confinement_beta",
+)
+
+
+# cottax node: `calculate_double_and_triple_product`, ports declared.
+def _double_and_triple_product(
+    nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev, t_energy_confinement
+):
+    return calculate_double_and_triple_product(
+        nd_plasma_electrons_vol_avg,
+        temp_plasma_electron_vol_avg_kev,
+        t_energy_confinement,
+    )
+
+
+DoubleAndTripleProduct = physics.function(_double_and_triple_product, "ntau", "nTtau")

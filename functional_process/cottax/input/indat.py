@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import equinox as eqx
-from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.interfaces import to_graph
 
 from functional_process.configurations import Configuration
 from functional_process.cottax.input.importer import Imported, read_indat
@@ -203,13 +203,13 @@ from functional_process.cottax.models.physics.scrape_off_layer import (
     TokamakScrapeOffLayer,
 )
 from functional_process.cottax.models.physics.tokamak_namespace import (
-    PulseBurnTime,
     TokamakCurrentDrive,
     TokamakPhysics,
     TokamakPlasmaBeta,
     TokamakPlasmaGeom,
     TokamakPulse,
 )
+from functional_process.cottax.models.pulse import PulseBurnTime
 from functional_process.cottax.models.power.electric_production import (
     AcpowLine,
     AcpowMotorGeneratorFlywheel,
@@ -352,7 +352,6 @@ from functional_process.cottax.models.tfcoil.namespace import (
 )
 from functional_process.cottax.models.tfcoil.quench import (
     TfCoilQuenchHeatCurrentDensity,
-    helium_properties_at_quench_nodes,
 )
 from functional_process.cottax.models.tfcoil.stress import (
     TfFieldAndForceClampedJoints,
@@ -1416,6 +1415,18 @@ UNPORTED = {
         if (_str_wp, _mat) != (1, SuperconductorModel.HAZELTON_ZHAI_REBCO)
     },
 }
+
+UNPORTED |= {
+    ("i_plant_availability", value): (
+        "the Morris (2) and ST (3) availability models are ported and unit-tested "
+        "(`Avail2`, `AvailSt`) but not assembled: `calculate_u_unplanned_vacuum` sums "
+        "over a Python `range()` bounded by `.vacuum.n_vac_pumps_high`, which "
+        "`VacuumOld` computes, so it is traced inside a run and cannot bound a loop. "
+        "TODO: a masked binomial sum up to a static maximum pump count; every "
+        "regression input sets `i_plant_availability = 0`"
+    )
+    for value in (2, 3)
+}
 """Why a known PROCESS value has no occupant, verbatim from the `Alternative(unported=)`
 declarations this replaced.
 """
@@ -1425,7 +1436,10 @@ def _slot_occupant(field, value, registry, *, build=None):
     """One registry lookup, with both failure modes spelled out."""
     if value in registry:
         occupant = registry[value]
-        return build(occupant) if build is not None else occupant()
+        if build is not None:
+            return build(occupant)
+        # a namespace is a class, built empty; a node is the wrapper itself
+        return occupant() if isinstance(occupant, type) else occupant
     if (field, value) in UNPORTED:
         raise NotImplementedError(
             f"{field} == {value} is a real PROCESS branch but is not ported: "
@@ -1832,7 +1846,7 @@ def _profile_parameterisation(
                 )
             )
             if cls is ProfileParameterisationPedestal
-            else cls(ecrh_density_limit=(EcrhDensityLimit() if is_stellarator else None))
+            else cls(ecrh_density_limit=(EcrhDensityLimit if is_stellarator else None))
         ),
     )
 
@@ -3386,23 +3400,21 @@ def _initialisation(imported, device, i_tf_sup, i_tf_sc_mat, ixc):
     # an array `cottax` refuses in a graph, and a Python one is a constant XLA folds and
     # `filter_jit` keys on -- `models/stated.py`, `_audit/optimise_design.md` §34.
     return Initialisation(
-        tf_cryoplant_efficiency=TfCryoplantEfficiency(),
-        tf_insulation_youngs_modulus=TfInsulationYoungsModulus() if tokamak else None,
-        tf_conductor_youngs_modulus=TfConductorYoungsModulus() if tokamak else None,
-        pf_coil_resistivity=PfCoilResistivity() if tokamak else None,
-        beam_electron_density_fraction=BeamElectronDensityFraction()
-        if tokamak
-        else None,
-        energy_storage_building_volume=EnergyStorageBuildingVolume()
+        tf_cryoplant_efficiency=TfCryoplantEfficiency,
+        tf_insulation_youngs_modulus=TfInsulationYoungsModulus if tokamak else None,
+        tf_conductor_youngs_modulus=TfConductorYoungsModulus if tokamak else None,
+        pf_coil_resistivity=PfCoilResistivity if tokamak else None,
+        beam_electron_density_fraction=BeamElectronDensityFraction if tokamak else None,
+        energy_storage_building_volume=EnergyStorageBuildingVolume
         if int(i_pulsed_plant) != 1
         else None,
-        double_null_upper_build=DoubleNullUpperBuild()
+        double_null_upper_build=DoubleNullUpperBuild
         if tokamak and int(i_single_null) == 0
         else None,
         # `st_init` returns at its first line on `istell == 0`, so both of its slots are
         # the stellarator arm of one dispatch and neither is a kwarg on a shared node.
-        stellarator_solenoid_absent=None if tokamak else StellaratorSolenoidAbsent(),
-        stellarator_pulse_times=None if tokamak else StellaratorPulseTimes(),
+        stellarator_solenoid_absent=None if tokamak else StellaratorSolenoidAbsent,
+        stellarator_pulse_times=None if tokamak else StellaratorPulseTimes,
     )
 
 
@@ -3462,8 +3474,14 @@ property table -- is a function of.
 """
 
 
-def _quench_helium_table(numbers, ixc):
-    """`(temp_he_peak, temp_quench_max, den_helium, cp_helium)` for this machine."""
+def _refuse_quench_grid_unknowns(ixc):
+    """Refuse a run iterating either temperature the helium table is evaluated at.
+
+    The table (`.tfcoil.den_helium_at_nodes` / `cp_helium_at_nodes`) is a value computed
+    before the run from `.tfcoil.tftmp` and `.tfcoil.temp_tf_conductor_quench_max` (see
+    `native._quench_helium_tables`). An unknown there moves the states CoolProp was asked
+    about while the table stays put.
+    """
     frozen = {
         name
         for identifier in ixc
@@ -3473,20 +3491,13 @@ def _quench_helium_table(numbers, ixc):
     }
     if frozen:
         raise NotImplementedError(
-            f"{sorted(frozen)} is an iteration variable on this run, and "
-            f"`TfCoilQuenchHeatCurrentDensity` carries the helium property table as a "
-            f"static field evaluated at the quadrature grid those two temperatures "
-            f"define. An unknown there moves the states CoolProp was asked about while "
-            f"the table stays put -- so this machine is refused rather than assembled "
-            f"with a stale table. Resolving it means giving the helium properties a "
-            f"producer (`quench.md` OQ1's option (b) or (c)), not relaxing this check"
+            f"{sorted(frozen)} is an iteration variable on this run, and the helium "
+            f"property table `TfCoilQuenchHeatCurrentDensity` reads is computed before "
+            f"the run at the quadrature grid those two temperatures define -- so this "
+            f"machine is refused rather than assembled with a stale table. Resolving it "
+            f"means giving the helium properties a producer (`quench.md` OQ1's option "
+            f"(b) or (c)), not relaxing this check"
         )
-    temp_he_peak = float(numbers.get("tftmp", 4.75))
-    temp_quench_max = float(numbers.get("temp_tf_conductor_quench_max", 150.0))
-    den_helium, cp_helium = helium_properties_at_quench_nodes(
-        temp_he_peak=temp_he_peak, temp_quench_max=temp_quench_max
-    )
-    return temp_he_peak, temp_quench_max, den_helium, cp_helium
 
 
 def _tokamak_device(
@@ -3525,12 +3536,7 @@ def _tokamak_device(
     # margin -- and both read the strain from the field it names, so it is answered once
     # here for the same reason `i_tf_turns_integer` is.
     i_str_wp = switches.get("i_str_wp", 1)  # `tfcoil_variables.py:508`
-    (
-        quench_temp_he_peak,
-        quench_temp_max,
-        quench_den_helium,
-        quench_cp_helium,
-    ) = _quench_helium_table(numbers, ixc)
+    _refuse_quench_grid_unknowns(ixc)
     i_plasma_current = switches.get("i_plasma_current", 4)  # `physics_variables.py:843`
     i_hcd_primary = switches.get("i_hcd_primary", 5)  # `current_drive_variables.py:190`
     i_hcd_secondary = switches.get("i_hcd_secondary", 0)  # `:206`
@@ -3584,7 +3590,7 @@ def _tokamak_device(
             ),
             PULSE_RAMP_TIMES,
         ),
-        burn_time=PulseBurnTime() if is_pulsed else None,
+        burn_time=PulseBurnTime if is_pulsed else None,
     )
     current_drive = _slot_occupant(
         "i_hcd_calculations",
@@ -3625,7 +3631,6 @@ def _tokamak_device(
             # `None` is an occupant on arm -3, not a refusal: a spherical tokamak whose
             # input sets `dz_xpoint_divertor` discards `divgeom`'s early return at
             # `build.py:800` and owns nothing.
-            build=lambda cls: None if cls is None else cls(),
         ),
         tf_top_height=_slot_occupant(
             "i_single_null",
@@ -3698,7 +3703,6 @@ def _tokamak_device(
             "tfc_sidewall_is_fraction",
             presence["tfc_sidewall_is_fraction"],
             DX_TF_SIDE_CASE_MIN,
-            build=lambda cls: None if cls is None else cls(),
         ),
         tf_coil_shape=_slot_occupant(
             "tf_coil_shape_arm",
@@ -3753,12 +3757,7 @@ def _tokamak_device(
             ),
             TF_STRESS,
         ),
-        tf_coil_quench_heat_current_density=TfCoilQuenchHeatCurrentDensity(
-            tftmp=quench_temp_he_peak,
-            temp_tf_conductor_quench_max=quench_temp_max,
-            den_helium_at_nodes=quench_den_helium,
-            cp_helium_at_nodes=quench_cp_helium,
-        ),
+        tf_coil_quench_heat_current_density=TfCoilQuenchHeatCurrentDensity,
     )
     # The turn-dimension flags decide the turn geometry on **both** turn types, from the
     # same three-way branch (`_croco_turn_geometry_arm` delegates), so they are read once
@@ -3852,16 +3851,9 @@ def _tokamak_device(
                 "i_p_coolant_pumping",
                 PUMPING_POWER,
                 2,  # `fwbs_variables.py:249`
-                build=lambda occupant: occupant(),
             ),
         ),
     )
-
-    def none_or_call(cls):
-        # `None` is an occupant, not a refusal, in the four registries that carry it
-        # (`CURRENT_PROFILE_INDEX` and friends): PROCESS's arm computes nothing and the
-        # field is a run input. Same shape as `DX_TF_SIDE_CASE_MIN` above.
-        return None if cls is None else cls()
 
     plasma_current = TokamakPlasmaCurrent(
         plasma_current=_slot_occupant(
@@ -3873,7 +3865,6 @@ def _tokamak_device(
             "i_alphaj",
             CurrentProfileIndexModel(switches.get("i_alphaj", 0)),  # `:951`
             CURRENT_PROFILE_INDEX,
-            build=none_or_call,
         ),
     )
     plasma_inductance = TokamakPlasmaInductance(
@@ -3882,7 +3873,6 @@ def _tokamak_device(
             # `physics_variables.py:948`
             IndInternalNormModel(switches.get("i_ind_plasma_internal_norm", 0)),
             IND_PLASMA_INTERNAL_NORM,
-            build=none_or_call,
         )
     )
     bootstrap_current = _slot_occupant(
@@ -3892,7 +3882,6 @@ def _tokamak_device(
         # The profile grid's shape, the same `201` the `ProfileGrid` registration in
         # `models/physics/namespace.py` carries -- a resolution, not a switch, and
         # `switch_audit` value-checks it against `.physics.n_plasma_profile_elements`.
-        build=lambda cls: None if cls is None else cls(n_plasma_profile_elements=201),
     )
     scrape_off_layer = TokamakScrapeOffLayer(
         outboard_power_decay_length=_slot_occupant(
@@ -3901,7 +3890,6 @@ def _tokamak_device(
                 switches.get("i_len_sol_outboard_power_decay", 1)  # `:1718`
             ),
             SOL_OUTBOARD_POWER_DECAY,
-            build=none_or_call,
         )
     )
     density_limit = TokamakDensityLimit(
@@ -3951,7 +3939,6 @@ def _tokamak_device(
                 "i_beta_norm_max",
                 switches.get("i_beta_norm_max", 1),  # `physics_variables.py`
                 BETA_NORM_MAX,
-                build=none_or_call,
             )
         ),
         plasma_inductance=plasma_inductance,
@@ -4112,6 +4099,14 @@ def machine_from_indat(input_file, stella_conf=None):
     ife = IFEModel(int(switches.get("ife", 0)))
     if ife is not IFEModel.MAGNETIC_CONFINEMENT:
         _refuse_unported_switch("ife", ife)
+    # `i_plant_availability` decides no slot either: the `avail` slot is filled from
+    # `ibkt_life` alone, which is the Taylor-Ward family (`i_plant_availability` 0, 1).
+    # Morris (2, PROCESS's own default) and the ST model (3) are refused here rather than
+    # silently built as Taylor-Ward. TODO: wire `Avail2` / `AvailSt` once
+    # `calculate_u_unplanned_vacuum` is trace-safe (see `UNPORTED`).
+    i_plant_availability = int(switches.get("i_plant_availability", 2))
+    if i_plant_availability in (2, 3):
+        _refuse_unported_switch("i_plant_availability", i_plant_availability)
     # `i_tf_turn_type` decides no slot either -- it selects the whole TF `Model` class
     # (`CICCSuperconductingTFCoil` vs `CROCOSuperconductingTFCoil`) at
     # `core/caller.py:298-313`, above every model, exactly as `ife` does one level up.
@@ -4198,13 +4193,13 @@ def machine_from_indat(input_file, stella_conf=None):
             # PROCESS computes a real number. `None` is absence, not refusal, by
             # `UNPORTED`'s own rule; `models/costs/namespace.py` carries the argument.
             reactor_structure_cost=(
-                ReactorStructureCost() if device is TokamakProcess else None
+                ReactorStructureCost if device is TokamakProcess else None
             ),
             # The second, landed 2026-08-30 once `Power.pfpwr` gave it its seven reads.
             # Same argument as 221.4: `stellarator.py` never calls `Power.run`, so there
             # is no PF coil power supply to condition.
             pf_coil_power_conditioning_cost=(
-                PfCoilPowerConditioningCost() if device is TokamakProcess else None
+                PfCoilPowerConditioningCost if device is TokamakProcess else None
             ),
             energy_storage_cost=_slot_occupant(
                 "i_pulsed_plant_istore",
@@ -4250,12 +4245,6 @@ def machine_from_indat(input_file, stella_conf=None):
                         pf_magnet_cost_material_arm,
                     ),
                     PF_MAGNET_COST,
-                    build=lambda cls: cls(
-                        n_cs_pf_coils=_pf_coil_topology(
-                            pf_magnet_cost_iohcl
-                        ).n_cs_pf_coils,
-                        i_pf_conductor=i_pf_conductor,
-                    ),
                 )
                 if device is TokamakProcess
                 else None
@@ -4349,13 +4338,11 @@ def machine_from_indat(input_file, stella_conf=None):
             "eta_turbine_arm",
             _eta_turbine_arm(i_thermal_electric_conversion, i_blanket_type),
             ETA_TURBINE,
-            build=lambda cls: None if cls is None else cls(),
         ),
         etath_liq=_slot_occupant(
             "secondary_cycle_liq",
             secondary_cycle_liq,
             ETATH_LIQ,
-            build=lambda cls: None if cls is None else cls(),
         ),
         temp_turbine_coolant_in=_slot_occupant(
             "temp_turbine_coolant_in_arm",
@@ -4363,31 +4350,26 @@ def machine_from_indat(input_file, stella_conf=None):
                 i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq
             ),
             TEMP_TURBINE_COOLANT_IN,
-            build=lambda cls: None if cls is None else cls(),
         ),
         p_fw_div_heat_deposited_mw=_slot_occupant(
             "p_fw_div_heat_deposited_arm",
             _p_fw_div_heat_deposited_arm(i_p_coolant_pumping),
             P_FW_DIV_HEAT_DEPOSITED,
-            build=lambda cls: None if cls is None else cls(),
         ),
         p_fw_blkt_coolant_pump_mw=_slot_occupant(
             "p_fw_blkt_coolant_pump_arm",
             _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping),
             P_FW_BLKT_COOLANT_PUMP,
-            build=lambda cls: None if cls is None else cls(),
         ),
         cryo_q_nuc=_slot_occupant(
             "inuclear_i_tf_sup",
             _cryo_q_nuc_arm(switches.get("inuclear", 0), i_tf_sup),
             CRYO_Q_NUC,
-            build=lambda cls: None if cls is None else cls(),
         ),
         cryo_q_loads=_slot_occupant(
             "cryo_q_loads_arm",
             _cryo_q_loads_arm(i_tf_sup, i_pf_conductor),
             CRYO_Q_LOADS,
-            build=lambda cls: None if cls is None else cls(),
         ),
         cryo_loads=_slot_occupant(
             "cryo_loads_arm",
@@ -4424,7 +4406,6 @@ def machine_from_indat(input_file, stella_conf=None):
             "cplife_arm",
             _cplife_arm(itart, i_tf_sup),
             CPLIFE,
-            build=lambda cls: None if cls is None else cls(),
         ),
     )
     # `physics_variables.py:875` -- both arms ported, identical reads. A slot rather
@@ -4516,12 +4497,7 @@ def machine_from_indat(input_file, stella_conf=None):
     # default only matters on arm 6 -- a preset machine reads no file, so a `helias_5b`
     # run needs no `stella_conf` companion and is not given a stellarator's one by
     # accident.
-    machine_config = StellaratorMachineConfig(
-        machine_config=machine_config_for_istell(
-            istell,
-            config_file=(REFERENCE_STELLA_CONF if stella_conf is None else stella_conf),
-        )
-    )
+    machine_config = StellaratorMachineConfig
     # The two joint dispatches, resolved into named locals before the constructor call
     # for the same reason `istell` is: so the *first* thing a refused combination
     # reports is the one the caller asked for, not whichever slot Python evaluated
@@ -4648,9 +4624,7 @@ validated against.
 """
 
 if __name__ == "__main__":
-    n_vars = sum(
-        len(node.reads) + len(node.owns) for node in GRAPH.definitions.values()
-    )
+    n_vars = sum(len(node.reads) + len(node.owns) for node in GRAPH.definitions.values())
     print(f"{len(GRAPH.definitions)} nodes, {n_vars} ports (inputs + outputs, unmerged)")
     for name, node in GRAPH.definitions.items():
         print(f"  {name.spelling}: {len(node.reads)} in, {len(node.owns)} out")
@@ -4672,7 +4646,7 @@ if __name__ == "__main__":
                     m.stellarator.fwbs.blanket_shield_power,
                 ),
                 REFERENCE_MACHINE,
-                (AFwTotalNoPowerflow(), BlanketShieldPowerExponential()),
+                (AFwTotalNoPowerflow, BlanketShieldPowerExponential()),
             ),
         ),
     ):
@@ -4700,6 +4674,17 @@ def configuration_from_indat(input_file, stella_conf=None) -> Configuration:
             f"`configurations/defaults.py`"
         )
     switches = switch_values_from_indat(imported)
+    if istell := int(switches.get("istell", 0)):
+        # What a stellarator's nodes read of its machine: a preset table, or on arm 6 the
+        # companion file. A value of the configuration, stated once.
+        values.setdefault("stellarator_config", {})["machine_config"] = (
+            machine_config_for_istell(
+                istell,
+                config_file=REFERENCE_STELLA_CONF
+                if stella_conf is None
+                else stella_conf,
+            )
+        )
     return Configuration(
         name=native.stem(imported.path),
         machine=machine_from_indat(imported, stella_conf),
@@ -4721,12 +4706,24 @@ def write_configuration(input_file, out=None, stella_conf=None) -> Path:
             / f"{native.stem(str(input_file))}.py"
         )
     source = Path(str(input_file))
-    source = str(source.relative_to(Path(__file__).resolve().parents[3])) if source.is_absolute() else str(source)
+    source = (
+        str(source.relative_to(Path(__file__).resolve().parents[3]))
+        if source.is_absolute()
+        else str(source)
+    )
     out.write_text(
         spell(
             configuration,
             source=source,
-            context={"stella_conf": str(REFERENCE_STELLA_CONF.relative_to(Path(__file__).resolve().parents[3])) if stella_conf is None else str(stella_conf)},
+            context={
+                "stella_conf": str(
+                    REFERENCE_STELLA_CONF.relative_to(
+                        Path(__file__).resolve().parents[3]
+                    )
+                )
+                if stella_conf is None
+                else str(stella_conf)
+            },
         )
     )
     return out

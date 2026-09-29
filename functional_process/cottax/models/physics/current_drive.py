@@ -1,14 +1,9 @@
 """Pure-functional port of `process/models/physics/current_drive.py`'s `CurrentDrive`."""
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import current_drive, heat_transport, physics
-from functional_process.cottax.stated import StatesValues
-from functional_process.cottax.wraps import WrapsFunction
+from functional_process.cottax.stated import states
 from functional_process.models.physics.current_drive import (
     calculate_current_drive_ecrh_primary_no_secondary,
     calculate_current_drive_freethy_ecrh_primary_no_secondary,
@@ -29,174 +24,166 @@ __all__ = [
 ]
 
 
-class HcdPrimaryEfficiency(ExplicitFunction):
-    """The family that owns `.current_drive.eta_cd_hcd_primary`: one occupant per model."""
+# The HcdPrimaryEfficiency family:
+# The family that owns `.current_drive.eta_cd_hcd_primary`: one occupant per model.
 
 
-class HcdPrimaryEfficiencyUserInputEcrh(HcdPrimaryEfficiency, WrapsFunction):
-    """`i_hcd_primary == 10` (`USER_INPUT_ELECTRON_CYCLOTRON`)."""
-
-    fn = user_input_electron_cyclotron_efficiency
-
-    eta_cd_norm_ecrh = From(current_drive)
-    nd_plasma_electrons_vol_avg = From(physics)
-    rmajor = From(physics)
-
-    eta_cd_hcd_primary = OutputInto(current_drive)
-
-
-class HcdPrimaryEfficiencyFreethyEcrhOMode(HcdPrimaryEfficiency):
-    """`i_hcd_primary == 13` (`FREETHY_ELECTRON_CYCLOTRON`), O-mode."""
-
-    eta_cd_hcd_primary = OutputInto(current_drive)
-
-    def __call__(
-        self,
-        temp_plasma_electron_vol_avg_kev=From(physics),
-        n_charge_plasma_effective_vol_avg=From(physics),
-        rmajor=From(physics),
-        nd_plasma_electrons_vol_avg=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        n_ecrh_harmonic=From(current_drive),
-        feffcd=From(current_drive),
-    ):
-        return freethy_electron_cyclotron_efficiency(
-            temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
-            n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
-            rmajor=rmajor,
-            nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
-            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-            n_ecrh_harmonic=n_ecrh_harmonic,
-            feffcd=feffcd,
-            i_ecrh_wave_mode=0,
-        )
+# `i_hcd_primary == 10` (`USER_INPUT_ELECTRON_CYCLOTRON`).
+HcdPrimaryEfficiencyUserInputEcrh = current_drive.function(
+    user_input_electron_cyclotron_efficiency,
+    "eta_cd_hcd_primary",
+    reads={
+        "nd_plasma_electrons_vol_avg": physics,
+        "rmajor": physics,
+    },
+)
 
 
-class HcdSecondaryHeating(ExplicitFunction):
-    """The family that owns what the *secondary* heating system contributes."""
+# `i_hcd_primary == 13` (`FREETHY_ELECTRON_CYCLOTRON`), O-mode.
+def _hcd_primary_efficiency_freethy_ecrh_o_mode(
+    temp_plasma_electron_vol_avg_kev,
+    n_charge_plasma_effective_vol_avg,
+    rmajor,
+    nd_plasma_electrons_vol_avg,
+    b_plasma_toroidal_on_axis,
+    n_ecrh_harmonic,
+    feffcd,
+):
+    return freethy_electron_cyclotron_efficiency(
+        temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
+        n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
+        rmajor=rmajor,
+        nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        n_ecrh_harmonic=n_ecrh_harmonic,
+        feffcd=feffcd,
+        i_ecrh_wave_mode=0,
+    )
 
 
-class HcdSecondaryHeatingNone(HcdSecondaryHeating, StatesValues):
-    """`i_hcd_secondary == 0` (`NO_CURRENT_DRIVE`): the secondary contributes zero."""
-
-    eta_cd_hcd_secondary = OutputInto(current_drive)
-    p_hcd_secondary_extra_heat_mw = OutputInto(current_drive)
-    p_hcd_secondary_electric_mw = OutputInto(heat_transport)
-
-
-class HcdSecondaryDrivenCurrent(WrapsFunction):
-    """cottax node: `hcd_secondary_driven_current`, ports declared."""
-
-    fn = hcd_secondary_driven_current
-
-    eta_cd_hcd_secondary = From(current_drive)
-    p_hcd_secondary_injected_mw = From(current_drive)
-    plasma_current = From(physics)
-
-    c_hcd_secondary_driven = OutputInto(current_drive)
-    f_c_plasma_hcd_secondary = OutputInto(current_drive)
+HcdPrimaryEfficiencyFreethyEcrhOMode = current_drive.function(
+    _hcd_primary_efficiency_freethy_ecrh_o_mode,
+    "eta_cd_hcd_primary",
+    reads={
+        "temp_plasma_electron_vol_avg_kev": physics,
+        "n_charge_plasma_effective_vol_avg": physics,
+        "rmajor": physics,
+        "nd_plasma_electrons_vol_avg": physics,
+        "b_plasma_toroidal_on_axis": physics,
+    },
+)
 
 
-class HcdPrimaryInjectedPower(WrapsFunction):
-    """cottax node: `hcd_primary_injected_power_mw`, ports declared."""
-
-    fn = hcd_primary_injected_power_mw
-
-    f_c_plasma_auxiliary = From(physics)
-    f_c_plasma_hcd_secondary = From(current_drive)
-    plasma_current = From(physics)
-    eta_cd_hcd_primary = From(current_drive)
-
-    p_hcd_primary_injected_mw = OutputInto(current_drive)
+# The HcdSecondaryHeating family:
+# The family that owns what the *secondary* heating system contributes.
 
 
-class HcdPrimaryPowers(ExplicitFunction):
-    """The family that owns the primary system's wall-plug and per-technology powers."""
+# `i_hcd_secondary == 0` (`NO_CURRENT_DRIVE`): the secondary contributes zero.
+HcdSecondaryHeatingNone = states(
+    current_drive,
+    "eta_cd_hcd_secondary",
+    "p_hcd_secondary_extra_heat_mw",
+    V.heat_transport.p_hcd_secondary_electric_mw,
+)
 
 
-class HcdPrimaryPowersElectronCyclotronNoSecondary(HcdPrimaryPowers):
-    """Primary method `ELECTRON_CYCLOTRON`.
-
-    `i_hcd_primary` 3, 7, 10, 13), secondary 0.
-    """
-
-    p_hcd_ecrh_injected_total_mw = OutputInto(current_drive)
-    p_hcd_ecrh_electric_mw = OutputInto(current_drive)
-    eta_hcd_primary_injector_wall_plug = OutputInto(current_drive)
-    p_hcd_primary_electric_mw = OutputInto(heat_transport)
-
-    def __call__(
-        self,
-        p_hcd_primary_injected_mw=From(current_drive),
-        p_hcd_primary_extra_heat_mw=From(current_drive),
-        eta_ecrh_injector_wall_plug=From(current_drive),
-    ):
-        return electron_cyclotron_primary_powers(
-            p_hcd_ecrh_injected_secondary_mw=0.0,
-            p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
-            p_hcd_primary_extra_heat_mw=p_hcd_primary_extra_heat_mw,
-            eta_ecrh_injector_wall_plug=eta_ecrh_injector_wall_plug,
-        )
+# cottax node: `hcd_secondary_driven_current`, ports declared.
+HcdSecondaryDrivenCurrent = current_drive.function(
+    hcd_secondary_driven_current,
+    "c_hcd_secondary_driven",
+    "f_c_plasma_hcd_secondary",
+    reads={
+        "plasma_current": physics,
+    },
+)
 
 
-class HcdInjectedPowerTotal(WrapsFunction):
-    """cottax node: `hcd_injected_power_total_mw`, ports declared. Switch independent."""
-
-    fn = hcd_injected_power_total_mw
-
-    p_hcd_primary_injected_mw = From(current_drive)
-    p_hcd_primary_extra_heat_mw = From(current_drive)
-    p_hcd_secondary_injected_mw = From(current_drive)
-    p_hcd_secondary_extra_heat_mw = From(current_drive)
-
-    p_hcd_injected_total_mw = OutputInto(current_drive)
+# cottax node: `hcd_primary_injected_power_mw`, ports declared.
+HcdPrimaryInjectedPower = current_drive.function(
+    hcd_primary_injected_power_mw,
+    "p_hcd_primary_injected_mw",
+    reads={
+        "f_c_plasma_auxiliary": physics,
+        "plasma_current": physics,
+    },
+)
 
 
-class HcdElectricTotal(ExplicitFunction):
-    """The family that owns `.heat_transport.p_hcd_electric_total_mw`."""
+# The HcdPrimaryPowers family:
+# The family that owns the primary system's wall-plug and per-technology powers.
 
 
-class HcdElectricTotalNonIgnited(HcdElectricTotal):
-    """`i_plasma_ignited == 0`.
-
-    `NON_IGNITED`): the sum of the two systems' wall plugs.
-    """
-
-    p_hcd_electric_total_mw = OutputInto(heat_transport)
-
-    def __call__(
-        self,
-        p_hcd_primary_electric_mw=From(heat_transport),
-        p_hcd_secondary_electric_mw=From(heat_transport),
-    ):
-        return hcd_electric_total_mw(
-            p_hcd_primary_electric_mw=p_hcd_primary_electric_mw,
-            p_hcd_secondary_electric_mw=p_hcd_secondary_electric_mw,
-            i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
-        )
+# Primary method `ELECTRON_CYCLOTRON`.
+#
+# `i_hcd_primary` 3, 7, 10, 13), secondary 0.
+def _hcd_primary_powers_electron_cyclotron_no_secondary(
+    p_hcd_primary_injected_mw, p_hcd_primary_extra_heat_mw, eta_ecrh_injector_wall_plug
+):
+    return electron_cyclotron_primary_powers(
+        p_hcd_ecrh_injected_secondary_mw=0.0,
+        p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
+        p_hcd_primary_extra_heat_mw=p_hcd_primary_extra_heat_mw,
+        eta_ecrh_injector_wall_plug=eta_ecrh_injector_wall_plug,
+    )
 
 
-class HcdElectricTotalIgnited(HcdElectricTotal):
-    """`i_plasma_ignited == 1` (`IGNITED`): zero, and two reads that are not reads."""
-
-    p_hcd_electric_total_mw = OutputInto(heat_transport)
-
-    def __call__(self):
-        return hcd_electric_total_mw(
-            p_hcd_primary_electric_mw=0.0,
-            p_hcd_secondary_electric_mw=0.0,
-            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
-        )
+HcdPrimaryPowersElectronCyclotronNoSecondary = current_drive.function(
+    _hcd_primary_powers_electron_cyclotron_no_secondary,
+    "p_hcd_ecrh_injected_total_mw",
+    "p_hcd_ecrh_electric_mw",
+    "eta_hcd_primary_injector_wall_plug",
+    V.heat_transport.p_hcd_primary_electric_mw,
+)
 
 
-class FusionGain(WrapsFunction):
-    """cottax node: `fusion_gain`, ports declared."""
+# cottax node: `hcd_injected_power_total_mw`, ports declared. Switch independent.
+HcdInjectedPowerTotal = current_drive.function(
+    hcd_injected_power_total_mw, "p_hcd_injected_total_mw"
+)
 
-    fn = fusion_gain
 
-    p_fusion_total_mw = From(physics)
-    p_hcd_injected_total_mw = From(current_drive)
-    p_beam_orbit_loss_mw = From(current_drive)
-    p_plasma_ohmic_mw = From(physics)
+# The HcdElectricTotal family:
+# The family that owns `.heat_transport.p_hcd_electric_total_mw`.
 
-    big_q_plasma = OutputInto(current_drive)
+
+# `i_plasma_ignited == 0`.
+#
+# `NON_IGNITED`): the sum of the two systems' wall plugs.
+def _hcd_electric_total_non_ignited(
+    p_hcd_primary_electric_mw, p_hcd_secondary_electric_mw
+):
+    return hcd_electric_total_mw(
+        p_hcd_primary_electric_mw=p_hcd_primary_electric_mw,
+        p_hcd_secondary_electric_mw=p_hcd_secondary_electric_mw,
+        i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
+    )
+
+
+HcdElectricTotalNonIgnited = heat_transport.function(
+    _hcd_electric_total_non_ignited, "p_hcd_electric_total_mw"
+)
+
+
+# `i_plasma_ignited == 1` (`IGNITED`): zero, and two reads that are not reads.
+def _hcd_electric_total_ignited():
+    return hcd_electric_total_mw(
+        p_hcd_primary_electric_mw=0.0,
+        p_hcd_secondary_electric_mw=0.0,
+        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+    )
+
+
+HcdElectricTotalIgnited = heat_transport.function(
+    _hcd_electric_total_ignited, "p_hcd_electric_total_mw"
+)
+
+
+# cottax node: `fusion_gain`, ports declared.
+FusionGain = current_drive.function(
+    fusion_gain,
+    "big_q_plasma",
+    reads={
+        "p_fusion_total_mw": physics,
+        "p_plasma_ohmic_mw": physics,
+    },
+)

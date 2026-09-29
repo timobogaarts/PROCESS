@@ -27,8 +27,8 @@ import optimistix as optx
 import pytest
 from cottax.execution.driver import GapDriver
 from cottax.execution.drivers.kinds import Start
-from cottax.interfaces import Assign, RunnableGraph, Schedule, is_root_find
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
+from cottax.interfaces import Assign, RunnableGraph, Schedule, is_root_find, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.pytree.path import PathMap, VarPath
 from cottax.visualization.sequencing import problem_types
 
@@ -264,7 +264,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
         ZTfInsideHalf,
     )
 
-    node = ZTfInsideHalf()
+    node = ZTfInsideHalf
     graph = to_graph(node)
     assert graph.definitions
 
@@ -311,7 +311,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     """
     from functional_process.cottax.models.stellarator.coils.calculate import LenTfCoil
 
-    node = LenTfCoil()
+    node = LenTfCoil
     graph = to_graph(node)
     assert graph.definitions
 
@@ -362,7 +362,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     """
     from functional_process.cottax.models.stellarator.coils.calculate import TfCryoArea
 
-    node = TfCryoArea()
+    node = TfCryoArea
     graph = to_graph(node)
     assert graph.definitions
 
@@ -914,7 +914,7 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
     and must now own `.tfcoil.j_tf_wp` -- the fresh value `winding_pack_post_intersect`
     computes, no longer discarded now that `WindingPackJTfWp` is gone.
     """
-    node = WindingPackTotalSizePost()
+    node = WindingPackTotalSizePost
     graph = to_graph(node)
     assert graph.definitions
     owned = {out for out in node.outputs}
@@ -930,7 +930,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     docstring).
     """
     pre = IterNb3snWindingPackIntersectInputs()
-    graph = to_graph(pre, Intersect())
+    graph = to_graph(pre, Intersect)
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.graph.is_acyclic
@@ -944,7 +944,7 @@ def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     `Intersect`'s `RootFind` problem owns -- as an ordinary `FromExactly`, alongside owning
     `.tfcoil.j_tf_wp` itself (see above). Two different edges, not a second self-loop.
     """
-    post = WindingPackTotalSizePost()
+    post = WindingPackTotalSizePost
     wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
     assert wp_width_r_min_path in post.node_definition.reads
     assert wp_width_r_min_path not in {out for out in post.outputs}
@@ -959,9 +959,9 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     the read is not declared at all and what is left is `Intersect`'s own
     `ImplicitFunction`/`RootFind` pair -- the cycle the model genuinely has.
     """
-    post = WindingPackTotalSizePost()
+    post = WindingPackTotalSizePost
 
-    graph = to_graph(Bi2212WindingPackIntersectInputs(), Intersect(), post)
+    graph = to_graph(Bi2212WindingPackIntersectInputs(), Intersect, post)
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
     assert not graph.graph.is_acyclic
     (cycle,) = graph.graph.cycles
@@ -975,7 +975,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     for material, occupant in _WINDING_PACK_OCCUPANTS.items():
         if material is SuperconductorModel.BI2212:
             continue
-        graph = to_graph(occupant(), Intersect(), post)
+        graph = to_graph(occupant(), Intersect, post)
         assert len(graph.definitions) == 4
         (cycle,) = graph.graph.cycles
         assert {n.spelling for n in cycle} == {
@@ -1079,8 +1079,8 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     }
 
     pre = _WINDING_PACK_OCCUPANTS[SuperconductorModel(int(i_tf_sc_mat))]()
-    post = WindingPackTotalSizePost()
-    graph = to_graph(pre, Intersect(), post)
+    post = WindingPackTotalSizePost
+    graph = to_graph(pre, Intersect, post)
     # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that
     # function's own `lo`/`hi` (`i_tf_sc_mat == 6` uses a different lower bound, not hit
     # here since this test uses material 1).
@@ -1089,7 +1089,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
     schedule = Schedule(
-        RunnableGraph(Assign(Intersect().problem_name, driver).apply(graph))
+        RunnableGraph(Assign(Intersect.problem_name, driver).apply(graph))
     )
     out = schedule.run(PathMap(env))
 

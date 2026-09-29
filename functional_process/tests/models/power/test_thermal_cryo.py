@@ -12,10 +12,9 @@ import inspect
 
 import jax
 import pytest
-from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.core import Function
+from cottax.interfaces import V, place, to_graph
 
-from functional_process.tests._harness import Tier1Contract, fuzz_samples
-from functional_process.tests._harness.sample_store import FROM_FILE
 from functional_process.cottax.input.indat import (
     COMPONENT_THERMAL_POWERS,
     CRYO_LOADS,
@@ -38,7 +37,6 @@ from functional_process.cottax.input.indat import (
     _temp_turbine_coolant_in_arm,
 )
 from functional_process.cottax.models.power.thermal_cryo import (
-    Cryo,
     calculate_component_thermal_powers,
     calculate_cryo,
     calculate_cryo_loads,
@@ -49,6 +47,8 @@ from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     CoilNuclearHeatingModel,
 )
+from functional_process.tests._harness import Tier1Contract, fuzz_samples
+from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.pfcoil_variables import PFConductorModel
@@ -600,12 +600,12 @@ def test_delta_eta_step_to_graph_builds(
     arm = _delta_eta_step_arm(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
-    node = DELTA_ETA_STEP[arm]()
+    node = DELTA_ETA_STEP[arm]
     graph = to_graph(node)
-    cls_name = type(node).__name__
+    cls_name = node.fn.__name__
     assert {n.spelling for n in graph.nodes} == {f"['{cls_name}']"}
     assert ".power.delta_eta" in {o.spelling for o in node.outputs}
-    reads = {i.spelling for i in node.inputs}
+    reads = {i.spelling for i in node.reads.values()}
     assert ".power.delta_eta_in" in reads
     assert ".power.delta_eta" not in reads
 
@@ -630,7 +630,7 @@ def _component_thermal_powers():
         BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
         ElectricConversionModelTypes.CCFE_HCPB_VALUE,
     )
-    return COMPONENT_THERMAL_POWERS[arm]()
+    return COMPONENT_THERMAL_POWERS[arm]
 
 
 def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
@@ -639,7 +639,7 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
     """
     node = _component_thermal_powers()
     owned = {o.spelling for o in node.outputs}
-    read = {i.spelling for i in node.inputs}
+    read = {i.spelling for i in node.reads.values()}
     for path in _SIX_SELF_LOOP_VARPATHS:
         assert path not in owned
     assert ".primary_pumping.p_fw_blkt_coolant_pump_mw" in read
@@ -660,7 +660,7 @@ def test_component_thermal_powers_to_graph_builds_cleanly():
     """
     node = _component_thermal_powers()
     graph = to_graph(node)
-    assert {n.spelling for n in graph.nodes} == {f"['{type(node).__name__}']"}
+    assert {n.spelling for n in graph.nodes} == {f"['{node.fn.__name__}']"}
 
 
 def _delta_eta_step_kwargs(**overrides):
@@ -683,7 +683,7 @@ def _delta_eta_step_kwargs(**overrides):
         "p_div_rad_total_mw": 15.0,
         "p_div_coolant_pump_mw": 6.0,
         "i_shld_primary_heat": 1.0,
-        "delta_eta_in": 0.05,
+        "delta_eta": 0.05,
     }
     kwargs.update(overrides)
     return kwargs
@@ -724,7 +724,7 @@ def _component_thermal_powers_call_kwargs(step_kwargs):
         "i_shld_primary_heat": step_kwargs["i_shld_primary_heat"],
         "eta_turbine": 0.4,
         "etath_liq": 0.4,
-        "delta_eta": step_kwargs["delta_eta_in"],
+        "delta_eta": step_kwargs["delta_eta"],
         "temp_blkt_coolant_out": 700.0,
         "outlet_temp_liq": 700.0,
         "temp_turbine_coolant_in": 600.0,
@@ -750,7 +750,7 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
     arm = _delta_eta_step_arm(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
-    node = DELTA_ETA_STEP[arm]()
+    node = DELTA_ETA_STEP[arm]
     delta_eta_from_step = node(**step_kwargs)
 
     full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
@@ -823,14 +823,14 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     arm = _delta_eta_step_arm(
         i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
     )
-    node = DELTA_ETA_STEP[arm]()
+    node = DELTA_ETA_STEP[arm]
     base_kwargs = _delta_eta_step_kwargs()
 
     def delta_eta_next(delta_eta):
-        out = node(**{**base_kwargs, "delta_eta_in": delta_eta})
+        out = node(**{**base_kwargs, "delta_eta": delta_eta})
         return out
 
-    grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta_in"])
+    grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta"])
     assert grad == 0.0
 
 
@@ -1004,8 +1004,8 @@ def test_eta_turbine_occupant_matches_calculate_component_thermal_powers(
     occupant = _occupant(
         ETA_TURBINE, _eta_turbine_arm(i_thermal_electric_conversion, i_blanket_type)
     )
-    node = occupant()
-    declared = inspect.signature(type(node).__call__).parameters
+    node = occupant
+    declared = inspect.signature(node.fn).parameters
     got = node(**{
         k: _CTP_FULL_KWARGS[k]
         for k in ("delta_eta", "temp_blkt_coolant_out")
@@ -1041,7 +1041,7 @@ def test_etath_liq_occupant_matches_calculate_component_thermal_powers():
     """`secondary_cycle_liq == 4` computes `etath_liq` from `.fwbs.outlet_temp_liq`
     alone; `== 2` is a pass-through and has no occupant.
     """
-    node = ETATH_LIQ[ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE]()
+    node = ETATH_LIQ[ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE]
     got = node(outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"])
     full = _call_full_ctp(
         i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
@@ -1085,8 +1085,8 @@ def test_temp_turbine_coolant_in_occupant_matches_calculate_component_thermal_po
     arm = _temp_turbine_coolant_in_arm(
         i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq
     )
-    node = TEMP_TURBINE_COOLANT_IN[arm]()
-    declared = inspect.signature(type(node).__call__).parameters
+    node = TEMP_TURBINE_COOLANT_IN[arm]
+    declared = inspect.signature(node.fn).parameters
     got = node(**{
         k: _CTP_FULL_KWARGS[k]
         for k in ("outlet_temp_liq", "temp_blkt_coolant_out")
@@ -1130,8 +1130,8 @@ def test_p_fw_div_heat_deposited_occupant_matches_calculate_component_thermal_po
     """Every `i_p_coolant_pumping` value except `MECHANICAL_WITH_PRESSURE_DROP`
     recomputes the field, and the occupant reproduces the composite's element.
     """
-    node = P_FW_DIV_HEAT_DEPOSITED[_p_fw_div_heat_deposited_arm(i_p_coolant_pumping)]()
-    declared = inspect.signature(type(node).__call__).parameters
+    node = P_FW_DIV_HEAT_DEPOSITED[_p_fw_div_heat_deposited_arm(i_p_coolant_pumping)]
+    declared = inspect.signature(node.fn).parameters
     got = node(**{k: v for k, v in _CTP_FULL_KWARGS.items() if k in declared})
     full = _call_full_ctp(
         i_p_coolant_pumping=i_p_coolant_pumping,
@@ -1169,8 +1169,8 @@ def test_p_fw_blkt_coolant_pump_occupant_matches_calculate_component_thermal_pow
     `.primary_pumping.p_fw_blkt_coolant_pump_mw`, the occupant is the plain sum the
     composite computes -- and reads neither the field it owns nor the switch.
     """
-    node = P_FW_BLKT_COOLANT_PUMP[_p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping)]()
-    declared = inspect.signature(type(node).__call__).parameters
+    node = P_FW_BLKT_COOLANT_PUMP[_p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping)]
+    declared = inspect.signature(node.fn).parameters
     got = node(**{k: v for k, v in _CTP_FULL_KWARGS.items() if k in declared})
     full = _call_full_ctp(
         i_p_coolant_pumping=i_p_coolant_pumping,
@@ -1228,15 +1228,14 @@ _CRYO_SWITCH_COMBOS = [
 
 
 def test_cryo_cannot_be_a_plain_node():
-    """`Cryo` stays unregistered because `cottax` will not build any of its arms --
-    the same position `PlantThermalEfficiency` is in, and the reason the split below
-    exists. `i_tf_sup`/`inuclear` used to be static kwargs on this node; de-staticizing
-    them into arms does not remove the self-loop and does not try to (`Cryo`'s own
-    docstring) -- every arm still both reads and owns `.fwbs.qnuc`, so the bodiless
-    base itself already demonstrates the refusal with no arm needed.
+    """`calculate_cryo` is not declared as a node because a node doing what it does
+    would both read and own `.fwbs.qnuc` -- the reason the split below exists. The
+    refusal is cottax core's own rule, so it is shown on a hand-built `Function` with
+    exactly that interface.
     """
+    qnuc = place(V.fwbs.qnuc)
     with pytest.raises(ValueError, match="which it also owns"):
-        to_graph(Cryo())
+        Function((qnuc,), (qnuc,))
 
 
 @pytest.mark.parametrize(("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS)
@@ -1252,22 +1251,20 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
     """
     qnuc_occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
     if qnuc_occupant is not None:
-        qnuc_node = qnuc_occupant()
+        qnuc_node = qnuc_occupant
         assert {n.spelling for n in to_graph(qnuc_node).nodes} == {
-            f"['{type(qnuc_node).__name__}']"
+            f"['{qnuc_node.fn.__name__}']"
         }
 
     q_occupant = CRYO_Q_LOADS[_cryo_q_loads_arm(i_tf_sup, int(i_pf_conductor))]
     if q_occupant is not None:
-        q_node = q_occupant()
+        q_node = q_occupant
         assert {n.spelling for n in to_graph(q_node).nodes} == {
-            f"['{type(q_node).__name__}']"
+            f"['{q_node.fn.__name__}']"
         }
 
-    loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]()
-    assert {n.spelling for n in to_graph(loads).nodes} == {
-        f"['{type(loads).__name__}']"
-    }
+    loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]
+    assert {n.spelling for n in to_graph(loads).nodes} == {f"['{loads.fn.__name__}']"}
 
 
 def test_cryo_split_ownership_is_a_partition():
@@ -1278,17 +1275,17 @@ def test_cryo_split_ownership_is_a_partition():
         _cryo_q_nuc_arm(
             CoilNuclearHeatingModel.FRANCES_FOX, TFConductorModel.SUPERCONDUCTING
         )
-    ]()
+    ]
     q_node = CRYO_Q_LOADS[
         _cryo_q_loads_arm(
             TFConductorModel.SUPERCONDUCTING, PFConductorModel.SUPERCONDUCTING
         )
-    ]()
+    ]
     loads = CRYO_LOADS[
         _cryo_loads_arm(
             TFConductorModel.SUPERCONDUCTING, PFConductorModel.SUPERCONDUCTING
         )
-    ]()
+    ]
 
     owned = [{o.spelling for o in n.outputs} for n in (qnuc_node, q_node, loads)]
     assert owned[0] == {".fwbs.qnuc"}
@@ -1303,7 +1300,7 @@ def test_cryo_split_ownership_is_a_partition():
     assert (owned[0] | owned[1]) & owned[2] == set()
 
     # `CryoLoads` must still *read* every `q*` -- it builds `helpow` from them.
-    read = {i.spelling for i in loads.inputs}
+    read = {i.spelling for i in loads.reads.values()}
     assert owned[0] | owned[1] <= read
 
 
@@ -1321,7 +1318,7 @@ def test_cryo_split_reproduces_calculate_cryo_loads(i_tf_sup, i_pf_conductor, in
     if qnuc_occupant is None:
         qnuc = _CRYO_KWARGS["qnuc"]
     else:
-        qnuc = qnuc_occupant()(p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"])
+        qnuc = qnuc_occupant(p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"])
     if i_tf_sup == 2:
         pytest.skip(
             "aluminium TF has no occupant -- `('i_tf_sup', 2)` is UNPORTED at the "
@@ -1338,15 +1335,15 @@ def test_cryo_split_reproduces_calculate_cryo_loads(i_tf_sup, i_pf_conductor, in
             _CRYO_KWARGS["qmisc"],
         )
     else:
-        q_node = q_occupant()
-        declared = inspect.signature(type(q_node).__call__).parameters
+        q_node = q_occupant
+        declared = inspect.signature(q_node.fn).parameters
         qss, qac, qcl, qmisc = q_node(**{
             k: (qnuc if k == "qnuc" else _CRYO_KWARGS[k])
             for k in declared
             if k != "self"
         })
-    loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]()
-    declared = inspect.signature(type(loads).__call__).parameters
+    loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]
+    declared = inspect.signature(loads.fn).parameters
     supplied = {
         **_CRYO_KWARGS,
         "qss": qss,
@@ -1424,18 +1421,18 @@ def test_cryo_q_nuc_has_no_self_read_on_the_computing_arm(
     if not has_occupant:
         assert occupant is None
         return
-    node = occupant()
+    node = occupant
     assert {o.spelling for o in node.outputs} == {".fwbs.qnuc"}
-    assert ".fwbs.qnuc" not in {i.spelling for i in node.inputs}
+    assert ".fwbs.qnuc" not in {i.spelling for i in node.reads.values()}
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
     """**The replacement for `test_cryo_q_loads_step_gradient`.**"""
     owned = {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     for arm in (0, 1):
-        node = CRYO_Q_LOADS[arm]()
+        node = CRYO_Q_LOADS[arm]
         assert {o.spelling for o in node.outputs} == owned
-        assert owned & {i.spelling for i in node.inputs} == set()
+        assert owned & {i.spelling for i in node.reads.values()} == set()
     assert (
         CRYO_Q_LOADS[
             _cryo_q_loads_arm(

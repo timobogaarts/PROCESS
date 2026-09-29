@@ -2,12 +2,7 @@
 
 import json  # noqa: F401
 
-import equinox as eqx
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    OutputInto,
-)
 
 from functional_process.cottax.paths import (
     stellarator_config,
@@ -30,45 +25,47 @@ from functional_process.vocabulary import (
 )
 
 
-class StellaratorMachineConfig(ExplicitFunction):
-    """cottax node: the selected machine config's 34 scalars, owned by the graph."""
+def _machine_config_scalars(machine_config):
+    return select_stellarator_config_scalars(dict(machine_config))
 
-    machine_config: tuple = eqx.field(static=True)
 
-    stella_config_symmetry = OutputInto(stellarator_config)
-    stella_config_coilspermodule = OutputInto(stellarator_config)
-    stella_config_rmajor_ref = OutputInto(stellarator_config)
-    stella_config_rminor_ref = OutputInto(stellarator_config)
-    stella_config_coil_rmajor = OutputInto(stellarator_config)
-    stella_config_coil_rminor = OutputInto(stellarator_config)
-    stella_config_aspect_ref = OutputInto(stellarator_config)
-    stella_config_bt_ref = OutputInto(stellarator_config)
-    stella_config_wp_area = OutputInto(stellarator_config)
-    stella_config_wp_bmax = OutputInto(stellarator_config)
-    stella_config_i0 = OutputInto(stellarator_config)
-    stella_config_a1 = OutputInto(stellarator_config)
-    stella_config_a2 = OutputInto(stellarator_config)
-    stella_config_dmin = OutputInto(stellarator_config)
-    stella_config_inductance = OutputInto(stellarator_config)
-    stella_config_coilsurface = OutputInto(stellarator_config)
-    stella_config_coillength = OutputInto(stellarator_config)
-    stella_config_max_portsize_width = OutputInto(stellarator_config)
-    stella_config_maximal_coil_height = OutputInto(stellarator_config)
-    stella_config_min_plasma_coil_distance = OutputInto(stellarator_config)
-    stella_config_derivative_min_lcfs_coils_dist = OutputInto(stellarator_config)
-    stella_config_vol_plasma = OutputInto(stellarator_config)
-    stella_config_plasma_surface = OutputInto(stellarator_config)
-    stella_config_wp_ratio = OutputInto(stellarator_config)
-    stella_config_max_force_density = OutputInto(stellarator_config)
-    stella_config_max_force_density_mnm = OutputInto(stellarator_config)
-    stella_config_min_bend_radius = OutputInto(stellarator_config)
-    stella_config_epseff = OutputInto(stellarator_config)
-    stella_config_max_lateral_force_density = OutputInto(stellarator_config)
-    stella_config_max_radial_force_density = OutputInto(stellarator_config)
-    stella_config_centering_force_max_mn = OutputInto(stellarator_config)
-    stella_config_centering_force_min_mn = OutputInto(stellarator_config)
-    stella_config_centering_force_avg_mn = OutputInto(stellarator_config)
-    stella_config_neutron_peakfactor = OutputInto(stellarator_config)
-
-    def __call__(self):
-        return select_stellarator_config_scalars(dict(self.machine_config))
+# cottax node: the selected machine config's 34 scalars, owned by the graph.
+# `.stellarator_config.machine_config` is the selected machine's `(key, value)` pairs
+# (`machine_config_for_istell`), read as a setting.
+StellaratorMachineConfig = stellarator_config.function(
+    _machine_config_scalars,
+    "stella_config_symmetry",
+    "stella_config_coilspermodule",
+    "stella_config_rmajor_ref",
+    "stella_config_rminor_ref",
+    "stella_config_coil_rmajor",
+    "stella_config_coil_rminor",
+    "stella_config_aspect_ref",
+    "stella_config_bt_ref",
+    "stella_config_wp_area",
+    "stella_config_wp_bmax",
+    "stella_config_i0",
+    "stella_config_a1",
+    "stella_config_a2",
+    "stella_config_dmin",
+    "stella_config_inductance",
+    "stella_config_coilsurface",
+    "stella_config_coillength",
+    "stella_config_max_portsize_width",
+    "stella_config_maximal_coil_height",
+    "stella_config_min_plasma_coil_distance",
+    "stella_config_derivative_min_lcfs_coils_dist",
+    "stella_config_vol_plasma",
+    "stella_config_plasma_surface",
+    "stella_config_wp_ratio",
+    "stella_config_max_force_density",
+    "stella_config_max_force_density_mnm",
+    "stella_config_min_bend_radius",
+    "stella_config_epseff",
+    "stella_config_max_lateral_force_density",
+    "stella_config_max_radial_force_density",
+    "stella_config_centering_force_max_mn",
+    "stella_config_centering_force_min_mn",
+    "stella_config_centering_force_avg_mn",
+    "stella_config_neutron_peakfactor",
+)

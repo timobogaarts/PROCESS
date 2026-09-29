@@ -2,14 +2,8 @@
 
 import math  # noqa: F401
 
-import equinox as eqx
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FixedPointFunction,
-    From,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     constraints,
@@ -19,8 +13,8 @@ from functional_process.cottax.paths import (
     physics,
     tfcoil,
     times,
+    vacuum,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.availability.availability import (
     DAY_SECONDS,  # noqa: F401
     DAYS_IN_YEAR,  # noqa: F401
@@ -110,581 +104,1316 @@ from functional_process.vocabulary import TFConductorModel
 # ---------------------------------------------------------------------------
 
 
-class CpLifetimeSuperconducting(WrapsFunction):
-    """cottax node: `calculate_cp_lifetime_superconducting`, unchanged, ports declared."""
-
-    fn = calculate_cp_lifetime_superconducting
-
-    neut_flux_cp = From(fwbs)
-    flu_tf_neutron_fast_max = From(constraints)
-    life_plant = From(costs)
-
-    cplife = OutputInto(costs)
-
-
-class CpLifetimeResistive(WrapsFunction):
-    """cottax node: `calculate_cp_lifetime_resistive`, unchanged, ports declared."""
-
-    fn = calculate_cp_lifetime_resistive
-
-    cpstflnc = From(costs)
-    pflux_fw_neutron_mw = From(physics)
-    life_plant = From(costs)
-
-    cplife = OutputInto(costs)
-
-
-class WardTaylorAvailability(WrapsFunction):
-    """cottax node: `calculate_ward_taylor_availability`, unchanged, ports declared."""
-
-    fn = calculate_ward_taylor_availability
-
-    life_div_fpy = From(costs)
-    life_blkt_fpy = From(fwbs)
-    t_div_replace_yrs = From(costs)
-    t_blkt_replace_yrs = From(costs)
-    tcomrepl = From(costs)
-    uubop = From(costs)
-    uucd = From(costs)
-    uudiv = From(costs)
-    uufuel = From(costs)
-    uufw = From(costs)
-    uumag = From(costs)
-    uuves = From(costs)
-
-    f_t_plant_available = OutputInto(costs)
-
-
-class CplifeAvail(ExplicitFunction):
-    """The `.costs.cplife` family for `Avail`/`Avail2` -- one occupant per arm of
-    `.physics.itart` x `.tfcoil.i_tf_sup`.
-    """
-
-    cplife = OutputInto(costs)
-
-
-class CplifeAvailSuperconducting(CplifeAvail, WrapsFunction):
-    """`itart == 1` with `i_tf_sup == SUPERCONDUCTING` (1): the centrepost lasts until
-    its fast-neutron fluence limit, then adjusted for plant availability.
-    """
-
-    fn = calculate_cplife_superconducting
-
-    neut_flux_cp = From(fwbs)
-    flu_tf_neutron_fast_max = From(constraints)
-    life_plant = From(costs)
-    f_t_plant_available = From(costs)
-
-
-class CplifeAvailResistive(CplifeAvail, WrapsFunction):
-    """`itart == 1` with `i_tf_sup != SUPERCONDUCTING`: the centrepost lasts until its
-    allowable stress fluence is spent, then adjusted for plant availability.
-    """
-
-    fn = calculate_cplife_resistive
-
-    cpstflnc = From(costs)
-    pflux_fw_neutron_mw = From(physics)
-    life_plant = From(costs)
-    f_t_plant_available = From(costs)
-
-
-class CplifeAvailSt(FixedPointFunction):
-    """cottax node: `.costs.cplife`'s Shape B self-reference in `AvailSt`
-    (`next_steps.md` §5) -- bodiless family base. Four occupants,
-    `.tfcoil.i_tf_sup` x `.physics.itart`: which formula computes the fresh centrepost
-    lifetime, and whether the `itart == SPHERICAL_TOKAMAK` lifetime-adjustment step is
-    then applied.
-
-    Kept a `FixedPointFunction` for every occupant even though none of the four reads a
-    previous `.costs.cplife` value at all -- `avail_st()` recomputes `cplife` from
-    scratch every call (see `calculate_cplife_avail_st_next`'s docstring, unchanged by
-    this split); this was already true of the single pre-split node, whose own docstring
-    called it "a degenerate but structurally honest use of the same primitive", and that
-    reasoning now applies uniformly across all four occupants rather than to one
-    switch-selected body.
-
-    Each occupant reuses an already-existing, already-tested function rather than
-    calling `calculate_cplife_avail_st_next` with baked switch values: the
-    `itart == SPHERICAL_TOKAMAK` pair is formula-identical to `CplifeAvail`'s own arms
-    (`CplifeAvailSuperconducting`/`CplifeAvailResistive`), and the
-    `itart != SPHERICAL_TOKAMAK` pair to `CpLifetimeSuperconducting`/
-    `CpLifetimeResistive` -- a `TFConductorModel`/`SphericalTokamakModel` case analysis
-    of `calculate_cplife_avail_st_next`'s own body confirms this (see each occupant's
-    docstring). Reusing them, rather than reintroducing `calculate_cplife_avail_st_next`
-    per occupant, also drops the dead `cpstflnc`/`pflux_fw_neutron_mw` (superconducting
-    arms) or `neut_flux_cp`/`flu_tf_neutron_fast_max` (resistive arms) reads that keeping
-    it would otherwise force.
-    """
-
-    cplife = OutputInto(costs)
-
-
-class CplifeAvailStSuperconductingAdjusted(CplifeAvailSt):
-    """`i_tf_sup == SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh
-    superconducting centrepost lifetime, availability-adjusted -- the same formula as
-    `CplifeAvailSuperconducting` (`.costs.cplife`'s `avail()`/`avail_2()` producer),
-    same `fn`, different node shape (`FixedPointFunction`, not `ExplicitFunction`).
-    """
-
-    def step(
-        self,
-        neut_flux_cp=From(fwbs),
-        flu_tf_neutron_fast_max=From(constraints),
-        life_plant=From(costs),
-        f_t_plant_available=From(costs),
-    ):
-        """`calculate_cplife_superconducting`, ports declared above."""
-        return calculate_cplife_superconducting(
-            neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
-        )
-
-
-class CplifeAvailStSuperconductingUnadjusted(CplifeAvailSt):
-    """`i_tf_sup == SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh
-    superconducting centrepost lifetime, unadjusted -- the same formula as
-    `CpLifetimeSuperconducting`.
-    """
-
-    def step(
-        self,
-        neut_flux_cp=From(fwbs),
-        flu_tf_neutron_fast_max=From(constraints),
-        life_plant=From(costs),
-    ):
-        """`calculate_cp_lifetime_superconducting`, ports declared above."""
-        return calculate_cp_lifetime_superconducting(
-            neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-        )
-
-
-class CplifeAvailStResistiveAdjusted(CplifeAvailSt):
-    """`i_tf_sup != SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh resistive
-    centrepost lifetime, availability-adjusted -- the same formula as
-    `CplifeAvailResistive`.
-    """
-
-    def step(
-        self,
-        cpstflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_plant=From(costs),
-        f_t_plant_available=From(costs),
-    ):
-        """`calculate_cplife_resistive`, ports declared above."""
-        return calculate_cplife_resistive(
-            cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
-        )
-
-
-class CplifeAvailStResistiveUnadjusted(CplifeAvailSt):
-    """`i_tf_sup != SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh resistive
-    centrepost lifetime, unadjusted -- the same formula as `CpLifetimeResistive`.
-    """
-
-    def step(
-        self,
-        cpstflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_plant=From(costs),
-    ):
-        """`calculate_cp_lifetime_resistive`, ports declared above."""
-        return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
-
-
-class Avail(ExplicitFunction):
-    """The `calculate_avail` family -- `calculate_avail`'s outputs *other* than
-    `.costs.cplife`, one occupant per `.costs.ibkt_life` value.
-    """
-
-    life_blkt_fpy = OutputInto(fwbs)
-    life_div_fpy = OutputInto(costs)
-    bktcycles = OutputInto(costs)
-    cpfact = OutputInto(costs)
-    life_hcd_fpy = OutputInto(costs)
-
-
-class AvailNeutronFluence(Avail, WrapsFunction):
-    """`ibkt_life == NEUTRON_FLUENCE` (0) -- PROCESS's own default
-    (`cost_variables.py:416`) and the reference run's.
-    """
-
-    fn = calculate_avail_neutron_fluence
-
-    life_fw_fpy = From(fwbs)
-    abktflnc = From(costs)
-    pflux_fw_neutron_mw = From(physics)
-    life_plant = From(costs)
-    pflux_div_heat_load_mw = From(divertor)
-    adivflnc = From(costs)
-    t_plant_pulse_total = From(times)
-    t_plant_pulse_burn = From(times)
-    f_t_plant_available = From(costs)
-
-
-class AvailDisplacementsPerAtom(Avail, WrapsFunction):
-    """`ibkt_life == FUSION_POWER` (1) -- the blanket lifetime set by displacement
-    damage per full-power year.
-    """
-
-    fn = calculate_avail_displacements_per_atom
-
-    life_fw_fpy = From(fwbs)
-    p_fusion_total_mw = From(physics)
-    life_dpa = From(costs)
-    life_plant = From(costs)
-    pflux_div_heat_load_mw = From(divertor)
-    adivflnc = From(costs)
-    t_plant_pulse_total = From(times)
-    t_plant_pulse_burn = From(times)
-    f_t_plant_available = From(costs)
-
-
-class Avail2(ExplicitFunction):
-    """cottax node: `calculate_avail_2`'s outputs *other* than `.costs.cplife`, ports
-    declared, `u_planned`/`u_unplanned` dropped (no `VarPath` -- see the module-level
-    note above) -- bodiless family base. Four occupants, `.costs.ibkt_life` x
-    `.physics.itart`.
-
-    `n_vac_pumps_high`/`redun_vac` stay `eqx.field(static=True)`: genuine IN.DAT input
-    values (`.vacuum.n_vac_pumps_high`, a `calculate_redun_vac`-derived
-    `.costs.redun_vac`), not a model choice, so they are read via `self` in every
-    occupant rather than baked -- unlike `ibkt_life`/`itart`, which each occupant bakes
-    to a literal and never holds as a field at all.
-    """
-
-    n_vac_pumps_high: int = eqx.field(static=True)
-    redun_vac: int = eqx.field(static=True)
-
-    life_blkt_fpy = OutputInto(fwbs)
-    life_div_fpy = OutputInto(costs)
-    life_hcd_fpy = OutputInto(costs)
-    t_plant_operational_total_yrs = OutputInto(costs)
-    f_t_plant_available = OutputInto(costs)
-    cpfact = OutputInto(costs)
-
-    def __call__(
-        self,
-        p_fusion_total_mw=From(physics),
-        abktflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_dpa=From(costs),
-        adivflnc=From(costs),
-        pflux_div_heat_load_mw=From(divertor),
-        life_plant=From(costs),
-        num_rh_systems=From(costs),
-        temp_tf_superconductor_margin_min=From(tfcoil),
-        temp_cs_superconductor_margin_min=From(tfcoil),
-        conf_mag=From(costs),
-        temp_margin=From(tfcoil),
-        div_prob_fail=From(costs),
-        div_umain_time=From(costs),
-        div_nu=From(costs),
-        div_nref=From(costs),
-        fwbs_prob_fail=From(costs),
-        fwbs_umain_time=From(costs),
-        fwbs_nu=From(costs),
-        fwbs_nref=From(costs),
-        t_plant_pulse_burn=From(times),
-        t_plant_pulse_total=From(times),
-        cplife=From(costs),
-    ):
-        return self._compute(
-            p_fusion_total_mw,
-            abktflnc,
-            pflux_fw_neutron_mw,
-            life_dpa,
-            adivflnc,
-            pflux_div_heat_load_mw,
-            life_plant,
-            num_rh_systems,
-            temp_tf_superconductor_margin_min,
-            temp_cs_superconductor_margin_min,
-            conf_mag,
-            temp_margin,
-            div_prob_fail,
-            div_umain_time,
-            div_nu,
-            div_nref,
-            fwbs_prob_fail,
-            fwbs_umain_time,
-            fwbs_nu,
-            fwbs_nref,
-            t_plant_pulse_burn,
-            t_plant_pulse_total,
-            cplife,
-        )
-
-
-class Avail2NeutronFluenceConventional(Avail2):
-    """`.costs.ibkt_life == NEUTRON_FLUENCE`, `.physics.itart ==
-    CONVENTIONAL_ASPECT_RATIO`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_2_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-        )
-
-
-class Avail2NeutronFluenceSphericalTokamak(Avail2):
-    """`.costs.ibkt_life == NEUTRON_FLUENCE`, `.physics.itart ==
-    SPHERICAL_TOKAMAK`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_2_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-        )
-
-
-class Avail2FusionPowerConventional(Avail2):
-    """`.costs.ibkt_life == FUSION_POWER`, `.physics.itart ==
-    CONVENTIONAL_ASPECT_RATIO`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_2_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-        )
-
-
-class Avail2FusionPowerSphericalTokamak(Avail2):
-    """`.costs.ibkt_life == FUSION_POWER`, `.physics.itart == SPHERICAL_TOKAMAK`."""
-
-    def _compute(self, *args):
-        return calculate_avail_2_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-        )
-
-
-class AvailSt(ExplicitFunction):
-    """cottax node: `calculate_avail_st`'s outputs *other* than `.costs.cplife`, ports
-    declared, `maint_cycle`/`n_cycles_main`/`n_centre_cols`/`u_planned`/`u_unplanned`
-    dropped (no `VarPath`) -- bodiless family base. Eight occupants,
-    `.costs.ibkt_life` x `.physics.itart` x `.tfcoil.i_tf_sup`: the third axis used to
-    be a Python `if` inside this class's own `__call__` (selecting the fresh centrepost
-    lifetime formula) -- the only control flow anywhere in this file's node bodies --
-    and splitting the switch dissolves it into which occupant is built, exactly like
-    `ibkt_life`/`itart` below. `calculate_avail_st_dropping_extras` (in
-    `functional_process/models/`) still carries an `if i_tf_sup == 1` internally, per
-    the pushdown convention (`ede83e67`): each occupant calls it with `i_tf_sup` already
-    a literal, never from `self`, so the branch is inert once an occupant is chosen.
-
-    `n_vac_pumps_high`/`redun_vac` stay static -- see `Avail2`'s docstring, same
-    reasoning.
-    """
-
-    n_vac_pumps_high: int = eqx.field(static=True)
-    redun_vac: int = eqx.field(static=True)
-
-    life_blkt_fpy = OutputInto(fwbs)
-    life_div_fpy = OutputInto(costs)
-    life_hcd_fpy = OutputInto(costs)
-    t_plant_operational_total_yrs = OutputInto(costs)
-    f_t_plant_available = OutputInto(costs)
-    cpfact = OutputInto(costs)
-
-    def __call__(
-        self,
-        abktflnc=From(costs),
-        pflux_fw_neutron_mw=From(physics),
-        life_dpa=From(costs),
-        p_fusion_total_mw=From(physics),
-        adivflnc=From(costs),
-        pflux_div_heat_load_mw=From(divertor),
-        life_plant=From(costs),
-        neut_flux_cp=From(fwbs),
-        flu_tf_neutron_fast_max=From(constraints),
-        cpstflnc=From(costs),
-        tmain=From(costs),
-        temp_tf_superconductor_margin_min=From(tfcoil),
-        temp_cs_superconductor_margin_min=From(tfcoil),
-        conf_mag=From(costs),
-        temp_margin=From(tfcoil),
-        div_prob_fail=From(costs),
-        div_umain_time=From(costs),
-        div_nu=From(costs),
-        div_nref=From(costs),
-        fwbs_prob_fail=From(costs),
-        fwbs_umain_time=From(costs),
-        fwbs_nu=From(costs),
-        fwbs_nref=From(costs),
-        num_rh_systems=From(costs),
-        u_unplanned_cp=From(costs),
-        t_plant_pulse_burn=From(times),
-        t_plant_pulse_total=From(times),
-    ):
-        return self._compute(
-            abktflnc,
-            pflux_fw_neutron_mw,
-            life_dpa,
-            p_fusion_total_mw,
-            adivflnc,
-            pflux_div_heat_load_mw,
-            life_plant,
-            neut_flux_cp,
-            flu_tf_neutron_fast_max,
-            cpstflnc,
-            tmain,
-            temp_tf_superconductor_margin_min,
-            temp_cs_superconductor_margin_min,
-            conf_mag,
-            temp_margin,
-            div_prob_fail,
-            div_umain_time,
-            div_nu,
-            div_nref,
-            fwbs_prob_fail,
-            fwbs_umain_time,
-            fwbs_nu,
-            fwbs_nref,
-            num_rh_systems,
-            u_unplanned_cp,
-            t_plant_pulse_burn,
-            t_plant_pulse_total,
-        )
-
-
-class AvailStNeutronFluenceConventionalSuperconducting(AvailSt):
-    """`ibkt_life == NEUTRON_FLUENCE`, `itart == CONVENTIONAL_ASPECT_RATIO`,
-    `i_tf_sup == SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        )
-
-
-class AvailStNeutronFluenceConventionalResistive(AvailSt):
-    """`ibkt_life == NEUTRON_FLUENCE`, `itart == CONVENTIONAL_ASPECT_RATIO`,
-    `i_tf_sup != SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
-        )
-
-
-class AvailStNeutronFluenceSphericalTokamakSuperconducting(AvailSt):
-    """`ibkt_life == NEUTRON_FLUENCE`, `itart == SPHERICAL_TOKAMAK`,
-    `i_tf_sup == SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        )
-
-
-class AvailStNeutronFluenceSphericalTokamakResistive(AvailSt):
-    """`ibkt_life == NEUTRON_FLUENCE`, `itart == SPHERICAL_TOKAMAK`,
-    `i_tf_sup != SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-            i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
-        )
-
-
-class AvailStFusionPowerConventionalSuperconducting(AvailSt):
-    """`ibkt_life == FUSION_POWER`, `itart == CONVENTIONAL_ASPECT_RATIO`,
-    `i_tf_sup == SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        )
-
-
-class AvailStFusionPowerConventionalResistive(AvailSt):
-    """`ibkt_life == FUSION_POWER`, `itart == CONVENTIONAL_ASPECT_RATIO`,
-    `i_tf_sup != SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
-        )
-
-
-class AvailStFusionPowerSphericalTokamakSuperconducting(AvailSt):
-    """`ibkt_life == FUSION_POWER`, `itart == SPHERICAL_TOKAMAK`,
-    `i_tf_sup == SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        )
-
-
-class AvailStFusionPowerSphericalTokamakResistive(AvailSt):
-    """`ibkt_life == FUSION_POWER`, `itart == SPHERICAL_TOKAMAK`,
-    `i_tf_sup != SUPERCONDUCTING`.
-    """
-
-    def _compute(self, *args):
-        return calculate_avail_st_dropping_extras(
-            *args,
-            self.n_vac_pumps_high,
-            self.redun_vac,
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-            i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
-        )
+# cottax node: `calculate_cp_lifetime_superconducting`, unchanged, ports declared.
+CpLifetimeSuperconducting = costs.function(
+    calculate_cp_lifetime_superconducting,
+    "cplife",
+    reads={
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+    },
+)
+
+
+# cottax node: `calculate_cp_lifetime_resistive`, unchanged, ports declared.
+CpLifetimeResistive = costs.function(
+    calculate_cp_lifetime_resistive,
+    "cplife",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+    },
+)
+
+
+# cottax node: `calculate_ward_taylor_availability`, unchanged, ports declared.
+WardTaylorAvailability = costs.function(
+    calculate_ward_taylor_availability,
+    "f_t_plant_available",
+    reads={
+        "life_blkt_fpy": fwbs,
+    },
+)
+
+
+# The CplifeAvail family:
+# The `.costs.cplife` family for `Avail`/`Avail2` -- one occupant per arm of
+# `.physics.itart` x `.tfcoil.i_tf_sup`.
+
+
+# `itart == 1` with `i_tf_sup == SUPERCONDUCTING` (1): the centrepost lasts until
+# its fast-neutron fluence limit, then adjusted for plant availability.
+CplifeAvailSuperconducting = costs.function(
+    calculate_cplife_superconducting,
+    "cplife",
+    reads={
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+    },
+)
+
+
+# `itart == 1` with `i_tf_sup != SUPERCONDUCTING`: the centrepost lasts until its
+# allowable stress fluence is spent, then adjusted for plant availability.
+CplifeAvailResistive = costs.function(
+    calculate_cplife_resistive,
+    "cplife",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+    },
+)
+
+
+# The CplifeAvailSt family:
+# cottax node: `.costs.cplife`'s Shape B self-reference in `AvailSt`
+# (`next_steps.md` §5) -- bodiless family base. Four occupants,
+# `.tfcoil.i_tf_sup` x `.physics.itart`: which formula computes the fresh centrepost
+# lifetime, and whether the `itart == SPHERICAL_TOKAMAK` lifetime-adjustment step is
+# then applied.
+#
+# Kept a `FixedPointFunction` for every occupant even though none of the four reads a
+# previous `.costs.cplife` value at all -- `avail_st()` recomputes `cplife` from
+# scratch every call (see `calculate_cplife_avail_st_next`'s docstring, unchanged by
+# this split); this was already true of the single pre-split node, whose own docstring
+# called it "a degenerate but structurally honest use of the same primitive", and that
+# reasoning now applies uniformly across all four occupants rather than to one
+# switch-selected body.
+#
+# Each occupant reuses an already-existing, already-tested function rather than
+# calling `calculate_cplife_avail_st_next` with baked switch values: the
+# `itart == SPHERICAL_TOKAMAK` pair is formula-identical to `CplifeAvail`'s own arms
+# (`CplifeAvailSuperconducting`/`CplifeAvailResistive`), and the
+# `itart != SPHERICAL_TOKAMAK` pair to `CpLifetimeSuperconducting`/
+# `CpLifetimeResistive` -- a `TFConductorModel`/`SphericalTokamakModel` case analysis
+# of `calculate_cplife_avail_st_next`'s own body confirms this (see each occupant's
+# docstring). Reusing them, rather than reintroducing `calculate_cplife_avail_st_next`
+# per occupant, also drops the dead `cpstflnc`/`pflux_fw_neutron_mw` (superconducting
+# arms) or `neut_flux_cp`/`flu_tf_neutron_fast_max` (resistive arms) reads that keeping
+# it would otherwise force.
+
+
+# `i_tf_sup == SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh
+# superconducting centrepost lifetime, availability-adjusted -- the same formula as
+# `CplifeAvailSuperconducting` (`.costs.cplife`'s `avail()`/`avail_2()` producer),
+# same `fn`, different node shape (`FixedPointFunction`, not `ExplicitFunction`).
+def _cplife_avail_st_superconducting_adjusted(
+    neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
+):
+    """`calculate_cplife_superconducting`, ports declared above."""
+    return calculate_cplife_superconducting(
+        neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
+    )
+
+
+CplifeAvailStSuperconductingAdjusted = costs.iteration(
+    _cplife_avail_st_superconducting_adjusted,
+    "cplife",
+    reads={
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+    },
+)
+
+
+# `i_tf_sup == SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh
+# superconducting centrepost lifetime, unadjusted -- the same formula as
+# `CpLifetimeSuperconducting`.
+def _cplife_avail_st_superconducting_unadjusted(
+    neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+):
+    """`calculate_cp_lifetime_superconducting`, ports declared above."""
+    return calculate_cp_lifetime_superconducting(
+        neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+    )
+
+
+CplifeAvailStSuperconductingUnadjusted = costs.iteration(
+    _cplife_avail_st_superconducting_unadjusted,
+    "cplife",
+    reads={
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+    },
+)
+
+
+# `i_tf_sup != SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh resistive
+# centrepost lifetime, availability-adjusted -- the same formula as
+# `CplifeAvailResistive`.
+def _cplife_avail_st_resistive_adjusted(
+    cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
+):
+    """`calculate_cplife_resistive`, ports declared above."""
+    return calculate_cplife_resistive(
+        cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
+    )
+
+
+CplifeAvailStResistiveAdjusted = costs.iteration(
+    _cplife_avail_st_resistive_adjusted,
+    "cplife",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+    },
+)
+
+
+# `i_tf_sup != SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh resistive
+# centrepost lifetime, unadjusted -- the same formula as `CpLifetimeResistive`.
+def _cplife_avail_st_resistive_unadjusted(cpstflnc, pflux_fw_neutron_mw, life_plant):
+    """`calculate_cp_lifetime_resistive`, ports declared above."""
+    return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
+
+
+CplifeAvailStResistiveUnadjusted = costs.iteration(
+    _cplife_avail_st_resistive_unadjusted,
+    "cplife",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+    },
+)
+
+
+# The Avail family:
+# The `calculate_avail` family -- `calculate_avail`'s outputs *other* than
+# `.costs.cplife`, one occupant per `.costs.ibkt_life` value.
+
+
+# `ibkt_life == NEUTRON_FLUENCE` (0) -- PROCESS's own default
+# (`cost_variables.py:416`) and the reference run's.
+AvailNeutronFluence = fwbs.function(
+    calculate_avail_neutron_fluence,
+    "life_blkt_fpy",
+    V.costs.life_div_fpy,
+    V.costs.bktcycles,
+    V.costs.cpfact,
+    V.costs.life_hcd_fpy,
+    reads={
+        "abktflnc": costs,
+        "pflux_fw_neutron_mw": physics,
+        "life_plant": costs,
+        "pflux_div_heat_load_mw": divertor,
+        "adivflnc": costs,
+        "t_plant_pulse_total": times,
+        "t_plant_pulse_burn": times,
+        "f_t_plant_available": costs,
+    },
+)
+
+
+# `ibkt_life == FUSION_POWER` (1) -- the blanket lifetime set by displacement
+# damage per full-power year.
+AvailDisplacementsPerAtom = fwbs.function(
+    calculate_avail_displacements_per_atom,
+    "life_blkt_fpy",
+    V.costs.life_div_fpy,
+    V.costs.bktcycles,
+    V.costs.cpfact,
+    V.costs.life_hcd_fpy,
+    reads={
+        "p_fusion_total_mw": physics,
+        "life_dpa": costs,
+        "life_plant": costs,
+        "pflux_div_heat_load_mw": divertor,
+        "adivflnc": costs,
+        "t_plant_pulse_total": times,
+        "t_plant_pulse_burn": times,
+        "f_t_plant_available": costs,
+    },
+)
+
+
+# cottax node: `calculate_avail_2`'s outputs *other* than `.costs.cplife`, ports
+# declared, `u_planned`/`u_unplanned` dropped (no `VarPath` -- see the module-level
+# note above) -- bodiless family base. Four occupants, `.costs.ibkt_life` x
+# `.physics.itart`.
+#
+# `n_vac_pumps_high`/`redun_vac` are reads: genuine IN.DAT input values
+# (`.vacuum.n_vac_pumps_high`, a `calculate_redun_vac`-derived `.costs.redun_vac`), not a
+# model choice -- unlike `ibkt_life`/`itart`, which each occupant bakes to a literal.
+# Both bound a Python `range()`, so each must arrive as a concrete int.
+
+
+# `.costs.ibkt_life == NEUTRON_FLUENCE`, `.physics.itart ==
+# CONVENTIONAL_ASPECT_RATIO`.
+def _avail2_neutron_fluence_conventional(
+    p_fusion_total_mw,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    num_rh_systems,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    cplife,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_2_dropping_extras(
+        p_fusion_total_mw,
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        num_rh_systems,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        cplife,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+    )
+
+
+Avail2NeutronFluenceConventional = costs.function(
+    _avail2_neutron_fluence_conventional,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "p_fusion_total_mw": physics,
+        "pflux_fw_neutron_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `.costs.ibkt_life == NEUTRON_FLUENCE`, `.physics.itart ==
+# SPHERICAL_TOKAMAK`.
+def _avail2_neutron_fluence_spherical_tokamak(
+    p_fusion_total_mw,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    num_rh_systems,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    cplife,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_2_dropping_extras(
+        p_fusion_total_mw,
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        num_rh_systems,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        cplife,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
+
+
+Avail2NeutronFluenceSphericalTokamak = costs.function(
+    _avail2_neutron_fluence_spherical_tokamak,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "p_fusion_total_mw": physics,
+        "pflux_fw_neutron_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `.costs.ibkt_life == FUSION_POWER`, `.physics.itart ==
+# CONVENTIONAL_ASPECT_RATIO`.
+def _avail2_fusion_power_conventional(
+    p_fusion_total_mw,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    num_rh_systems,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    cplife,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_2_dropping_extras(
+        p_fusion_total_mw,
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        num_rh_systems,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        cplife,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+    )
+
+
+Avail2FusionPowerConventional = costs.function(
+    _avail2_fusion_power_conventional,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "p_fusion_total_mw": physics,
+        "pflux_fw_neutron_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `.costs.ibkt_life == FUSION_POWER`, `.physics.itart == SPHERICAL_TOKAMAK`.
+def _avail2_fusion_power_spherical_tokamak(
+    p_fusion_total_mw,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    num_rh_systems,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    cplife,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_2_dropping_extras(
+        p_fusion_total_mw,
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        num_rh_systems,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        cplife,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
+
+
+Avail2FusionPowerSphericalTokamak = costs.function(
+    _avail2_fusion_power_spherical_tokamak,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "p_fusion_total_mw": physics,
+        "pflux_fw_neutron_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# cottax node: `calculate_avail_st`'s outputs *other* than `.costs.cplife`, ports
+# declared, `maint_cycle`/`n_cycles_main`/`n_centre_cols`/`u_planned`/`u_unplanned`
+# dropped (no `VarPath`) -- bodiless family base. Eight occupants,
+# `.costs.ibkt_life` x `.physics.itart` x `.tfcoil.i_tf_sup`: the third axis used to
+# be a Python `if` inside this class's own `__call__` (selecting the fresh centrepost
+# lifetime formula) -- the only control flow anywhere in this file's node bodies --
+# and splitting the switch dissolves it into which occupant is built, exactly like
+# `ibkt_life`/`itart` below. `calculate_avail_st_dropping_extras` (in
+# `functional_process/models/`) still carries an `if i_tf_sup == 1` internally, per
+# the pushdown convention (`ede83e67`): each occupant calls it with `i_tf_sup` already
+# a literal, never from `self`, so the branch is inert once an occupant is chosen.
+#
+# `n_vac_pumps_high`/`redun_vac` are reads -- see `Avail2`'s, same reasoning.
+
+
+# `ibkt_life == NEUTRON_FLUENCE`, `itart == CONVENTIONAL_ASPECT_RATIO`,
+# `i_tf_sup == SUPERCONDUCTING`.
+def _avail_st_neutron_fluence_conventional_superconducting(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+    )
+
+
+AvailStNeutronFluenceConventionalSuperconducting = costs.function(
+    _avail_st_neutron_fluence_conventional_superconducting,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == NEUTRON_FLUENCE`, `itart == CONVENTIONAL_ASPECT_RATIO`,
+# `i_tf_sup != SUPERCONDUCTING`.
+def _avail_st_neutron_fluence_conventional_resistive(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
+    )
+
+
+AvailStNeutronFluenceConventionalResistive = costs.function(
+    _avail_st_neutron_fluence_conventional_resistive,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == NEUTRON_FLUENCE`, `itart == SPHERICAL_TOKAMAK`,
+# `i_tf_sup == SUPERCONDUCTING`.
+def _avail_st_neutron_fluence_spherical_tokamak_superconducting(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+    )
+
+
+AvailStNeutronFluenceSphericalTokamakSuperconducting = costs.function(
+    _avail_st_neutron_fluence_spherical_tokamak_superconducting,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == NEUTRON_FLUENCE`, `itart == SPHERICAL_TOKAMAK`,
+# `i_tf_sup != SUPERCONDUCTING`.
+def _avail_st_neutron_fluence_spherical_tokamak_resistive(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
+    )
+
+
+AvailStNeutronFluenceSphericalTokamakResistive = costs.function(
+    _avail_st_neutron_fluence_spherical_tokamak_resistive,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == FUSION_POWER`, `itart == CONVENTIONAL_ASPECT_RATIO`,
+# `i_tf_sup == SUPERCONDUCTING`.
+def _avail_st_fusion_power_conventional_superconducting(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+    )
+
+
+AvailStFusionPowerConventionalSuperconducting = costs.function(
+    _avail_st_fusion_power_conventional_superconducting,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == FUSION_POWER`, `itart == CONVENTIONAL_ASPECT_RATIO`,
+# `i_tf_sup != SUPERCONDUCTING`.
+def _avail_st_fusion_power_conventional_resistive(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
+    )
+
+
+AvailStFusionPowerConventionalResistive = costs.function(
+    _avail_st_fusion_power_conventional_resistive,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == FUSION_POWER`, `itart == SPHERICAL_TOKAMAK`,
+# `i_tf_sup == SUPERCONDUCTING`.
+def _avail_st_fusion_power_spherical_tokamak_superconducting(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+    )
+
+
+AvailStFusionPowerSphericalTokamakSuperconducting = costs.function(
+    _avail_st_fusion_power_spherical_tokamak_superconducting,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)
+
+
+# `ibkt_life == FUSION_POWER`, `itart == SPHERICAL_TOKAMAK`,
+# `i_tf_sup != SUPERCONDUCTING`.
+def _avail_st_fusion_power_spherical_tokamak_resistive(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    p_fusion_total_mw,
+    adivflnc,
+    pflux_div_heat_load_mw,
+    life_plant,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    tmain,
+    temp_tf_superconductor_margin_min,
+    temp_cs_superconductor_margin_min,
+    conf_mag,
+    temp_margin,
+    div_prob_fail,
+    div_umain_time,
+    div_nu,
+    div_nref,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
+    num_rh_systems,
+    u_unplanned_cp,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    n_vac_pumps_high,
+    redun_vac,
+):
+    return calculate_avail_st_dropping_extras(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        p_fusion_total_mw,
+        adivflnc,
+        pflux_div_heat_load_mw,
+        life_plant,
+        neut_flux_cp,
+        flu_tf_neutron_fast_max,
+        cpstflnc,
+        tmain,
+        temp_tf_superconductor_margin_min,
+        temp_cs_superconductor_margin_min,
+        conf_mag,
+        temp_margin,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
+        num_rh_systems,
+        u_unplanned_cp,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        n_vac_pumps_high,
+        redun_vac,
+        ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        i_tf_sup=TFConductorModel.WATER_COOLED_COPPER,
+    )
+
+
+AvailStFusionPowerSphericalTokamakResistive = costs.function(
+    _avail_st_fusion_power_spherical_tokamak_resistive,
+    V.fwbs.life_blkt_fpy,
+    "life_div_fpy",
+    "life_hcd_fpy",
+    "t_plant_operational_total_yrs",
+    "f_t_plant_available",
+    "cpfact",
+    reads={
+        "pflux_fw_neutron_mw": physics,
+        "p_fusion_total_mw": physics,
+        "pflux_div_heat_load_mw": divertor,
+        "neut_flux_cp": fwbs,
+        "flu_tf_neutron_fast_max": constraints,
+        "temp_tf_superconductor_margin_min": tfcoil,
+        "temp_cs_superconductor_margin_min": tfcoil,
+        "temp_margin": tfcoil,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_total": times,
+        "n_vac_pumps_high": vacuum,
+    },
+)

@@ -192,19 +192,19 @@ def test_raw_separatrix_power_nodes_read_the_raw_mint():
     test so a future edit cannot silently rebind it to the wrong mint.
     """
     raw_reading_nodes = [
-        Eich2013SOLPowerDecayLength(),
-        Mast2014SOLPowerDecayLength1(),
-        Mast2014SOLPowerDecayLength2(),
-        OutboardSOLParallelPowerFlux(),
-        OutboardSOLEich13ParallelPowerFlux(),
+        Eich2013SOLPowerDecayLength,
+        Mast2014SOLPowerDecayLength1,
+        Mast2014SOLPowerDecayLength2,
+        OutboardSOLParallelPowerFlux,
+        OutboardSOLEich13ParallelPowerFlux,
     ]
     for node in raw_reading_nodes:
-        paths = [i.spelling for i in node.inputs]
+        paths = [i.spelling for i in node.reads.values()]
         assert ".physics.p_plasma_separatrix_mw_raw" in paths, (
-            f"{type(node).__name__} does not read the raw separatrix-power mint"
+            f"{node.fn.__name__} does not read the raw separatrix-power mint"
         )
         assert ".physics.p_plasma_separatrix_mw" not in paths, (
-            f"{type(node).__name__} reads the transformed (post-kludge) separatrix "
+            f"{node.fn.__name__} reads the transformed (post-kludge) separatrix "
             "power instead of the raw mint"
         )
 
@@ -217,9 +217,9 @@ def test_eich13_area_node_reads_the_eich_length_directly():
     switch happens to select `EICH_2013`.
     """
     eich13_area = [
-        i.spelling for i in UpstreamSOLOutboardEich13ParallelArea().inputs
+        i.spelling for i in UpstreamSOLOutboardEich13ParallelArea.reads.values()
     ]
-    selected_area = [i.spelling for i in UpstreamSOLOutboardParallelArea().inputs]
+    selected_area = [i.spelling for i in UpstreamSOLOutboardParallelArea.reads.values()]
 
     assert ".physics.len_plasma_sol_eich13_power_decay" in eich13_area
     assert ".physics.len_sol_outboard_power_decay" not in eich13_area
@@ -232,7 +232,7 @@ def test_outboard_sol_power_decay_length_occupant_reads_only_its_own_candidate()
     value is passed through, not which formula runs, so the occupant's own reads-set is
     exactly one `VarPath`.
     """
-    reads = [i.spelling for i in OutboardSOLPowerDecayLengthEich2013().inputs]
+    reads = [i.spelling for i in OutboardSOLPowerDecayLengthEich2013.reads.values()]
     assert reads == [".physics.len_plasma_sol_eich13_power_decay"]
-    outputs = [o.spelling for o in OutboardSOLPowerDecayLengthEich2013().outputs]
+    outputs = [o.spelling for o in OutboardSOLPowerDecayLengthEich2013.outputs]
     assert outputs == [".physics.len_sol_outboard_power_decay"]

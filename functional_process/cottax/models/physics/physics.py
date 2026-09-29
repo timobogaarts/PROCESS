@@ -1,14 +1,8 @@
 """Pure-functional port of the **tokamak arm** of `process/models/physics/physics.py`."""
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import current_drive, physics, times
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
@@ -28,216 +22,143 @@ from functional_process.models.physics.physics import (
     plasma_ohmic_heating,
 )
 
+# The SurfaceAveragedPoloidalField family:
+# The family that owns `.physics.b_plasma_surface_poloidal_average`.
+
+
+# `i_plasma_current != PENG_DIVERTOR_SCALING`: Ampere's law over the perimeter.
+SurfaceAveragedPoloidalFieldAmperes = physics.function(
+    calculate_surface_averaged_poloidal_field_amperes,
+    "b_plasma_surface_poloidal_average",
+    reads={
+        "cur_plasma": V.physics.plasma_current,
+    },
+)
+
+
+# cottax node: `calculate_unclipped_radiation_powers`, ports declared.
+UnclippedRadiationPowers = physics.function(
+    calculate_unclipped_radiation_powers,
+    "pden_plasma_core_rad_mw",
+    "pden_plasma_outer_rad_mw",
+    "p_plasma_inner_rad_mw",
+    "p_plasma_outer_rad_mw",
+)
 
-class SurfaceAveragedPoloidalField(ExplicitFunction):
-    """The family that owns `.physics.b_plasma_surface_poloidal_average`."""
 
+# cottax node: `calculate_total_radiation_power`, ports declared.
+TotalRadiationPower = physics.function(
+    calculate_total_radiation_power, "p_plasma_rad_mw"
+)
 
-class SurfaceAveragedPoloidalFieldAmperes(SurfaceAveragedPoloidalField, WrapsFunction):
-    """`i_plasma_current != PENG_DIVERTOR_SCALING`: Ampere's law over the perimeter."""
 
-    fn = calculate_surface_averaged_poloidal_field_amperes
+# The SeparatrixPower family:
+# The family that owns `.physics.p_plasma_separatrix_mw_raw`.
 
-    cur_plasma = FromExactly(physics.plasma_current)
-    len_plasma_poloidal = From(physics)
 
-    b_plasma_surface_poloidal_average = OutputInto(physics)
+# `i_plasma_ignited == NON_IGNITED`: injected heating crosses the separatrix.
+SeparatrixPowerNonIgnited = physics.function(
+    calculate_separatrix_power,
+    "p_plasma_separatrix_mw_raw",
+    reads={
+        "p_hcd_injected_total_mw": current_drive,
+    },
+)
 
 
-class UnclippedRadiationPowers(WrapsFunction):
-    """cottax node: `calculate_unclipped_radiation_powers`, ports declared."""
+# cottax node: `force_positive_separatrix_power`, ports declared.
+PositiveSeparatrixPower = physics.function(
+    force_positive_separatrix_power, "p_plasma_separatrix_mw"
+)
 
-    fn = calculate_unclipped_radiation_powers
 
-    pden_plasma_core_rad_mw_unclipped = From(physics)
-    pden_plasma_outer_rad_mw_unclipped = From(physics)
-    vol_plasma = From(physics)
+# The PulseRampTimes family:
+# The family that owns the plasma-current ramp times, `physics.py:463-498`.
 
-    pden_plasma_core_rad_mw = OutputInto(physics)
-    pden_plasma_outer_rad_mw = OutputInto(physics)
-    p_plasma_inner_rad_mw = OutputInto(physics)
-    p_plasma_outer_rad_mw = OutputInto(physics)
 
+# `i_pulsed_plant == 1` and `pulsetimings == 0` -- `large_tokamak_eval`'s arm.
+PulseRampTimesPulsedDefault = times.function(
+    calculate_pulsed_plant_ramp_times,
+    "t_plant_pulse_plasma_current_ramp_up",
+    "t_plant_pulse_plasma_current_ramp_down",
+    reads={
+        "plasma_current": physics,
+    },
+)
 
-class TotalRadiationPower(WrapsFunction):
-    """cottax node: `calculate_total_radiation_power`, ports declared."""
 
-    fn = calculate_total_radiation_power
+# `i_pulsed_plant != 1` and `i_t_current_ramp_up == 0`.
+#
+# The spherical tokamaks'.
+PulseRampTimesContinuousDefault = times.function(
+    calculate_continuous_plant_ramp_times,
+    "t_plant_pulse_plasma_current_ramp_up",
+    "t_plant_pulse_coil_precharge",
+    "t_plant_pulse_plasma_current_ramp_down",
+    reads={
+        "plasma_current": physics,
+    },
+)
 
-    pden_plasma_rad_mw = From(physics)
-    vol_plasma = From(physics)
 
-    p_plasma_rad_mw = OutputInto(physics)
+# cottax node: `calculate_plasma_energy_from_beta`, total-beta binding.
+PlasmaEnergyFromBeta = physics.function(
+    calculate_plasma_energy_from_beta,
+    "e_plasma_beta",
+    reads={
+        "beta": V.physics.beta_total_vol_avg,
+        "b_field": V.physics.b_plasma_total,
+    },
+)
 
 
-class SeparatrixPower(ExplicitFunction):
-    """The family that owns `.physics.p_plasma_separatrix_mw_raw`."""
+# cottax node: `plasma_ohmic_heating`.
+PlasmaOhmicHeating = physics.function(
+    plasma_ohmic_heating,
+    "pden_plasma_ohmic_mw",
+    "p_plasma_ohmic_mw",
+    "f_res_plasma_neo",
+    "res_plasma",
+    reads={
+        "zeff": V.physics.n_charge_plasma_effective_vol_avg,
+    },
+)
 
 
-class SeparatrixPowerNonIgnited(SeparatrixPower, WrapsFunction):
-    """`i_plasma_ignited == NON_IGNITED`: injected heating crosses the separatrix."""
+# cottax node: `calculate_coulomb_logarithm_ion_electron`.
+CoulombLogarithmIonElectron = physics.function(
+    calculate_coulomb_logarithm_ion_electron, "dlamie"
+)
 
-    fn = calculate_separatrix_power
 
-    f_p_alpha_plasma_deposited = From(physics)
-    p_alpha_total_mw = From(physics)
-    p_non_alpha_charged_mw = From(physics)
-    p_hcd_injected_total_mw = From(current_drive)
-    p_plasma_ohmic_mw = From(physics)
-    p_plasma_rad_mw = From(physics)
+# cottax node: `calculate_pflux_plasma_surface_neutron_avg_mw`.
+PlasmaSurfaceNeutronFlux = physics.function(
+    calculate_pflux_plasma_surface_neutron_avg_mw, "pflux_plasma_surface_neutron_avg_mw"
+)
 
-    p_plasma_separatrix_mw_raw = OutputInto(physics)
 
+# cottax node: `calculate_beta_norm_max_wesson`.
+BetaNormMaxWesson = physics.function(calculate_beta_norm_max_wesson, "beta_norm_max")
 
-class PositiveSeparatrixPower(WrapsFunction):
-    """cottax node: `force_positive_separatrix_power`, ports declared."""
 
-    fn = force_positive_separatrix_power
+# cottax node: `calculate_beta_limit_from_norm`. Unswitched.
+BetaLimitFromNorm = physics.function(calculate_beta_limit_from_norm, "beta_vol_avg_max")
 
-    p_plasma_separatrix_mw_raw = From(physics)
 
-    p_plasma_separatrix_mw = OutputInto(physics)
+# cottax node: `calculate_toroidal_beta`. Unswitched.
+ToroidalBeta = physics.function(calculate_toroidal_beta, "beta_toroidal_vol_avg")
 
 
-class PulseRampTimes(ExplicitFunction):
-    """The family that owns the plasma-current ramp times, `physics.py:463-498`."""
+# cottax node: `calculate_poloidal_beta`.
+PoloidalBeta = physics.function(
+    calculate_poloidal_beta,
+    "beta_poloidal_vol_avg",
+    reads={
+        "b_plasma_poloidal_average": V.physics.b_plasma_surface_poloidal_average,
+        "beta": V.physics.beta_total_vol_avg,
+    },
+)
 
 
-class PulseRampTimesPulsedDefault(PulseRampTimes, WrapsFunction):
-    """`i_pulsed_plant == 1` and `pulsetimings == 0` -- `large_tokamak_eval`'s arm."""
-
-    fn = calculate_pulsed_plant_ramp_times
-
-    plasma_current = From(physics)
-
-    t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
-    t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
-
-
-class PulseRampTimesContinuousDefault(PulseRampTimes, WrapsFunction):
-    """`i_pulsed_plant != 1` and `i_t_current_ramp_up == 0`.
-
-    The spherical tokamaks'.
-    """
-
-    fn = calculate_continuous_plant_ramp_times
-
-    plasma_current = From(physics)
-
-    t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
-    t_plant_pulse_coil_precharge = OutputInto(times)
-    t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
-
-
-class PlasmaEnergyFromBeta(WrapsFunction):
-    """cottax node: `calculate_plasma_energy_from_beta`, total-beta binding."""
-
-    fn = calculate_plasma_energy_from_beta
-
-    beta = FromExactly(physics.beta_total_vol_avg)
-    b_field = FromExactly(physics.b_plasma_total)
-    vol_plasma = From(physics)
-
-    e_plasma_beta = OutputInto(physics)
-
-
-class PlasmaOhmicHeating(WrapsFunction):
-    """cottax node: `plasma_ohmic_heating`."""
-
-    fn = plasma_ohmic_heating
-
-    f_c_plasma_inductive = From(physics)
-    kappa95 = From(physics)
-    plasma_current = From(physics)
-    rmajor = From(physics)
-    rminor = From(physics)
-    temp_plasma_electron_density_weighted_kev = From(physics)
-    vol_plasma = From(physics)
-    zeff = FromExactly(physics.n_charge_plasma_effective_vol_avg)
-    plasma_res_factor = From(physics)
-
-    pden_plasma_ohmic_mw = OutputInto(physics)
-    p_plasma_ohmic_mw = OutputInto(physics)
-    f_res_plasma_neo = OutputInto(physics)
-    res_plasma = OutputInto(physics)
-
-
-class CoulombLogarithmIonElectron(WrapsFunction):
-    """cottax node: `calculate_coulomb_logarithm_ion_electron`."""
-
-    fn = calculate_coulomb_logarithm_ion_electron
-
-    nd_plasma_electrons_vol_avg = From(physics)
-    temp_plasma_electron_vol_avg_kev = From(physics)
-
-    dlamie = OutputInto(physics)
-
-
-class PlasmaSurfaceNeutronFlux(WrapsFunction):
-    """cottax node: `calculate_pflux_plasma_surface_neutron_avg_mw`."""
-
-    fn = calculate_pflux_plasma_surface_neutron_avg_mw
-
-    p_neutron_total_mw = From(physics)
-    a_plasma_surface = From(physics)
-
-    pflux_plasma_surface_neutron_avg_mw = OutputInto(physics)
-
-
-class BetaNormMaxWesson(WrapsFunction):
-    """cottax node: `calculate_beta_norm_max_wesson`."""
-
-    fn = calculate_beta_norm_max_wesson
-
-    ind_plasma_internal_norm = From(physics)
-
-    beta_norm_max = OutputInto(physics)
-
-
-class BetaLimitFromNorm(WrapsFunction):
-    """cottax node: `calculate_beta_limit_from_norm`. Unswitched."""
-
-    fn = calculate_beta_limit_from_norm
-
-    b_plasma_toroidal_on_axis = From(physics)
-    beta_norm_max = From(physics)
-    plasma_current = From(physics)
-    rminor = From(physics)
-
-    beta_vol_avg_max = OutputInto(physics)
-
-
-class ToroidalBeta(WrapsFunction):
-    """cottax node: `calculate_toroidal_beta`. Unswitched."""
-
-    fn = calculate_toroidal_beta
-
-    beta_total_vol_avg = From(physics)
-    b_plasma_total = From(physics)
-    b_plasma_toroidal_on_axis = From(physics)
-
-    beta_toroidal_vol_avg = OutputInto(physics)
-
-
-class PoloidalBeta(WrapsFunction):
-    """cottax node: `calculate_poloidal_beta`."""
-
-    fn = calculate_poloidal_beta
-
-    b_plasma_total = From(physics)
-    b_plasma_poloidal_average = FromExactly(physics.b_plasma_surface_poloidal_average)
-    beta = FromExactly(physics.beta_total_vol_avg)
-
-    beta_poloidal_vol_avg = OutputInto(physics)
-
-
-class ThermalBeta(WrapsFunction):
-    """cottax node: `calculate_thermal_beta`."""
-
-    fn = calculate_thermal_beta
-
-    beta_total_vol_avg = From(physics)
-    beta_fast_alpha = From(physics)
-    beta_beam = From(physics)
-
-    beta_thermal_vol_avg = OutputInto(physics)
+# cottax node: `calculate_thermal_beta`.
+ThermalBeta = physics.function(calculate_thermal_beta, "beta_thermal_vol_avg")

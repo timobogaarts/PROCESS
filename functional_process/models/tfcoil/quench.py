@@ -465,7 +465,7 @@ def tf_dump_voltage_peak(*, e_tf_coil_magnetic_stored, t_tf_quench_dump, c_tf_tu
 
 
 def v_tf_coil_dump_quench_kv(
-    *, e_tf_coil_magnetic_stored, t_tf_superconductor_quench, c_tf_turn
+    e_tf_coil_magnetic_stored, t_tf_superconductor_quench, c_tf_turn
 ):
     """TF coil quench dump voltage, kV. `superconducting.py:2793-2795`.
 

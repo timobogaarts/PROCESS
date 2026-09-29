@@ -1,9 +1,6 @@
 """Mutual and self inductances of the PF coils, the CS and the plasma."""
 
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
-
 from functional_process.cottax.paths import build, pf_coil, physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,  # noqa: F401 -- re-exported for tests
     calculate_pf_cs_plasma_inductances_at_reference_width,
@@ -19,37 +16,24 @@ at `(rmajor, 0)`.
 """
 
 
-class PFCoilInductance(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.inductance`."""
-
-    fn = calculate_pf_cs_plasma_inductances_at_reference_width
-
-    rmajor = From(physics)
-    ind_plasma = From(physics)
-    dr_cs = From(build)
-    r_cs_middle = From(pf_coil)
-    r_pf_coil_middle = From(pf_coil)
-    z_pf_coil_middle = From(pf_coil)
-    r_pf_coil_inner = From(pf_coil)
-    r_pf_coil_outer = From(pf_coil)
-    z_pf_coil_upper = From(pf_coil)
-    z_pf_coil_lower = From(pf_coil)
-    n_pf_coil_turns = From(pf_coil)
-
-    ind_pf_cs_plasma_mutual = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.inductance`.
+PFCoilInductance = pf_coil.function(
+    calculate_pf_cs_plasma_inductances_at_reference_width,
+    "ind_pf_cs_plasma_mutual",
+    reads={
+        "rmajor": physics,
+        "ind_plasma": physics,
+        "dr_cs": build,
+    },
+)
 
 
-class PFCoilInductanceNoCentralSolenoid(WrapsFunction):
-    """cottax node: `.tokamak.pf_coil.inductance`, the `iohcl = 0` occupant."""
-
-    fn = calculate_pf_plasma_inductances_no_central_solenoid_bound
-
-    rmajor = From(physics)
-    ind_plasma = From(physics)
-    r_pf_coil_middle = From(pf_coil)
-    z_pf_coil_middle = From(pf_coil)
-    z_pf_coil_upper = From(pf_coil)
-    z_pf_coil_lower = From(pf_coil)
-    n_pf_coil_turns = From(pf_coil)
-
-    ind_pf_cs_plasma_mutual = OutputInto(pf_coil)
+# cottax node: `.tokamak.pf_coil.inductance`, the `iohcl = 0` occupant.
+PFCoilInductanceNoCentralSolenoid = pf_coil.function(
+    calculate_pf_plasma_inductances_no_central_solenoid_bound,
+    "ind_pf_cs_plasma_mutual",
+    reads={
+        "rmajor": physics,
+        "ind_plasma": physics,
+    },
+)

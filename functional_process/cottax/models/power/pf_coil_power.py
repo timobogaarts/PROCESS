@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import From, OutputInto
+from cottax.interfaces import V
 
 from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,
@@ -14,13 +14,11 @@ from functional_process.cottax.models.pfcoil import (
     PFCoilTopology,
 )
 from functional_process.cottax.paths import (
-    heat_transport,
     pf_coil,
     pf_power,
     physics,
     times,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.power.pf_coil_power import (
     COILS_IN_GROUP_WITH_CS,
     GROUP_CIRCUIT_INDEX,
@@ -75,63 +73,91 @@ __all__ = [
 ]
 
 
-class PfCoilPowerSupplies(WrapsFunction):
-    """cottax node: `.power.pf_coil_power` -- `Power.pfpwr`, eleven owned fields.
-
-    Bodiless family base: `topology` used to be a static field (`PFCoilTopology`,
-    defaulting to `REFERENCE_TOPOLOGY`) -- `_pf_coil_topology` only ever hands this
-    slot one of two values, so it is now two occupants instead, following the arm
-    pattern `models/pfcoil/`'s own topology-bound nodes already established (e.g.
-    `PFCoilEquilibriumCurrents`/`PFCoilEquilibriumCurrentsNoCentralSolenoid`). The
-    read set is identical between the two arms -- only the loop bounds baked into
-    `topology` differ -- so both share this base's reads and outputs and add only
-    `fn`.
-    """
-
-    srcktpm = OutputInto(pf_power)
-    poloidalpower = OutputInto(pf_power)
-    ensxpfm = OutputInto(pf_power)
-    peakpoloidalpower = OutputInto(pf_power)
-    peakmva = OutputInto(heat_transport)
-    vpfskv = OutputInto(pf_power)
-    pfckts = OutputInto(pf_power)
-    spfbusl = OutputInto(pf_power)
-    acptmax = OutputInto(pf_power)
-    spsmva = OutputInto(pf_power)
-    p_pf_electric_supplies_mw = OutputInto(pf_coil)
-
-    rmajor = From(physics)
-    c_pf_coil_turn_peak_input = From(pf_coil)
-    rhopfbus = From(pf_coil)
-    rho_pf_coil = From(pf_coil)
-    r_pf_coil_middle = From(pf_coil)
-    j_pf_coil_wp_peak = From(pf_coil)
-    f_a_pf_coil_void = From(pf_coil)
-    c_pf_cs_coils_peak_ma = From(pf_coil)
-    c_pf_cs_coil_pulse_end_ma = From(pf_coil)
-    n_pf_coil_turns = From(pf_coil)
-    c_pf_coil_turn = From(pf_coil)
-    ind_pf_cs_plasma_mutual = From(pf_coil)
-    f_p_pf_energy_store_loss = From(pf_power)
-    f_p_pf_psu_loss = From(pf_power)
-    etapsu = From(pf_coil)
-    p_plasma_ohmic_mw = From(physics)
-    t_plant_pulse_coil_precharge = From(times)
-    t_plant_pulse_plasma_current_ramp_up = From(times)
-    t_plant_pulse_fusion_ramp = From(times)
-    t_plant_pulse_burn = From(times)
-    t_plant_pulse_plasma_current_ramp_down = From(times)
+# The PfCoilPowerSupplies family:
+# cottax node: `.power.pf_coil_power` -- `Power.pfpwr`, eleven owned fields.
+#
+# Bodiless family base: `topology` used to be a static field (`PFCoilTopology`,
+# defaulting to `REFERENCE_TOPOLOGY`) -- `_pf_coil_topology` only ever hands this
+# slot one of two values, so it is now two occupants instead, following the arm
+# pattern `models/pfcoil/`'s own topology-bound nodes already established (e.g.
+# `PFCoilEquilibriumCurrents`/`PFCoilEquilibriumCurrentsNoCentralSolenoid`). The
+# read set is identical between the two arms -- only the loop bounds baked into
+# `topology` differ -- so both share this base's reads and outputs and add only
+# `fn`.
 
 
-class PfCoilPowerSuppliesReference(PfCoilPowerSupplies):
-    """`.build.iohcl != 0` -- `REFERENCE_TOPOLOGY`, a machine with a central
-    solenoid.
-    """
+# `.build.iohcl != 0` -- `REFERENCE_TOPOLOGY`, a machine with a central
+# solenoid.
+PfCoilPowerSuppliesReference = pf_power.function(
+    calculate_pf_coil_power_supplies_reference,
+    "srcktpm",
+    "poloidalpower",
+    "ensxpfm",
+    "peakpoloidalpower",
+    V.heat_transport.peakmva,
+    "vpfskv",
+    "pfckts",
+    "spfbusl",
+    "acptmax",
+    "spsmva",
+    V.pf_coil.p_pf_electric_supplies_mw,
+    reads={
+        "rmajor": physics,
+        "c_pf_coil_turn_peak_input": pf_coil,
+        "rhopfbus": pf_coil,
+        "rho_pf_coil": pf_coil,
+        "r_pf_coil_middle": pf_coil,
+        "j_pf_coil_wp_peak": pf_coil,
+        "f_a_pf_coil_void": pf_coil,
+        "c_pf_cs_coils_peak_ma": pf_coil,
+        "c_pf_cs_coil_pulse_end_ma": pf_coil,
+        "n_pf_coil_turns": pf_coil,
+        "c_pf_coil_turn": pf_coil,
+        "ind_pf_cs_plasma_mutual": pf_coil,
+        "etapsu": pf_coil,
+        "p_plasma_ohmic_mw": physics,
+        "t_plant_pulse_coil_precharge": times,
+        "t_plant_pulse_plasma_current_ramp_up": times,
+        "t_plant_pulse_fusion_ramp": times,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_plasma_current_ramp_down": times,
+    },
+)
 
-    fn = calculate_pf_coil_power_supplies_reference
 
-
-class PfCoilPowerSuppliesNoCentralSolenoid(PfCoilPowerSupplies):
-    """`.build.iohcl == 0` -- `SPHERICAL_TOKAMAK_TOPOLOGY`, no central solenoid."""
-
-    fn = calculate_pf_coil_power_supplies_no_central_solenoid
+# `.build.iohcl == 0` -- `SPHERICAL_TOKAMAK_TOPOLOGY`, no central solenoid.
+PfCoilPowerSuppliesNoCentralSolenoid = pf_power.function(
+    calculate_pf_coil_power_supplies_no_central_solenoid,
+    "srcktpm",
+    "poloidalpower",
+    "ensxpfm",
+    "peakpoloidalpower",
+    V.heat_transport.peakmva,
+    "vpfskv",
+    "pfckts",
+    "spfbusl",
+    "acptmax",
+    "spsmva",
+    V.pf_coil.p_pf_electric_supplies_mw,
+    reads={
+        "rmajor": physics,
+        "c_pf_coil_turn_peak_input": pf_coil,
+        "rhopfbus": pf_coil,
+        "rho_pf_coil": pf_coil,
+        "r_pf_coil_middle": pf_coil,
+        "j_pf_coil_wp_peak": pf_coil,
+        "f_a_pf_coil_void": pf_coil,
+        "c_pf_cs_coils_peak_ma": pf_coil,
+        "c_pf_cs_coil_pulse_end_ma": pf_coil,
+        "n_pf_coil_turns": pf_coil,
+        "c_pf_coil_turn": pf_coil,
+        "ind_pf_cs_plasma_mutual": pf_coil,
+        "etapsu": pf_coil,
+        "p_plasma_ohmic_mw": physics,
+        "t_plant_pulse_coil_precharge": times,
+        "t_plant_pulse_plasma_current_ramp_up": times,
+        "t_plant_pulse_fusion_ramp": times,
+        "t_plant_pulse_burn": times,
+        "t_plant_pulse_plasma_current_ramp_down": times,
+    },
+)

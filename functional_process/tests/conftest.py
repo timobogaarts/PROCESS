@@ -156,11 +156,11 @@ def package_root():
 
 @pytest.fixture(scope="session")
 def reads_only_its_own_statement():
-    """Assert a `models/stated.StatesValues` reads exactly `^stated.<each output>`."""
-    from functional_process.cottax.stated import stated_port
+    """Assert a stated node (`stated.states`) reads exactly `^stated.<each output>`."""
+    from functional_process.cottax.stated import STATED
 
     def check(node):
-        assert list(node.inputs) == [stated_port(out) for out in node.outputs]
+        assert list(node.reads.values()) == [STATED(out) for out in node.outputs]
         return node
 
     return check

@@ -4,14 +4,10 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    ModelNamespace,
-    OutputInto,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 from functional_process.cottax.paths import physics, times
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
@@ -28,75 +24,52 @@ __all__ = [
 ]
 
 
-class PlasmaInternalInductanceScalings(WrapsFunction):
-    """cottax node: `.tokamak.plasma_inductance.scalings`."""
-
-    fn = internal_inductance_norm_scalings
-
-    alphaj = From(physics)
-    kappa = From(physics)
-    b_plasma_surface_poloidal_average = From(physics)
-    plasma_current = From(physics)
-    vol_plasma = From(physics)
-    rmajor = From(physics)
-
-    ind_plasma_internal_norm_wesson = OutputInto(physics)
-    ind_plasma_internal_norm_menard = OutputInto(physics)
-    ind_plasma_internal_norm_iter_3 = OutputInto(physics)
+# cottax node: `.tokamak.plasma_inductance.scalings`.
+PlasmaInternalInductanceScalings = physics.function(
+    internal_inductance_norm_scalings,
+    "ind_plasma_internal_norm_wesson",
+    "ind_plasma_internal_norm_menard",
+    "ind_plasma_internal_norm_iter_3",
+)
 
 
-class PlasmaInternalInductanceNormWesson(WrapsFunction):
-    """cottax node: `.tokamak.plasma_inductance.internal_inductance_norm`."""
-
-    fn = internal_inductance_norm_wesson
-
-    ind_plasma_internal_norm_wesson = From(physics)
-
-    ind_plasma_internal_norm = OutputInto(physics)
+# cottax node: `.tokamak.plasma_inductance.internal_inductance_norm`.
+PlasmaInternalInductanceNormWesson = physics.function(
+    internal_inductance_norm_wesson, "ind_plasma_internal_norm"
+)
 
 
-class PlasmaVoltSecondRequirements(WrapsFunction):
-    """cottax node: `.tokamak.plasma_inductance.volt_seconds`."""
-
-    fn = calculate_volt_second_requirements
-
-    csawth = From(physics)
-    eps = From(physics)
-    f_c_plasma_inductive = From(physics)
-    ejima_coeff = From(physics)
-    kappa = From(physics)
-    rmajor = From(physics)
-    res_plasma = From(physics)
-    plasma_current = From(physics)
-    t_plant_pulse_fusion_ramp = From(times)
-    t_plant_pulse_burn = From(times)
-    ind_plasma_internal_norm = From(physics)
-
-    vs_plasma_internal = OutputInto(physics)
-    ind_plasma = OutputInto(physics)
-    vs_plasma_burn_required = OutputInto(physics)
-    vs_plasma_ramp_required = OutputInto(physics)
-    vs_plasma_ind_ramp = OutputInto(physics)
-    vs_plasma_res_ramp = OutputInto(physics)
-    vs_plasma_total_required = OutputInto(physics)
-    v_plasma_loop_burn = OutputInto(physics)
+# cottax node: `.tokamak.plasma_inductance.volt_seconds`.
+PlasmaVoltSecondRequirements = physics.function(
+    calculate_volt_second_requirements,
+    "vs_plasma_internal",
+    "ind_plasma",
+    "vs_plasma_burn_required",
+    "vs_plasma_ramp_required",
+    "vs_plasma_ind_ramp",
+    "vs_plasma_res_ramp",
+    "vs_plasma_total_required",
+    "v_plasma_loop_burn",
+    reads={
+        "t_plant_pulse_fusion_ramp": times,
+        "t_plant_pulse_burn": times,
+    },
+)
 
 
-class TokamakPlasmaInductance(ModelNamespace):
+class TokamakPlasmaInductance(eqx.Module):
     """`.tokamak.plasma_inductance` -- three slots, one of them switched."""
 
-    scalings: PlasmaInternalInductanceScalings = PlasmaInternalInductanceScalings()
+    scalings: Explicit = PlasmaInternalInductanceScalings
     """Unconditional -- PROCESS evaluates all three scalings before any switch is read
     (`physics.py:4721-4736`).
     """
 
-    internal_inductance_norm: PlasmaInternalInductanceNormWesson | None = (
-        dataclasses.field(kw_only=True)
-    )
+    internal_inductance_norm: Explicit | None = dataclasses.field(kw_only=True)
     """`.physics.i_ind_plasma_internal_norm` -- `1` (Wesson) is written; `0`
     (USER_INPUT) is **no node at all** (`physics.py:4760` selects the field from itself,
     so the field is a run input and the slot is empty); `2` (Menard) is UNPORTED.
     """
 
-    volt_seconds: PlasmaVoltSecondRequirements = PlasmaVoltSecondRequirements()
+    volt_seconds: Explicit = PlasmaVoltSecondRequirements
     """Unconditional -- `calculate_volt_second_requirements` has no branch at all."""

@@ -958,8 +958,8 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
     read follows from the law, which is why `CONFINEMENT_SCALING` is keyed on
     `i_confinement_time` and not on `istell`.
     """
-    iss04 = [i.spelling for i in Iss04ConfinementTime().inputs]
-    ipb98 = [i.spelling for i in IterIpb98y2ConfinementTime().inputs]
+    iss04 = [i.spelling for i in Iss04ConfinementTime.reads.values()]
+    ipb98 = [i.spelling for i in IterIpb98y2ConfinementTime.reads.values()]
 
     assert ".stellarator.iotabar" in iss04
     assert ".physics.q95" not in iss04
@@ -970,7 +970,7 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
 
     # Same output either way -- one field, whichever law owns it -- which is what makes
     # them genuine alternatives for one slot.
-    assert Iss04ConfinementTime().outputs == IterIpb98y2ConfinementTime().outputs
+    assert Iss04ConfinementTime.outputs == IterIpb98y2ConfinementTime.outputs
 
 
 def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
@@ -983,9 +983,9 @@ def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
     built -- one read more, nothing else, and the same owned field either way, which is
     what makes them alternatives for one slot rather than two different nodes.
     """
-    ignited = [i.spelling for i in PlasmaPowerLossIgnitedCoreRadiation().inputs]
+    ignited = [i.spelling for i in PlasmaPowerLossIgnitedCoreRadiation.reads.values()]
     non_ignited = [
-        i.spelling for i in PlasmaPowerLossNonIgnitedCoreRadiation().inputs
+        i.spelling for i in PlasmaPowerLossNonIgnitedCoreRadiation.reads.values()
     ]
 
     assert set(non_ignited) - set(ignited) == {".current_drive.p_hcd_injected_total_mw"}
@@ -996,8 +996,8 @@ def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
     assert ".physics.pden_plasma_rad_mw" not in ignited + non_ignited
 
     assert (
-        PlasmaPowerLossIgnitedCoreRadiation().outputs
-        == PlasmaPowerLossNonIgnitedCoreRadiation().outputs
+        PlasmaPowerLossIgnitedCoreRadiation.outputs
+        == PlasmaPowerLossNonIgnitedCoreRadiation.outputs
     )
 
 
@@ -1025,11 +1025,11 @@ def test_power_loss_occupants_match_process(i_plasma_ignited):
         "vol_plasma": kwargs["vol_plasma"],
     }
     if i_plasma_ignited == 0:
-        actual = PlasmaPowerLossNonIgnitedCoreRadiation()(
+        actual = PlasmaPowerLossNonIgnitedCoreRadiation(
             p_hcd_injected_total_mw=kwargs["p_hcd_injected_total_mw"], **shared
         )
     else:
-        actual = PlasmaPowerLossIgnitedCoreRadiation()(**shared)
+        actual = PlasmaPowerLossIgnitedCoreRadiation(**shared)
 
     assert float(actual) == pytest.approx(expected, rel=1e-14, abs=0.0)
 
@@ -1051,9 +1051,9 @@ def test_the_non_ignited_arm_is_not_the_ignited_one():
         "pden_plasma_core_rad_mw": kwargs["pden_plasma_core_rad_mw"],
         "vol_plasma": kwargs["vol_plasma"],
     }
-    ignited = float(PlasmaPowerLossIgnitedCoreRadiation()(**shared))
+    ignited = float(PlasmaPowerLossIgnitedCoreRadiation(**shared))
     non_ignited = float(
-        PlasmaPowerLossNonIgnitedCoreRadiation()(
+        PlasmaPowerLossNonIgnitedCoreRadiation(
             p_hcd_injected_total_mw=kwargs["p_hcd_injected_total_mw"], **shared
         )
     )

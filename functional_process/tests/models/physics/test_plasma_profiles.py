@@ -16,8 +16,7 @@ about the profile objects. If a ported function secretly needed something else o
 """
 
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.pytree.path import VarPath
+from cottax.interfaces import to_graph
 
 from functional_process.cottax.models.physics.plasma_profiles import (
     PedestalProfileValues,
@@ -382,7 +381,7 @@ def test_pedestal_profile_values_assembles_alone():
     """`PedestalProfileValues` must assemble as its own one-node graph, the same
     minimal structural check `test_composition.py` runs for `PlasmaComposition`.
     """
-    graph = to_graph(PedestalProfileValues())
+    graph = to_graph(PedestalProfileValues)
     assert graph.definitions
 
 
@@ -394,11 +393,11 @@ def test_pedestal_profile_values_owns_cross_area_prn1():
     lands in `.divertor`, alongside the four fields `_audit/tokamak_boundary.md` §
     "The four that are a shared subsystem's gap" lists, which must land in `.physics`.
     """
-    node = PedestalProfileValues()
-    owned = {out for out in node.outputs}
-    read = {inp for inp in node.inputs}
+    node = PedestalProfileValues
+    owned = set(node.outputs)
+    read = set(node.reads.values())
 
-    prn1_path = resolve(divertor.prn1, VarPath)
+    prn1_path = divertor.place("prn1")
     assert prn1_path in owned
     assert prn1_path not in read
 
@@ -409,7 +408,7 @@ def test_pedestal_profile_values_owns_cross_area_prn1():
         "temp_plasma_ion_density_weighted_kev",
         "temp_plasma_electron_line_avg_kev",
     ):
-        path = resolve(getattr(physics, name), VarPath)
+        path = physics.place(name)
         assert path in owned, name
         assert path not in read, name
 

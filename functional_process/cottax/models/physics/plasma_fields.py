@@ -4,19 +4,13 @@ field `Physics.run` derives from them.
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    FromExactly,
-    ModelNamespace,
-    OutputInto,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit, V
 
-from functional_process.cottax.models.physics.physics import SurfaceAveragedPoloidalField
 from functional_process.cottax.models.stellarator.plasma_physics import (
     calculate_total_field,
 )
 from functional_process.cottax.paths import physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.plasma_fields import (
     calculate_plasma_inboard_toroidal_field,
     calculate_plasma_outboard_toroidal_field,
@@ -28,90 +22,61 @@ __all__ = [
 ]
 
 
-class TotalMagneticField(WrapsFunction):
-    """cottax node: `physics.py:373-376`, the on-axis total field."""
-
-    fn = calculate_total_field
-
-    b_plasma_toroidal_on_axis = From(physics)
-    b_plasma_surface_poloidal_average = From(physics)
-
-    b_plasma_total = OutputInto(physics)
+# cottax node: `physics.py:373-376`, the on-axis total field.
+TotalMagneticField = physics.function(calculate_total_field, "b_plasma_total")
 
 
-class PlasmaInboardToroidalField(WrapsFunction):
-    """`physics.py:394-401`, the inboard-midplane toroidal field component."""
-
-    fn = calculate_plasma_inboard_toroidal_field
-
-    b_plasma_toroidal_on_axis = From(physics)
-    rmajor = From(physics)
-    rminor = From(physics)
-
-    b_plasma_inboard_toroidal = OutputInto(physics)
+# `physics.py:394-401`, the inboard-midplane toroidal field component.
+PlasmaInboardToroidalField = physics.function(
+    calculate_plasma_inboard_toroidal_field, "b_plasma_inboard_toroidal"
+)
 
 
-class PlasmaOutboardToroidalField(WrapsFunction):
-    """`physics.py:403-409`, the outboard-midplane toroidal field component."""
-
-    fn = calculate_plasma_outboard_toroidal_field
-
-    b_plasma_toroidal_on_axis = From(physics)
-    rmajor = From(physics)
-    rminor = From(physics)
-
-    b_plasma_outboard_toroidal = OutputInto(physics)
+# `physics.py:403-409`, the outboard-midplane toroidal field component.
+PlasmaOutboardToroidalField = physics.function(
+    calculate_plasma_outboard_toroidal_field, "b_plasma_outboard_toroidal"
+)
 
 
-class TotalMagneticFieldInboard(WrapsFunction):
-    """`physics.py:386-392`, the inboard total field."""
-
-    fn = calculate_total_field
-
-    b_plasma_toroidal_on_axis = FromExactly(physics.b_plasma_inboard_toroidal)
-    b_plasma_surface_poloidal_average = From(physics)
-
-    b_plasma_inboard_total = OutputInto(physics)
-
-
-class TotalMagneticFieldOutboard(WrapsFunction):
-    """`physics.py:378-384`, the outboard total field."""
-
-    fn = calculate_total_field
-
-    b_plasma_toroidal_on_axis = FromExactly(physics.b_plasma_outboard_toroidal)
-    b_plasma_surface_poloidal_average = From(physics)
-
-    b_plasma_outboard_total = OutputInto(physics)
+# `physics.py:386-392`, the inboard total field.
+TotalMagneticFieldInboard = physics.function(
+    calculate_total_field,
+    "b_plasma_inboard_total",
+    reads={
+        "b_plasma_toroidal_on_axis": V.physics.b_plasma_inboard_toroidal,
+    },
+)
 
 
-class PlasmaFields(ModelNamespace):
+# `physics.py:378-384`, the outboard total field.
+TotalMagneticFieldOutboard = physics.function(
+    calculate_total_field,
+    "b_plasma_outboard_total",
+    reads={
+        "b_plasma_toroidal_on_axis": V.physics.b_plasma_outboard_toroidal,
+    },
+)
+
+
+class PlasmaFields(eqx.Module):
     """`.tokamak.plasma_fields` -- the fields `PlasmaFields` produces for this graph."""
 
-    surface_averaged_poloidal_field: SurfaceAveragedPoloidalField = dataclasses.field(
-        kw_only=True
-    )
+    surface_averaged_poloidal_field: Explicit = dataclasses.field(kw_only=True)
     """`.physics.i_plasma_current` -- the Ampere arm is written, the Peng arm
     (`i_plasma_current == 2`) calls `PlasmaCurrent.plascar_bpol` and is UNPORTED.
     """
 
-    total_magnetic_field: TotalMagneticField = TotalMagneticField()
+    total_magnetic_field: Explicit = TotalMagneticField
     """`.physics.b_plasma_total`. Unswitched."""
 
-    plasma_inboard_toroidal_field: PlasmaInboardToroidalField = (
-        PlasmaInboardToroidalField()
-    )
+    plasma_inboard_toroidal_field: Explicit = PlasmaInboardToroidalField
     """`.physics.b_plasma_inboard_toroidal`. Unswitched."""
 
-    plasma_outboard_toroidal_field: PlasmaOutboardToroidalField = (
-        PlasmaOutboardToroidalField()
-    )
+    plasma_outboard_toroidal_field: Explicit = PlasmaOutboardToroidalField
     """`.physics.b_plasma_outboard_toroidal`. Unswitched."""
 
-    total_magnetic_field_inboard: TotalMagneticFieldInboard = TotalMagneticFieldInboard()
+    total_magnetic_field_inboard: Explicit = TotalMagneticFieldInboard
     """`.physics.b_plasma_inboard_total`."""
 
-    total_magnetic_field_outboard: TotalMagneticFieldOutboard = (
-        TotalMagneticFieldOutboard()
-    )
+    total_magnetic_field_outboard: Explicit = TotalMagneticFieldOutboard
     """`.physics.b_plasma_outboard_total`."""

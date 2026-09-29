@@ -4,16 +4,10 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    FromExactly,
-    ModelNamespace,
-    Output,
-    OutputInto,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit, V
 
 from functional_process.cottax.paths import physics
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,
@@ -38,50 +32,45 @@ __all__ = [
 ]
 
 
-class GreenwaldDensityLimit(WrapsFunction):
-    """Unconditional producer of `.physics.nd_plasma_electron_max_array[6]`."""
-
-    fn = calculate_greenwald_density_limit
-
-    c_plasma = FromExactly(physics.plasma_current)
-    rminor = From(physics)
-
-    nd_plasma_electron_max_array_7 = Output(physics.nd_plasma_electron_max_array[6])
-
-
-class EnforcedDensityLimitGreenwald(WrapsFunction):
-    """The `i_density_limit == 7` (GREENWALD) occupant: selects the array element
-    `GreenwaldDensityLimit` already produced.
-    """
-
-    fn = select_enforced_density_limit_greenwald
-
-    nd_plasma_electron_max_array_7 = FromExactly(physics.nd_plasma_electron_max_array[6])
-
-    nd_plasma_electrons_max = OutputInto(physics)
+# Unconditional producer of `.physics.nd_plasma_electron_max_array[6]`.
+GreenwaldDensityLimit = physics.function(
+    calculate_greenwald_density_limit,
+    V.physics.nd_plasma_electron_max_array[6],
+    reads={
+        "c_plasma": V.physics.plasma_current,
+    },
+)
 
 
-class GreenwaldFraction(WrapsFunction):
-    """Unconditional producer of `.physics.f_nd_plasma_greenwald`."""
+# The `i_density_limit == 7` (GREENWALD) occupant: selects the array element
+# `GreenwaldDensityLimit` already produced.
+EnforcedDensityLimitGreenwald = physics.function(
+    select_enforced_density_limit_greenwald,
+    "nd_plasma_electrons_max",
+    reads={
+        "nd_plasma_electron_max_array_7": V.physics.nd_plasma_electron_max_array[6],
+    },
+)
 
-    fn = calculate_greenwald_fraction
 
-    nd_plasma_electron_line = From(physics)
-    nd_plasma_electron_max_array_7 = FromExactly(physics.nd_plasma_electron_max_array[6])
+# Unconditional producer of `.physics.f_nd_plasma_greenwald`.
+GreenwaldFraction = physics.function(
+    calculate_greenwald_fraction,
+    "f_nd_plasma_greenwald",
+    reads={
+        "nd_plasma_electron_max_array_7": V.physics.nd_plasma_electron_max_array[6],
+    },
+)
 
-    f_nd_plasma_greenwald = OutputInto(physics)
 
-
-class TokamakDensityLimit(ModelNamespace):
+class TokamakDensityLimit(eqx.Module):
     """`.tokamak.density_limit` -- three slots, one switched."""
 
-    greenwald_density_limit: GreenwaldDensityLimit = GreenwaldDensityLimit()
+    greenwald_density_limit: Explicit = GreenwaldDensityLimit
     """Unconditional producer of `.physics.nd_plasma_electron_max_array[6]`."""
 
-    enforced_density_limit: EnforcedDensityLimitGreenwald = dataclasses.field(
-        kw_only=True
-    )
+    enforced_density_limit: Explicit = dataclasses.field(kw_only=True)
     """`.physics.i_density_limit` -- eight values, one occupant."""
 
-    greenwald_fraction: GreenwaldFraction = GreenwaldFraction()
+    greenwald_fraction: Explicit = GreenwaldFraction
     """Unconditional producer of `.physics.f_nd_plasma_greenwald`."""

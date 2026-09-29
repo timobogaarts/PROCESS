@@ -5,7 +5,8 @@ Which cost nodes this machine has, and their settings.
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
@@ -14,12 +15,10 @@ from functional_process.cottax.models.costs.costs import (
     BlanketCost,
     ConstructedCost,
     ConvertFpyToCalendar,
-    CostOfElectricity,
     CryogenicSystemCost,
     DieselGeneratorsCost,
     DivertorCost,
     ElectricPlantEquipmentCost,
-    EnergyStorageCost,
     FirstWallCost,
     FuelHandlingCost,
     FuellingSystemCost,
@@ -34,18 +33,14 @@ from functional_process.cottax.models.costs.costs import (
     MaintenanceEquipmentCost,
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
-    PfCoilPowerConditioningCost,
-    PfMagnetCost,
     PowerConditioningCost,
     PowerInjectionCost,
     ReactorCoolingSystemCost,
     ReactorCost,
-    ReactorStructureCost,
     ShieldCost,
     StructuresCost,
     SwitchyardCost,
     TfCoilPowerConditioningCost,
-    TfMagnetCostSuperconducting,
     TotalPlantDirectCost,
     TransformersCost,
     TurbinePlantEquipmentCost,
@@ -54,7 +49,7 @@ from functional_process.cottax.models.costs.costs import (
 )
 
 
-class Costs(ModelNamespace):
+class Costs(eqx.Module):
     """`costs.py`'s 1990 cost model: the `.costs.i_cost_model == 0` arm, 43 nodes."""
 
     # Registry unit #18, `models/costs/costs.py` -- the whole `.costs.coe` chain, 42 of
@@ -69,8 +64,8 @@ class Costs(ModelNamespace):
     # `i_confinement_time`/`i_thermal_electric_conversion`/`i_p_coolant_pumping` did
     # (`next_steps.md` §8.2). Their values here are PROCESS's own bare defaults *and*
     # the reference run's, except `iohcl` -- flagged individually below.
-    convert_fpy_to_calendar: ConvertFpyToCalendar = ConvertFpyToCalendar()
-    structures_cost: StructuresCost = StructuresCost()  # Account 21
+    convert_fpy_to_calendar: Explicit = ConvertFpyToCalendar
+    structures_cost: Explicit = StructuresCost  # Account 21
     # **`ife` was an `eqx.field(static=True)` on each of these six nodes and is gone**
     # (`_audit/next_steps.md` §14.2). Each has a real PROCESS `ife == 1` arm reading an
     # entirely different set of `.ife.*` fields (2-D material-mass arrays for the three
@@ -79,9 +74,9 @@ class Costs(ModelNamespace):
     # to `machine_from_indat`, which answers `ife` **once**, at assembly, for all six at
     # once -- rather than seven times, at trace time, inside seven node bodies. The
     # classes here are the magnetic-confinement occupants and no longer see the integer.
-    first_wall_cost: FirstWallCost = FirstWallCost()  # Account 221.1
-    blanket_cost: BlanketCost = BlanketCost()  # Account 221.2
-    shield_cost: ShieldCost = ShieldCost()  # Account 221.3
+    first_wall_cost: Explicit = FirstWallCost  # Account 221.1
+    blanket_cost: Explicit = BlanketCost  # Account 221.2
+    shield_cost: Explicit = ShieldCost  # Account 221.3
     # Account 221.4 (reactor structure): **a slot on a tokamak and `None` on a
     # stellarator**, and the first slot in this tree whose occupant is decided by the
     # *device* rather than by a switch.
@@ -104,11 +99,11 @@ class Costs(ModelNamespace):
     # `large_tokamak_nof`. The stellarator graph is untouched: a `None` slot contributes
     # no node, `c2214` stays the `0.0` boundary input it always was there, and
     # `ReactorCost`'s read of it is unmoved.
-    reactor_structure_cost: ReactorStructureCost | None = dataclasses.field(
+    reactor_structure_cost: Explicit | None = dataclasses.field(
         kw_only=True
     )  # Account 221.4
-    divertor_cost: DivertorCost = DivertorCost()  # Account 221.5
-    reactor_cost: ReactorCost = ReactorCost()  # Account 221 total
+    divertor_cost: Explicit = DivertorCost  # Account 221.5
+    reactor_cost: Explicit = ReactorCost  # Account 221 total
     # **`supercond_cost_model` was an `eqx.field(static=True)` here and is a slot now**
     # (`_audit/next_steps.md` §14.2). Its two arms read disjoint fields --
     # `.costs.ucsc` + `.tfcoil.m_tf_coil_superconductor` against `.costs.sc_mat_cost_0`
@@ -126,12 +121,8 @@ class Costs(ModelNamespace):
     # before a resistive run could assemble, which is the honest statement of what is
     # missing.
     # Account 222.1
-    tf_magnet_cost_superconducting: TfMagnetCostSuperconducting = dataclasses.field(
-        kw_only=True
-    )
-    pf_magnet_cost: PfMagnetCost | None = dataclasses.field(
-        kw_only=True
-    )  # Account 222.2
+    tf_magnet_cost_superconducting: Explicit = dataclasses.field(kw_only=True)
+    pf_magnet_cost: Explicit | None = dataclasses.field(kw_only=True)  # Account 222.2
     """Account 222.2, **restored 2026-08-30**, and the third device-decided slot -- and
     the only one that is device-decided *and* switched, so both mechanisms meet on it.
     """
@@ -170,17 +161,15 @@ class Costs(ModelNamespace):
     # and everything above them (`c22`, `c2`, `cdirt`, `concost`, `coe`) are unmoved,
     # measured rather than argued. Their fourteen sub-accounts (`c22221`-`c22224`,
     # `c22521`-`c22527`) had no reader in this graph at all and simply leave it.
-    vacuum_vessel_assembly_cost: VacuumVesselAssemblyCost = (
-        VacuumVesselAssemblyCost()
-    )  # Account 222.3
-    magnets_cost: MagnetsCost = MagnetsCost()  # Account 222 total
-    power_injection_cost: PowerInjectionCost = PowerInjectionCost()  # Account 223
-    vacuum_system_cost: VacuumSystemCost = VacuumSystemCost()  # Account 224
-    tf_coil_power_conditioning_cost: TfCoilPowerConditioningCost = (
-        TfCoilPowerConditioningCost()
-    )  # Account 225.1
-    pf_coil_power_conditioning_cost: PfCoilPowerConditioningCost | None = (
-        dataclasses.field(kw_only=True)
+    vacuum_vessel_assembly_cost: Explicit = VacuumVesselAssemblyCost  # Account 222.3
+    magnets_cost: Explicit = MagnetsCost  # Account 222 total
+    power_injection_cost: Explicit = PowerInjectionCost  # Account 223
+    vacuum_system_cost: Explicit = VacuumSystemCost  # Account 224
+    tf_coil_power_conditioning_cost: Explicit = (
+        TfCoilPowerConditioningCost  # Account 225.1
+    )
+    pf_coil_power_conditioning_cost: Explicit | None = dataclasses.field(
+        kw_only=True
     )  # Account 225.2
     """Account 225.2, **restored 2026-08-30**, and the second device-decided slot."""
     # (the deleted-slot note above `vacuum_vessel_assembly_cost` is now historical) **`energy_storage_cost` below is deliberately
@@ -192,69 +181,51 @@ class Costs(ModelNamespace):
     # until the slot became a family. `istore == 3` stays unported (a third reads-set:
     # `.heat_transport.p_plant_primary_heat_mw`, `.times.t_plant_pulse_no_burn`,
     # `.pulse.dtstor`).
-    energy_storage_cost: EnergyStorageCost = dataclasses.field(kw_only=True)
+    energy_storage_cost: Explicit = dataclasses.field(kw_only=True)
     """Account 225.3, and **the reads follow the arm.** At `i_pulsed_plant == 0` this
     account is identically zero and reads nothing; at `== 1` it scales an itemised
     literal by net electric power.
     """
-    power_conditioning_cost: PowerConditioningCost = (
-        PowerConditioningCost()
-    )  # Account 225 total
-    reactor_cooling_system_cost: ReactorCoolingSystemCost = (
-        ReactorCoolingSystemCost()
-    )  # Account 2261
-    auxiliary_component_cooling_cost: AuxiliaryComponentCoolingCost = (
-        AuxiliaryComponentCoolingCost()
-    )  # Account 2262
-    cryogenic_system_cost: CryogenicSystemCost = CryogenicSystemCost()  # Account 2263
-    heat_transport_system_cost: HeatTransportSystemCost = (
-        HeatTransportSystemCost()
-    )  # Account 226 total
-    fuelling_system_cost: FuellingSystemCost = FuellingSystemCost()  # Account 2271
+    power_conditioning_cost: Explicit = PowerConditioningCost  # Account 225 total
+    reactor_cooling_system_cost: Explicit = ReactorCoolingSystemCost  # Account 2261
+    auxiliary_component_cooling_cost: Explicit = (
+        AuxiliaryComponentCoolingCost  # Account 2262
+    )
+    cryogenic_system_cost: Explicit = CryogenicSystemCost  # Account 2263
+    heat_transport_system_cost: Explicit = HeatTransportSystemCost  # Account 226 total
+    fuelling_system_cost: Explicit = FuellingSystemCost  # Account 2271
     # Account 2272 -- also the sole producer of
     # `.physics.wtgpd`, the one field `costs.py` writes outside `.costs.*`.
-    fuel_processing_cost: FuelProcessingCost = FuelProcessingCost()
-    atmospheric_recovery_cost: AtmosphericRecoveryCost = (
-        AtmosphericRecoveryCost()
-    )  # Account 2273
-    nuclear_building_ventilation_cost: NuclearBuildingVentilationCost = (
-        NuclearBuildingVentilationCost()
-    )  # Account 2274
-    fuel_handling_cost: FuelHandlingCost = FuelHandlingCost()  # Account 227 total
-    instrumentation_and_control_cost: InstrumentationAndControlCost = (
-        InstrumentationAndControlCost()
-    )  # Account 228
-    maintenance_equipment_cost: MaintenanceEquipmentCost = (
-        MaintenanceEquipmentCost()
-    )  # Account 229
-    fusion_power_island_cost: FusionPowerIslandCost = (
-        FusionPowerIslandCost()
-    )  # Account 22 total
-    turbine_plant_equipment_cost: TurbinePlantEquipmentCost = (
-        TurbinePlantEquipmentCost()
-    )  # Account 23
-    switchyard_cost: SwitchyardCost = SwitchyardCost()  # Account 241
-    transformers_cost: TransformersCost = TransformersCost()  # Account 242
-    low_voltage_cost: LowVoltageCost = LowVoltageCost()  # Account 243
-    diesel_generators_cost: DieselGeneratorsCost = DieselGeneratorsCost()  # Account 244
-    auxiliary_facility_power_cost: AuxiliaryFacilityPowerCost = (
-        AuxiliaryFacilityPowerCost()
-    )  # Account 245
-    electric_plant_equipment_cost: ElectricPlantEquipmentCost = (
-        ElectricPlantEquipmentCost()
-    )  # Account 24 total
-    misc_plant_equipment_cost: MiscPlantEquipmentCost = (
-        MiscPlantEquipmentCost()
-    )  # Account 25
-    heat_rejection_cost: HeatRejectionCost = HeatRejectionCost()  # Account 26
-    total_plant_direct_cost: TotalPlantDirectCost = (
-        TotalPlantDirectCost()
-    )  # `.costs.cdirt`, inline in `Costs.run()`
-    indirect_costs: IndirectCosts = IndirectCosts()  # Account 9
-    constructed_cost: ConstructedCost = (
-        ConstructedCost()
-    )  # `.costs.concost`, inline in `Costs.run()`
-    cost_of_electricity: CostOfElectricity | None = dataclasses.field(kw_only=True)
+    fuel_processing_cost: Explicit = FuelProcessingCost
+    atmospheric_recovery_cost: Explicit = AtmosphericRecoveryCost  # Account 2273
+    nuclear_building_ventilation_cost: Explicit = (
+        NuclearBuildingVentilationCost  # Account 2274
+    )
+    fuel_handling_cost: Explicit = FuelHandlingCost  # Account 227 total
+    instrumentation_and_control_cost: Explicit = (
+        InstrumentationAndControlCost  # Account 228
+    )
+    maintenance_equipment_cost: Explicit = MaintenanceEquipmentCost  # Account 229
+    fusion_power_island_cost: Explicit = FusionPowerIslandCost  # Account 22 total
+    turbine_plant_equipment_cost: Explicit = TurbinePlantEquipmentCost  # Account 23
+    switchyard_cost: Explicit = SwitchyardCost  # Account 241
+    transformers_cost: Explicit = TransformersCost  # Account 242
+    low_voltage_cost: Explicit = LowVoltageCost  # Account 243
+    diesel_generators_cost: Explicit = DieselGeneratorsCost  # Account 244
+    auxiliary_facility_power_cost: Explicit = AuxiliaryFacilityPowerCost  # Account 245
+    electric_plant_equipment_cost: Explicit = (
+        ElectricPlantEquipmentCost  # Account 24 total
+    )
+    misc_plant_equipment_cost: Explicit = MiscPlantEquipmentCost  # Account 25
+    heat_rejection_cost: Explicit = HeatRejectionCost  # Account 26
+    total_plant_direct_cost: Explicit = (
+        TotalPlantDirectCost  # `.costs.cdirt`, inline in `Costs.run()`
+    )
+    indirect_costs: Explicit = IndirectCosts  # Account 9
+    constructed_cost: Explicit = (
+        ConstructedCost  # `.costs.concost`, inline in `Costs.run()`
+    )
+    cost_of_electricity: Explicit | None = dataclasses.field(kw_only=True)
     """Whether this run has a cost of electricity at all, and if so which centrepost
     treatment -- `.costs.ireactor`, `.costs.ipnet` and `.physics.itart` jointly
     (`cost_variables.py:521`/`:515`, `physics_variables.py:994`; defaults `1`, `0`,

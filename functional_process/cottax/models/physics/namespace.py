@@ -4,19 +4,16 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 from functional_process.cottax.models.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
-    PlasmaComposition,
 )
 from functional_process.cottax.models.physics.confinement_time import (
     ConfinementScalingInputs,
-    ConfinementTail,
-    ConfinementTimeScaling,
     DoubleAndTripleProduct,
     IterPhysicsBasisElongation,
-    PlasmaPowerLoss,
 )
 from functional_process.cottax.models.physics.dimensionless_parameters import (
     DimensionlessPlasmaParameters,
@@ -36,14 +33,12 @@ from functional_process.cottax.models.physics.plasma_profiles import (
 )
 from functional_process.cottax.models.physics.profiles import (
     DensityProfile,
-    GreenwaldDensityFractions,
     NeProfileIntegral,
     ParabolicOnAxisDensities,
     ParabolicOnAxisTemperatures,
     ParabolicTemperatureProfile,
     PedestalOnAxisDensities,
     PedestalOnAxisTemperatures,
-    PedestalSeparatrixDensities,
     PedestalTemperatureProfile,
     ProfileGrid,
     TeProfileIntegral,
@@ -51,7 +46,6 @@ from functional_process.cottax.models.physics.profiles import (
 from functional_process.cottax.models.physics.pure_formulas import (
     AuxiliaryPhysicsQuantities,
     ElectronThermalEnergy,
-    FastAlphaBeta,
     IonElectronEquilibration,
     IonThermalEnergy,
     TotalPlasmaHeatingPower,
@@ -61,33 +55,26 @@ from functional_process.cottax.models.physics.radiation_power import (
     PlasmaRadiationPowers,
     SynchrotronRadiationPower,
 )
-from functional_process.cottax.models.stellarator.density_limits import (
-    EcrhDensityLimit,
-)
 from functional_process.cottax.models.stellarator.plasma_physics import (
     FusionPowerTotalsMw,
     FusionTotalsNoBeam,
 )
 
 
-class ProfileParameterisationParabolic(ModelNamespace):
+class ProfileParameterisationParabolic(eqx.Module):
     """Parabolic profiles: the `.physics.i_plasma_pedestal == 0` occupant, 6 or 7 nodes."""
 
-    ecrh_density_limit: EcrhDensityLimit | None = dataclasses.field(kw_only=True)
+    ecrh_density_limit: Explicit | None = dataclasses.field(kw_only=True)
     """The ECRH density limit -- **present on a stellarator, absent on a tokamak.** Not
     just a formula switch: `density_limits.py:146-150` shows PROCESS itself has no
     formula for `st_d_limit_ecrh` outside `i_plasma_pedestal == 0` -- the `else` arm
     only logs an error and produces no defined `dlimit_ecrh`/`bt_max_ecrh`.
     """
 
-    parabolic_temperature_profile: ParabolicTemperatureProfile = (
-        ParabolicTemperatureProfile()
-    )
-    parabolic_on_axis_densities: ParabolicOnAxisDensities = ParabolicOnAxisDensities()
-    parabolic_on_axis_temperatures: ParabolicOnAxisTemperatures = (
-        ParabolicOnAxisTemperatures()
-    )
-    parabolic_gradient_lengths: ParabolicGradientLengths = ParabolicGradientLengths()
+    parabolic_temperature_profile: Explicit = ParabolicTemperatureProfile
+    parabolic_on_axis_densities: Explicit = ParabolicOnAxisDensities
+    parabolic_on_axis_temperatures: Explicit = ParabolicOnAxisTemperatures
+    parabolic_gradient_lengths: Explicit = ParabolicGradientLengths
     # `ParabolicProfileValues` -- the line-average/density-weighted tail
     # of `parabolic_parameterisation`. `plasma_profiles.md`'s "cottax
     # node" section deferred it pending that record's open question 1
@@ -98,7 +85,7 @@ class ProfileParameterisationParabolic(ModelNamespace):
     # weighted_kev`/`temp_plasma_ion_density_weighted_kev` were boundary
     # inputs and iteration variable 4 had no path into fusion
     # reactivity or beta -- see that class's docstring.
-    parabolic_profile_values: ParabolicProfileValues = ParabolicProfileValues()
+    parabolic_profile_values: Explicit = ParabolicProfileValues
     # The seven-field L-mode reset (`plasma_profiles.py:92-117`), the
     # producer these fields never had. Belongs on this arm and only this
     # arm: PROCESS applies it in `parabolic_parameterisation`, i.e.
@@ -109,15 +96,13 @@ class ProfileParameterisationParabolic(ModelNamespace):
     # profile once they are zero -- so a parabolic run silently got a
     # pedestal density profile. See `LModeProfileReset`'s docstring for
     # the measured effect on the SAND cold solve.
-    l_mode_profile_reset: LModeProfileReset = LModeProfileReset()
+    l_mode_profile_reset: Explicit = LModeProfileReset
 
 
-class ProfileParameterisationPedestal(ModelNamespace):
+class ProfileParameterisationPedestal(eqx.Module):
     """Pedestal profiles: the `.physics.i_plasma_pedestal == 1` occupant, 5 nodes."""
 
-    pedestal_separatrix: PedestalSeparatrixDensities | GreenwaldDensityFractions = (
-        dataclasses.field(kw_only=True)
-    )
+    pedestal_separatrix: Explicit = dataclasses.field(kw_only=True)
     """`.physics.i_nd_plasma_pedestal_separatrix` -- **the two arms are inverses of one
     another, and that is why neither could be defaulted.** `GREENWALD_FRACTION` (`1`,
     PROCESS's default and `large_tokamak_eval`'s) reads the two Greenwald *fractions*
@@ -125,13 +110,9 @@ class ProfileParameterisationPedestal(ModelNamespace):
     the two fractions.
     """
 
-    pedestal_temperature_profile: PedestalTemperatureProfile = (
-        PedestalTemperatureProfile()
-    )
-    pedestal_on_axis_densities: PedestalOnAxisDensities = PedestalOnAxisDensities()
-    pedestal_on_axis_temperatures: PedestalOnAxisTemperatures = (
-        PedestalOnAxisTemperatures()
-    )
+    pedestal_temperature_profile: Explicit = PedestalTemperatureProfile
+    pedestal_on_axis_densities: Explicit = PedestalOnAxisDensities
+    pedestal_on_axis_temperatures: Explicit = PedestalOnAxisTemperatures
     # `PedestalProfileValues` -- the line-average/density-weighted tail
     # of `pedestal_parameterisation`, and the mirror of the parabolic
     # arm's `parabolic_profile_values` below. **Found by assembling a
@@ -151,7 +132,7 @@ class ProfileParameterisationPedestal(ModelNamespace):
     # ragged arms nobody declared are not** -- a slot with an occupant
     # on both arms can still have one arm produce less than the other,
     # and only the boundary sees it.
-    pedestal_profile_values: PedestalProfileValues = PedestalProfileValues()
+    pedestal_profile_values: Explicit = PedestalProfileValues
     # No pedestal-arm counterpart to `EcrhDensityLimit`: PROCESS's own
     # default configuration (`i_plasma_pedestal == 1`) never computes a
     # real ECRH density limit at all -- see the note on the value-0 arm.
@@ -159,7 +140,7 @@ class ProfileParameterisationPedestal(ModelNamespace):
     # this arm, not merely unported.
 
 
-class PhysicsProfiles(ModelNamespace):
+class PhysicsProfiles(eqx.Module):
     """Plasma profile shapes and the volume averages taken over them."""
 
     parameterisation: (
@@ -168,56 +149,54 @@ class PhysicsProfiles(ModelNamespace):
     """How the plasma profiles are shaped (`.physics.i_plasma_pedestal`, default 1)."""
 
     # unit #12, physics/plasma_profiles.py
-    profile_factors: ProfileFactors = ProfileFactors()
+    profile_factors: Explicit = ProfileFactors
     # unit #21, physics/profiles.py -- arms not gated by `i_plasma_pedestal` only
-    profile_grid: ProfileGrid = ProfileGrid(
-        n_plasma_profile_elements=201
-    )  # `physics_variables.py:1054` default
-    ne_profile_integral: NeProfileIntegral = NeProfileIntegral()
-    te_profile_integral: TeProfileIntegral = TeProfileIntegral()
-    density_profile: DensityProfile = DensityProfile()
+    profile_grid: Explicit = ProfileGrid  # `physics_variables.py:1054` default
+    ne_profile_integral: Explicit = NeProfileIntegral
+    te_profile_integral: Explicit = TeProfileIntegral
+    density_profile: Explicit = DensityProfile
     # `plasma_profiles.py`. Unswitched, not under `.physics.i_plasma_pedestal`:
     # PROCESS writes `.physics.temp_plasma_ion_vol_avg_kev` in `parameterise_plasma`
     # *before* the branch, so it runs in both arms. A `FixedPointFunction` rather than an
     # `ExplicitFunction` because the field is conditionally owned by *data*
     # (`f_temp_plasma_ion_electron > 0`) -- see the class's own docstring for why that is
     # the honest shape and not a workaround.
-    ion_vol_avg_temperature: IonVolAvgTemperature = IonVolAvgTemperature()
+    ion_vol_avg_temperature: Explicit = IonVolAvgTemperature
 
 
-class PhysicsConfinementTime(ModelNamespace):
+class PhysicsConfinementTime(eqx.Module):
     """Energy confinement: the head, the scaling law, and the tail, as separate slots."""
 
-    inputs: ConfinementScalingInputs = ConfinementScalingInputs()
+    inputs: Explicit = ConfinementScalingInputs
     """The unit conversions the laws take as arguments (`nd_plasma_electron_line_19`,
     `cur_plasma_ma`).
     """
 
-    elongation: IterPhysicsBasisElongation = IterPhysicsBasisElongation()
+    elongation: Explicit = IterPhysicsBasisElongation
     """`.physics.kappa_ipb`, and **now registered.** It was deliberately left out while
     `ConfinementTime` computed and owned `kappa_ipb` itself -- registering both would
     have been a duplicate-ownership conflict on one `VarPath`.
     """
 
-    power_loss: PlasmaPowerLoss = dataclasses.field(kw_only=True)
+    power_loss: Explicit = dataclasses.field(kw_only=True)
     """The head: `.physics.p_plasma_loss_mw`, decided by `i_plasma_ignited` **and**
     `i_rad_loss` together, since one adds injected heating and the other subtracts a
     radiation term.
     """
 
-    scaling: ConfinementTimeScaling = dataclasses.field(kw_only=True)
+    scaling: Explicit = dataclasses.field(kw_only=True)
     """Which law runs (`i_confinement_time`)."""
 
-    double_and_triple_product: DoubleAndTripleProduct = DoubleAndTripleProduct()
+    double_and_triple_product: Explicit = DoubleAndTripleProduct
     """`.physics.ntau`/`.physics.nTtau`, downstream of `t_energy_confinement`."""
 
-    tail: ConfinementTail = dataclasses.field(kw_only=True)
+    tail: Explicit = dataclasses.field(kw_only=True)
     """Everything downstream of the law, identical for all of them, and the reason the
     split does not duplicate anything.
     """
 
 
-class Physics(ModelNamespace):
+class Physics(eqx.Module):
     """Plasma physics: composition, profiles, fusion rates, beta, exhaust."""
 
     # **Filed here on physical grounds, against PROCESS's own filing.** Both live in
@@ -230,7 +209,7 @@ class Physics(ModelNamespace):
     # the stronger claim is a grouping "declared on physical grounds" rather than
     # mirrored from PROCESS's file layout, and this is the first place the two
     # disagree -- so the declaration wins, and §11.1's containment result survives.
-    fusion_power_totals_mw: FusionPowerTotalsMw = FusionPowerTotalsMw()
+    fusion_power_totals_mw: Explicit = FusionPowerTotalsMw
     # The `else` arm of `stellarator.py:2002-2054`, three identities -- and the only
     # producer of `.physics.fusden_total`/`.fusden_alpha_total`/`.p_dt_total_mw`,
     # which were boundary inputs until it landed. Unconditional because the arm is
@@ -238,16 +217,16 @@ class Physics(ModelNamespace):
     # of a beam, and because the beam arm calls the unportable `reactions.beam_fusion`
     # (unit #19) -- there is no second arm to switch between. See
     # `_audit/boundary_inputs_audit.md` §4c (b7)/(b8) and the class's own docstring.
-    fusion_totals_no_beam: FusionTotalsNoBeam = FusionTotalsNoBeam()
+    fusion_totals_no_beam: Explicit = FusionTotalsNoBeam
     profiles: PhysicsProfiles = dataclasses.field(kw_only=True)
 
     confinement_time: PhysicsConfinementTime = dataclasses.field(kw_only=True)
 
     # unit #19, physics/fusion_reactions.py
-    fusion_rates: FusionRates = FusionRates()
-    set_fusion_powers: SetFusionPowers = SetFusionPowers()
+    fusion_rates: Explicit = FusionRates
+    set_fusion_powers: Explicit = SetFusionPowers
     # unit #20, physics/radiation_power.py
-    synchrotron_radiation_power: SynchrotronRadiationPower = SynchrotronRadiationPower()
+    synchrotron_radiation_power: Explicit = SynchrotronRadiationPower
     # `imp_indices` is a graph-assembly-time fact (which impurity species this machine
     # has), not a per-evaluation switch -- see `ImpurityRadiationTotals`'s docstring.
     # All 14 species: H/He are always recomputed by `plasma_composition()`, and species
@@ -256,26 +235,22 @@ class Physics(ModelNamespace):
     # scope targets. A run without those iteration variables active could legitimately
     # need a narrower tuple; nothing here checks that yet (radiation_power.md § open
     # questions 2).
-    impurity_radiation_totals: ImpurityRadiationTotals = ImpurityRadiationTotals(
-        imp_indices=tuple(range(14))
-    )
-    plasma_radiation_powers: PlasmaRadiationPowers = PlasmaRadiationPowers()
+    impurity_radiation_totals: Explicit = ImpurityRadiationTotals
+    plasma_radiation_powers: Explicit = PlasmaRadiationPowers
     # unit #9 chunk A, physics/pure_formulas.py -- five already-pure formulas
     # lifted verbatim, no entanglement, no switch-driven topology split.
-    ion_electron_equilibration: IonElectronEquilibration = IonElectronEquilibration()
-    auxiliary_physics_quantities: AuxiliaryPhysicsQuantities = (
-        AuxiliaryPhysicsQuantities()
-    )
-    total_plasma_heating_power: TotalPlasmaHeatingPower = TotalPlasmaHeatingPower()
-    electron_thermal_energy: ElectronThermalEnergy = ElectronThermalEnergy()
-    ion_thermal_energy: IonThermalEnergy = IonThermalEnergy()
+    ion_electron_equilibration: Explicit = IonElectronEquilibration
+    auxiliary_physics_quantities: Explicit = AuxiliaryPhysicsQuantities
+    total_plasma_heating_power: Explicit = TotalPlasmaHeatingPower
+    electron_thermal_energy: Explicit = ElectronThermalEnergy
+    ion_thermal_energy: Explicit = IonThermalEnergy
     # **`i_beta_fast_alpha` was a static kwarg here and is a slot now**
     # (`_audit/next_steps.md` §14.2). The note it replaces -- "kept as a static kwarg,
     # not a Switch, both branches read the same six variables" -- was correct about the
     # reads and is no longer the rule: a switch value selects an occupant whatever its
     # reads. Nothing structural moves; what moves is that the two published formulas are
     # two named occupants. Default `1` (WARD), `physics_variables.py:875`.
-    fast_alpha_beta: FastAlphaBeta = dataclasses.field(kw_only=True)
+    fast_alpha_beta: Explicit = dataclasses.field(kw_only=True)
     # unit #9 chunk B, physics/composition.py. `plasma_composition`'s
     # `.physics.first_call` turned out not to be a genuine cycle at all -- its real
     # referent (`f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`) has
@@ -305,18 +280,18 @@ class Physics(ModelNamespace):
     # `composition.py:219-222` is `nd_beam_ions = 0` under IGNITED
     # versus `nd_plasma_electrons_vol_avg * f_nd_beam_electron` otherwise, so the
     # ignited arm reads a strict *subset* of the non-ignited arm's inputs.
-    plasma_composition: PlasmaComposition = dataclasses.field(kw_only=True)
+    plasma_composition: Explicit = dataclasses.field(kw_only=True)
     """**`i_plasma_ignited` was a static kwarg here and is a slot now**
     (`_audit/next_steps.md` §14.2).
     """
     # Over the line length and left that way: slot name and occupant class are both
     # this long, and the annotation cannot be wrapped -- `ruff format` strips
     # parentheses from around an annotation. An import alias would hide the class name.
-    calculate_effective_charge_ionisation_profiles: CalculateEffectiveChargeIonisationProfiles = CalculateEffectiveChargeIonisationProfiles()  # noqa: E501
+    calculate_effective_charge_ionisation_profiles: Explicit = (
+        CalculateEffectiveChargeIonisationProfiles  # noqa: E501
+    )
     # unit #9 chunk C, physics/dimensionless_parameters.py -- the one real
     # computation inside the 1095-line `outplas` reporting method.
-    dimensionless_plasma_parameters: DimensionlessPlasmaParameters = (
-        DimensionlessPlasmaParameters()
-    )
+    dimensionless_plasma_parameters: Explicit = DimensionlessPlasmaParameters
     # unit #11, physics/exhaust.py
-    radiation_fraction: RadiationFraction = RadiationFraction()
+    radiation_fraction: Explicit = RadiationFraction

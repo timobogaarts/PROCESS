@@ -33,7 +33,6 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from functional_process.cottax.architectures.evaluate import resolve  # noqa: E402
 from functional_process.cottax.input import indat  # noqa: E402
 from functional_process.cottax.input.indat import (  # noqa: E402
     graph_for,
@@ -44,6 +43,15 @@ from functional_process.vocabulary import (  # noqa: E402
     SuperconductorModel,
     TFConductorModel,
 )
+
+ROOT = Path(__file__).resolve().parents[3]
+"""The repository root, which a configuration's path is relative to."""
+
+
+def resolve(name):
+    """`name` as an absolute path, read relative to `ROOT` when it is not already."""
+    path = Path(name)
+    return (path if path.is_absolute() else ROOT / path).resolve()
 
 
 @functools.cache

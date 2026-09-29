@@ -3,16 +3,10 @@
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    From,
-    FromExactly,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.models.stellarator.coils.coils import (
     bmax_from_awp,  # noqa: F401
-    intersect,  # noqa: F401
 )
 from functional_process.cottax.models.stellarator.coils.forces import (
     calculate_centering_force_avg_mn,  # noqa: F401
@@ -37,7 +31,6 @@ from functional_process.cottax.paths import (
     stellarator_config,
     tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.physics.superconductors import (
     bi2212,  # noqa: F401
     gl_nbti,  # noqa: F401
@@ -88,607 +81,598 @@ from functional_process.vocabulary import (
     SuperconductorModel,  # noqa: F401
 )
 
-
-class CoilToroidalThickness(WrapsFunction):
-    fn = calculate_coil_toroidal_thickness
-
-    dx_tf_wp_primary_toroidal = From(tfcoil)
-    dx_tf_side_case_min = From(tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-
-    dx_tf_inboard_out_toroidal = OutputInto(tfcoil)
-
-
-class CoilRadialThickness(WrapsFunction):
-    fn = calculate_coil_radial_thickness
-
-    dr_tf_nose_case = From(tfcoil)
-    dr_tf_wp_with_insulation = From(tfcoil)
-    dr_tf_plasma_case = From(tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-
-    dr_tf_inboard = OutputInto(build)
-
-
-class CoilCrossSectionalArea(WrapsFunction):
-    fn = calculate_coil_cross_sectional_area
-
-    a_tf_wp_with_insulation = From(tfcoil)
-    dr_tf_inboard = From(build)
-    dx_tf_inboard_out_toroidal = From(tfcoil)
-
-    a_tf_leg_outboard = OutputInto(tfcoil)
-    a_tf_coil_inboard_case = OutputInto(tfcoil)
-
-
-class CoilHalfWidths(WrapsFunction):
-    fn = calculate_coil_half_widths
-
-    dx_tf_inboard_out_toroidal = From(tfcoil)
-
-    tfocrn = OutputInto(tfcoil)
-    tficrn = OutputInto(tfcoil)
-
-
-class PlasmaFacingCoilArea(WrapsFunction):
-    fn = calculate_plasma_facing_coil_area
-
-    n_tf_coils = From(tfcoil)
-    dx_tf_inboard_out_toroidal = From(tfcoil)
-    len_tf_coil = From(tfcoil)
-
-    tfsai = OutputInto(tfcoil)
-    tfsao = OutputInto(tfcoil)
-
-
-class CoilCoilToroidalGap(WrapsFunction):
-    fn = select_coil_coil_toroidal_gap
-
-    stella_config_dmin = From(stellarator_config)
-    r_coil_major = From(stellarator)
-    r_coil_minor = From(stellarator)
-    stella_config_coil_rmajor = From(stellarator_config)
-    stella_config_coil_rminor = From(stellarator_config)
-    dx_tf_inboard_out_toroidal = From(tfcoil)
-
-    toroidalgap = OutputInto(tfcoil)
-
-
-class CoilsSummaryVariables(WrapsFunction):
-    fn = calculate_coils_summary_variables
-
-    n_tf_coils = From(tfcoil)
-    a_tf_leg_outboard = From(tfcoil)
-    coilcurrent = From(stellarator)
-    r_coil_major = From(stellarator)
-    r_coil_minor = From(stellarator)
-    awp_rad = FromExactly(tfcoil.dr_tf_wp_with_insulation)
-
-    a_tf_inboard_total = OutputInto(tfcoil)
-    c_tf_total = OutputInto(tfcoil)
-    j_tf_coil_full_area = OutputInto(tfcoil)
-    r_b_tf_inboard_peak_symmetric = OutputInto(tfcoil)
-
-
-class StoredMagneticEnergy(WrapsFunction):
-    fn = calculate_stored_magnetic_energy
-
-    stella_config_inductance = From(stellarator_config)
-    f_st_rmajor = From(stellarator)
-    r_coil_minor = From(stellarator)
-    stella_config_coil_rminor = From(stellarator_config)
-    f_st_n_coils = From(stellarator)
-    c_tf_total = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-
-    e_tf_magnetic_stored_total_gj = OutputInto(tfcoil)
-
-
-class WindingPackGeometry(WrapsFunction):
-    fn = calculate_winding_pack_geometry
-
-    dx_tf_turn_general = From(tfcoil)
-    dx_tf_turn_steel = From(tfcoil)
-    dx_tf_turn_insulation = From(tfcoil)
-
-    a_tf_turn_cable_space_no_void = OutputInto(tfcoil)
-    a_tf_turn_steel = OutputInto(tfcoil)
-
-
-class CoilCurrent(WrapsFunction):
-    """`coilcurrent` has no PROCESS storage location -- it is a local in `st_coil`,
-    threaded manually into `winding_pack_total_size` and
-    `calculate_coils_summary_variables`.
-    """
-
-    fn = calculate_current
-
-    f_st_b = From(stellarator)
-    stella_config_i0 = From(stellarator_config)
-    f_st_rmajor = From(stellarator)
-    f_st_n_coils = From(stellarator)
-
-    coilcurrent = OutputInto(stellarator)
-    f_st_i_total = OutputInto(stellarator)
-
-
-class WindingPackIntersectInputs(ExplicitFunction):
-    """The family that owns the *pre*-`intersect` half of `winding_pack_total_size`: the
-    sampled `(wp_width_r, lhs, rhs)` curves `coils.py`'s `Intersect`
-    (`ImplicitFunction`/`RootFind`) needs as its own `From`s, and the starting guess it
-    is driven from.
-    """
-
-    wp_width_r = OutputInto(stellarator)
-    lhs = OutputInto(stellarator)
-    rhs = OutputInto(stellarator)
-    wp_width_r_min_guess = OutputInto(stellarator)
-
-    sample_lower_divisor = 40.0
-    guess_divisor = 10.0
-    """`_MATERIAL_SAMPLING`'s row for this occupant's material, as plain class
-    attributes -- the ordinary pair by default, overridden by the one occupant PROCESS
-    treats differently.
-
-    Read by every occupant's `__call__` and passed as plain arguments into
-    `winding_pack_intersect_inputs_curves`/the
-    `calculate_*_winding_pack_intersect_inputs` functions
-    (`functional_process/models/stellarator/coils/calculate.py`) -- the computation
-    itself (the former `_curves` method) lives there now, not on this class, so it is
-    callable with no cottax node in hand.
-    """
-
-
-class IterNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == ITER_NB3SN` (1) -- PROCESS's own default and this run's value."""
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-    ):
-        return winding_pack_intersect_inputs_curves(
-            jcrit_iter_nb3sn,
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-        )
-
-
-class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == BI2212` (2)."""
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-        fhts=From(tfcoil),
-        j_tf_wp=From(tfcoil),
-    ):
-        return calculate_bi2212_winding_pack_intersect_inputs(
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-            fhts,
-            j_tf_wp,
-        )
-
-
-class OldLubellNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == OLD_LUBELL_NBTI` (3). Literals only, no material read."""
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-    ):
-        return winding_pack_intersect_inputs_curves(
-            jcrit_old_lubell_nbti,
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-        )
-
-
-class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- the only occupant reading
-    `.tfcoil.bcritsc`/`.tfcoil.tcritsc`, which are exactly what "user-defined" means
-    here.
-    """
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-        bcritsc=From(tfcoil),
-        tcritsc=From(tfcoil),
-    ):
-        return calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-            bcritsc,
-            tcritsc,
-        )
-
-
-class WstNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == WST_NB3SN` (5). Literals only, no material read."""
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-    ):
-        return winding_pack_intersect_inputs_curves(
-            jcrit_wst_nb3sn,
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-        )
-
-
-class CrocoRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == CROCO_REBCO` (6) -- the one occupant with different sampling."""
-
-    sample_lower_divisor = 150.0
-    guess_divisor = 20.0
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-    ):
-        return winding_pack_intersect_inputs_curves(
-            jcrit_croco_rebco,
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-        )
-
-
-class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == DURHAM_NBTI` (7) -- the only occupant reading
-    `.tfcoil.b_crit_upper_nbti`/`.tfcoil.t_crit_nbti`.
-    """
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-        b_crit_upper_nbti=From(tfcoil),
-        t_crit_nbti=From(tfcoil),
-    ):
-        return calculate_durham_nbti_winding_pack_intersect_inputs(
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-            b_crit_upper_nbti,
-            t_crit_nbti,
-        )
-
-
-class DurhamRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
-    """`i_tf_sc_mat == DURHAM_REBCO` (8)."""
-
-    def __call__(
-        self,
-        r_coil_major=From(stellarator),
-        r_coil_minor=From(stellarator),
-        coilcurrent=From(stellarator),
-        n_tf_coils=From(tfcoil),
-        stella_config_a1=From(stellarator_config),
-        stella_config_a2=From(stellarator_config),
-        stella_config_wp_ratio=From(stellarator_config),
-        tftmp=From(tfcoil),
-        tmargmin=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_j_tf_wp_critical_max=From(constraints),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        dx_tf_turn_general=From(tfcoil),
-    ):
-        return winding_pack_intersect_inputs_curves(
-            jcrit_durham_rebco,
-            self.sample_lower_divisor,
-            self.guess_divisor,
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            f_a_tf_turn_cable_copper,
-            f_a_tf_turn_cable_space_extra_void,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-        )
-
-
-class WindingPackTotalSizePost(WrapsFunction):
-    """cottax node: the *post*-`intersect` half of `winding_pack_total_size` --
-    everything downstream of the resolved crossing point.
-
-    `winding_pack_post_intersect`'s return tuple is already in this exact order (see its
-    own docstring), so the declaration below delegates directly.
-    """
-
-    fn = winding_pack_post_intersect
-
-    wp_width_r_min = From(stellarator)
-    r_coil_major = From(stellarator)
-    r_coil_minor = From(stellarator)
-    coilcurrent = From(stellarator)
-    n_tf_coils = From(tfcoil)
-    stella_config_a1 = From(stellarator_config)
-    stella_config_a2 = From(stellarator_config)
-    stella_config_wp_ratio = From(stellarator_config)
-    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
-    a_tf_turn_cable_space_no_void = From(tfcoil)
-    dx_tf_turn_general = From(tfcoil)
-    dx_tf_wp_insulation = From(tfcoil)
-    a_tf_turn_steel = From(tfcoil)
-
-    b_tf_inboard_peak_symmetric = OutputInto(tfcoil)
-    dx_tf_wp_primary_toroidal = OutputInto(tfcoil)
-    dx_tf_wp_secondary_toroidal = OutputInto(tfcoil)
-    dr_tf_wp_with_insulation = OutputInto(tfcoil)
-    j_tf_wp = OutputInto(tfcoil)
-    n_tf_coil_turns = OutputInto(tfcoil)
-    c_tf_turn = OutputInto(tfcoil)
-    a_tf_wp_conductor = OutputInto(tfcoil)
-    a_tf_wp_extra_void = OutputInto(tfcoil)
-    a_tf_coil_wp_turn_insulation = OutputInto(tfcoil)
-    a_tf_wp_steel = OutputInto(tfcoil)
-    a_tf_wp_no_insulation = OutputInto(tfcoil)
-    a_tf_wp_with_insulation = OutputInto(tfcoil)
-
-
-class CoilCasing(WrapsFunction):
-    fn = calculate_casing
-
-    dr_tf_nose_case = From(tfcoil)
-
-    dr_tf_plasma_case = OutputInto(tfcoil)
-    dx_tf_side_case_min = OutputInto(tfcoil)
-
-
-class VerticalPorts(WrapsFunction):
-    fn = calculate_vertical_ports
-
-    stella_config_max_portsize_width = From(stellarator_config)
-    f_st_rmajor = From(stellarator)
-    f_st_n_coils = From(stellarator)
-
-    vporttmax = OutputInto(stellarator)
-    vportpmax = OutputInto(stellarator)
-    vportamax = OutputInto(stellarator)
-
-
-class HorizontalPorts(WrapsFunction):
-    fn = calculate_horizontal_ports
-
-    stella_config_max_portsize_width = From(stellarator_config)
-    f_st_rmajor = From(stellarator)
-    f_st_n_coils = From(stellarator)
-
-    hporttmax = OutputInto(stellarator)
-    hportpmax = OutputInto(stellarator)
-    hportamax = OutputInto(stellarator)
-
-
-class ZTfInsideHalf(WrapsFunction):
-    """cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`."""
-
-    fn = calculate_z_tf_inside_half
-
-    stella_config_maximal_coil_height = From(stellarator_config)
-    r_coil_minor = From(stellarator)
-    stella_config_coil_rminor = From(stellarator_config)
-
-    z_tf_inside_half = OutputInto(build)
-
-
-class LenTfCoil(WrapsFunction):
-    """cottax node: `calculate_len_tf_coil`, owning `.tfcoil.len_tf_coil`."""
-
-    fn = calculate_len_tf_coil
-
-    stella_config_coillength = From(stellarator_config)
-    r_coil_minor = From(stellarator)
-    stella_config_coil_rminor = From(stellarator_config)
-    n_tf_coils = From(tfcoil)
-
-    len_tf_coil = OutputInto(tfcoil)
-
-
-class TfCryoArea(WrapsFunction):
-    """cottax node: `calculate_tfcryoarea`, owning `.tfcoil.tfcryoarea`."""
-
-    fn = calculate_tfcryoarea
-
-    stella_config_coilsurface = From(stellarator_config)
-    f_st_rmajor = From(stellarator)
-    r_coil_minor = From(stellarator)
-    stella_config_coil_rminor = From(stellarator_config)
-
-    tfcryoarea = OutputInto(tfcoil)
+# CoilToroidalThickness()
+CoilToroidalThickness = tfcoil.function(
+    calculate_coil_toroidal_thickness, "dx_tf_inboard_out_toroidal"
+)
+
+
+# CoilRadialThickness()
+CoilRadialThickness = build.function(
+    calculate_coil_radial_thickness,
+    "dr_tf_inboard",
+    reads={
+        "dr_tf_nose_case": tfcoil,
+        "dr_tf_wp_with_insulation": tfcoil,
+        "dr_tf_plasma_case": tfcoil,
+        "dx_tf_wp_insulation": tfcoil,
+    },
+)
+
+
+# CoilCrossSectionalArea()
+CoilCrossSectionalArea = tfcoil.function(
+    calculate_coil_cross_sectional_area,
+    "a_tf_leg_outboard",
+    "a_tf_coil_inboard_case",
+    reads={
+        "dr_tf_inboard": build,
+    },
+)
+
+
+# CoilHalfWidths()
+CoilHalfWidths = tfcoil.function(calculate_coil_half_widths, "tfocrn", "tficrn")
+
+
+# PlasmaFacingCoilArea()
+PlasmaFacingCoilArea = tfcoil.function(
+    calculate_plasma_facing_coil_area, "tfsai", "tfsao"
+)
+
+
+# CoilCoilToroidalGap()
+CoilCoilToroidalGap = tfcoil.function(
+    select_coil_coil_toroidal_gap,
+    "toroidalgap",
+    reads={
+        "stella_config_dmin": stellarator_config,
+        "r_coil_major": stellarator,
+        "r_coil_minor": stellarator,
+        "stella_config_coil_rmajor": stellarator_config,
+        "stella_config_coil_rminor": stellarator_config,
+    },
+)
+
+
+# CoilsSummaryVariables()
+CoilsSummaryVariables = tfcoil.function(
+    calculate_coils_summary_variables,
+    "a_tf_inboard_total",
+    "c_tf_total",
+    "j_tf_coil_full_area",
+    "r_b_tf_inboard_peak_symmetric",
+    reads={
+        "coilcurrent": stellarator,
+        "r_coil_major": stellarator,
+        "r_coil_minor": stellarator,
+        "awp_rad": V.tfcoil.dr_tf_wp_with_insulation,
+    },
+)
+
+
+# StoredMagneticEnergy()
+StoredMagneticEnergy = tfcoil.function(
+    calculate_stored_magnetic_energy,
+    "e_tf_magnetic_stored_total_gj",
+    reads={
+        "stella_config_inductance": stellarator_config,
+        "f_st_rmajor": stellarator,
+        "r_coil_minor": stellarator,
+        "stella_config_coil_rminor": stellarator_config,
+        "f_st_n_coils": stellarator,
+    },
+)
+
+
+# WindingPackGeometry()
+WindingPackGeometry = tfcoil.function(
+    calculate_winding_pack_geometry, "a_tf_turn_cable_space_no_void", "a_tf_turn_steel"
+)
+
+
+# `coilcurrent` has no PROCESS storage location -- it is a local in `st_coil`,
+# threaded manually into `winding_pack_total_size` and
+# `calculate_coils_summary_variables`.
+CoilCurrent = stellarator.function(
+    calculate_current,
+    "coilcurrent",
+    "f_st_i_total",
+    reads={
+        "stella_config_i0": stellarator_config,
+    },
+)
+
+
+# The WindingPackIntersectInputs family:
+# The family that owns the *pre*-`intersect` half of `winding_pack_total_size`: the
+# sampled `(wp_width_r, lhs, rhs)` curves `coils.py`'s `Intersect`
+# (`ImplicitFunction`/`RootFind`) needs as its own `From`s, and the starting guess it
+# is driven from.
+
+
+# `(sample_lower_divisor, guess_divisor)`: `_MATERIAL_SAMPLING`'s row for a material --
+# the ordinary pair, and the one PROCESS treats differently (CroCo REBCO).
+_ORDINARY = (40.0, 10.0)
+_CROCO_REBCO = (150.0, 20.0)
+
+# Every occupant reads these, at these places; the Bi2212, user-defined Nb3Sn and
+# Durham NbTi occupants read two more, from `.tfcoil`.
+_INTERSECT_READS = {
+    "r_coil_major": stellarator,
+    "r_coil_minor": stellarator,
+    "coilcurrent": stellarator,
+    "n_tf_coils": tfcoil,
+    "stella_config_a1": stellarator_config,
+    "stella_config_a2": stellarator_config,
+    "stella_config_wp_ratio": stellarator_config,
+    "tftmp": tfcoil,
+    "tmargmin": tfcoil,
+    "f_a_tf_turn_cable_copper": tfcoil,
+    "f_a_tf_turn_cable_space_extra_void": tfcoil,
+    "f_j_tf_wp_critical_max": constraints,
+    "a_tf_turn_cable_space_no_void": tfcoil,
+    "dx_tf_turn_general": tfcoil,
+}
+_INTERSECT_OUTPUTS = ("wp_width_r", "lhs", "rhs", "wp_width_r_min_guess")
+
+
+def _iter_nb3sn_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    return winding_pack_intersect_inputs_curves(
+        jcrit_iter_nb3sn,
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
+# `i_tf_sc_mat == ITER_NB3SN` (1) -- PROCESS's own default and this run's value.
+IterNb3snWindingPackIntersectInputs = stellarator.function(
+    _iter_nb3sn_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads=_INTERSECT_READS,
+)
+
+
+def _bi2212_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    fhts,
+    j_tf_wp,
+):
+    return calculate_bi2212_winding_pack_intersect_inputs(
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+        fhts,
+        j_tf_wp,
+    )
+
+
+# `i_tf_sc_mat == BI2212` (2).
+Bi2212WindingPackIntersectInputs = stellarator.function(
+    _bi2212_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads={**_INTERSECT_READS, "fhts": tfcoil, "j_tf_wp": tfcoil},
+)
+
+
+def _old_lubell_nbti_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    return winding_pack_intersect_inputs_curves(
+        jcrit_old_lubell_nbti,
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
+# `i_tf_sc_mat == OLD_LUBELL_NBTI` (3). Literals only, no material read.
+OldLubellNbtiWindingPackIntersectInputs = stellarator.function(
+    _old_lubell_nbti_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads=_INTERSECT_READS,
+)
+
+
+def _user_defined_nb3sn_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    bcritsc,
+    tcritsc,
+):
+    return calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+        bcritsc,
+        tcritsc,
+    )
+
+
+# `i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- the only occupant reading
+# `.tfcoil.bcritsc`/`.tfcoil.tcritsc`, which are exactly what "user-defined" means
+# here.
+UserDefinedNb3snWindingPackIntersectInputs = stellarator.function(
+    _user_defined_nb3sn_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads={**_INTERSECT_READS, "bcritsc": tfcoil, "tcritsc": tfcoil},
+)
+
+
+def _wst_nb3sn_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    return winding_pack_intersect_inputs_curves(
+        jcrit_wst_nb3sn,
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
+# `i_tf_sc_mat == WST_NB3SN` (5). Literals only, no material read.
+WstNb3snWindingPackIntersectInputs = stellarator.function(
+    _wst_nb3sn_winding_pack_intersect_inputs, *_INTERSECT_OUTPUTS, reads=_INTERSECT_READS
+)
+
+
+def _croco_rebco_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    return winding_pack_intersect_inputs_curves(
+        jcrit_croco_rebco,
+        *_CROCO_REBCO,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
+# `i_tf_sc_mat == CROCO_REBCO` (6) -- the one occupant with different sampling.
+CrocoRebcoWindingPackIntersectInputs = stellarator.function(
+    _croco_rebco_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads=_INTERSECT_READS,
+)
+
+
+def _durham_nbti_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    b_crit_upper_nbti,
+    t_crit_nbti,
+):
+    return calculate_durham_nbti_winding_pack_intersect_inputs(
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+        b_crit_upper_nbti,
+        t_crit_nbti,
+    )
+
+
+# `i_tf_sc_mat == DURHAM_NBTI` (7) -- the only occupant reading
+# `.tfcoil.b_crit_upper_nbti`/`.tfcoil.t_crit_nbti`.
+DurhamNbtiWindingPackIntersectInputs = stellarator.function(
+    _durham_nbti_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads={**_INTERSECT_READS, "b_crit_upper_nbti": tfcoil, "t_crit_nbti": tfcoil},
+)
+
+
+def _durham_rebco_winding_pack_intersect_inputs(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    return winding_pack_intersect_inputs_curves(
+        jcrit_durham_rebco,
+        *_ORDINARY,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
+# `i_tf_sc_mat == DURHAM_REBCO` (8).
+DurhamRebcoWindingPackIntersectInputs = stellarator.function(
+    _durham_rebco_winding_pack_intersect_inputs,
+    *_INTERSECT_OUTPUTS,
+    reads=_INTERSECT_READS,
+)
+
+
+# cottax node: the *post*-`intersect` half of `winding_pack_total_size` --
+# everything downstream of the resolved crossing point.
+#
+# `winding_pack_post_intersect`'s return tuple is already in this exact order (see its
+# own docstring), so the declaration below delegates directly.
+WindingPackTotalSizePost = tfcoil.function(
+    winding_pack_post_intersect,
+    "b_tf_inboard_peak_symmetric",
+    "dx_tf_wp_primary_toroidal",
+    "dx_tf_wp_secondary_toroidal",
+    "dr_tf_wp_with_insulation",
+    "j_tf_wp",
+    "n_tf_coil_turns",
+    "c_tf_turn",
+    "a_tf_wp_conductor",
+    "a_tf_wp_extra_void",
+    "a_tf_coil_wp_turn_insulation",
+    "a_tf_wp_steel",
+    "a_tf_wp_no_insulation",
+    "a_tf_wp_with_insulation",
+    reads={
+        "wp_width_r_min": stellarator,
+        "r_coil_major": stellarator,
+        "r_coil_minor": stellarator,
+        "coilcurrent": stellarator,
+        "stella_config_a1": stellarator_config,
+        "stella_config_a2": stellarator_config,
+        "stella_config_wp_ratio": stellarator_config,
+    },
+)
+
+
+# CoilCasing()
+CoilCasing = tfcoil.function(
+    calculate_casing, "dr_tf_plasma_case", "dx_tf_side_case_min"
+)
+
+
+# VerticalPorts()
+VerticalPorts = stellarator.function(
+    calculate_vertical_ports,
+    "vporttmax",
+    "vportpmax",
+    "vportamax",
+    reads={
+        "stella_config_max_portsize_width": stellarator_config,
+    },
+)
+
+
+# HorizontalPorts()
+HorizontalPorts = stellarator.function(
+    calculate_horizontal_ports,
+    "hporttmax",
+    "hportpmax",
+    "hportamax",
+    reads={
+        "stella_config_max_portsize_width": stellarator_config,
+    },
+)
+
+
+# cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`.
+ZTfInsideHalf = build.function(
+    calculate_z_tf_inside_half,
+    "z_tf_inside_half",
+    reads={
+        "stella_config_maximal_coil_height": stellarator_config,
+        "r_coil_minor": stellarator,
+        "stella_config_coil_rminor": stellarator_config,
+    },
+)
+
+
+# cottax node: `calculate_len_tf_coil`, owning `.tfcoil.len_tf_coil`.
+LenTfCoil = tfcoil.function(
+    calculate_len_tf_coil,
+    "len_tf_coil",
+    reads={
+        "stella_config_coillength": stellarator_config,
+        "r_coil_minor": stellarator,
+        "stella_config_coil_rminor": stellarator_config,
+    },
+)
+
+
+# cottax node: `calculate_tfcryoarea`, owning `.tfcoil.tfcryoarea`.
+TfCryoArea = tfcoil.function(
+    calculate_tfcryoarea,
+    "tfcryoarea",
+    reads={
+        "stella_config_coilsurface": stellarator_config,
+        "f_st_rmajor": stellarator,
+        "r_coil_minor": stellarator,
+        "stella_config_coil_rminor": stellarator_config,
+    },
+)

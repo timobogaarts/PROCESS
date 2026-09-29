@@ -4,19 +4,14 @@ Registry #14.
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import (
-    From,
-    OutputInto,
-)
+from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     build,
     physics,
-    rebco,
     superconducting_tfcoil,
     tfcoil,
 )
-from functional_process.cottax.wraps import WrapsFunction
 from functional_process.models.safe_math import (
     safe_sqrt,  # noqa: F401
 )
@@ -27,44 +22,43 @@ from functional_process.models.stellarator.coils.quench import (
     max_dump_voltage,  # noqa: F401
 )
 
-
-class QuenchProtection(WrapsFunction):
-    """cottax node: `calculate_quench_protection`, unchanged, ports declared."""
-
-    fn = calculate_quench_protection
-
-    rmajor = From(physics)
-    rminor = From(physics)
-    dr_fw_plasma_gap_inboard = From(build)
-    dr_fw_inboard = From(build)
-    dr_blkt_inboard = From(build)
-    dr_shld_blkt_gap = From(build)
-    dr_shld_inboard = From(build)
-    dr_fw_plasma_gap_outboard = From(build)
-    dr_fw_outboard = From(build)
-    dr_blkt_outboard = From(build)
-    dr_shld_outboard = From(build)
-    b_plasma_toroidal_on_axis = From(physics)
-    c_tf_total = From(tfcoil)
-    t_tf_superconductor_quench = From(tfcoil)
-    dr_vv_inboard = From(build)
-    dr_vv_outboard = From(build)
-    t_tf_quench_detection = From(tfcoil)
-    f_a_tf_turn_cable_copper = From(tfcoil)
-    f_a_tf_turn_cable_space_extra_void = From(tfcoil)
-    tftmp = From(tfcoil)
-    a_tf_turn_cable_space_no_void = From(tfcoil)
-    dx_tf_turn_general = From(tfcoil)
-    a_tf_wp_conductor = From(tfcoil)
-    e_tf_magnetic_stored_total_gj = From(tfcoil)
-    n_tf_coils = From(tfcoil)
-    c_tf_turn = From(tfcoil)
-
-    f_vv_actual = OutputInto(superconducting_tfcoil)
-    vv_stress_quench = OutputInto(superconducting_tfcoil)
-    j_tf_wp_quench_heat_max = OutputInto(tfcoil)
-    coppera_m2 = OutputInto(rebco)
-    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)
+# cottax node: `calculate_quench_protection`, unchanged, ports declared.
+QuenchProtection = superconducting_tfcoil.function(
+    calculate_quench_protection,
+    "f_vv_actual",
+    "vv_stress_quench",
+    V.tfcoil.j_tf_wp_quench_heat_max,
+    V.rebco.coppera_m2,
+    V.tfcoil.v_tf_coil_dump_quench_kv,
+    reads={
+        "rmajor": physics,
+        "rminor": physics,
+        "dr_fw_plasma_gap_inboard": build,
+        "dr_fw_inboard": build,
+        "dr_blkt_inboard": build,
+        "dr_shld_blkt_gap": build,
+        "dr_shld_inboard": build,
+        "dr_fw_plasma_gap_outboard": build,
+        "dr_fw_outboard": build,
+        "dr_blkt_outboard": build,
+        "dr_shld_outboard": build,
+        "b_plasma_toroidal_on_axis": physics,
+        "c_tf_total": tfcoil,
+        "t_tf_superconductor_quench": tfcoil,
+        "dr_vv_inboard": build,
+        "dr_vv_outboard": build,
+        "t_tf_quench_detection": tfcoil,
+        "f_a_tf_turn_cable_copper": tfcoil,
+        "f_a_tf_turn_cable_space_extra_void": tfcoil,
+        "tftmp": tfcoil,
+        "a_tf_turn_cable_space_no_void": tfcoil,
+        "dx_tf_turn_general": tfcoil,
+        "a_tf_wp_conductor": tfcoil,
+        "e_tf_magnetic_stored_total_gj": tfcoil,
+        "n_tf_coils": tfcoil,
+        "c_tf_turn": tfcoil,
+    },
+)
 
 
 # `max_dump_voltage`, `calculate_quench_protection_current_density`, and

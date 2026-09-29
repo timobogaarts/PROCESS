@@ -2,21 +2,14 @@
 
 import dataclasses
 
-from cottax.interfaces.pytree_namespace_module import ModelNamespace
-
-from functional_process.cottax.models.availability.availability import Avail, CplifeAvail
-from functional_process.cottax.models.power.electric_production import (
-    PlantElectricProductionReactor,
-    PowerProfilesOverTime,
-)
+import equinox as eqx
+from cottax.interfaces import Explicit
 
 
-class Availability(ModelNamespace):
+class Availability(eqx.Module):
     """Plant availability and component lifetimes."""
 
-    electric_production: PowerProfilesOverTime | PlantElectricProductionReactor = (
-        dataclasses.field(kw_only=True)
-    )
+    electric_production: Explicit = dataclasses.field(kw_only=True)
     """Net electric power over the pulse cycle (`.costs.ireactor`, default 1)."""
 
     # `PowerProfilesOverTime`/`PlantElectricProductionReactor` are the two arms of the
@@ -44,11 +37,11 @@ class Availability(ModelNamespace):
     # `check_arms_are_exclusive` would reject a one-real-arm pairing, same as
     # `i_vacuum_pumping`/`i_cost_model`). `ibkt_life=0`/`itart=0` match
     # `cost_variables.py:416`/`physics_variables.py:994`'s defaults.
-    avail: Avail = dataclasses.field(kw_only=True)
+    avail: Explicit = dataclasses.field(kw_only=True)
     """Component lifetimes and the pulse-cycle factors -- one occupant per
     `.costs.ibkt_life` value.
     """
-    cplife_avail: CplifeAvail | None = dataclasses.field(kw_only=True)
+    cplife_avail: Explicit | None = dataclasses.field(kw_only=True)
     """The centrepost lifetime, or **nothing at all** -- `.physics.itart` and
     `.tfcoil.i_tf_sup` jointly.
     """
