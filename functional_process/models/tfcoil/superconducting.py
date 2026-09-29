@@ -1907,6 +1907,7 @@ def temperature_margin_lubell_nbti(
     b_c20max,
     temp_c0max,
     temp_tf_coolant_peak_field,
+    c0=1.0e10,
 ):
     """Temperature margin, old-Lubell-NbTi fit (`i_tf_sc_mat == 3`).
 
@@ -1915,7 +1916,8 @@ def temperature_margin_lubell_nbti(
     `superconductor_current_density_margin` that consumes it -- which is why `run`
     builds a ten-element `arguments` tuple for material 3 and a nine-element one for
     every other (`:1236-1256`). No strain, for the same reason the properties arm has
-    none.
+    none. `c0` defaults to that literal, and only PROCESS's signature
+    (`calculate_superconductor_temperature_margin` below) passes it.
     """
 
     def margin_fn(temperature):
@@ -1923,7 +1925,7 @@ def temperature_margin_lubell_nbti(
             jcrit_nbti(
                 temp_conductor=temperature,
                 b_conductor=b_tf_inboard_peak,
-                c0=1.0e10,
+                c0=c0,
                 b_c20max=b_c20max,
                 temp_c0max=temp_c0max,
             )[0]
@@ -2079,4 +2081,170 @@ def calculate_old_lubell_nbti_temperature_margin(
         temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
         temp_tf_coolant_peak_field=tftmp,
     )
+    return margin, margin
+
+
+# ---- PROCESS's two signatures, dispatching on the material -------------------------
+#
+# The graph never calls these: the converter picks the material's occupant, which calls
+# its branch function directly. They are PROCESS's functions at their own signatures
+# (`data` spelled as the fields each reads off it), kept so the tier-1 contracts compare
+# one function to PROCESS at every branch and `test_machine_variants.py` checks the
+# chosen occupant is the branch PROCESS's switch takes.
+
+_CICC_REFUSED = {
+    2: "Bi-2212: PROCESS's own branch raises `UnboundLocalError` (`bc20m`/`tc0m` never "
+    "assigned, superconducting.py:2941-2984), so there is nothing to port",
+}
+
+
+def tf_cable_in_conduit_superconductor_properties(
+    a_tf_turn_cable_space,
+    a_tf_turn,
+    a_tf_turn_cable_space_effective,
+    f_a_tf_turn_cable_space_cooling,
+    b_tf_inboard_peak,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+    j_tf_wp,
+    i_tf_superconductor,
+    f_strain_scale,
+    temp_tf_coolant_peak_field,
+    bcritsc,
+    tcritsc,
+    i_str_wp,
+    str_wp,
+    str_tf_con_res,
+    b_crit_upper_nbti,
+    t_crit_nbti,
+):
+    """`CICCSuperconductingTFCoil.tf_cable_in_conduit_superconductor_properties`
+    (`superconducting.py:2806-3166`), `data` spelled as the five fields it reads, over
+    the per-material functions above.
+
+    `i_str_wp` picks the strain field (`:2896-2899`), `i_tf_superconductor` the arm. The
+    first four and `f_strain_scale` are read only by the Bi-2212 arm, which PROCESS
+    cannot complete; tape materials are refused by PROCESS's own shape guard.
+
+    Returns
+    -------
+    :
+        `(j_tf_wp_critical, j_crit_str_tf, f_c_tf_turn_operating_critical,
+        j_tf_coil_turn, j_superconductor, c_turn_cables_critical,
+        j_superconductor_critical, bc20m, tc0m)`, the arms' own order.
+
+    Raises
+    ------
+    ValueError
+        At Bi-2212 or a tape material.
+    """
+    del a_tf_turn_cable_space, f_a_tf_turn_cable_space_cooling, j_tf_wp, f_strain_scale
+    strain = str_tf_con_res if i_str_wp == 0 else str_wp
+    common = {
+        "a_tf_turn_cable_space_effective": a_tf_turn_cable_space_effective,
+        "a_tf_turn": a_tf_turn,
+        "b_tf_inboard_peak": b_tf_inboard_peak,
+        "f_a_tf_turn_cable_copper": f_a_tf_turn_cable_copper,
+        "c_tf_turn": c_tf_turn,
+        "temp_tf_coolant_peak_field": temp_tf_coolant_peak_field,
+    }
+    if i_tf_superconductor == 1:
+        return cicc_superconductor_properties_itersc(
+            **common, strain=strain, b_c20max=32.97, temp_c0max=16.06
+        )
+    if i_tf_superconductor == 3:
+        return cicc_superconductor_properties_lubell_nbti(**common)
+    if i_tf_superconductor == 4:
+        return cicc_superconductor_properties_itersc(
+            **common, strain=strain, b_c20max=bcritsc, temp_c0max=tcritsc
+        )
+    if i_tf_superconductor == 5:
+        return cicc_superconductor_properties_wst_nb3sn(**common, strain=strain)
+    if i_tf_superconductor == 7:
+        return cicc_superconductor_properties_durham_nbti(
+            **common,
+            strain=strain,
+            b_crit_upper_nbti=b_crit_upper_nbti,
+            t_crit_nbti=t_crit_nbti,
+        )
+    raise ValueError(
+        f"i_tf_superconductor={i_tf_superconductor!r}: "
+        + _CICC_REFUSED.get(
+            int(i_tf_superconductor),
+            "not a cable superconductor; PROCESS's shape guard refuses it "
+            "(superconducting.py:2882-2889)",
+        )
+    )
+
+
+_MARGIN_REFUSED = {
+    2: "Bi-2212: PROCESS returns 0.0 and leaves `.tfcoil.temp_margin` unwritten, "
+    "unreachable because the properties arm raises first",
+    6: "CROCO_REBCO: PROCESS raises `Unknown superconductor type` (superconducting.py:"
+    "1290-1292)",
+    7: "Durham NbTi: PROCESS's secant search leaves the reals (a complex margin, or a "
+    "`TypeError`), so there is no real answer to agree with",
+}
+
+
+def calculate_superconductor_temperature_margin(
+    i_tf_superconductor,
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    bc20m,
+    tc0m,
+    c0,
+    temp_tf_coolant_peak_field,
+    dr_tf_hts_tape,
+    dx_tf_hts_tape_rebco,
+    dx_tf_hts_tape_total,
+):
+    """`SuperconductingTFCoil.calculate_superconductor_temperature_margin`
+    (`superconducting.py:1174-1291`), `data` spelled as the three tape dimensions
+    branch 9 reads off it, over the per-material margins.
+
+    Returns
+    -------
+    :
+        `(temp_tf_superconductor_margin, temp_margin)`: PROCESS's return and the same
+        number it writes to `.tfcoil.temp_margin` (`:1279`).
+
+    Raises
+    ------
+    ValueError
+        At a material the port writes no arm for (`_MARGIN_REFUSED`).
+    """
+    from functional_process.models.tfcoil.croco import (  # noqa: PLC0415 -- croco imports this module
+        temperature_margin_gl_rebco,
+        temperature_margin_hijc_rebco,
+    )
+
+    point = {
+        "j_superconductor": j_superconductor,
+        "b_tf_inboard_peak": b_tf_inboard_peak,
+        "b_c20max": bc20m,
+        "temp_c0max": tc0m,
+        "temp_tf_coolant_peak_field": temp_tf_coolant_peak_field,
+    }
+    if i_tf_superconductor in {1, 4}:
+        margin = temperature_margin_itersc(**point, strain=strain)
+    elif i_tf_superconductor == 3:
+        margin = temperature_margin_lubell_nbti(**point, c0=c0)
+    elif i_tf_superconductor == 5:
+        margin = temperature_margin_wst_nb3sn(**point, strain=strain)
+    elif i_tf_superconductor == 8:
+        margin = temperature_margin_gl_rebco(**point, strain=strain)
+    elif i_tf_superconductor == 9:
+        margin = temperature_margin_hijc_rebco(
+            **point,
+            dr_hts_tape=dr_tf_hts_tape,
+            dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
+            dx_hts_tape_total=dx_tf_hts_tape_total,
+        )
+    else:
+        raise ValueError(
+            f"i_tf_superconductor={i_tf_superconductor!r}: "
+            + _MARGIN_REFUSED.get(int(i_tf_superconductor), "not a material")
+        )
     return margin, margin

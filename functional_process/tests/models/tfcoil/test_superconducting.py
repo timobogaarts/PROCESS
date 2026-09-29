@@ -17,6 +17,7 @@ different point.
 
 import dataclasses
 import functools
+from types import MappingProxyType
 
 import numpy as np
 import pytest
@@ -56,7 +57,11 @@ from functional_process.cottax.models.tfcoil.superconducting import (
     vv_stress_on_quench,
     vv_stress_quench_from_build,
 )
-from functional_process.tests._harness import Tier1Contract, legacy_sample
+from functional_process.models.tfcoil.superconducting import (
+    calculate_superconductor_temperature_margin,
+    tf_cable_in_conduit_superconductor_properties,
+)
+from functional_process.tests._harness import Sample, Tier1Contract, legacy_sample
 from functional_process.tests._harness.process_reference import unpacked
 from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
@@ -1554,6 +1559,183 @@ class TestTemperatureMarginOldLubellNbti(Tier1Contract):
         "temp_c0max": (9.0, 9.6),
         "temp_tf_coolant_peak_field": (4.2, 5.5),
     }
+
+
+# ---------------------------------------------------------------------------
+# PROCESS's two signatures, dispatching on the material: every arm the port writes
+# ---------------------------------------------------------------------------
+
+_BI2212_ONLY = {
+    "a_tf_turn_cable_space": 1.3e-3,
+    "f_a_tf_turn_cable_space_cooling": 0.3,
+    "j_tf_wp": 2.5e7,
+    "f_strain_scale": 1.0,
+}
+"""The four arguments only the Bi-2212 arm reads, at finite values: the dispatch is
+checked at every arm it takes, and each arm's own case already poisons them."""
+
+_OTHER_ARMS = {
+    "bcritsc": 24.0,
+    "tcritsc": 15.5,
+    "b_crit_upper_nbti": 14.86,
+    "t_crit_nbti": 9.04,
+}
+"""Arm 4's and arm 7's constants, off the arms' own points; ignored by the others."""
+
+
+def _reference_tf_cable_in_conduit_superconductor_properties(
+    *, i_str_wp, str_wp, str_tf_con_res, b_crit_upper_nbti, t_crit_nbti, **inputs
+):
+    """PROCESS's function, the five fields it reads off `data` set from the
+    arguments, in the port's return order.
+    """
+    model = _sctfcoil()
+    t = model.data.tfcoil
+    t.i_str_wp = i_str_wp
+    t.str_wp = str_wp
+    t.str_tf_con_res = str_tf_con_res
+    t.b_crit_upper_nbti = b_crit_upper_nbti
+    t.t_crit_nbti = t_crit_nbti
+    t.j_crit_str_tf = np.nan
+    result = CICCSuperconductingTFCoil.tf_cable_in_conduit_superconductor_properties(
+        data=model.data, **inputs
+    )
+    return (
+        result.j_tf_wp_critical,
+        t.j_crit_str_tf,
+        result.f_c_tf_turn_operating_critical,
+        result.j_tf_coil_turn,
+        result.j_superconductor,
+        result.c_turn_cables_critical,
+        result.j_superconductor_critical,
+        result.bc20m,
+        result.tc0m,
+    )
+
+
+def _cicc_dispatch_samples():
+    """Each arm's own point, at both strain fields: the field `i_str_wp` does not name
+    holds another strain, so reading the wrong one disagrees.
+    """
+    arms = (
+        (1, TestCiccSuperconductorPropertiesIterNb3sn),
+        (3, TestCiccSuperconductorPropertiesOldLubellNbti),
+        (4, TestCiccSuperconductorPropertiesUserDefinedNb3sn),
+        (5, TestCiccSuperconductorPropertiesWstNb3sn),
+        (7, TestCiccSuperconductorPropertiesDurhamNbti),
+    )
+    samples = []
+    for material, case in arms:
+        point = dict(case.samples[0].kwargs)
+        strain = point.pop("strain", -0.003)
+        point["b_tf_inboard_peak"] = point.pop("b_tf_inboard_peak")
+        for i_str_wp in (0, 1):
+            named, other = ("str_tf_con_res", "str_wp")[:: 1 if i_str_wp == 0 else -1]
+            samples.append(
+                Sample(
+                    MappingProxyType({
+                        **_BI2212_ONLY,
+                        **_OTHER_ARMS,
+                        **point,
+                        "i_tf_superconductor": material,
+                        "i_str_wp": i_str_wp,
+                        named: strain,
+                        other: 0.5 * strain,
+                    }),
+                    "synthetic",
+                    f"cicc-dispatch-{material}-i_str_wp-{i_str_wp}",
+                )
+            )
+    return samples
+
+
+class TestTfCableInConduitSuperconductorProperties(Tier1Contract):
+    """PROCESS's signature over the five cable arms, and `i_str_wp`'s strain pick."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_tf_cable_in_conduit_superconductor_properties
+    ported = tf_cable_in_conduit_superconductor_properties
+    static_argnames = ("i_tf_superconductor", "i_str_wp")
+
+    samples = _cicc_dispatch_samples()
+
+
+_TAPE = {
+    "dr_tf_hts_tape": 0.0062886208094437655,
+    "dx_tf_hts_tape_rebco": 1e-06,
+    "dx_tf_hts_tape_total": 0.000211,
+}
+"""`test_croco.py`'s tape, read by arm 9 alone."""
+
+
+def _reference_calculate_superconductor_temperature_margin(
+    *, dr_tf_hts_tape, dx_tf_hts_tape_rebco, dx_tf_hts_tape_total, **inputs
+):
+    """PROCESS's function, the tape off `data`, as `(return, .tfcoil.temp_margin)`."""
+    model = _sctfcoil()
+    d = model.data.superconducting_tfcoil
+    d.dr_tf_hts_tape = dr_tf_hts_tape
+    d.dx_tf_hts_tape_rebco = dx_tf_hts_tape_rebco
+    d.dx_tf_hts_tape_total = dx_tf_hts_tape_total
+    model.data.tfcoil.temp_margin = np.nan
+    margin = CICCSuperconductingTFCoil.calculate_superconductor_temperature_margin(
+        data=model.data, **inputs
+    )
+    return (margin, model.data.tfcoil.temp_margin)
+
+
+def _margin_dispatch_samples():
+    """Each arm's own point; arm 4 at arm 1's, as the same fit."""
+
+    def point(case):
+        kwargs = dict(case.samples[0].kwargs)
+        return {
+            "j_superconductor": kwargs["j_superconductor"],
+            "b_tf_inboard_peak": kwargs["b_tf_inboard_peak"],
+            "strain": kwargs.get("strain", 0.0),
+            "bc20m": kwargs["b_c20max"],
+            "tc0m": kwargs["temp_c0max"],
+            "temp_tf_coolant_peak_field": kwargs["temp_tf_coolant_peak_field"],
+        }
+
+    rebco = {
+        "j_superconductor": 1.0e8,
+        "b_tf_inboard_peak": 11.717722779177526,
+        "strain": -0.003,
+        "temp_tf_coolant_peak_field": 4.75,
+    }
+    arms = (
+        (1, point(TestTemperatureMarginIterNb3sn)),
+        (3, point(TestTemperatureMarginOldLubellNbti)),
+        (4, point(TestTemperatureMarginIterNb3sn)),
+        (5, point(TestTemperatureMarginWstNb3sn)),
+        (8, {**rebco, "bc20m": 430.0, "tc0m": 185.0}),
+        (9, {**rebco, "bc20m": 138.0, "tc0m": 92.0}),
+    )
+    return [
+        Sample(
+            MappingProxyType({
+                **_TAPE,
+                **arm,
+                "c0": 1.0e10,
+                "i_tf_superconductor": material,
+            }),
+            "synthetic",
+            f"margin-dispatch-{material}",
+        )
+        for material, arm in arms
+    ]
+
+
+class TestCalculateSuperconductorTemperatureMargin(Tier1Contract):
+    """PROCESS's signature over the six arms the port writes, cable and tape."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_calculate_superconductor_temperature_margin
+    ported = calculate_superconductor_temperature_margin
+    static_argnames = ("i_tf_superconductor",)
+
+    samples = _margin_dispatch_samples()
 
 
 # ---------------------------------------------------------------------------

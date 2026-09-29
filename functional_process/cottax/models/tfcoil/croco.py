@@ -7,11 +7,13 @@ from cottax.interfaces import V
 from functional_process.cottax.paths import superconducting_tfcoil, tfcoil
 from functional_process.cottax.stated import states
 from functional_process.models.tfcoil.croco import (
+    calculate_durham_rebco_croco_temperature_margin,
     calculate_hazelton_zhai_rebco_croco_temperature_margin,
     croco_averaged_turn_geometry_from_current_per_turn,
     croco_cable_geometry,
     croco_cable_space_properties,
     croco_inboard_areas_and_fractions,
+    croco_superconductor_properties_gl_rebco,
     croco_superconductor_properties_hijc_rebco,
     croco_turn_cable_space_cooling_fraction,
     croco_turn_cable_space_extra_void,  # noqa: F401 -- re-exported for indat.py / tests
@@ -148,6 +150,42 @@ HazeltonZhaiRebcoCrocoSuperconductorProperties = tfcoil.function(
         "dx_tf_hts_tape_rebco": superconducting_tfcoil,
         "dx_tf_hts_tape_total": superconducting_tfcoil,
         "a_tf_croco_strand": superconducting_tfcoil,
+    },
+)
+
+
+# `i_tf_sc_mat == 8` -- Durham GL REBCO, the one tape arm that reads a strain.
+DurhamRebcoCrocoSuperconductorProperties = tfcoil.function(
+    croco_superconductor_properties_gl_rebco,
+    "j_tf_wp_critical",
+    "j_crit_str_tf",
+    V.superconducting_tfcoil.f_c_tf_turn_operating_critical,
+    V.superconducting_tfcoil.j_tf_coil_turn,
+    V.superconducting_tfcoil.j_tf_superconductor,
+    V.superconducting_tfcoil.cur_tf_turn_croco_strand_critical,
+    V.superconducting_tfcoil.c_tf_turn_cables_critical,
+    V.superconducting_tfcoil.j_tf_superconductor_critical,
+    V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
+    V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
+    reads={
+        "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
+        "cur_tf_turn": V.tfcoil.c_tf_turn,
+        "temp_tf_peak": V.tfcoil.tftmp,
+        "strain": V.tfcoil.str_wp,
+        "a_tf_croco_strand": superconducting_tfcoil,
+    },
+)
+
+
+# `i_tf_sc_mat == 8` -- its temperature margin, on the unclipped strain.
+DurhamRebcoCrocoTemperatureMargin = tfcoil.function(
+    calculate_durham_rebco_croco_temperature_margin,
+    "temp_tf_superconductor_margin",
+    "temp_margin",
+    reads={
+        "j_tf_superconductor": superconducting_tfcoil,
+        "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil,
+        "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil,
     },
 )
 

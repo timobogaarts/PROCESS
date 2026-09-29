@@ -383,6 +383,8 @@ from functional_process.cottax.models.tfcoil.base import (
 )
 from functional_process.cottax.models.tfcoil.croco import (
     CrocoAveragedTurnGeometryFromCurrentPerTurn,
+    DurhamRebcoCrocoSuperconductorProperties,
+    DurhamRebcoCrocoTemperatureMargin,
     HazeltonZhaiRebcoCrocoSuperconductorProperties,
     HazeltonZhaiRebcoCrocoTemperatureMargin,
     croco_turn_cable_space_extra_void,
@@ -610,20 +612,6 @@ _CROCO_REBCO_MARGIN_REASON = (
     "pass at this value. Refused in **both** CroCo slots, so the properties one cannot "
     "assemble alone into a machine PROCESS itself cannot run -- the same reason "
     "`_BI2212_UNBOUND_REASON` is keyed on both cable-in-conduit slots"
-)
-
-_DURHAM_REBCO_CROCO_REASON = (
-    "`i_tf_sc_mat == 8` (DURHAM_REBCO) is a real and complete CroCo arm -- `gl_rebco` "
-    "for the properties (process/models/tfcoil/superconducting.py:4459-4480) and "
-    "branch 8 of `superconductor_current_density_margin` "
-    "(process/models/superconductors.py:1268-1270) for the margin -- and the only arm "
-    "of either that actually *uses* a strain, which is why `i_str_wp` stays a key of "
-    "both registries. `gl_rebco` is already ported "
-    "(functional_process/models/physics/superconductors.py), so this is a small "
-    "addition rather than a missing model. **No tracked input file selects it**: both "
-    "CroCo machines set `i_tf_sc_mat = 9` (spherical_tokamak_eval.IN.DAT:355, "
-    "st_regression.IN.DAT:827). Refused until something reaches it, rather than written "
-    "against no measurement"
 )
 
 _CROCO_INTEGER_TURN_REASON = (
@@ -1422,8 +1410,8 @@ UNPORTED = {
     #
     # Written as comprehensions for the same reason `SC_TF_MASSES` is: the refusal is a
     # *rule* over the switch's values (cable shapes are refused by PROCESS's own guard,
-    # `i_str_wp == 0` by this port), and thirty-eight hand-written rows would be
-    # thirty-eight chances to key one of them wrong.
+    # `i_str_wp == 0` by this port), and thirty-odd hand-written rows would be as many
+    # chances to key one of them wrong.
     ("croco_turn_geometry_arm", 1): _CROCO_INTEGER_TURN_REASON,
     ("croco_turn_geometry_arm", -1): _CROCO_TURN_DIMENSION_INPUT_REASON,
     ("croco_turn_geometry_arm", -2): _CROCO_TURN_DIMENSION_INPUT_REASON,
@@ -1433,8 +1421,6 @@ UNPORTED = {
             if _mat.sc_shape is not SuperconductorShape.TAPE
             else _CROCO_REBCO_MARGIN_REASON
             if _mat is SuperconductorModel.CROCO_REBCO
-            else _DURHAM_REBCO_CROCO_REASON
-            if _mat is SuperconductorModel.DURHAM_REBCO
             else _I_STR_WP_ZERO_REASON
         )
         for _slot in (
@@ -1443,7 +1429,11 @@ UNPORTED = {
         )
         for _str_wp in (0, 1)
         for _mat in SuperconductorModel
-        if (_str_wp, _mat) != (1, SuperconductorModel.HAZELTON_ZHAI_REBCO)
+        if (_str_wp, _mat)
+        not in {
+            (1, SuperconductorModel.DURHAM_REBCO),
+            (1, SuperconductorModel.HAZELTON_ZHAI_REBCO),
+        }
     },
 }
 
@@ -2661,6 +2651,7 @@ CROCO_TURN_GEOMETRY = {0: CrocoAveragedTurnGeometryFromCurrentPerTurn}
 """The CroCo turn-geometry arm -> its occupant."""
 
 CROCO_SUPERCONDUCTOR_PROPERTIES = {
+    (1, SuperconductorModel.DURHAM_REBCO): DurhamRebcoCrocoSuperconductorProperties,
     (
         1,
         SuperconductorModel.HAZELTON_ZHAI_REBCO,
@@ -2669,6 +2660,7 @@ CROCO_SUPERCONDUCTOR_PROPERTIES = {
 """`(.tfcoil.i_str_wp, .tfcoil.i_tf_sc_mat)` -> the CroCo critical-current occupant."""
 
 CROCO_TEMPERATURE_MARGIN = {
+    (1, SuperconductorModel.DURHAM_REBCO): DurhamRebcoCrocoTemperatureMargin,
     (
         1,
         SuperconductorModel.HAZELTON_ZHAI_REBCO,

@@ -11,7 +11,7 @@ not the declarations that call them.
 
 import jax.numpy as jnp
 
-from functional_process.models.physics.superconductors import hijc_rebco
+from functional_process.models.physics.superconductors import gl_rebco, hijc_rebco
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.models.tfcoil.superconducting import _temperature_margin
 
@@ -516,3 +516,158 @@ def calculate_hazelton_zhai_rebco_croco_temperature_margin(
         temp_tf_coolant_peak_field=tftmp,
     )
     return margin, margin
+
+
+_REBCO_STRAIN_LIMIT = 0.7e-2
+"""`|strain|` beyond which the tape arms substitute `sign(strain) * 0.7e-2`
+(`superconducting.py:4464-4470`)."""
+
+
+def croco_superconductor_properties_gl_rebco(
+    a_tf_turn,
+    b_tf_inboard_peak,
+    cur_tf_turn,
+    temp_tf_peak,
+    strain,
+    a_tf_croco_strand,
+):
+    """`i_tf_sc_mat == 8` -- Durham Ginzburg-Landau REBCO.
+
+    Ports `process/models/tfcoil/superconducting.py:4457-4480`: `(bc20m, tc0m)` the
+    literals `(430, 185)`, the strain clipped at `0.7e-2` (the `logger.error` dropped)
+    and handed to `gl_rebco` -- the one tape arm that uses a strain, so `i_str_wp`
+    decides which field this occupant reads. No tape dimension is read.
+
+    Returns
+    -------
+    :
+        `croco_superconductor_properties_hijc_rebco`'s ten outputs.
+    """
+    bc20m = 430.0
+    tc0m = 185.0
+    strain = jnp.where(
+        jnp.abs(strain) > _REBCO_STRAIN_LIMIT,
+        jnp.sign(strain) * _REBCO_STRAIN_LIMIT,
+        strain,
+    )
+    j_superconductor_critical, _, _ = gl_rebco(
+        temp_tf_peak, b_tf_inboard_peak, strain, bc20m, tc0m
+    )
+    return (
+        *_croco_superconductor_properties(
+            j_superconductor_critical=j_superconductor_critical,
+            a_tf_croco_strand=a_tf_croco_strand,
+            a_tf_turn=a_tf_turn,
+            cur_tf_turn=cur_tf_turn,
+        ),
+        j_superconductor_critical,
+        bc20m,
+        tc0m,
+    )
+
+
+def temperature_margin_gl_rebco(
+    *,
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """Temperature margin on `i_tf_sc_mat == 8`: branch 8 of
+    `superconductor_current_density_margin` (`process/models/superconductors.py:
+    1268-1270`) under the shared secant search. The strain is **not** clipped here: `run` hands the raw field
+    (`superconducting.py:4002-4005`), as on the Nb3Sn arms.
+    """
+
+    def margin_fn(temperature):
+        j_critical, _, _ = gl_rebco(
+            temperature, b_tf_inboard_peak, strain, b_c20max, temp_c0max
+        )
+        return j_critical - j_superconductor
+
+    return _temperature_margin(
+        margin_fn=margin_fn, temp_tf_coolant_peak_field=temp_tf_coolant_peak_field
+    )
+
+
+def calculate_durham_rebco_croco_temperature_margin(
+    j_tf_superconductor,
+    b_tf_inboard_peak_with_ripple,
+    str_wp,
+    b_tf_superconductor_critical_zero_temp_strain,
+    temp_tf_superconductor_critical_zero_field_strain,
+    tftmp,
+):
+    """`i_tf_sc_mat == 8`'s temperature margin, written to both
+    `.tfcoil.temp_tf_superconductor_margin` and `.tfcoil.temp_margin`.
+    """
+    margin = temperature_margin_gl_rebco(
+        j_superconductor=j_tf_superconductor,
+        b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+        strain=str_wp,
+        b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+        temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+        temp_tf_coolant_peak_field=tftmp,
+    )
+    return margin, margin
+
+
+def tf_croco_superconductor_properties(
+    a_tf_turn,
+    b_tf_inboard_peak,
+    cur_tf_turn,
+    temp_tf_peak,
+    i_tf_superconductor,
+    dr_tf_hts_tape,
+    dx_tf_hts_tape_rebco,
+    dx_tf_hts_tape_total,
+    a_tf_croco_strand,
+    i_str_wp,
+    str_wp,
+    str_tf_con_res,
+):
+    """`CROCOSuperconductingTFCoil.tf_croco_superconductor_properties`
+    (`superconducting.py:4391-4557`), `self.data` spelled as the three fields it reads,
+    over the per-material functions above. The graph never calls it: the converter picks
+    the material's occupant.
+
+    `CROCO_REBCO` (6) is refused: its properties arm runs, but PROCESS's temperature
+    margin raises on it, so no CroCo machine completes at that value. A cable material
+    is refused by PROCESS's own shape guard (`:4435-4441`).
+
+    Raises
+    ------
+    ValueError
+        At a material the port writes no arm for.
+    """
+    strain = str_tf_con_res if i_str_wp == 0 else str_wp
+    if i_tf_superconductor == 8:
+        return croco_superconductor_properties_gl_rebco(
+            a_tf_turn,
+            b_tf_inboard_peak,
+            cur_tf_turn,
+            temp_tf_peak,
+            strain,
+            a_tf_croco_strand,
+        )
+    if i_tf_superconductor == 9:
+        return croco_superconductor_properties_hijc_rebco(
+            a_tf_turn,
+            b_tf_inboard_peak,
+            cur_tf_turn,
+            temp_tf_peak,
+            dr_tf_hts_tape,
+            dx_tf_hts_tape_rebco,
+            dx_tf_hts_tape_total,
+            a_tf_croco_strand,
+        )
+    raise ValueError(
+        f"i_tf_superconductor={i_tf_superconductor!r}: "
+        + (
+            "CROCO_REBCO's temperature margin raises in PROCESS"
+            if i_tf_superconductor == 6
+            else "not a tape superconductor; PROCESS's shape guard refuses it"
+        )
+    )

@@ -29,10 +29,14 @@ from functional_process.cottax.input.native import (
 from functional_process.models.costs import costs as C
 from functional_process.models.pfcoil import masses as pf_masses
 from functional_process.models.power import thermal_cryo as T
+from functional_process.models.stellarator.coils.calculate import (
+    winding_pack_pre_intersect,
+)
 from functional_process.models.stellarator.coils.mass import calculate_coils_mass
 from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
     calculate_fw_blanket_shield_geometry,
 )
+from functional_process.models.tfcoil import croco as tf_croco
 from functional_process.models.tfcoil import superconducting as tf_superconducting
 from functional_process.models.vacuum.vacuum import calculate_vacuum_pumping_old
 
@@ -54,6 +58,9 @@ SWITCHES = (
     "i_thermal_electric_conversion",
     # The PF and TF magnet costs' dispatch.
     "supercond_cost_model",
+    # The TF superconductor: which critical surface, and which strain field it reads.
+    "i_tf_sc_mat",
+    "i_str_wp",
 )
 """Every switch a dispatch below is called with, valued from the configuration."""
 
@@ -82,6 +89,42 @@ def _indexed(fn, **entries):
     return dispatch
 
 
+def _renamed(fn, outputs=None, **leaves):
+    """`fn`, taking each parameter `name` renamed to `leaves[name]` -- the field of the
+    place the variants read it at, where PROCESS's signature names it otherwise -- and
+    returning `outputs` of its result when given: the ones the variants own.
+    """
+    names = [leaves.get(n, n) for n in inspect.signature(fn).parameters]
+    original = {leaves.get(n, n): n for n in inspect.signature(fn).parameters}
+
+    def dispatch(**kwargs):
+        result = fn(**{original[k]: v for k, v in kwargs.items()})
+        return result if outputs is None else tuple(result[i] for i in outputs)
+
+    dispatch.__signature__ = inspect.Signature([
+        inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY) for n in names
+    ])
+    dispatch.__name__ = fn.__name__
+    return dispatch
+
+
+_PEAK_FIELD = {"b_tf_inboard_peak": "b_tf_inboard_peak_with_ripple"}
+_MARGIN_PLACES = {
+    **_PEAK_FIELD,
+    "i_tf_superconductor": "i_tf_sc_mat",
+    "j_superconductor": "j_tf_superconductor",
+    "strain": "str_wp",
+    "bc20m": "b_tf_superconductor_critical_zero_temp_strain",
+    "tc0m": "temp_tf_superconductor_critical_zero_field_strain",
+    "temp_tf_coolant_peak_field": "tftmp",
+}
+"""`calculate_superconductor_temperature_margin`'s parameters -> the places `run`
+passes (`superconducting.py:2749-2761`), the strain at `i_str_wp == 1`."""
+
+TF_SUPERCONDUCTOR_MARGIN = _renamed(
+    tf_superconducting.calculate_superconductor_temperature_margin, **_MARGIN_PLACES
+)
+
 TF_DENSITY = {"den_tf_sc_material": ("dcond", "i_tf_sc_mat")}
 PF_DENSITY = {"den_pf_conductor": ("dcond", "i_pf_superconductor")}
 CS_DENSITY = {"den_cs_conductor": ("dcond", "i_cs_superconductor")}
@@ -108,6 +151,34 @@ SLOTS = {
     ("vacuum", "vacuum_old"): calculate_vacuum_pumping_old,
     ("stellarator", "fwbs", "fw_blanket_shield_geometry"): (
         calculate_fw_blanket_shield_geometry
+    ),
+    # The ST machines hold their CroCo coil at this slot too.
+    ("tokamak", "cicc_superconducting_tf_coil", "cicc_superconductor_properties"): (
+        _renamed(
+            tf_superconducting.tf_cable_in_conduit_superconductor_properties,
+            **_PEAK_FIELD,
+            i_tf_superconductor="i_tf_sc_mat",
+            temp_tf_coolant_peak_field="tftmp",
+        )
+    ),
+    ("tokamak", "cicc_superconducting_tf_coil", "croco_superconductor_properties"): (
+        _renamed(
+            tf_croco.tf_croco_superconductor_properties,
+            **_PEAK_FIELD,
+            i_tf_superconductor="i_tf_sc_mat",
+            cur_tf_turn="c_tf_turn",
+            temp_tf_peak="tftmp",
+        )
+    ),
+    (
+        "tokamak",
+        "cicc_superconducting_tf_coil",
+        "tf_superconductor_temperature_margin",
+    ): TF_SUPERCONDUCTOR_MARGIN,
+    # PROCESS's `winding_pack_total_size` up to `intersect`, less the area fraction the
+    # post-intersect node owns.
+    ("stellarator", "coils", "winding_pack_intersect_inputs"): _renamed(
+        winding_pack_pre_intersect, outputs=(0, 1, 2, 4)
     ),
 }
 """Each switched slot -> PROCESS's dispatch over its variants."""
@@ -167,13 +238,66 @@ NOT_PLACES = {
     "i_p_coolant_pumping": 2,
     "i_blkt_dual_coolant": 0,
     "supercond_cost_model": 0,
+    "i_str_wp": 1,
 }
 """Switches that are not a place a configuration values, and PROCESS's defaults
-(`fwbs_variables.py:249`, `:526`, `cost_variables.py:552`); the file's own value
-wins."""
+(`fwbs_variables.py:249`, `:526`, `cost_variables.py:552`, `tfcoil_variables.py:508`);
+the file's own value wins."""
 
-FIXED = {"qtorus": 0.0}
-"""Values the declarations fix at `Vacuum.run`'s one call site."""
+FIXED = {"qtorus": 0.0, "c0": 1.0e10}
+"""Values the declarations fix at their call sites: `Vacuum.run`'s, and the NbTi
+constant `run` hands the temperature margin (`superconducting.py:2758`)."""
+
+COMPUTED = {
+    # The TF turn and its critical surface, `large_tokamak_eval`'s order.
+    "a_tf_turn_cable_space_effective": 1.1e-3,
+    "a_tf_turn": 2.4e-3,
+    "b_tf_inboard_peak_with_ripple": 11.0,
+    "str_wp": -0.003,
+    "str_tf_con_res": -0.002,
+    "bcritsc": 24.0,
+    "tcritsc": 15.5,
+    "b_crit_upper_nbti": 14.86,
+    "t_crit_nbti": 9.04,
+    # The CroCo tape and strand, `test_croco.py`'s.
+    "dr_tf_hts_tape": 0.0062886208094437655,
+    "dx_tf_hts_tape_total": 0.000211,
+    "a_tf_croco_strand": 0.00013387,
+    # The stellarator's coil and winding pack, HELIAS 5B's (`test_calculate.py`).
+    "r_coil_major": 22.237837837837837,
+    "r_coil_minor": 4.7171171171171169,
+    "coilcurrent": 12.711229086229087,
+    "stella_config_a1": 0.688,
+    "stella_config_a2": 0.025,
+    "stella_config_wp_ratio": 1.2,
+    "a_tf_turn_cable_space_no_void": 0.00225,
+    "dx_tf_turn_general": 0.056,
+    "f_j_tf_wp_critical_max": 0.7,
+    "fhts": 0.5,
+    "j_tf_wp": 2.0e7,
+}
+"""Places no configuration values (computed, or left at no default), at a point every
+chosen variant is valid at; perturbed like the configuration's own."""
+
+COMPUTED_BY_MATERIAL = {
+    1: {
+        "j_tf_superconductor": 3.0e8,
+        "b_tf_superconductor_critical_zero_temp_strain": 32.97,
+        "temp_tf_superconductor_critical_zero_field_strain": 16.06,
+    },
+    5: {
+        "j_tf_superconductor": 3.0e8,
+        "b_tf_superconductor_critical_zero_temp_strain": 32.97,
+        "temp_tf_superconductor_critical_zero_field_strain": 16.06,
+    },
+    9: {
+        "j_tf_superconductor": 1.0e8,
+        "b_tf_superconductor_critical_zero_temp_strain": 138.0,
+        "temp_tf_superconductor_critical_zero_field_strain": 92.0,
+    },
+}
+"""The temperature margin's inputs the properties node computes, per material: a
+critical surface's own constants and a current density below its critical one."""
 
 PF_COIL_ARRAYS = (
     "r_pf_coil_middle",
@@ -280,7 +404,12 @@ def _agree(name, slots):
                 shape = np.shape(by_leaf["n_pf_coil_turns"])
                 arguments[parameter] = rng.uniform(0.5, 2.0, size=shape)
             else:
-                arguments[parameter] = _random_like(by_leaf.get(parameter, 1.0), rng)
+                computed = COMPUTED | COMPUTED_BY_MATERIAL.get(
+                    switches.get("i_tf_sc_mat"), {}
+                )
+                arguments[parameter] = _random_like(
+                    by_leaf.get(parameter, computed.get(parameter, 1.0)), rng
+                )
         derived = _derived(arguments, state)
         values = []
         for parameter in places:

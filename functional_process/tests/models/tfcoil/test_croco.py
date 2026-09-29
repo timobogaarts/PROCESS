@@ -17,6 +17,7 @@ projection is a slice and not a different point.
 
 import functools
 import pathlib
+from types import MappingProxyType
 
 import jax
 import jax.numpy as jnp
@@ -45,7 +46,12 @@ from functional_process.cottax.models.tfcoil.namespace import (
     CrocoSuperconductingTfCoil,
     SuperconductingTfCoil,
 )
-from functional_process.tests._harness import Tier1Contract
+from functional_process.models.tfcoil.croco import (
+    croco_superconductor_properties_gl_rebco,
+    temperature_margin_gl_rebco,
+    tf_croco_superconductor_properties,
+)
+from functional_process.tests._harness import Sample, Tier1Contract
 from functional_process.tests._harness.process_reference import unpacked
 from functional_process.tests._harness.sample_store import FROM_FILE
 from process.core.model import DataStructure
@@ -58,6 +64,7 @@ from process.models.tfcoil.superconducting import CROCOSuperconductingTFCoil
 # The reference tokamak (run from the repository root, as the regression inputs are).
 TOKAMAK_INPUT_FILE = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
 
+_DURHAM_REBCO = 8
 _HAZELTON_ZHAI_REBCO = 9
 
 
@@ -407,6 +414,242 @@ class TestHazeltonZhaiRebcoCrocoTemperatureMargin(Tier1Contract):
 
 
 # ---------------------------------------------------------------------------
+# Tape arm 8, Durham Ginzburg-Landau REBCO: properties and temperature margin
+# ---------------------------------------------------------------------------
+
+
+def _limits(model, result):
+    """A `TFSuperconductorLimits` in the port's order, `j_crit_str_tf` off `data`."""
+    return (
+        result.j_tf_wp_critical,
+        model.data.tfcoil.j_crit_str_tf,
+        result.f_c_tf_turn_operating_critical,
+        result.j_tf_coil_turn,
+        result.j_superconductor,
+        result.c_turn_cables_critical,
+        result.c_turn_cables_critical,
+        result.j_superconductor_critical,
+        result.bc20m,
+        result.tc0m,
+    )
+
+
+def _reference_croco_superconductor_properties_gl_rebco(
+    a_tf_turn, b_tf_inboard_peak, cur_tf_turn, temp_tf_peak, strain, a_tf_croco_strand
+):
+    """`i_tf_sc_mat == 8`, the strain planted in `.tfcoil.str_wp` at `i_str_wp = 1`.
+
+    `.tfcoil.str_tf_con_res` is NaN and the tape dimensions too, so a port reading the
+    other strain or a tape dimension disagrees.
+    """
+    model = _croco()
+    model.data.tfcoil.i_str_wp = 1
+    model.data.tfcoil.str_wp = strain
+    model.data.tfcoil.str_tf_con_res = np.nan
+    result = model.tf_croco_superconductor_properties(
+        a_tf_turn=a_tf_turn,
+        b_tf_inboard_peak=b_tf_inboard_peak,
+        cur_tf_turn=cur_tf_turn,
+        temp_tf_peak=temp_tf_peak,
+        i_tf_superconductor=_DURHAM_REBCO,
+        dr_tf_hts_tape=np.nan,
+        dx_tf_hts_tape_rebco=np.nan,
+        dx_tf_hts_tape_total=np.nan,
+        a_tf_croco_strand=a_tf_croco_strand,
+    )
+    return _limits(model, result)
+
+
+_GL_REBCO_TURN = {
+    "a_tf_turn": 0.003225866914717279,
+    "b_tf_inboard_peak": 11.717722779177526,
+    "cur_tf_turn": 85462.67497090799,
+    "temp_tf_peak": 4.75,
+    "a_tf_croco_strand": 0.00013387,
+}
+"""`TestHazeltonZhaiRebcoCrocoSuperconductorProperties`' turn: the same CroCo turn,
+another tape fit."""
+
+
+class TestDurhamRebcoCrocoSuperconductorProperties(Tier1Contract):
+    """`i_tf_sc_mat == 8` -- the one tape arm that reads a strain, clipped at `0.7e-2`.
+
+    One sample inside the clip and one beyond it, so the substitution is executed.
+    """
+
+    audit_record = "models/tfcoil/croco.md"
+    reference = _reference_croco_superconductor_properties_gl_rebco
+    ported = croco_superconductor_properties_gl_rebco
+
+    samples = [
+        Sample(
+            MappingProxyType({**_GL_REBCO_TURN, "strain": -0.003}),
+            "synthetic",
+            "croco-sc-properties-rebco8",
+        ),
+        Sample(
+            MappingProxyType({**_GL_REBCO_TURN, "strain": -0.009}),
+            "synthetic",
+            "croco-sc-properties-rebco8-clipped",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "a_tf_turn": (2.5e-3, 4.0e-3),
+        "b_tf_inboard_peak": (6.0, 16.0),
+        "cur_tf_turn": (6.0e4, 1.0e5),
+        "temp_tf_peak": (4.0, 25.0),
+        "strain": (-0.006, 0.006),
+        "a_tf_croco_strand": (1.0e-4, 1.6e-4),
+    }
+
+
+def _reference_temperature_margin_gl_rebco(
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """Branch 8 of `superconductor_current_density_margin` under PROCESS's own secant
+    search, the tape dimensions NaN: branch 8 reads none.
+    """
+    model = _croco()
+    d = model.data.superconducting_tfcoil
+    d.dr_tf_hts_tape = d.dx_tf_hts_tape_rebco = d.dx_tf_hts_tape_total = np.nan
+    return model.calculate_superconductor_temperature_margin(
+        i_tf_superconductor=_DURHAM_REBCO,
+        j_superconductor=j_superconductor,
+        b_tf_inboard_peak=b_tf_inboard_peak,
+        strain=strain,
+        bc20m=b_c20max,
+        tc0m=temp_c0max,
+        c0=1.0e10,
+        temp_tf_coolant_peak_field=temp_tf_coolant_peak_field,
+        data=model.data,
+    )
+
+
+class TestDurhamRebcoCrocoTemperatureMargin(Tier1Contract):
+    """`i_tf_sc_mat == 8`'s margin, `(bc20m, tc0m)` the properties arm's `(430, 185)`."""
+
+    audit_record = "models/tfcoil/croco.md"
+    reference = _reference_temperature_margin_gl_rebco
+    ported = temperature_margin_gl_rebco
+
+    samples = [
+        Sample(
+            MappingProxyType({
+                "j_superconductor": 1.0e8,
+                "b_tf_inboard_peak": 11.717722779177526,
+                "strain": -0.003,
+                "b_c20max": 430.0,
+                "temp_c0max": 185.0,
+                "temp_tf_coolant_peak_field": 4.75,
+            }),
+            "synthetic",
+            "croco-temp-margin-rebco8",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "j_superconductor": (5e7, 3e8),
+        "b_tf_inboard_peak": (8.0, 16.0),
+        "strain": (-0.004, -0.001),
+        "b_c20max": (420.0, 440.0),
+        "temp_c0max": (180.0, 190.0),
+        "temp_tf_coolant_peak_field": (4.0, 20.0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# `tf_croco_superconductor_properties` at PROCESS's signature, every arm
+# ---------------------------------------------------------------------------
+
+
+def _reference_tf_croco_superconductor_properties(
+    *, i_str_wp, str_wp, str_tf_con_res, **inputs
+):
+    """PROCESS's function, `self.data`'s three fields set from the arguments."""
+    model = _croco()
+    model.data.tfcoil.i_str_wp = i_str_wp
+    model.data.tfcoil.str_wp = str_wp
+    model.data.tfcoil.str_tf_con_res = str_tf_con_res
+    return _limits(model, model.tf_croco_superconductor_properties(**inputs))
+
+
+def _croco_dispatch_samples():
+    """Arm 9 at its sample, arm 8 at both strain fields: the other field is another
+    strain, so the one `i_str_wp` names is the one that counts.
+    """
+    (rebco9,) = TestHazeltonZhaiRebcoCrocoSuperconductorProperties.samples[:1]
+    tape = {
+        name: rebco9.kwargs[name]
+        for name in ("dr_tf_hts_tape", "dx_tf_hts_tape_rebco", "dx_tf_hts_tape_total")
+    }
+    samples = [
+        Sample(
+            MappingProxyType({
+                **rebco9.kwargs,
+                "i_tf_superconductor": _HAZELTON_ZHAI_REBCO,
+                "i_str_wp": 1,
+                "str_wp": -0.003,
+                "str_tf_con_res": -0.002,
+            }),
+            "synthetic",
+            "croco-dispatch-9",
+        )
+    ]
+    samples.extend(
+        Sample(
+            MappingProxyType({
+                **_GL_REBCO_TURN,
+                **tape,
+                "i_tf_superconductor": _DURHAM_REBCO,
+                "i_str_wp": i_str_wp,
+                "str_wp": -0.003,
+                "str_tf_con_res": -0.001,
+            }),
+            "synthetic",
+            f"croco-dispatch-8-i_str_wp-{i_str_wp}",
+        )
+        for i_str_wp in (0, 1)
+    )
+    return samples
+
+
+class TestTfCrocoSuperconductorProperties(Tier1Contract):
+    """PROCESS's signature, dispatching over the two tape arms the port writes."""
+
+    audit_record = "models/tfcoil/croco.md"
+    reference = _reference_tf_croco_superconductor_properties
+    ported = tf_croco_superconductor_properties
+    static_argnames = ("i_tf_superconductor", "i_str_wp")
+
+    samples = _croco_dispatch_samples()
+
+
+def test_a_croco_machine_assembles_at_durham_rebco(tmp_path):
+    """`i_tf_sc_mat = 8` on a CroCo machine takes the two arm-8 occupants."""
+    text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
+    text = "\n".join(
+        "i_tf_sc_mat = 8" if line.startswith("i_tf_sc_mat") else line
+        for line in text.splitlines()
+    )
+    indat = tmp_path / "croco8.IN.DAT"
+    indat.write_text(text + "\ni_tf_turn_type = 2\n")
+    coil = machine_from_indat(str(indat)).tokamak.cicc_superconducting_tf_coil
+    assert coil.croco_superconductor_properties.fn is (
+        croco_superconductor_properties_gl_rebco
+    )
+    assert "temperature_margin" in (
+        coil.tf_superconductor_temperature_margin.fn.__name__
+    )
+    assert "durham" in coil.tf_superconductor_temperature_margin.fn.__name__
+
+
+# ---------------------------------------------------------------------------
 # The registries, and what a CroCo machine assembles to
 # ---------------------------------------------------------------------------
 
@@ -469,7 +712,7 @@ def test_every_unwritten_croco_material_is_refused_with_a_reason(slot):
 
 
 def test_a_croco_machine_refuses_an_unwritten_tape_material(tmp_path):
-    """A CroCo machine asking for `i_tf_sc_mat = 8` stops, and says which slot.
+    """A CroCo machine asking for `i_tf_sc_mat = 6` stops, and says which slot.
 
     The end-to-end half of the trade above, and the check that the *CroCo* registries
     are the ones a CroCo machine consults rather than the cable-in-conduit slot's
@@ -477,10 +720,10 @@ def test_a_croco_machine_refuses_an_unwritten_tape_material(tmp_path):
     """
     text = pathlib.Path(TOKAMAK_INPUT_FILE).read_text()
     text = "\n".join(
-        "i_tf_sc_mat = 8" if line.startswith("i_tf_sc_mat") else line
+        "i_tf_sc_mat = 6" if line.startswith("i_tf_sc_mat") else line
         for line in text.splitlines()
     )
-    indat = tmp_path / "croco8.IN.DAT"
+    indat = tmp_path / "croco6.IN.DAT"
     indat.write_text(text + "\ni_tf_turn_type = 2\n")
 
     with pytest.raises(NotImplementedError, match="i_str_wp_i_tf_sc_mat_croco"):
