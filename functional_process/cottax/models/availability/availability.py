@@ -172,17 +172,8 @@ CplifeAvailResistive = costs.function(
 # superconducting centrepost lifetime, availability-adjusted -- the same formula as
 # `CplifeAvailSuperconducting` (`.costs.cplife`'s `avail()`/`avail_2()` producer),
 # same `fn`, different node shape (`FixedPointFunction`, not `ExplicitFunction`).
-def _cplife_avail_st_superconducting_adjusted(
-    neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
-):
-    """`calculate_cplife_superconducting`, ports declared above."""
-    return calculate_cplife_superconducting(
-        neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
-    )
-
-
 CplifeAvailStSuperconductingAdjusted = costs.iteration(
-    _cplife_avail_st_superconducting_adjusted,
+    calculate_cplife_superconducting,
     "cplife",
 )
 
@@ -190,17 +181,8 @@ CplifeAvailStSuperconductingAdjusted = costs.iteration(
 # `i_tf_sup == SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh
 # superconducting centrepost lifetime, unadjusted -- the same formula as
 # `CpLifetimeSuperconducting`.
-def _cplife_avail_st_superconducting_unadjusted(
-    neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-):
-    """`calculate_cp_lifetime_superconducting`, ports declared above."""
-    return calculate_cp_lifetime_superconducting(
-        neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-    )
-
-
 CplifeAvailStSuperconductingUnadjusted = costs.iteration(
-    _cplife_avail_st_superconducting_unadjusted,
+    calculate_cp_lifetime_superconducting,
     "cplife",
 )
 
@@ -208,30 +190,16 @@ CplifeAvailStSuperconductingUnadjusted = costs.iteration(
 # `i_tf_sup != SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh resistive
 # centrepost lifetime, availability-adjusted -- the same formula as
 # `CplifeAvailResistive`.
-def _cplife_avail_st_resistive_adjusted(
-    cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
-):
-    """`calculate_cplife_resistive`, ports declared above."""
-    return calculate_cplife_resistive(
-        cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
-    )
-
-
 CplifeAvailStResistiveAdjusted = costs.iteration(
-    _cplife_avail_st_resistive_adjusted,
+    calculate_cplife_resistive,
     "cplife",
 )
 
 
 # `i_tf_sup != SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh resistive
 # centrepost lifetime, unadjusted -- the same formula as `CpLifetimeResistive`.
-def _cplife_avail_st_resistive_unadjusted(cpstflnc, pflux_fw_neutron_mw, life_plant):
-    """`calculate_cp_lifetime_resistive`, ports declared above."""
-    return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
-
-
 CplifeAvailStResistiveUnadjusted = costs.iteration(
-    _cplife_avail_st_resistive_unadjusted,
+    calculate_cp_lifetime_resistive,
     "cplife",
 )
 

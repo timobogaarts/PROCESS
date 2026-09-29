@@ -60,11 +60,9 @@ VacuumPumpingSimple = vacuum.function(
 
 
 # cottax node: `duct_diameter_residual` as a genuine `RootFind` implicit model.
-def _duct_diameter_root_find(d_duct, l1, l2, l3, xmult_i, ceff_i):
-    return duct_diameter_residual(d_duct, l1, l2, l3, xmult_i, ceff_i)
-
-
-DuctDiameterRootFind = vacuum.residual(_duct_diameter_root_find, "d_duct")
+DuctDiameterRootFind = vacuum.residual(
+    duct_diameter_residual, "d_duct", reads={"diameter": "d_duct"}
+)
 
 
 # cottax node: the two inequality residuals, each held `<= 0`.

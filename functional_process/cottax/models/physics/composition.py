@@ -284,48 +284,8 @@ PlasmaCompositionNonIgnited = physics.function(
 
 
 # cottax node: `calculate_effective_charge_ionisation_profiles`, ports declared.
-def _calculate_effective_charge_ionisation_profiles(
-    temp_plasma_electron_profile_kev,
-    f_nd_impurity_electron_array_0,
-    f_nd_impurity_electron_array_1,
-    f_nd_impurity_electron_array_2,
-    f_nd_impurity_electron_array_3,
-    f_nd_impurity_electron_array_4,
-    f_nd_impurity_electron_array_5,
-    f_nd_impurity_electron_array_6,
-    f_nd_impurity_electron_array_7,
-    f_nd_impurity_electron_array_8,
-    f_nd_impurity_electron_array_9,
-    f_nd_impurity_electron_array_10,
-    f_nd_impurity_electron_array_11,
-    f_nd_impurity_electron_array_12,
-    f_nd_impurity_electron_array_13,
-    temp_impurity_keV_array,
-    impurity_arr_zav,
-):
-    return effective_charge_ionisation_profiles_from_indexed_impurities(
-        temp_plasma_electron_profile_kev,
-        f_nd_impurity_electron_array_0,
-        f_nd_impurity_electron_array_1,
-        f_nd_impurity_electron_array_2,
-        f_nd_impurity_electron_array_3,
-        f_nd_impurity_electron_array_4,
-        f_nd_impurity_electron_array_5,
-        f_nd_impurity_electron_array_6,
-        f_nd_impurity_electron_array_7,
-        f_nd_impurity_electron_array_8,
-        f_nd_impurity_electron_array_9,
-        f_nd_impurity_electron_array_10,
-        f_nd_impurity_electron_array_11,
-        f_nd_impurity_electron_array_12,
-        f_nd_impurity_electron_array_13,
-        temp_impurity_keV_array,
-        impurity_arr_zav,
-    )
-
-
 CalculateEffectiveChargeIonisationProfiles = physics.function(
-    _calculate_effective_charge_ionisation_profiles,
+    effective_charge_ionisation_profiles_from_indexed_impurities,
     "n_charge_plasma_effective_profile",
     V.impurity_radiation.n_charge_impurity_profile,
     reads={

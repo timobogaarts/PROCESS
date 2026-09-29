@@ -179,47 +179,6 @@ ThermalEnergyTotals = physics.function(
 )
 
 
-def select_stellarator_beta_and_stored_energy(
-    beta_fast_alpha,
-    beta_beam,
-    nd_plasma_electrons_vol_avg,
-    temp_plasma_electron_density_weighted_kev,
-    nd_plasma_ions_total_vol_avg,
-    temp_plasma_ion_density_weighted_kev,
-    b_plasma_total,
-    vol_plasma,
-    m_ions_total_amu,
-    nd_plasma_electron_line,
-    b_plasma_toroidal_on_axis,
-    eps,
-    rmajor,
-):
-    """`(beta_total_vol_avg, e_plasma_beta)` half of
-    `calculate_stellarator_beta_and_rho_star` -- `rho_star` is `DimensionlessPlasma
-    Parameters`' output (see `StellaratorBetaAndStoredEnergy`'s own docstring for why
-    this class must not also produce it), so it is discarded here exactly as the
-    declaration already discarded it.
-    """
-    beta_total_vol_avg, e_plasma_beta, _rho_star = (
-        calculate_stellarator_beta_and_rho_star(
-            beta_fast_alpha,
-            beta_beam,
-            nd_plasma_electrons_vol_avg,
-            temp_plasma_electron_density_weighted_kev,
-            nd_plasma_ions_total_vol_avg,
-            temp_plasma_ion_density_weighted_kev,
-            b_plasma_total,
-            vol_plasma,
-            m_ions_total_amu,
-            nd_plasma_electron_line,
-            b_plasma_toroidal_on_axis,
-            eps,
-            rmajor,
-        )
-    )
-    return beta_total_vol_avg, e_plasma_beta
-
-
 # cottax node: `calculate_stellarator_beta_and_rho_star` minus its `rho_star`
 # output -- the registerable form of `StellaratorBetaAndRhoStar` above.
 StellaratorBetaAndStoredEnergy = physics.function(

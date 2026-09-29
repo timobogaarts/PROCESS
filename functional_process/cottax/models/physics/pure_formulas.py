@@ -19,28 +19,10 @@ __all__ = [
 
 
 # cottax node: `rether`, unchanged, ports declared.
-def _ion_electron_equilibration(
-    alphan,
-    alphat,
-    nd_plasma_electrons_vol_avg,
-    dlamie,
-    temp_plasma_electron_vol_avg_kev,
-    temp_plasma_ion_vol_avg_kev,
-    n_charge_plasma_effective_mass_weighted_vol_avg,
-):
-    return rether(
-        alphan,
-        alphat,
-        nd_plasma_electrons_vol_avg,
-        dlamie,
-        temp_plasma_electron_vol_avg_kev,
-        temp_plasma_ion_vol_avg_kev,
-        n_charge_plasma_effective_mass_weighted_vol_avg,
-    )
-
-
 IonElectronEquilibration = physics.function(
-    _ion_electron_equilibration, "pden_ion_electron_equilibration_mw"
+    rether,
+    "pden_ion_electron_equilibration_mw",
+    reads={"te": "temp_plasma_electron_vol_avg_kev"},
 )
 
 
@@ -85,59 +67,33 @@ AuxiliaryPhysicsQuantities = physics.function(
 
 
 # cottax node: `calculate_total_plasma_heating_power`, unchanged, ports declared.
-def _total_plasma_heating_power(
-    f_p_alpha_plasma_deposited,
-    p_alpha_total_mw,
-    p_non_alpha_charged_mw,
-    p_plasma_ohmic_mw,
-    p_hcd_injected_total_mw,
-):
-    return calculate_total_plasma_heating_power(
-        f_p_alpha_plasma_deposited,
-        p_alpha_total_mw,
-        p_non_alpha_charged_mw,
-        p_plasma_ohmic_mw,
-        p_hcd_injected_total_mw,
-    )
-
-
 TotalPlasmaHeatingPower = physics.function(
-    _total_plasma_heating_power,
+    calculate_total_plasma_heating_power,
     "p_plasma_heating_total_mw",
 )
 
 
 # cottax node: `calaculate_stored_thermal_energy`, electron binding.
-def _electron_thermal_energy(
-    vol_plasma, nd_plasma_electrons_vol_avg, temp_plasma_electron_density_weighted_kev
-):
-    return calaculate_stored_thermal_energy(
-        vol_plasma,
-        nd_plasma_electrons_vol_avg,
-        temp_plasma_electron_density_weighted_kev,
-    )
-
-
 ElectronThermalEnergy = physics.function(
-    _electron_thermal_energy,
+    calaculate_stored_thermal_energy,
     "eden_plasma_electrons_thermal_vol_avg",
     "e_plasma_electrons_thermal",
+    reads={
+        "nd_plasma_vol_avg": "nd_plasma_electrons_vol_avg",
+        "temp_plasma_density_weighted_vol_avg_kev": "temp_plasma_electron_density_weighted_kev",
+    },
 )
 
 
 # cottax node: `calaculate_stored_thermal_energy`, ion binding.
-def _ion_thermal_energy(
-    vol_plasma, nd_plasma_ions_total_vol_avg, temp_plasma_ion_density_weighted_kev
-):
-    return calaculate_stored_thermal_energy(
-        vol_plasma,
-        nd_plasma_ions_total_vol_avg,
-        temp_plasma_ion_density_weighted_kev,
-    )
-
-
 IonThermalEnergy = physics.function(
-    _ion_thermal_energy, "eden_plasma_ions_thermal_vol_avg", "e_plasma_ions_thermal"
+    calaculate_stored_thermal_energy,
+    "eden_plasma_ions_thermal_vol_avg",
+    "e_plasma_ions_thermal",
+    reads={
+        "nd_plasma_vol_avg": "nd_plasma_ions_total_vol_avg",
+        "temp_plasma_density_weighted_vol_avg_kev": "temp_plasma_ion_density_weighted_kev",
+    },
 )
 
 
@@ -148,63 +104,17 @@ IonThermalEnergy = physics.function(
 
 # `i_beta_fast_alpha == ITER_PHYSICS_RULES` (0) -- the ITER Physics Design
 # Guidelines fraction (`physics.py:2043`).
-def _fast_alpha_beta_iter_physics_rules(
-    b_plasma_surface_poloidal_average,
-    b_plasma_toroidal_on_axis,
-    nd_plasma_electrons_vol_avg,
-    nd_plasma_fuel_ions_vol_avg,
-    nd_plasma_ions_total_vol_avg,
-    temp_plasma_electron_density_weighted_kev,
-    temp_plasma_ion_density_weighted_kev,
-    pden_alpha_total_mw,
-    pden_plasma_alpha_mw,
-    f_plasma_fuel_deuterium,
-):
-    return fast_alpha_beta_iter_physics_rules(
-        b_plasma_surface_poloidal_average,
-        b_plasma_toroidal_on_axis,
-        nd_plasma_electrons_vol_avg,
-        nd_plasma_fuel_ions_vol_avg,
-        nd_plasma_ions_total_vol_avg,
-        temp_plasma_electron_density_weighted_kev,
-        temp_plasma_ion_density_weighted_kev,
-        pden_alpha_total_mw,
-        pden_plasma_alpha_mw,
-        f_plasma_fuel_deuterium,
-    )
-
-
 FastAlphaBetaIterPhysicsRules = physics.function(
-    _fast_alpha_beta_iter_physics_rules, "beta_fast_alpha"
+    fast_alpha_beta_iter_physics_rules,
+    "beta_fast_alpha",
+    reads={"b_plasma_poloidal_average": "b_plasma_surface_poloidal_average"},
 )
 
 
 # `i_beta_fast_alpha == WARD` (1) -- PROCESS's own default
 # (`physics_variables.py:238`) and the reference run's.
-def _fast_alpha_beta_ward(
-    b_plasma_surface_poloidal_average,
-    b_plasma_toroidal_on_axis,
-    nd_plasma_electrons_vol_avg,
-    nd_plasma_fuel_ions_vol_avg,
-    nd_plasma_ions_total_vol_avg,
-    temp_plasma_electron_density_weighted_kev,
-    temp_plasma_ion_density_weighted_kev,
-    pden_alpha_total_mw,
-    pden_plasma_alpha_mw,
-    f_plasma_fuel_deuterium,
-):
-    return fast_alpha_beta_ward(
-        b_plasma_surface_poloidal_average,
-        b_plasma_toroidal_on_axis,
-        nd_plasma_electrons_vol_avg,
-        nd_plasma_fuel_ions_vol_avg,
-        nd_plasma_ions_total_vol_avg,
-        temp_plasma_electron_density_weighted_kev,
-        temp_plasma_ion_density_weighted_kev,
-        pden_alpha_total_mw,
-        pden_plasma_alpha_mw,
-        f_plasma_fuel_deuterium,
-    )
-
-
-FastAlphaBetaWard = physics.function(_fast_alpha_beta_ward, "beta_fast_alpha")
+FastAlphaBetaWard = physics.function(
+    fast_alpha_beta_ward,
+    "beta_fast_alpha",
+    reads={"b_plasma_poloidal_average": "b_plasma_surface_poloidal_average"},
+)

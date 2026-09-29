@@ -120,22 +120,14 @@ __all__ = [
 
 
 # cottax node: `calculate_iter_physics_basis_elongation`, ports declared.
-def _iter_physics_basis_elongation(vol_plasma, rmajor, rminor):
-    return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
-
-
 IterPhysicsBasisElongation = physics.function(
-    _iter_physics_basis_elongation, "kappa_ipb"
+    calculate_iter_physics_basis_elongation, "kappa_ipb"
 )
 
 
 # The unit conversions every scaling law takes as arguments.
-def _confinement_scaling_inputs(nd_plasma_electron_line, plasma_current):
-    return confinement_scaling_inputs(nd_plasma_electron_line, plasma_current)
-
-
 ConfinementScalingInputs = physics.function(
-    _confinement_scaling_inputs, "nd_plasma_electron_line_19", "cur_plasma_ma"
+    confinement_scaling_inputs, "nd_plasma_electron_line_19", "cur_plasma_ma"
 )
 
 
@@ -206,55 +198,15 @@ PlasmaPowerLossNonIgnitedCoreRadiation = physics.function(
 
 
 # ISS04 stellarator scaling. `ConfinementTimeModel.ISS04_STELLARATOR` (38).
-def _iss04_confinement_time(
-    rminor,
-    rmajor,
-    nd_plasma_electron_line_19,
-    b_plasma_toroidal_on_axis,
-    p_plasma_loss_mw,
-    iotabar,
-):
-    return iss04_stellarator_confinement_time(
-        rminor,
-        rmajor,
-        nd_plasma_electron_line_19,
-        b_plasma_toroidal_on_axis,
-        p_plasma_loss_mw,
-        iotabar,
-    )
-
-
 Iss04ConfinementTime = physics.function(
-    _iss04_confinement_time,
+    iss04_stellarator_confinement_time,
     "t_electron_confinement",
 )
 
 
 # IPB98(y,2) ELMy H-mode scaling.
-def _iter_ipb98y2_confinement_time(
-    cur_plasma_ma,
-    b_plasma_toroidal_on_axis,
-    nd_plasma_electron_line_19,
-    p_plasma_loss_mw,
-    rmajor,
-    kappa_ipb,
-    aspect,
-    afuel,
-):
-    return iter_ipb98y2_confinement_time(
-        cur_plasma_ma,
-        b_plasma_toroidal_on_axis,
-        nd_plasma_electron_line_19,
-        p_plasma_loss_mw,
-        rmajor,
-        kappa_ipb,
-        aspect,
-        afuel,
-    )
-
-
 IterIpb98y2ConfinementTime = physics.function(
-    _iter_ipb98y2_confinement_time,
+    iter_ipb98y2_confinement_time,
     "t_electron_confinement",
     reads={
         "afuel": V.physics.m_fuel_amu,
@@ -306,14 +258,9 @@ ConfinementTailCoreRadiation = physics.function(
 
 
 # cottax node: `calculate_double_and_triple_product`, ports declared.
-def _double_and_triple_product(
-    nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev, t_energy_confinement
-):
-    return calculate_double_and_triple_product(
-        nd_plasma_electrons_vol_avg,
-        temp_plasma_electron_vol_avg_kev,
-        t_energy_confinement,
-    )
-
-
-DoubleAndTripleProduct = physics.function(_double_and_triple_product, "ntau", "nTtau")
+DoubleAndTripleProduct = physics.function(
+    calculate_double_and_triple_product,
+    "ntau",
+    "nTtau",
+    reads={"temp_plasma_electrons_vol_avg_kev": "temp_plasma_electron_vol_avg_kev"},
+)

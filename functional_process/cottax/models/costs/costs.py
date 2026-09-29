@@ -427,35 +427,19 @@ StructuresCostNonReactor = costs.function(
 
 
 # cottax node: `calculate_indirect_costs` (Account 9).
-def _indirect_costs(cfind_lsa, cdirt, cowner, fcontng):
-    return calculate_indirect_costs_formula(cfind_lsa, cdirt, cowner, fcontng)
-
-
-IndirectCosts = costs.function(_indirect_costs, "cindrt", "ccont")
+IndirectCosts = costs.function(calculate_indirect_costs_formula, "cindrt", "ccont")
 
 
 # cottax node: `calculate_reactor_structure_cost` (Account 221.4).
-def _reactor_structure_cost(gsmass, UCGSS, cmlsa_reactor_structure, fkind):
-    return calculate_reactor_structure_cost_formula(
-        gsmass, UCGSS, cmlsa_reactor_structure, fkind
-    )
-
-
 ReactorStructureCost = costs.function(
-    _reactor_structure_cost,
+    calculate_reactor_structure_cost_formula,
     "c2214",
 )
 
 
 # cottax node: `calculate_vacuum_vessel_assembly_cost` (Account 222.3).
-def _vacuum_vessel_assembly_cost(m_vv, uccryo, cmlsa_magnets, fkind):
-    return calculate_vacuum_vessel_assembly_cost_formula(
-        m_vv, uccryo, cmlsa_magnets, fkind
-    )
-
-
 VacuumVesselAssemblyCost = costs.function(
-    _vacuum_vessel_assembly_cost,
+    calculate_vacuum_vessel_assembly_cost_formula,
     "c2223",
 )
 
@@ -552,44 +536,8 @@ TfCoilPowerConditioningCostResistive = costs.function(
 
 
 # cottax node: `calculate_pf_coil_power_conditioning_cost` (Account 225.2).
-def _pf_coil_power_conditioning_cost(
-    ucpfps,
-    peakmva,
-    ucpfic,
-    pfckts,
-    ucpfb,
-    spfbusl,
-    acptmax,
-    ucpfbs,
-    srcktpm,
-    ucpfbk,
-    vpfskv,
-    ucpfdr1,
-    ensxpfm,
-    ucpfcb,
-    fkind,
-):
-    return calculate_pf_coil_power_conditioning_cost(
-        ucpfps,
-        peakmva,
-        ucpfic,
-        pfckts,
-        ucpfb,
-        spfbusl,
-        acptmax,
-        ucpfbs,
-        srcktpm,
-        ucpfbk,
-        vpfskv,
-        ucpfdr1,
-        ensxpfm,
-        ucpfcb,
-        fkind,
-    )
-
-
 PfCoilPowerConditioningCost = costs.function(
-    _pf_coil_power_conditioning_cost,
+    calculate_pf_coil_power_conditioning_cost,
     "c22521",
     "c22522",
     "c22523",
@@ -602,32 +550,8 @@ PfCoilPowerConditioningCost = costs.function(
 
 
 # cottax node: `calculate_reactor_cooling_system_cost` (Account 2261).
-def _reactor_cooling_system_cost(
-    uchts_blkt_coolant,
-    p_fw_div_heat_deposited_mw,
-    p_blkt_nuclear_heat_total_mw,
-    p_shld_nuclear_heat_mw,
-    cmlsa_heat_transport,
-    fkind,
-    UCPHX,
-    n_primary_heat_exchangers,
-    p_plant_primary_heat_mw,
-):
-    return calculate_reactor_cooling_system_cost_formula(
-        uchts_blkt_coolant,
-        p_fw_div_heat_deposited_mw,
-        p_blkt_nuclear_heat_total_mw,
-        p_shld_nuclear_heat_mw,
-        cmlsa_heat_transport,
-        fkind,
-        UCPHX,
-        n_primary_heat_exchangers,
-        p_plant_primary_heat_mw,
-    )
-
-
 ReactorCoolingSystemCost = costs.function(
-    _reactor_cooling_system_cost,
+    calculate_reactor_cooling_system_cost_formula,
     "cpp",
     "chx",
     "c2261",
@@ -635,38 +559,24 @@ ReactorCoolingSystemCost = costs.function(
 
 
 # cottax node: `calculate_fuelling_system_cost` (Account 2271).
-def _fuelling_system_cost(ucf1, fkind):
-    return calculate_fuelling_system_cost(ucf1, fkind)
-
-
-FuellingSystemCost = costs.function(_fuelling_system_cost, "c2271")
+FuellingSystemCost = costs.function(calculate_fuelling_system_cost, "c2271")
 
 
 # cottax node: `calculate_nuclear_building_ventilation_cost` (Account 2274).
-def _nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind):
-    return calculate_nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind)
-
-
 NuclearBuildingVentilationCost = costs.function(
-    _nuclear_building_ventilation_cost,
+    calculate_nuclear_building_ventilation_cost,
     "c2274",
 )
 
 
 # cottax node: `calculate_instrumentation_and_control_cost` (Account 228).
-def _instrumentation_and_control_cost(uciac, fkind):
-    return calculate_instrumentation_and_control_cost(uciac, fkind)
-
-
-InstrumentationAndControlCost = costs.function(_instrumentation_and_control_cost, "c228")
+InstrumentationAndControlCost = costs.function(
+    calculate_instrumentation_and_control_cost, "c228"
+)
 
 
 # cottax node: `calculate_maintenance_equipment_cost` (Account 229).
-def _maintenance_equipment_cost(ucme, fkind):
-    return calculate_maintenance_equipment_cost(ucme, fkind)
-
-
-MaintenanceEquipmentCost = costs.function(_maintenance_equipment_cost, "c229")
+MaintenanceEquipmentCost = costs.function(calculate_maintenance_equipment_cost, "c229")
 
 
 # cottax node: `calculate_turbine_plant_equipment_cost` (Account 23).
@@ -683,69 +593,43 @@ TurbinePlantEquipmentCostNonReactor = costs.function(
 
 
 # cottax node: `calculate_switchyard_cost` (Account 241).
-def _switchyard_cost(UCSWYD, cmlsa_electrical_plant):
-    return calculate_switchyard_cost_formula(UCSWYD, cmlsa_electrical_plant)
-
-
-SwitchyardCost = costs.function(_switchyard_cost, "c241")
+SwitchyardCost = costs.function(calculate_switchyard_cost_formula, "c241")
 
 
 # cottax node: `calculate_transformers_cost` (Account 242).
-def _transformers_cost(
-    UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, cmlsa_electrical_plant
-):
-    return calculate_transformers_cost_formula(
-        UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, cmlsa_electrical_plant
-    )
-
-
 TransformersCost = costs.function(
-    _transformers_cost,
+    calculate_transformers_cost_formula,
     "c242",
 )
 
 
 # cottax node: `calculate_low_voltage_cost` (Account 243).
-def _low_voltage_cost(UCLV, tlvpmw, cmlsa_electrical_plant):
-    return calculate_low_voltage_cost_formula(UCLV, tlvpmw, cmlsa_electrical_plant)
-
-
 LowVoltageCost = costs.function(
-    _low_voltage_cost,
+    calculate_low_voltage_cost_formula,
     "c243",
 )
 
 
 # cottax node: `calculate_diesel_generators_cost` (Account 244).
-def _diesel_generators_cost(UCDGEN, cmlsa_electrical_plant):
-    return calculate_diesel_generators_cost_formula(UCDGEN, cmlsa_electrical_plant)
-
-
-DieselGeneratorsCost = costs.function(_diesel_generators_cost, "c244")
+DieselGeneratorsCost = costs.function(calculate_diesel_generators_cost_formula, "c244")
 
 
 # cottax node: `calculate_auxiliary_facility_power_cost` (Account 245).
-def _auxiliary_facility_power_cost(UCAF, cmlsa_electrical_plant):
-    return calculate_auxiliary_facility_power_cost_formula(UCAF, cmlsa_electrical_plant)
-
-
-AuxiliaryFacilityPowerCost = costs.function(_auxiliary_facility_power_cost, "c245")
+AuxiliaryFacilityPowerCost = costs.function(
+    calculate_auxiliary_facility_power_cost_formula, "c245"
+)
 
 
 # cottax node: `calculate_electric_plant_equipment_cost` (Account 24, total).
-def _electric_plant_equipment_cost(c241, c242, c243, c244, c245):
-    return calculate_electric_plant_equipment_cost(c241, c242, c243, c244, c245)
-
-
-ElectricPlantEquipmentCost = costs.function(_electric_plant_equipment_cost, "c24")
+ElectricPlantEquipmentCost = costs.function(
+    calculate_electric_plant_equipment_cost, "c24"
+)
 
 
 # cottax node: `calculate_misc_plant_equipment_cost` (Account 25).
-def _misc_plant_equipment_cost(ucmisc, cmlsa_misc_plant):
-    return calculate_misc_plant_equipment_cost_formula(ucmisc, cmlsa_misc_plant)
-
-
-MiscPlantEquipmentCost = costs.function(_misc_plant_equipment_cost, "c25")
+MiscPlantEquipmentCost = costs.function(
+    calculate_misc_plant_equipment_cost_formula, "c25"
+)
 
 
 # cottax node: `calculate_heat_rejection_cost` (Account 26).
@@ -838,16 +722,8 @@ BlanketCostCapitalThenFuel = costs.function(
 
 
 # cottax node: `calculate_shield_cost` (Account 221.3).
-def _shield_cost(
-    cmlsa_first_wall_blanket_shield, whtshld, ucshld, wpenshld, ucpens, fkind
-):
-    return calculate_shield_cost_magnetic_confinement(
-        cmlsa_first_wall_blanket_shield, whtshld, ucshld, wpenshld, ucpens, fkind
-    )
-
-
 ShieldCost = costs.function(
-    _shield_cost,
+    calculate_shield_cost_magnetic_confinement,
     "c22131",
     "c22132",
     "c2213",
@@ -855,11 +731,7 @@ ShieldCost = costs.function(
 
 
 # cottax node: `calculate_reactor_cost` (Account 221 total).
-def _reactor_cost(c2211, c2212, c2213, c2214, c2215):
-    return calculate_reactor_cost(c2211, c2212, c2213, c2214, c2215)
-
-
-ReactorCost = costs.function(_reactor_cost, "c221")
+ReactorCost = costs.function(calculate_reactor_cost, "c221")
 
 
 # The TfMagnetCostSuperconducting family:
@@ -868,50 +740,8 @@ ReactorCost = costs.function(_reactor_cost, "c221")
 
 # `.costs.supercond_cost_model == PER_KG` (0) -- PROCESS's own default
 # (`cost_variables.py:552`) and the reference run's.
-def _tf_magnet_cost_superconducting_per_kg(
-    cmlsa_magnets,
-    ucsc_tf,
-    m_tf_coil_superconductor,
-    len_tf_coil,
-    n_tf_coil_turns,
-    uccu,
-    m_tf_coil_copper,
-    cconshtf,
-    cconfix,
-    n_tf_coils,
-    ucwindtf,
-    m_tf_coil_case,
-    uccase,
-    aintmass,
-    UCINT,
-    clgsmass,
-    UCGSS,
-    fkind,
-):
-    return calculate_tf_magnet_cost_superconducting_per_kg(
-        cmlsa_magnets,
-        ucsc_tf,
-        m_tf_coil_superconductor,
-        len_tf_coil,
-        n_tf_coil_turns,
-        uccu,
-        m_tf_coil_copper,
-        cconshtf,
-        cconfix,
-        n_tf_coils,
-        ucwindtf,
-        m_tf_coil_case,
-        uccase,
-        aintmass,
-        UCINT,
-        clgsmass,
-        UCGSS,
-        fkind,
-    )
-
-
 TfMagnetCostSuperconductingPerKg = costs.function(
-    _tf_magnet_cost_superconducting_per_kg,
+    calculate_tf_magnet_cost_superconducting_per_kg,
     "c22211",
     "c22212",
     "c22213",
@@ -923,52 +753,8 @@ TfMagnetCostSuperconductingPerKg = costs.function(
 
 # `.costs.supercond_cost_model == PER_KAM` (1) -- strand cost scaled by critical
 # current density.
-def _tf_magnet_cost_superconducting_per_kam(
-    cmlsa_magnets,
-    sc_mat_cost_0_tf,
-    j_crit_str_0_tf,
-    j_crit_str_tf,
-    len_tf_coil,
-    n_tf_coil_turns,
-    uccu,
-    m_tf_coil_copper,
-    cconshtf,
-    cconfix,
-    n_tf_coils,
-    ucwindtf,
-    m_tf_coil_case,
-    uccase,
-    aintmass,
-    UCINT,
-    clgsmass,
-    UCGSS,
-    fkind,
-):
-    return calculate_tf_magnet_cost_superconducting_per_kam(
-        cmlsa_magnets,
-        sc_mat_cost_0_tf,
-        j_crit_str_0_tf,
-        j_crit_str_tf,
-        len_tf_coil,
-        n_tf_coil_turns,
-        uccu,
-        m_tf_coil_copper,
-        cconshtf,
-        cconfix,
-        n_tf_coils,
-        ucwindtf,
-        m_tf_coil_case,
-        uccase,
-        aintmass,
-        UCINT,
-        clgsmass,
-        UCGSS,
-        fkind,
-    )
-
-
 TfMagnetCostSuperconductingPerKam = costs.function(
-    _tf_magnet_cost_superconducting_per_kam,
+    calculate_tf_magnet_cost_superconducting_per_kam,
     "c22211",
     "c22212",
     "c22213",
@@ -981,16 +767,8 @@ TfMagnetCostSuperconductingPerKam = costs.function(
 
 # cottax node: `calculate_tf_magnet_cost_resistive` (Account 222.1,
 # `.tfcoil.i_tf_sup != 1`).
-def _tf_magnet_cost_resistive(
-    cmlsa_magnets, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
-):
-    return calculate_tf_magnet_cost_resistive_formula(
-        cmlsa_magnets, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
-    )
-
-
 TfMagnetCostResistive = costs.function(
-    _tf_magnet_cost_resistive,
+    calculate_tf_magnet_cost_resistive_formula,
     "c22211",
     "c22212",
     "c2221",
@@ -1358,27 +1136,15 @@ EnergyStorageCostUnpulsed = states(costs, "c2253")
 
 # `.pulse.istore == ELECTROWATT_OPTION_1` (1) -- PROCESS's own default
 # (`pulse_variables.py:16`).
-def _energy_storage_cost_pulsed_electrowatt_option1(p_plant_electric_net_mw, fkind):
-    return calculate_energy_storage_cost_electrowatt_option_1(
-        p_plant_electric_net_mw, fkind
-    )
-
-
 EnergyStorageCostPulsedElectrowattOption1 = costs.function(
-    _energy_storage_cost_pulsed_electrowatt_option1,
+    calculate_energy_storage_cost_electrowatt_option_1,
     "c2253",
 )
 
 
 # `.pulse.istore == ELECTROWATT_OPTION_2` (2).
-def _energy_storage_cost_pulsed_electrowatt_option2(p_plant_electric_net_mw, fkind):
-    return calculate_energy_storage_cost_electrowatt_option_2(
-        p_plant_electric_net_mw, fkind
-    )
-
-
 EnergyStorageCostPulsedElectrowattOption2 = costs.function(
-    _energy_storage_cost_pulsed_electrowatt_option2,
+    calculate_energy_storage_cost_electrowatt_option_2,
     "c2253",
 )
 
@@ -1390,115 +1156,55 @@ PowerConditioningCost = costs.function(
 
 
 # cottax node: `calculate_auxiliary_component_cooling_cost` (Account 2262).
-def _auxiliary_component_cooling_cost(
-    cmlsa_heat_transport,
-    UCAHTS,
-    p_hcd_electric_loss_mw,
-    p_cryo_plant_electric_mw,
-    vachtmw,
-    p_tritium_plant_electric_mw,
-    fachtmw,
-    fkind,
-):
-    return calculate_auxiliary_component_cooling_cost_magnetic_confinement(
-        cmlsa_heat_transport,
-        UCAHTS,
-        p_hcd_electric_loss_mw,
-        p_cryo_plant_electric_mw,
-        vachtmw,
-        p_tritium_plant_electric_mw,
-        fachtmw,
-        fkind,
-    )
-
-
 AuxiliaryComponentCoolingCost = costs.function(
-    _auxiliary_component_cooling_cost,
+    calculate_auxiliary_component_cooling_cost_magnetic_confinement,
     "cppa",
     "c2262",
 )
 
 
 # cottax node: `calculate_cryogenic_system_cost` (Account 2263).
-def _cryogenic_system_cost(cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fkind):
-    return calculate_cryogenic_system_cost_formula(
-        cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fkind
-    )
-
-
 CryogenicSystemCost = costs.function(
-    _cryogenic_system_cost,
+    calculate_cryogenic_system_cost_formula,
     "c2263",
 )
 
 
 # cottax node: `calculate_heat_transport_system_cost` (Account 226 total).
-def _heat_transport_system_cost(c2261, c2262, c2263):
-    return calculate_heat_transport_system_cost(c2261, c2262, c2263)
-
-
-HeatTransportSystemCost = costs.function(_heat_transport_system_cost, "c226")
+HeatTransportSystemCost = costs.function(calculate_heat_transport_system_cost, "c226")
 
 
 # cottax node: `calculate_fuel_processing_cost` (Account 2272).
-def _fuel_processing_cost(rndfuel, m_fuel_amu, UCFPR, fkind):
-    return calculate_fuel_processing_cost_magnetic_confinement(
-        rndfuel, m_fuel_amu, UCFPR, fkind
-    )
-
-
 FuelProcessingCost = physics.function(
-    _fuel_processing_cost,
+    calculate_fuel_processing_cost_magnetic_confinement,
     "wtgpd",
     V.costs.c2272,
 )
 
 
 # cottax node: `calculate_atmospheric_recovery_cost` (Account 2273).
-def _atmospheric_recovery_cost(f_plasma_fuel_tritium, UCDTC, volrci, wsvol, fkind):
-    return calculate_atmospheric_recovery_cost(
-        f_plasma_fuel_tritium, UCDTC, volrci, wsvol, fkind
-    )
-
-
 AtmosphericRecoveryCost = costs.function(
-    _atmospheric_recovery_cost,
+    calculate_atmospheric_recovery_cost,
     "c2273",
 )
 
 
 # cottax node: `calculate_fuel_handling_cost` (Account 227 total).
-def _fuel_handling_cost(c2271, c2272, c2273, c2274):
-    return calculate_fuel_handling_cost(c2271, c2272, c2273, c2274)
-
-
-FuelHandlingCost = costs.function(_fuel_handling_cost, "c227")
+FuelHandlingCost = costs.function(calculate_fuel_handling_cost, "c227")
 
 
 # cottax node: `calculate_fusion_power_island_cost` (Account 22 total).
-def _fusion_power_island_cost(c221, c222, c223, c224, c225, c226, c227, c228, c229):
-    return calculate_fusion_power_island_cost(
-        c221, c222, c223, c224, c225, c226, c227, c228, c229
-    )
-
-
-FusionPowerIslandCost = costs.function(_fusion_power_island_cost, "crctcore", "c22")
+FusionPowerIslandCost = costs.function(
+    calculate_fusion_power_island_cost, "crctcore", "c22"
+)
 
 
 # cottax node: `calculate_total_plant_direct_cost`.
-def _total_plant_direct_cost(c21, c22, c23, c24, c25, c26):
-    return calculate_total_plant_direct_cost(c21, c22, c23, c24, c25, c26)
-
-
-TotalPlantDirectCost = costs.function(_total_plant_direct_cost, "cdirt")
+TotalPlantDirectCost = costs.function(calculate_total_plant_direct_cost, "cdirt")
 
 
 # cottax node: `calculate_constructed_cost`.
-def _constructed_cost(cdirt, cindrt, ccont):
-    return calculate_constructed_cost(cdirt, cindrt, ccont)
-
-
-ConstructedCost = costs.function(_constructed_cost, "concost")
+ConstructedCost = costs.function(calculate_constructed_cost, "concost")
 
 
 # The CostOfElectricity family:
