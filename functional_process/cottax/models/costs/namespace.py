@@ -12,19 +12,14 @@ from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
     AuxiliaryFacilityPowerCost,
-    BlanketCost,
     ConstructedCost,
-    ConvertFpyToCalendar,
     CryogenicSystemCost,
     DieselGeneratorsCost,
-    DivertorCost,
     ElectricPlantEquipmentCost,
-    FirstWallCost,
     FuelHandlingCost,
     FuellingSystemCost,
     FuelProcessingCost,
     FusionPowerIslandCost,
-    HeatRejectionCost,
     HeatTransportSystemCost,
     IndirectCosts,
     InstrumentationAndControlCost,
@@ -34,17 +29,12 @@ from functional_process.cottax.models.costs.costs import (
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
     PowerConditioningCost,
-    PowerInjectionCost,
     ReactorCoolingSystemCost,
     ReactorCost,
     ShieldCost,
-    StructuresCost,
     SwitchyardCost,
-    TfCoilPowerConditioningCost,
     TotalPlantDirectCost,
     TransformersCost,
-    TurbinePlantEquipmentCost,
-    VacuumSystemCost,
     VacuumVesselAssemblyCost,
 )
 
@@ -64,8 +54,12 @@ class Costs(eqx.Module):
     # `i_confinement_time`/`i_thermal_electric_conversion`/`i_p_coolant_pumping` did
     # (`next_steps.md` §8.2). Their values here are PROCESS's own bare defaults *and*
     # the reference run's, except `iohcl` -- flagged individually below.
-    convert_fpy_to_calendar: Explicit = ConvertFpyToCalendar
-    structures_cost: Explicit = StructuresCost  # Account 21
+    # The occupants below whose field has no default are chosen by a switch, in the
+    # converter (`.physics.itart`, `.costs.ireactor`, `.costs.ifueltyp`,
+    # `.tfcoil.i_tf_sup`, `.current_drive.i_hcd_primary`,
+    # `.vacuum.i_vacuum_pump_type`): no node reads a switch.
+    convert_fpy_to_calendar: Explicit = dataclasses.field(kw_only=True)
+    structures_cost: Explicit = dataclasses.field(kw_only=True)  # Account 21
     # **`ife` was an `eqx.field(static=True)` on each of these six nodes and is gone**
     # (`_audit/next_steps.md` §14.2). Each has a real PROCESS `ife == 1` arm reading an
     # entirely different set of `.ife.*` fields (2-D material-mass arrays for the three
@@ -74,8 +68,8 @@ class Costs(eqx.Module):
     # to `machine_from_indat`, which answers `ife` **once**, at assembly, for all six at
     # once -- rather than seven times, at trace time, inside seven node bodies. The
     # classes here are the magnetic-confinement occupants and no longer see the integer.
-    first_wall_cost: Explicit = FirstWallCost  # Account 221.1
-    blanket_cost: Explicit = BlanketCost  # Account 221.2
+    first_wall_cost: Explicit = dataclasses.field(kw_only=True)  # Account 221.1
+    blanket_cost: Explicit = dataclasses.field(kw_only=True)  # Account 221.2
     shield_cost: Explicit = ShieldCost  # Account 221.3
     # Account 221.4 (reactor structure): **a slot on a tokamak and `None` on a
     # stellarator**, and the first slot in this tree whose occupant is decided by the
@@ -102,7 +96,7 @@ class Costs(eqx.Module):
     reactor_structure_cost: Explicit | None = dataclasses.field(
         kw_only=True
     )  # Account 221.4
-    divertor_cost: Explicit = DivertorCost  # Account 221.5
+    divertor_cost: Explicit = dataclasses.field(kw_only=True)  # Account 221.5
     reactor_cost: Explicit = ReactorCost  # Account 221 total
     # **`supercond_cost_model` was an `eqx.field(static=True)` here and is a slot now**
     # (`_audit/next_steps.md` §14.2). Its two arms read disjoint fields --
@@ -163,11 +157,11 @@ class Costs(eqx.Module):
     # `c22521`-`c22527`) had no reader in this graph at all and simply leave it.
     vacuum_vessel_assembly_cost: Explicit = VacuumVesselAssemblyCost  # Account 222.3
     magnets_cost: Explicit = MagnetsCost  # Account 222 total
-    power_injection_cost: Explicit = PowerInjectionCost  # Account 223
-    vacuum_system_cost: Explicit = VacuumSystemCost  # Account 224
-    tf_coil_power_conditioning_cost: Explicit = (
-        TfCoilPowerConditioningCost  # Account 225.1
-    )
+    power_injection_cost: Explicit = dataclasses.field(kw_only=True)  # Account 223
+    vacuum_system_cost: Explicit = dataclasses.field(kw_only=True)  # Account 224
+    tf_coil_power_conditioning_cost: Explicit = dataclasses.field(
+        kw_only=True
+    )  # Account 225.1
     pf_coil_power_conditioning_cost: Explicit | None = dataclasses.field(
         kw_only=True
     )  # Account 225.2
@@ -207,7 +201,9 @@ class Costs(eqx.Module):
     )
     maintenance_equipment_cost: Explicit = MaintenanceEquipmentCost  # Account 229
     fusion_power_island_cost: Explicit = FusionPowerIslandCost  # Account 22 total
-    turbine_plant_equipment_cost: Explicit = TurbinePlantEquipmentCost  # Account 23
+    turbine_plant_equipment_cost: Explicit = dataclasses.field(
+        kw_only=True
+    )  # Account 23
     switchyard_cost: Explicit = SwitchyardCost  # Account 241
     transformers_cost: Explicit = TransformersCost  # Account 242
     low_voltage_cost: Explicit = LowVoltageCost  # Account 243
@@ -217,7 +213,7 @@ class Costs(eqx.Module):
         ElectricPlantEquipmentCost  # Account 24 total
     )
     misc_plant_equipment_cost: Explicit = MiscPlantEquipmentCost  # Account 25
-    heat_rejection_cost: Explicit = HeatRejectionCost  # Account 26
+    heat_rejection_cost: Explicit = dataclasses.field(kw_only=True)  # Account 26
     total_plant_direct_cost: Explicit = (
         TotalPlantDirectCost  # `.costs.cdirt`, inline in `Costs.run()`
     )

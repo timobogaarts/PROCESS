@@ -491,14 +491,16 @@ def duct_fits_residual(d_duct, a1max):
     residual, `<= 0` when the duct fits. `solve_duct_geometry`'s own `fits = a1_new <
     a1max` test, restated as a signed residual (`Feasibility`'s `inequalities`
     convention, same shape `duct_diameter_residual` already uses for the equality
-    case)."""
+    case).
+    """
     return 0.25 * jnp.pi * d_duct * d_duct - a1max
 
 
 def pumping_speed_floor_residual(ceff_i, s_i):
     """`1.1 * s_i - ceff_i` -- the pumping-speed-floor inequality's residual, `<= 0`
     when `ceff_i` stays above `1.1 * s_i`. `solve_duct_geometry`'s own `ceff_next <= 1.1
-    * s_i` "too small, give up" test, restated the same way as `duct_fits_residual`."""
+    * s_i` "too small, give up" test, restated the same way as `duct_fits_residual`.
+    """
     return 1.1 * s_i - ceff_i
 
 
@@ -617,10 +619,68 @@ def _solve_vacuum_pumping_old(
         `.vacuum.n_vac_pumps_high` -- see `calculate_vacuum_pumping_old`, which applies
         that rounding.
     """
+    cond1 = jnp.logical_or(i_vac_pump_dwell == 1, t_plant_pulse_dwell == 0)
+    cond2 = i_vac_pump_dwell == 2
+    tpump = jnp.where(
+        cond1,
+        t_plant_pulse_coil_precharge,
+        jnp.where(
+            cond2,
+            t_plant_pulse_dwell + t_plant_pulse_coil_precharge,
+            t_plant_pulse_dwell,
+        ),
+    )
+    return _solve_vacuum_pumping_old_given(
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dsol,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        ritf,
+        n_tf_coils,
+        tpump,
+        n_divertors,
+        qtorus,
+        gasld,
+        i_vacuum_pump_type == 1,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def _solve_vacuum_pumping_old_given(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dsol,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    ritf,
+    n_tf_coils,
+    tpump,
+    n_divertors,
+    qtorus,
+    gasld,
+    is_cryo,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+):
+    """`_solve_vacuum_pumping_old` given what its two switches decide: the pumping
+    time `tpump` (`i_vac_pump_dwell`) and whether the pumps are cryopumps
+    (`i_vacuum_pump_type`). Same diagnostic 7-tuple.
+    """
     xmult = jnp.asarray(XMULT)
     sp_turbo = jnp.asarray(_SP_TURBOMOLECULAR)
     sp_cryo = jnp.asarray(_SP_COMPOUND_CRYOPUMP)
-    is_cryo = i_vacuum_pump_type == 1
     sp = jnp.where(is_cryo, sp_cryo, sp_turbo)
 
     ntf = jnp.floor(n_tf_coils)
@@ -635,17 +695,6 @@ def _solve_vacuum_pumping_old(
     s0 = ogas / pres_vv_chamber_base
 
     volume = vol_plasma * (rminor + dsol) * (rminor + dsol) / (rminor * rminor)
-    cond1 = jnp.logical_or(i_vac_pump_dwell == 1, t_plant_pulse_dwell == 0)
-    cond2 = i_vac_pump_dwell == 2
-    tpump = jnp.where(
-        cond1,
-        t_plant_pulse_coil_precharge,
-        jnp.where(
-            cond2,
-            t_plant_pulse_dwell + t_plant_pulse_coil_precharge,
-            t_plant_pulse_dwell,
-        ),
-    )
     # log(pend / pstart) == log(100) identically -- see the docstring above.
     s1 = volume / tpump * jnp.log(100.0)
 
@@ -915,6 +964,405 @@ def calculate_vacuum_pumping_old(
     )
     n_vac_pumps_high = jnp.floor(pumpn + 0.5)
     return n_vac_pumps_high, nduct, dlscalc, mvdsh, dimax
+
+
+def _vacuum_pumping_old_arm(
+    is_cryo,
+    tpump,
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+):
+    """`calculate_vacuum_pumping_old` given what its switches decide, at `Vacuum.run`'s
+    `qtorus = 0.0`: the body every `(i_vacuum_pump_type, i_vac_pump_dwell)` arm below
+    shares.
+    """
+    dsol, ritf, gasld = _derive_vacuum_pumping_old_locals(
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+    )
+    pumpn, nduct, dlscalc, mvdsh, dimax, _imax, _ceff_used = (
+        _solve_vacuum_pumping_old_given(
+            p_fusion_total_mw,
+            rmajor,
+            rminor,
+            dsol,
+            a_plasma_surface,
+            vol_plasma,
+            dr_shld_outboard,
+            dr_shld_inboard,
+            dr_tf_inboard,
+            ritf,
+            n_tf_coils,
+            tpump,
+            n_divertors,
+            0.0,
+            gasld,
+            is_cryo,
+            pres_vv_chamber_base,
+            pres_div_chamber_burn,
+            outgrat_fw,
+        )
+    )
+    return jnp.floor(pumpn + 0.5), nduct, dlscalc, mvdsh, dimax
+
+
+def calculate_vacuum_pumping_old_turbomolecular_dwell(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    t_plant_pulse_dwell,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 0`, turbomolecular pumps,
+    and `i_vac_pump_dwell == 0`, pumped during the dwell (the precharge if there is
+    none).
+    """
+    tpump = jnp.where(
+        t_plant_pulse_dwell == 0, t_plant_pulse_coil_precharge, t_plant_pulse_dwell
+    )
+    return _vacuum_pumping_old_arm(
+        False,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def calculate_vacuum_pumping_old_turbomolecular_precharge(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 0`, turbomolecular pumps,
+    and `i_vac_pump_dwell == 1`, pumped during the precharge; the dwell is not read.
+    """
+    tpump = t_plant_pulse_coil_precharge
+    return _vacuum_pumping_old_arm(
+        False,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def calculate_vacuum_pumping_old_turbomolecular_dwell_and_precharge(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    t_plant_pulse_dwell,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 0`, turbomolecular pumps,
+    and `i_vac_pump_dwell == 2`, pumped during the dwell and the precharge.
+    """
+    tpump = jnp.where(
+        t_plant_pulse_dwell == 0,
+        t_plant_pulse_coil_precharge,
+        t_plant_pulse_dwell + t_plant_pulse_coil_precharge,
+    )
+    return _vacuum_pumping_old_arm(
+        False,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def calculate_vacuum_pumping_old_cryopump_dwell(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    t_plant_pulse_dwell,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 1`, compound cryopumps,
+    and `i_vac_pump_dwell == 0`, pumped during the dwell (the precharge if there is
+    none).
+    """
+    tpump = jnp.where(
+        t_plant_pulse_dwell == 0, t_plant_pulse_coil_precharge, t_plant_pulse_dwell
+    )
+    return _vacuum_pumping_old_arm(
+        True,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def calculate_vacuum_pumping_old_cryopump_precharge(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 1`, compound cryopumps,
+    and `i_vac_pump_dwell == 1`, pumped during the precharge; the dwell is not read.
+    """
+    tpump = t_plant_pulse_coil_precharge
+    return _vacuum_pumping_old_arm(
+        True,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
+
+
+def calculate_vacuum_pumping_old_cryopump_dwell_and_precharge(
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    r_shld_inboard_inner,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    n_tf_coils,
+    t_plant_pulse_dwell,
+    n_divertors,
+    molflow_plasma_fuelling_required,
+    m_fuel_amu,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
+    t_plant_pulse_coil_precharge,
+):
+    """`calculate_vacuum_pumping_old` at `i_vacuum_pump_type == 1`, compound cryopumps,
+    and `i_vac_pump_dwell == 2`, pumped during the dwell and the precharge.
+    """
+    tpump = jnp.where(
+        t_plant_pulse_dwell == 0,
+        t_plant_pulse_coil_precharge,
+        t_plant_pulse_dwell + t_plant_pulse_coil_precharge,
+    )
+    return _vacuum_pumping_old_arm(
+        True,
+        tpump,
+        p_fusion_total_mw,
+        rmajor,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard,
+        a_plasma_surface,
+        vol_plasma,
+        dr_shld_outboard,
+        dr_shld_inboard,
+        dr_tf_inboard,
+        r_shld_inboard_inner,
+        dr_shld_vv_gap_inboard,
+        dr_vv_inboard,
+        n_tf_coils,
+        n_divertors,
+        molflow_plasma_fuelling_required,
+        m_fuel_amu,
+        pres_vv_chamber_base,
+        pres_div_chamber_burn,
+        outgrat_fw,
+    )
 
 
 # ---------------------------------------------------------------------------

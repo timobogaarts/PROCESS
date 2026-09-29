@@ -1,9 +1,9 @@
 """The vacuum subsystem's namespace."""
 
+import dataclasses
+
 import equinox as eqx
 from cottax.interfaces import Explicit
-
-from functional_process.cottax.models.vacuum.vacuum import VacuumOld
 
 
 class Vacuum(eqx.Module):
@@ -15,7 +15,9 @@ class Vacuum(eqx.Module):
     # output, so this switch fails `check_arms_are_exclusive` -- see
     # `TOPOLOGY_SWITCHES`'s docstring above. `VacuumPumpingSimple` stays
     # ported-but-unregistered.
-    vacuum_old: Explicit = VacuumOld
+    # One occupant per `.vacuum.i_vacuum_pump_type` x `.vacuum.i_vac_pump_dwell`
+    # arm, chosen by the converter (`VacuumOld*`).
+    vacuum_old: Explicit = dataclasses.field(kw_only=True)
     # `DuctDiameterRootFind` is **not registered**, and that is the point of it.
     # Every `VarPath` it reads or owns is minted and unique to it
     # (`.vacuum.d_duct`/`l1`/`l2`/`l3`/`xmult_i`/`ceff_i`), so registering it put an

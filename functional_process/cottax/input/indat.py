@@ -67,20 +67,49 @@ from functional_process.cottax.models.buildings.buildings import (
 )
 from functional_process.cottax.models.buildings.namespace import Buildings
 from functional_process.cottax.models.costs.costs import (
-    CostOfElectricityConventionalAspectRatio,
-    CostOfElectricitySphericalTokamak,
+    BlanketCostCapital,
+    BlanketCostCapitalThenFuel,
+    BlanketCostFuel,
+    ConvertFpyToCalendarConventionalAspectRatio,
+    ConvertFpyToCalendarSphericalTokamak,
+    CostOfElectricityConventionalAspectRatioCapital,
+    CostOfElectricityConventionalAspectRatioCapitalThenFuel,
+    CostOfElectricityConventionalAspectRatioFuel,
+    CostOfElectricitySphericalTokamakCapital,
+    CostOfElectricitySphericalTokamakCapitalThenFuel,
+    CostOfElectricitySphericalTokamakFuel,
+    DivertorCostCapital,
+    DivertorCostCapitalThenFuel,
+    DivertorCostFuel,
     EnergyStorageCostPulsedElectrowattOption1,
     EnergyStorageCostPulsedElectrowattOption2,
     EnergyStorageCostUnpulsed,
+    FirstWallCostCapital,
+    FirstWallCostCapitalThenFuel,
+    FirstWallCostFuel,
+    HeatRejectionCostNonReactor,
+    HeatRejectionCostReactor,
     PfCoilPowerConditioningCost,
     PfMagnetCostPerKam,
     PfMagnetCostPerKamNoCentralSolenoid,
     PfMagnetCostPerKg,
     PfMagnetCostPerKgCsWstNb3Sn,
     PfMagnetCostPerKgNoCentralSolenoid,
+    PowerInjectionCostCapitalIonCyclotron,
+    PowerInjectionCostCapitalLowerHybrid,
+    PowerInjectionCostFuelIonCyclotron,
+    PowerInjectionCostFuelLowerHybrid,
     ReactorStructureCost,
+    StructuresCostNonReactor,
+    StructuresCostReactor,
+    TfCoilPowerConditioningCostResistive,
+    TfCoilPowerConditioningCostSuperconducting,
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
+    TurbinePlantEquipmentCostNonReactor,
+    TurbinePlantEquipmentCostReactor,
+    VacuumSystemCostCryopump,
+    VacuumSystemCostTurbomolecular,
 )
 from functional_process.cottax.models.costs.namespace import Costs
 from functional_process.cottax.models.divertor import (
@@ -229,31 +258,51 @@ from functional_process.cottax.models.power.tf_coil_power import (
     TfPowerSuperconducting,
 )
 from functional_process.cottax.models.power.thermal_cryo import (
-    ComponentThermalPowersMechDualCcfe,
-    ComponentThermalPowersMechDualOther,
-    ComponentThermalPowersMechLiquidCcfe,
-    ComponentThermalPowersMechLiquidOther,
-    ComponentThermalPowersMechSolidCcfe,
-    ComponentThermalPowersMechSolidOther,
-    ComponentThermalPowersSummedDualCcfe,
-    ComponentThermalPowersSummedDualOther,
-    ComponentThermalPowersSummedLiquidCcfe,
-    ComponentThermalPowersSummedLiquidOther,
-    ComponentThermalPowersSummedSolidCcfe,
-    ComponentThermalPowersSummedSolidOther,
+    ComponentThermalPowersMechDualCcfeShieldPrimary,
+    ComponentThermalPowersMechDualCcfeShieldSecondary,
+    ComponentThermalPowersMechDualOtherShieldPrimary,
+    ComponentThermalPowersMechDualOtherShieldSecondary,
+    ComponentThermalPowersMechLiquidCcfeShieldPrimary,
+    ComponentThermalPowersMechLiquidCcfeShieldSecondary,
+    ComponentThermalPowersMechLiquidOtherShieldPrimary,
+    ComponentThermalPowersMechLiquidOtherShieldSecondary,
+    ComponentThermalPowersMechSolidCcfeShieldPrimary,
+    ComponentThermalPowersMechSolidCcfeShieldSecondary,
+    ComponentThermalPowersMechSolidOtherShieldPrimary,
+    ComponentThermalPowersMechSolidOtherShieldSecondary,
+    ComponentThermalPowersSummedDualCcfeShieldPrimary,
+    ComponentThermalPowersSummedDualCcfeShieldSecondary,
+    ComponentThermalPowersSummedDualOtherShieldPrimary,
+    ComponentThermalPowersSummedDualOtherShieldSecondary,
+    ComponentThermalPowersSummedLiquidCcfeShieldPrimary,
+    ComponentThermalPowersSummedLiquidCcfeShieldSecondary,
+    ComponentThermalPowersSummedLiquidOtherShieldPrimary,
+    ComponentThermalPowersSummedLiquidOtherShieldSecondary,
+    ComponentThermalPowersSummedSolidCcfeShieldPrimary,
+    ComponentThermalPowersSummedSolidCcfeShieldSecondary,
+    ComponentThermalPowersSummedSolidOtherShieldPrimary,
+    ComponentThermalPowersSummedSolidOtherShieldSecondary,
     CryoLoadsActive,
     CryoLoadsInactive,
     CryoQLoadsResistiveTf,
     CryoQLoadsSuperconductingTf,
     CryoQNuc,
-    DeltaEtaStepMechLiquidCcfe,
-    DeltaEtaStepMechLiquidOther,
-    DeltaEtaStepMechSolidCcfe,
-    DeltaEtaStepMechSolidOther,
-    DeltaEtaStepSummedLiquidCcfe,
-    DeltaEtaStepSummedLiquidOther,
-    DeltaEtaStepSummedSolidCcfe,
-    DeltaEtaStepSummedSolidOther,
+    DeltaEtaStepMechLiquidCcfeShieldPrimary,
+    DeltaEtaStepMechLiquidCcfeShieldSecondary,
+    DeltaEtaStepMechLiquidOtherShieldPrimary,
+    DeltaEtaStepMechLiquidOtherShieldSecondary,
+    DeltaEtaStepMechSolidCcfeShieldPrimary,
+    DeltaEtaStepMechSolidCcfeShieldSecondary,
+    DeltaEtaStepMechSolidOtherShieldPrimary,
+    DeltaEtaStepMechSolidOtherShieldSecondary,
+    DeltaEtaStepSummedLiquidCcfeShieldPrimary,
+    DeltaEtaStepSummedLiquidCcfeShieldSecondary,
+    DeltaEtaStepSummedLiquidOtherShieldPrimary,
+    DeltaEtaStepSummedLiquidOtherShieldSecondary,
+    DeltaEtaStepSummedSolidCcfeShieldPrimary,
+    DeltaEtaStepSummedSolidCcfeShieldSecondary,
+    DeltaEtaStepSummedSolidOtherShieldPrimary,
+    DeltaEtaStepSummedSolidOtherShieldSecondary,
     EtathLiqSupercriticalCo2,
     EtaTurbineCcfeHcpbValue,
     EtaTurbineCcfeHcpbValueWithDivertor,
@@ -319,6 +368,10 @@ from functional_process.cottax.models.stellarator.plasma_physics import (
 from functional_process.cottax.models.stellarator.preset_config import (
     StellaratorMachineConfig,
     machine_config_for_istell,
+)
+from functional_process.cottax.models.stellarator.stellarator_fwbs_s1_s5 import (
+    FwBlanketShieldGeometryNoPowerflow,
+    FwBlanketShieldGeometryWithPowerflow,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
@@ -407,7 +460,14 @@ from functional_process.cottax.models.total_process import (
     StellaratorProcess,
     TokamakProcess,
 )
+from functional_process.cottax.models.vacuum.namespace import Vacuum
 from functional_process.cottax.models.vacuum.vacuum import (
+    VacuumOldCryopumpDwell,
+    VacuumOldCryopumpDwellAndPrecharge,
+    VacuumOldCryopumpPrecharge,
+    VacuumOldTurbomolecularDwell,
+    VacuumOldTurbomolecularDwellAndPrecharge,
+    VacuumOldTurbomolecularPrecharge,
     VacuumVesselDShapedDoubleNull,
     VacuumVesselEllipticalDoubleNull,
     VacuumVesselEllipticalSingleNull,
@@ -1666,15 +1726,19 @@ P_FW_BLKT_COOLANT_PUMP = {0: PFwBlktCoolantPumpMw, 1: None}
 
 
 def _component_thermal_powers_arm(
-    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
-) -> int:
-    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion)`
-    -> `ComponentThermalPowers`'s arm.
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_shld_primary_heat,
+) -> tuple[int, int]:
+    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion,
+    i_shld_primary_heat)` -> `ComponentThermalPowers`'s arm.
 
     Twelve arms, not the raw 4x3x5 enum product: `i_p_coolant_pumping` and
     `i_thermal_electric_conversion` each decide one bit here (see
     `calculate_component_thermal_powers_owned`'s own docstring for which), and
-    `i_blkt_dual_coolant` is read at all three of its values.
+    `i_blkt_dual_coolant` is read at all three of its values -- each twice, with the
+    shield's heat primary (`i_shld_primary_heat == 1`) or not (`0`).
     """
     pump = (
         1
@@ -1692,31 +1756,47 @@ def _component_thermal_powers_arm(
         is ElectricConversionModelTypes.CCFE_HCPB_VALUE
         else 1
     )
-    return pump * 6 + breeder * 2 + conversion
+    return pump * 6 + breeder * 2 + conversion, int(i_shld_primary_heat)
 
 
 COMPONENT_THERMAL_POWERS = {
-    0: ComponentThermalPowersSummedSolidCcfe,
-    1: ComponentThermalPowersSummedSolidOther,
-    2: ComponentThermalPowersSummedLiquidCcfe,
-    3: ComponentThermalPowersSummedLiquidOther,
-    4: ComponentThermalPowersSummedDualCcfe,
-    5: ComponentThermalPowersSummedDualOther,
-    6: ComponentThermalPowersMechSolidCcfe,
-    7: ComponentThermalPowersMechSolidOther,
-    8: ComponentThermalPowersMechLiquidCcfe,
-    9: ComponentThermalPowersMechLiquidOther,
-    10: ComponentThermalPowersMechDualCcfe,
-    11: ComponentThermalPowersMechDualOther,
+    (0, 1): ComponentThermalPowersSummedSolidCcfeShieldPrimary,
+    (0, 0): ComponentThermalPowersSummedSolidCcfeShieldSecondary,
+    (1, 1): ComponentThermalPowersSummedSolidOtherShieldPrimary,
+    (1, 0): ComponentThermalPowersSummedSolidOtherShieldSecondary,
+    (2, 1): ComponentThermalPowersSummedLiquidCcfeShieldPrimary,
+    (2, 0): ComponentThermalPowersSummedLiquidCcfeShieldSecondary,
+    (3, 1): ComponentThermalPowersSummedLiquidOtherShieldPrimary,
+    (3, 0): ComponentThermalPowersSummedLiquidOtherShieldSecondary,
+    (4, 1): ComponentThermalPowersSummedDualCcfeShieldPrimary,
+    (4, 0): ComponentThermalPowersSummedDualCcfeShieldSecondary,
+    (5, 1): ComponentThermalPowersSummedDualOtherShieldPrimary,
+    (5, 0): ComponentThermalPowersSummedDualOtherShieldSecondary,
+    (6, 1): ComponentThermalPowersMechSolidCcfeShieldPrimary,
+    (6, 0): ComponentThermalPowersMechSolidCcfeShieldSecondary,
+    (7, 1): ComponentThermalPowersMechSolidOtherShieldPrimary,
+    (7, 0): ComponentThermalPowersMechSolidOtherShieldSecondary,
+    (8, 1): ComponentThermalPowersMechLiquidCcfeShieldPrimary,
+    (8, 0): ComponentThermalPowersMechLiquidCcfeShieldSecondary,
+    (9, 1): ComponentThermalPowersMechLiquidOtherShieldPrimary,
+    (9, 0): ComponentThermalPowersMechLiquidOtherShieldSecondary,
+    (10, 1): ComponentThermalPowersMechDualCcfeShieldPrimary,
+    (10, 0): ComponentThermalPowersMechDualCcfeShieldSecondary,
+    (11, 1): ComponentThermalPowersMechDualOtherShieldPrimary,
+    (11, 0): ComponentThermalPowersMechDualOtherShieldSecondary,
 }
 """`_component_thermal_powers_arm(...)` -> the `component_thermal_powers` occupant."""
 
 
 def _delta_eta_step_arm(
-    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
-) -> int:
-    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion)`
-    -> `DeltaEtaStep`'s arm.
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_shld_primary_heat,
+) -> tuple[int, int]:
+    """`(i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion,
+    i_shld_primary_heat)` -> `DeltaEtaStep`'s arm, the last as in
+    `_component_thermal_powers_arm`.
 
     Eight arms: `i_blkt_dual_coolant` is coarser here than in
     `_component_thermal_powers_arm` above -- only
@@ -1747,18 +1827,26 @@ def _delta_eta_step_arm(
         is ElectricConversionModelTypes.CCFE_HCPB_VALUE
         else 1
     )
-    return pump * 4 + breeder * 2 + conversion
+    return pump * 4 + breeder * 2 + conversion, int(i_shld_primary_heat)
 
 
 DELTA_ETA_STEP = {
-    0: DeltaEtaStepSummedSolidCcfe,
-    1: DeltaEtaStepSummedSolidOther,
-    2: DeltaEtaStepSummedLiquidCcfe,
-    3: DeltaEtaStepSummedLiquidOther,
-    4: DeltaEtaStepMechSolidCcfe,
-    5: DeltaEtaStepMechSolidOther,
-    6: DeltaEtaStepMechLiquidCcfe,
-    7: DeltaEtaStepMechLiquidOther,
+    (0, 1): DeltaEtaStepSummedSolidCcfeShieldPrimary,
+    (0, 0): DeltaEtaStepSummedSolidCcfeShieldSecondary,
+    (1, 1): DeltaEtaStepSummedSolidOtherShieldPrimary,
+    (1, 0): DeltaEtaStepSummedSolidOtherShieldSecondary,
+    (2, 1): DeltaEtaStepSummedLiquidCcfeShieldPrimary,
+    (2, 0): DeltaEtaStepSummedLiquidCcfeShieldSecondary,
+    (3, 1): DeltaEtaStepSummedLiquidOtherShieldPrimary,
+    (3, 0): DeltaEtaStepSummedLiquidOtherShieldSecondary,
+    (4, 1): DeltaEtaStepMechSolidCcfeShieldPrimary,
+    (4, 0): DeltaEtaStepMechSolidCcfeShieldSecondary,
+    (5, 1): DeltaEtaStepMechSolidOtherShieldPrimary,
+    (5, 0): DeltaEtaStepMechSolidOtherShieldSecondary,
+    (6, 1): DeltaEtaStepMechLiquidCcfeShieldPrimary,
+    (6, 0): DeltaEtaStepMechLiquidCcfeShieldSecondary,
+    (7, 1): DeltaEtaStepMechLiquidOtherShieldPrimary,
+    (7, 0): DeltaEtaStepMechLiquidOtherShieldSecondary,
 }
 """`_delta_eta_step_arm(...)` -> the `delta_eta_step` occupant."""
 
@@ -2012,12 +2100,91 @@ def _pf_magnet_cost_arm(supercond_cost_model, iohcl, pf_coil_arm) -> int:
 
 COST_OF_ELECTRICITY = {
     0: _no_cost_of_electricity,
-    1: CostOfElectricityConventionalAspectRatio,
-    2: CostOfElectricitySphericalTokamak,
+    1: {
+        0: CostOfElectricityConventionalAspectRatioCapital,
+        1: CostOfElectricityConventionalAspectRatioFuel,
+        2: CostOfElectricityConventionalAspectRatioCapitalThenFuel,
+    },
+    2: {
+        0: CostOfElectricitySphericalTokamakCapital,
+        1: CostOfElectricitySphericalTokamakFuel,
+        2: CostOfElectricitySphericalTokamakCapitalThenFuel,
+    },
 }
 """`_cost_of_electricity_arm(ireactor, ipnet, itart)` -> the cost-of-electricity
-occupant, or `None`.
+occupant by `.costs.ifueltyp`, or the absent occupant.
 """
+
+CONVERT_FPY_TO_CALENDAR = {
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
+        ConvertFpyToCalendarConventionalAspectRatio
+    ),
+    SphericalTokamakModel.SPHERICAL_TOKAMAK: ConvertFpyToCalendarSphericalTokamak,
+}
+"""`.physics.itart` -> the calendar-lifetime occupant."""
+
+STRUCTURES_COST = {0: StructuresCostNonReactor, 1: StructuresCostReactor}
+"""`.costs.ireactor` -> the Account 21 occupant."""
+
+TURBINE_PLANT_EQUIPMENT_COST = {
+    0: TurbinePlantEquipmentCostNonReactor,
+    1: TurbinePlantEquipmentCostReactor,
+}
+"""`.costs.ireactor` -> the Account 23 occupant."""
+
+HEAT_REJECTION_COST = {0: HeatRejectionCostNonReactor, 1: HeatRejectionCostReactor}
+"""`.costs.ireactor` -> the Account 26 occupant."""
+
+FIRST_WALL_COST = {
+    0: FirstWallCostCapital,
+    1: FirstWallCostFuel,
+    2: FirstWallCostCapitalThenFuel,
+}
+"""`.costs.ifueltyp` -> the Account 221.1 occupant."""
+
+BLANKET_COST = {0: BlanketCostCapital, 1: BlanketCostFuel, 2: BlanketCostCapitalThenFuel}
+"""`.costs.ifueltyp` -> the Account 221.2 occupant."""
+
+DIVERTOR_COST = {
+    0: DivertorCostCapital,
+    1: DivertorCostFuel,
+    2: DivertorCostCapitalThenFuel,
+}
+"""`.costs.ifueltyp` -> the Account 221.5 occupant."""
+
+POWER_INJECTION_COST = {
+    (0, 0): PowerInjectionCostCapitalLowerHybrid,
+    (0, 1): PowerInjectionCostCapitalIonCyclotron,
+    (1, 0): PowerInjectionCostFuelLowerHybrid,
+    (1, 1): PowerInjectionCostFuelIonCyclotron,
+}
+"""`(ifueltyp == 1, i_hcd_primary == 2)` -> the Account 223 occupant: whether a fraction
+of the current drive is fuel, and whether Account 223.2 is costed as ion cyclotron."""
+
+TF_COIL_POWER_CONDITIONING_COST = {
+    TFConductorModel.WATER_COOLED_COPPER: TfCoilPowerConditioningCostResistive,
+    TFConductorModel.SUPERCONDUCTING: TfCoilPowerConditioningCostSuperconducting,
+}
+"""`.tfcoil.i_tf_sup` -> the Account 225.1 occupant (`2` is refused at `TF_POWER`)."""
+
+VACUUM_SYSTEM_COST = {0: VacuumSystemCostTurbomolecular, 1: VacuumSystemCostCryopump}
+"""`.vacuum.i_vacuum_pump_type` -> the Account 224 occupant."""
+
+VACUUM_OLD = {
+    (0, 0): VacuumOldTurbomolecularDwell,
+    (0, 1): VacuumOldTurbomolecularPrecharge,
+    (0, 2): VacuumOldTurbomolecularDwellAndPrecharge,
+    (1, 0): VacuumOldCryopumpDwell,
+    (1, 1): VacuumOldCryopumpPrecharge,
+    (1, 2): VacuumOldCryopumpDwellAndPrecharge,
+}
+"""`(.vacuum.i_vacuum_pump_type, .vacuum.i_vac_pump_dwell)` -> the pumping occupant."""
+
+FW_BLANKET_SHIELD_GEOMETRY = {
+    0: FwBlanketShieldGeometryNoPowerflow,
+    1: FwBlanketShieldGeometryWithPowerflow,
+}
+"""`.heat_transport.ipowerflow` -> the stellarator's S1 occupant."""
 
 
 def _cost_of_electricity_arm(ireactor: int, ipnet: int, itart: int) -> int:
@@ -4126,7 +4293,17 @@ def machine_from_indat(input_file, stella_conf=None):
     # and -- jointly with `ipnet` and `itart` -- whether `costs.cost_of_electricity`
     # exists at all and which centrepost treatment it uses. `cost_variables.py:521`/
     # `:515` for the first two defaults.
-    ireactor = switches.get("ireactor", 1)
+    ireactor = int(switches.get("ireactor", 1))
+    # `vacuum_variables.py`'s defaults: compound cryopumps, pumped during the dwell.
+    i_vacuum_pump_type = int(switches.get("i_vacuum_pump_type", 1))
+    i_vac_pump_dwell = int(switches.get("i_vac_pump_dwell", 0))
+    vacuum = Vacuum(
+        vacuum_old=_slot_occupant(
+            "i_vacuum_pump_type_i_vac_pump_dwell",
+            (i_vacuum_pump_type, i_vac_pump_dwell),
+            VACUUM_OLD,
+        )
+    )
     # `supercond_cost_model` decides two slots since 2026-08-30 -- Account 222.1's and
     # Account 222.2's -- so it is read once here and threaded, rather than read twice
     # inside the constructor. `cost_variables.py:552` is the default.
@@ -4150,10 +4327,17 @@ def machine_from_indat(input_file, stella_conf=None):
         pf_magnet_cost_iohcl,
         switches.get("i_cs_superconductor", 1),  # `pfcoil_variables.py:239`
     )
-    cost_of_electricity = _slot_occupant(
+    # `cost_variables.py`'s default: every replacement a capital cost.
+    ifueltyp = int(switches.get("ifueltyp", 0))
+    by_fuel_type = _slot_occupant(
         "ireactor_ipnet_itart",
         _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0), itart),
         COST_OF_ELECTRICITY,
+    )
+    cost_of_electricity = (
+        _slot_occupant("ifueltyp", ifueltyp, by_fuel_type)
+        if isinstance(by_fuel_type, dict)
+        else by_fuel_type()
     )
     # ---- the five subsystems both devices have, built once ------------------------
     #
@@ -4168,6 +4352,31 @@ def machine_from_indat(input_file, stella_conf=None):
         1,
         build=lambda cls: cls(
             cost_of_electricity=cost_of_electricity,
+            # The switches below each choose an occupant; no node reads one.
+            convert_fpy_to_calendar=_slot_occupant(
+                "itart", itart, CONVERT_FPY_TO_CALENDAR
+            ),
+            structures_cost=_slot_occupant("ireactor", ireactor, STRUCTURES_COST),
+            turbine_plant_equipment_cost=_slot_occupant(
+                "ireactor", ireactor, TURBINE_PLANT_EQUIPMENT_COST
+            ),
+            heat_rejection_cost=_slot_occupant(
+                "ireactor", ireactor, HEAT_REJECTION_COST
+            ),
+            first_wall_cost=_slot_occupant("ifueltyp", ifueltyp, FIRST_WALL_COST),
+            blanket_cost=_slot_occupant("ifueltyp", ifueltyp, BLANKET_COST),
+            divertor_cost=_slot_occupant("ifueltyp", ifueltyp, DIVERTOR_COST),
+            power_injection_cost=_slot_occupant(
+                "ifueltyp_i_hcd_primary",
+                (int(ifueltyp == 1), int(int(i_hcd_primary) == 2)),
+                POWER_INJECTION_COST,
+            ),
+            tf_coil_power_conditioning_cost=_slot_occupant(
+                "i_tf_sup", i_tf_sup, TF_COIL_POWER_CONDITIONING_COST
+            ),
+            vacuum_system_cost=_slot_occupant(
+                "i_vacuum_pump_type", i_vacuum_pump_type, VACUUM_SYSTEM_COST
+            ),
             # **The one slot in this tree decided by the device rather than by a
             # switch**, and the exception is the point of it: Account 221.4 costs a
             # reactor structure, and a stellarator has none to cost. `st_strc` sets
@@ -4257,6 +4466,8 @@ def machine_from_indat(input_file, stella_conf=None):
     secondary_cycle_liq = ElectricConversionModelTypes(
         int(switches.get("secondary_cycle_liq", 4))
     )
+    # `heat_transport_variables.py`'s default: the shield's heat is primary.
+    i_shld_primary_heat = int(switches.get("i_shld_primary_heat", 1))
     power = Power(
         # `Power.pfpwr`, the PF-coil power supply -- present on a tokamak and genuinely
         # absent on a stellarator, which has no PF coils and whose `stellarator.py`
@@ -4307,14 +4518,20 @@ def machine_from_indat(input_file, stella_conf=None):
         component_thermal_powers=_slot_occupant(
             "component_thermal_powers_arm",
             _component_thermal_powers_arm(
-                i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+                i_p_coolant_pumping,
+                i_blkt_dual_coolant,
+                i_thermal_electric_conversion,
+                i_shld_primary_heat,
             ),
             COMPONENT_THERMAL_POWERS,
         ),
         delta_eta_step=_slot_occupant(
             "delta_eta_step_arm",
             _delta_eta_step_arm(
-                i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+                i_p_coolant_pumping,
+                i_blkt_dual_coolant,
+                i_thermal_electric_conversion,
+                i_shld_primary_heat,
             ),
             DELTA_ETA_STEP,
         ),
@@ -4466,6 +4683,7 @@ def machine_from_indat(input_file, stella_conf=None):
             ),
             power=power,
             buildings=buildings,
+            vacuum=vacuum,
             availability=availability,
         )
 
@@ -4547,6 +4765,9 @@ def machine_from_indat(input_file, stella_conf=None):
             fwbs=StellaratorFwbs(
                 blanket_shield_power=blanket_shield_power,
                 blanket_masses=blanket_masses,
+                fw_blanket_shield_geometry=_slot_occupant(
+                    "ipowerflow", ipowerflow, FW_BLANKET_SHIELD_GEOMETRY
+                ),
             ),
             # One arm index, two slots: `_wall_load_arm` is the whole dispatch and
             # both registries are keyed on it. `physics_variables.py:1006` is
@@ -4586,6 +4807,7 @@ def machine_from_indat(input_file, stella_conf=None):
         ),
         power=power,
         buildings=buildings,
+        vacuum=vacuum,
         availability=availability,
     )
 

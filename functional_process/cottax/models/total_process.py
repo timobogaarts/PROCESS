@@ -32,11 +32,8 @@ class StellaratorProcess(eqx.Module):
 
     buildings: Buildings = dataclasses.field(kw_only=True)
 
-    vacuum: Vacuum = Vacuum()
-    """The one sub-namespace that keeps a default: nothing inside it is switched, so
-    there is nothing for `machine_from_indat` to decide and no configuration for a
-    default to smuggle in.
-    """
+    vacuum: Vacuum = dataclasses.field(kw_only=True)
+    """The pumping model, its occupant chosen by the pump type and dwell switches."""
 
     availability: Availability = dataclasses.field(kw_only=True)
 
@@ -66,10 +63,7 @@ class TokamakProcess(eqx.Module):
 
     buildings: Buildings = dataclasses.field(kw_only=True)
 
-    vacuum: Vacuum = Vacuum()
-    """Default for the same reason it is on a stellarator: nothing inside it is
-    switched.
-    """
+    vacuum: Vacuum = dataclasses.field(kw_only=True)
 
     availability: Availability = dataclasses.field(kw_only=True)
     """Plant availability -- 4 nodes, and the one place the two devices differ by a

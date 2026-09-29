@@ -1,5 +1,7 @@
 """Pure-functional port of `process/models/vacuum.py` (registry unit #16)."""
 
+import inspect
+
 import jax  # noqa: F401
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
@@ -25,7 +27,12 @@ from functional_process.models.vacuum.vacuum import (
     calculate_dshaped_vessel_volumes,  # noqa: F401
     calculate_duct_feasibility_conditions,
     calculate_elliptical_vessel_volumes,  # noqa: F401
-    calculate_vacuum_pumping_old,
+    calculate_vacuum_pumping_old_cryopump_dwell,
+    calculate_vacuum_pumping_old_cryopump_dwell_and_precharge,
+    calculate_vacuum_pumping_old_cryopump_precharge,
+    calculate_vacuum_pumping_old_turbomolecular_dwell,
+    calculate_vacuum_pumping_old_turbomolecular_dwell_and_precharge,
+    calculate_vacuum_pumping_old_turbomolecular_precharge,
     calculate_vacuum_pumping_simple,
     calculate_vacuum_vessel_mass,  # noqa: F401
     calculate_vacuum_vessel_outputs,
@@ -38,6 +45,13 @@ from functional_process.models.vacuum.vacuum import (
     solve_duct_diameter,  # noqa: F401
     solve_duct_geometry,  # noqa: F401
 )
+
+
+def _restricted(fn, reads):
+    """`reads`, less the parameters `fn` does not take."""
+    taken = inspect.signature(fn).parameters
+    return {name: place for name, place in reads.items() if name in taken}
+
 
 # cottax node: `calculate_vacuum_pumping_simple`'s combined pump count.
 VacuumPumpingSimple = vacuum.function(
@@ -74,90 +88,100 @@ DuctFeasibility = vacuum.Feasibility(
 """The declared problem itself: "find a feasible `ceff_i`", no objective."""
 
 
-# cottax node: `calculate_vacuum_pumping_old`'s five real outputs.
-def _vacuum_old(
-    p_fusion_total_mw,
-    rmajor,
-    rminor,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    a_plasma_surface,
-    vol_plasma,
-    dr_shld_outboard,
-    dr_shld_inboard,
-    dr_tf_inboard,
-    r_shld_inboard_inner,
-    dr_shld_vv_gap_inboard,
-    dr_vv_inboard,
-    n_tf_coils,
-    t_plant_pulse_dwell,
-    n_divertors,
-    molflow_plasma_fuelling_required,
-    m_fuel_amu,
-    i_vac_pump_dwell,
-    i_vacuum_pump_type,
-    pres_vv_chamber_base,
-    pres_div_chamber_burn,
-    outgrat_fw,
-    t_plant_pulse_coil_precharge,
-):
-    return calculate_vacuum_pumping_old(
-        p_fusion_total_mw,
-        rmajor,
-        rminor,
-        dr_fw_plasma_gap_inboard,
-        dr_fw_plasma_gap_outboard,
-        a_plasma_surface,
-        vol_plasma,
-        dr_shld_outboard,
-        dr_shld_inboard,
-        dr_tf_inboard,
-        r_shld_inboard_inner,
-        dr_shld_vv_gap_inboard,
-        dr_vv_inboard,
-        n_tf_coils,
-        t_plant_pulse_dwell,
-        n_divertors,
-        0.0,
-        molflow_plasma_fuelling_required,
-        m_fuel_amu,
-        i_vac_pump_dwell,
-        i_vacuum_pump_type,
-        pres_vv_chamber_base,
-        pres_div_chamber_burn,
-        outgrat_fw,
-        t_plant_pulse_coil_precharge,
-    )
+# cottax node: `calculate_vacuum_pumping_old`'s five real outputs, one occupant per
+# `.vacuum.i_vacuum_pump_type` x `.vacuum.i_vac_pump_dwell` arm (the pump type decides
+# the pump speeds, the dwell switch the pumping time).
+_VACUUM_OLD_READS = {
+    "p_fusion_total_mw": physics,
+    "rmajor": physics,
+    "rminor": physics,
+    "dr_fw_plasma_gap_inboard": build,
+    "dr_fw_plasma_gap_outboard": build,
+    "a_plasma_surface": physics,
+    "vol_plasma": physics,
+    "dr_shld_outboard": build,
+    "dr_shld_inboard": build,
+    "dr_tf_inboard": build,
+    "r_shld_inboard_inner": build,
+    "dr_shld_vv_gap_inboard": build,
+    "dr_vv_inboard": build,
+    "n_tf_coils": tfcoil,
+    "t_plant_pulse_dwell": times,
+    "n_divertors": divertor,
+    "molflow_plasma_fuelling_required": physics,
+    "m_fuel_amu": physics,
+    "t_plant_pulse_coil_precharge": times,
+}
 
-
-VacuumOld = vacuum.function(
-    _vacuum_old,
+VacuumOldTurbomolecularDwell = vacuum.function(
+    calculate_vacuum_pumping_old_turbomolecular_dwell,
     "n_vac_pumps_high",
     "n_vv_vacuum_ducts",
     "dlscal",
     "m_vv_vacuum_duct_shield",
     "dia_vv_vacuum_ducts",
-    reads={
-        "p_fusion_total_mw": physics,
-        "rmajor": physics,
-        "rminor": physics,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "a_plasma_surface": physics,
-        "vol_plasma": physics,
-        "dr_shld_outboard": build,
-        "dr_shld_inboard": build,
-        "dr_tf_inboard": build,
-        "r_shld_inboard_inner": build,
-        "dr_shld_vv_gap_inboard": build,
-        "dr_vv_inboard": build,
-        "n_tf_coils": tfcoil,
-        "t_plant_pulse_dwell": times,
-        "n_divertors": divertor,
-        "molflow_plasma_fuelling_required": physics,
-        "m_fuel_amu": physics,
-        "t_plant_pulse_coil_precharge": times,
-    },
+    reads=_restricted(
+        calculate_vacuum_pumping_old_turbomolecular_dwell, _VACUUM_OLD_READS
+    ),
+)
+
+VacuumOldTurbomolecularPrecharge = vacuum.function(
+    calculate_vacuum_pumping_old_turbomolecular_precharge,
+    "n_vac_pumps_high",
+    "n_vv_vacuum_ducts",
+    "dlscal",
+    "m_vv_vacuum_duct_shield",
+    "dia_vv_vacuum_ducts",
+    reads=_restricted(
+        calculate_vacuum_pumping_old_turbomolecular_precharge, _VACUUM_OLD_READS
+    ),
+)
+
+VacuumOldTurbomolecularDwellAndPrecharge = vacuum.function(
+    calculate_vacuum_pumping_old_turbomolecular_dwell_and_precharge,
+    "n_vac_pumps_high",
+    "n_vv_vacuum_ducts",
+    "dlscal",
+    "m_vv_vacuum_duct_shield",
+    "dia_vv_vacuum_ducts",
+    reads=_restricted(
+        calculate_vacuum_pumping_old_turbomolecular_dwell_and_precharge,
+        _VACUUM_OLD_READS,
+    ),
+)
+
+VacuumOldCryopumpDwell = vacuum.function(
+    calculate_vacuum_pumping_old_cryopump_dwell,
+    "n_vac_pumps_high",
+    "n_vv_vacuum_ducts",
+    "dlscal",
+    "m_vv_vacuum_duct_shield",
+    "dia_vv_vacuum_ducts",
+    reads=_restricted(calculate_vacuum_pumping_old_cryopump_dwell, _VACUUM_OLD_READS),
+)
+
+VacuumOldCryopumpPrecharge = vacuum.function(
+    calculate_vacuum_pumping_old_cryopump_precharge,
+    "n_vac_pumps_high",
+    "n_vv_vacuum_ducts",
+    "dlscal",
+    "m_vv_vacuum_duct_shield",
+    "dia_vv_vacuum_ducts",
+    reads=_restricted(
+        calculate_vacuum_pumping_old_cryopump_precharge, _VACUUM_OLD_READS
+    ),
+)
+
+VacuumOldCryopumpDwellAndPrecharge = vacuum.function(
+    calculate_vacuum_pumping_old_cryopump_dwell_and_precharge,
+    "n_vac_pumps_high",
+    "n_vv_vacuum_ducts",
+    "dlscal",
+    "m_vv_vacuum_duct_shield",
+    "dia_vv_vacuum_ducts",
+    reads=_restricted(
+        calculate_vacuum_pumping_old_cryopump_dwell_and_precharge, _VACUUM_OLD_READS
+    ),
 )
 
 

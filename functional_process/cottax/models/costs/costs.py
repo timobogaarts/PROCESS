@@ -2,6 +2,8 @@
 (the 1990-style cost model, registry unit #18).
 """
 
+import inspect
+
 import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces import V
@@ -36,19 +38,34 @@ from functional_process.models.costs.costs import (
     calculate_auxiliary_component_cooling_cost_magnetic_confinement,
     calculate_auxiliary_facility_power_cost,
     calculate_blanket_cost,
+    calculate_blanket_cost_capital,
+    calculate_blanket_cost_capital_then_fuel,
+    calculate_blanket_cost_fuel,
     calculate_blanket_cost_magnetic_confinement,
     calculate_constructed_cost,
     calculate_cost_of_electricity,
     calculate_cost_of_electricity_conventional_aspect_ratio,
+    calculate_cost_of_electricity_conventional_aspect_ratio_capital,
+    calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel,
+    calculate_cost_of_electricity_conventional_aspect_ratio_fuel,
     calculate_cost_of_electricity_spherical_tokamak,
+    calculate_cost_of_electricity_spherical_tokamak_capital,
+    calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel,
+    calculate_cost_of_electricity_spherical_tokamak_fuel,
     calculate_cryogenic_system_cost,
     calculate_diesel_generators_cost,
     calculate_divertor_cost,
+    calculate_divertor_cost_capital,
+    calculate_divertor_cost_capital_then_fuel,
+    calculate_divertor_cost_fuel,
     calculate_electric_plant_equipment_cost,
     calculate_energy_storage_cost,
     calculate_energy_storage_cost_electrowatt_option_1,
     calculate_energy_storage_cost_electrowatt_option_2,
     calculate_first_wall_cost,
+    calculate_first_wall_cost_capital,
+    calculate_first_wall_cost_capital_then_fuel,
+    calculate_first_wall_cost_fuel,
     calculate_first_wall_cost_magnetic_confinement,
     calculate_fuel_handling_cost,
     calculate_fuel_processing_cost,
@@ -56,11 +73,14 @@ from functional_process.models.costs.costs import (
     calculate_fuelling_system_cost,
     calculate_fusion_power_island_cost,
     calculate_heat_rejection_cost,
+    calculate_heat_rejection_cost_non_reactor,
+    calculate_heat_rejection_cost_reactor,
     calculate_heat_transport_system_cost,
     calculate_indirect_costs,
     calculate_instrumentation_and_control_cost,
     calculate_low_voltage_cost,
     calculate_magnets_cost,
+    calculate_magnets_cost_magnetic_confinement,
     calculate_maintenance_equipment_cost,
     calculate_misc_plant_equipment_cost,
     calculate_nuclear_building_ventilation_cost,
@@ -68,10 +88,17 @@ from functional_process.models.costs.costs import (
     calculate_pf_magnet_cost,
     calculate_pf_magnet_cost_per_kam,
     calculate_pf_magnet_cost_per_kam_no_central_solenoid,
+    calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting,
+    calculate_pf_magnet_cost_per_kam_superconducting,
     calculate_pf_magnet_cost_per_kg,
     calculate_pf_magnet_cost_per_kg_no_central_solenoid,
+    calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting,
+    calculate_pf_magnet_cost_per_kg_superconducting,
     calculate_power_conditioning_cost,
+    calculate_power_conditioning_cost_magnetic_confinement,
     calculate_power_injection_cost,
+    calculate_power_injection_cost_capital,
+    calculate_power_injection_cost_fuel,
     calculate_power_injection_cost_magnetic_confinement,
     calculate_reactor_cooling_system_cost,
     calculate_reactor_cost,
@@ -79,8 +106,12 @@ from functional_process.models.costs.costs import (
     calculate_shield_cost,
     calculate_shield_cost_magnetic_confinement,
     calculate_structures_cost,
+    calculate_structures_cost_non_reactor,
+    calculate_structures_cost_reactor,
     calculate_switchyard_cost,
     calculate_tf_coil_power_conditioning_cost,
+    calculate_tf_coil_power_conditioning_cost_resistive,
+    calculate_tf_coil_power_conditioning_cost_superconducting,
     calculate_tf_magnet_cost_resistive,
     calculate_tf_magnet_cost_superconducting,
     calculate_tf_magnet_cost_superconducting_per_kam,
@@ -88,9 +119,14 @@ from functional_process.models.costs.costs import (
     calculate_total_plant_direct_cost,
     calculate_transformers_cost,
     calculate_turbine_plant_equipment_cost,
+    calculate_turbine_plant_equipment_cost_non_reactor,
+    calculate_turbine_plant_equipment_cost_reactor,
     calculate_vacuum_system_cost,
+    calculate_vacuum_system_cost_for_pump,
     calculate_vacuum_vessel_assembly_cost,
     convert_fpy_to_calendar,
+    convert_fpy_to_calendar_conventional_aspect_ratio,
+    convert_fpy_to_calendar_spherical_tokamak,
 )
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.vocabulary import PFConductorModel
@@ -109,24 +145,36 @@ __all__ = [
     "AtmosphericRecoveryCost",
     "AuxiliaryComponentCoolingCost",
     "AuxiliaryFacilityPowerCost",
-    "BlanketCost",
+    "BlanketCostCapital",
+    "BlanketCostCapitalThenFuel",
+    "BlanketCostFuel",
     "ConstructedCost",
-    "ConvertFpyToCalendar",
-    "CostOfElectricityConventionalAspectRatio",
-    "CostOfElectricitySphericalTokamak",
+    "ConvertFpyToCalendarConventionalAspectRatio",
+    "ConvertFpyToCalendarSphericalTokamak",
+    "CostOfElectricityConventionalAspectRatioCapital",
+    "CostOfElectricityConventionalAspectRatioCapitalThenFuel",
+    "CostOfElectricityConventionalAspectRatioFuel",
+    "CostOfElectricitySphericalTokamakCapital",
+    "CostOfElectricitySphericalTokamakCapitalThenFuel",
+    "CostOfElectricitySphericalTokamakFuel",
     "CryogenicSystemCost",
     "DieselGeneratorsCost",
-    "DivertorCost",
+    "DivertorCostCapital",
+    "DivertorCostCapitalThenFuel",
+    "DivertorCostFuel",
     "ElectricPlantEquipmentCost",
     "EnergyStorageCostPulsedElectrowattOption1",
     "EnergyStorageCostPulsedElectrowattOption2",
     "EnergyStorageCostUnpulsed",
-    "FirstWallCost",
+    "FirstWallCostCapital",
+    "FirstWallCostCapitalThenFuel",
+    "FirstWallCostFuel",
     "FuelHandlingCost",
     "FuelProcessingCost",
     "FuellingSystemCost",
     "FusionPowerIslandCost",
-    "HeatRejectionCost",
+    "HeatRejectionCostNonReactor",
+    "HeatRejectionCostReactor",
     "HeatTransportSystemCost",
     "IndirectCosts",
     "InstrumentationAndControlCost",
@@ -143,21 +191,28 @@ __all__ = [
     "PfMagnetCostPerKgCsWstNb3Sn",
     "PfMagnetCostPerKgNoCentralSolenoid",
     "PowerConditioningCost",
-    "PowerInjectionCost",
+    "PowerInjectionCostCapitalIonCyclotron",
+    "PowerInjectionCostCapitalLowerHybrid",
+    "PowerInjectionCostFuelIonCyclotron",
+    "PowerInjectionCostFuelLowerHybrid",
     "ReactorCoolingSystemCost",
     "ReactorCost",
     "ReactorStructureCost",
     "ShieldCost",
-    "StructuresCost",
+    "StructuresCostNonReactor",
+    "StructuresCostReactor",
     "SwitchyardCost",
-    "TfCoilPowerConditioningCost",
+    "TfCoilPowerConditioningCostResistive",
+    "TfCoilPowerConditioningCostSuperconducting",
     "TfMagnetCostResistive",
     "TfMagnetCostSuperconductingPerKam",
     "TfMagnetCostSuperconductingPerKg",
     "TotalPlantDirectCost",
     "TransformersCost",
-    "TurbinePlantEquipmentCost",
-    "VacuumSystemCost",
+    "TurbinePlantEquipmentCostNonReactor",
+    "TurbinePlantEquipmentCostReactor",
+    "VacuumSystemCostCryopump",
+    "VacuumSystemCostTurbomolecular",
     "VacuumVesselAssemblyCost",
     "buildings",
     "calculate_atmospheric_recovery_cost",
@@ -165,19 +220,34 @@ __all__ = [
     "calculate_auxiliary_component_cooling_cost_magnetic_confinement",
     "calculate_auxiliary_facility_power_cost",
     "calculate_blanket_cost",
+    "calculate_blanket_cost_capital",
+    "calculate_blanket_cost_capital_then_fuel",
+    "calculate_blanket_cost_fuel",
     "calculate_blanket_cost_magnetic_confinement",
     "calculate_constructed_cost",
     "calculate_cost_of_electricity",
     "calculate_cost_of_electricity_conventional_aspect_ratio",
+    "calculate_cost_of_electricity_conventional_aspect_ratio_capital",
+    "calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel",
+    "calculate_cost_of_electricity_conventional_aspect_ratio_fuel",
     "calculate_cost_of_electricity_spherical_tokamak",
+    "calculate_cost_of_electricity_spherical_tokamak_capital",
+    "calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel",
+    "calculate_cost_of_electricity_spherical_tokamak_fuel",
     "calculate_cryogenic_system_cost",
     "calculate_diesel_generators_cost",
     "calculate_divertor_cost",
+    "calculate_divertor_cost_capital",
+    "calculate_divertor_cost_capital_then_fuel",
+    "calculate_divertor_cost_fuel",
     "calculate_electric_plant_equipment_cost",
     "calculate_energy_storage_cost",
     "calculate_energy_storage_cost_electrowatt_option_1",
     "calculate_energy_storage_cost_electrowatt_option_2",
     "calculate_first_wall_cost",
+    "calculate_first_wall_cost_capital",
+    "calculate_first_wall_cost_capital_then_fuel",
+    "calculate_first_wall_cost_fuel",
     "calculate_first_wall_cost_magnetic_confinement",
     "calculate_fuel_handling_cost",
     "calculate_fuel_processing_cost",
@@ -185,11 +255,14 @@ __all__ = [
     "calculate_fuelling_system_cost",
     "calculate_fusion_power_island_cost",
     "calculate_heat_rejection_cost",
+    "calculate_heat_rejection_cost_non_reactor",
+    "calculate_heat_rejection_cost_reactor",
     "calculate_heat_transport_system_cost",
     "calculate_indirect_costs",
     "calculate_instrumentation_and_control_cost",
     "calculate_low_voltage_cost",
     "calculate_magnets_cost",
+    "calculate_magnets_cost_magnetic_confinement",
     "calculate_maintenance_equipment_cost",
     "calculate_misc_plant_equipment_cost",
     "calculate_nuclear_building_ventilation_cost",
@@ -197,10 +270,17 @@ __all__ = [
     "calculate_pf_magnet_cost",
     "calculate_pf_magnet_cost_per_kam",
     "calculate_pf_magnet_cost_per_kam_no_central_solenoid",
+    "calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting",
+    "calculate_pf_magnet_cost_per_kam_superconducting",
     "calculate_pf_magnet_cost_per_kg",
     "calculate_pf_magnet_cost_per_kg_no_central_solenoid",
+    "calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting",
+    "calculate_pf_magnet_cost_per_kg_superconducting",
     "calculate_power_conditioning_cost",
+    "calculate_power_conditioning_cost_magnetic_confinement",
     "calculate_power_injection_cost",
+    "calculate_power_injection_cost_capital",
+    "calculate_power_injection_cost_fuel",
     "calculate_power_injection_cost_magnetic_confinement",
     "calculate_reactor_cooling_system_cost",
     "calculate_reactor_cost",
@@ -208,8 +288,12 @@ __all__ = [
     "calculate_shield_cost",
     "calculate_shield_cost_magnetic_confinement",
     "calculate_structures_cost",
+    "calculate_structures_cost_non_reactor",
+    "calculate_structures_cost_reactor",
     "calculate_switchyard_cost",
     "calculate_tf_coil_power_conditioning_cost",
+    "calculate_tf_coil_power_conditioning_cost_resistive",
+    "calculate_tf_coil_power_conditioning_cost_superconducting",
     "calculate_tf_magnet_cost_resistive",
     "calculate_tf_magnet_cost_superconducting",
     "calculate_tf_magnet_cost_superconducting_per_kam",
@@ -217,9 +301,14 @@ __all__ = [
     "calculate_total_plant_direct_cost",
     "calculate_transformers_cost",
     "calculate_turbine_plant_equipment_cost",
+    "calculate_turbine_plant_equipment_cost_non_reactor",
+    "calculate_turbine_plant_equipment_cost_reactor",
     "calculate_vacuum_system_cost",
+    "calculate_vacuum_system_cost_for_pump",
     "calculate_vacuum_vessel_assembly_cost",
     "convert_fpy_to_calendar",
+    "convert_fpy_to_calendar_conventional_aspect_ratio",
+    "convert_fpy_to_calendar_spherical_tokamak",
     "costs",
     "current_drive",
     "divertor",
@@ -241,86 +330,63 @@ __all__ = [
 ]
 
 
+def _restricted(fn, reads):
+    """`reads`, less the parameters `fn` does not take: one table of places shared by
+    the variants of one account, each variant reading only what its branch reads."""
+    taken = inspect.signature(fn).parameters
+    return {name: place for name, place in reads.items() if name in taken}
+
+
 # cottax node: `convert_fpy_to_calendar`.
-def _convert_fpy_to_calendar(
-    life_blkt_fpy, life_plant, f_t_plant_available, life_div_fpy, itart, cplife
-):
-    return convert_fpy_to_calendar(
-        life_blkt_fpy, life_plant, f_t_plant_available, life_div_fpy, itart, cplife
-    )
+_CONVERT_FPY_TO_CALENDAR_READS = {
+    "life_plant": costs,
+    "f_t_plant_available": costs,
+    "life_div_fpy": costs,
+    "cplife": costs,
+}
 
-
-ConvertFpyToCalendar = fwbs.function(
-    _convert_fpy_to_calendar,
+# `.physics.itart != 1`: no centrepost, `cplife_cal` is zero.
+ConvertFpyToCalendarConventionalAspectRatio = fwbs.function(
+    convert_fpy_to_calendar_conventional_aspect_ratio,
     "life_blkt",
     V.costs.cdrlife_cal,
     V.costs.life_div,
     V.costs.cplife_cal,
-    reads={
-        "life_plant": costs,
-        "f_t_plant_available": costs,
-        "life_div_fpy": costs,
-        "itart": physics,
-        "cplife": costs,
-    },
+    reads=_restricted(
+        convert_fpy_to_calendar_conventional_aspect_ratio,
+        _CONVERT_FPY_TO_CALENDAR_READS,
+    ),
+)
+
+# `.physics.itart == 1`: the centrepost's calendar lifetime too.
+ConvertFpyToCalendarSphericalTokamak = fwbs.function(
+    convert_fpy_to_calendar_spherical_tokamak,
+    "life_blkt",
+    V.costs.cdrlife_cal,
+    V.costs.life_div,
+    V.costs.cplife_cal,
+    reads=_restricted(
+        convert_fpy_to_calendar_spherical_tokamak, _CONVERT_FPY_TO_CALENDAR_READS
+    ),
 )
 
 
 # cottax node: `calculate_structures_cost` (Account 21).
-def _structures_cost(
-    csi,
-    lsa,
-    cland,
-    ucrb,
-    rbvol,
-    UCMB,
-    rmbvol,
-    UCWS,
-    wsvol,
-    UCTR,
-    triv,
-    UCEL,
-    elevol,
-    UCAD,
-    admvol,
-    UCCO,
-    convol,
-    UCSH,
-    shovol,
-    UCCR,
-    cryvol,
-    ireactor,
-    cturbb,
-):
-    return calculate_structures_cost(
-        csi,
-        lsa,
-        cland,
-        ucrb,
-        rbvol,
-        UCMB,
-        rmbvol,
-        UCWS,
-        wsvol,
-        UCTR,
-        triv,
-        UCEL,
-        elevol,
-        UCAD,
-        admvol,
-        UCCO,
-        convol,
-        UCSH,
-        shovol,
-        UCCR,
-        cryvol,
-        ireactor,
-        cturbb,
-    )
+_STRUCTURES_COST_READS = {
+    "rbvol": buildings,
+    "rmbvol": buildings,
+    "wsvol": buildings,
+    "triv": buildings,
+    "elevol": buildings,
+    "admvol": buildings,
+    "convol": buildings,
+    "shovol": buildings,
+    "cryvol": buildings,
+}
 
-
-StructuresCost = costs.function(
-    _structures_cost,
+# `.costs.ireactor == 1`: with a turbine building.
+StructuresCostReactor = costs.function(
+    calculate_structures_cost_reactor,
     "c211",
     "c212",
     "c213",
@@ -335,17 +401,27 @@ StructuresCost = costs.function(
     "c2174",
     "c217",
     "c21",
-    reads={
-        "rbvol": buildings,
-        "rmbvol": buildings,
-        "wsvol": buildings,
-        "triv": buildings,
-        "elevol": buildings,
-        "admvol": buildings,
-        "convol": buildings,
-        "shovol": buildings,
-        "cryvol": buildings,
-    },
+    reads=_STRUCTURES_COST_READS,
+)
+
+# `.costs.ireactor == 0`: no turbine building, `c213` zero.
+StructuresCostNonReactor = costs.function(
+    calculate_structures_cost_non_reactor,
+    "c211",
+    "c212",
+    "c213",
+    "c2141",
+    "c2142",
+    "c214",
+    "c215",
+    "c216",
+    "c2171",
+    "c2172",
+    "c2173",
+    "c2174",
+    "c217",
+    "c21",
+    reads=_STRUCTURES_COST_READS,
 )
 
 
@@ -386,58 +462,32 @@ VacuumVesselAssemblyCost = costs.function(
 
 
 # cottax node: `calculate_divertor_cost` (Account 221.5).
-def _divertor_cost(ife, a_div_surface_total, ucdiv, fkind, ifueltyp):
-    return calculate_divertor_cost(ife, a_div_surface_total, ucdiv, fkind, ifueltyp)
-
-
-DivertorCost = costs.function(
-    _divertor_cost,
+# One occupant per `.costs.ifueltyp` (the magnetic-confinement arm; `ife == 1` is
+# refused by the converter): whether the divertor is a capital or a fuel cost.
+DivertorCostCapital = costs.function(
+    calculate_divertor_cost_capital,
     "c2215",
     "divcst",
-    reads={
-        "ife": ife,
-        "a_div_surface_total": divertor,
-    },
+    reads={"a_div_surface_total": divertor},
+)
+DivertorCostFuel = costs.function(
+    calculate_divertor_cost_fuel,
+    "c2215",
+    "divcst",
+    reads={"a_div_surface_total": divertor},
+)
+DivertorCostCapitalThenFuel = costs.function(
+    calculate_divertor_cost_capital_then_fuel,
+    "c2215",
+    "divcst",
+    reads={"a_div_surface_total": divertor},
 )
 
 
 # cottax node: `calculate_vacuum_system_cost` (Account 224).
-def _vacuum_system_cost(
-    i_vacuum_pump_type,
-    n_vac_pumps_high,
-    UCCPMP,
-    UCTPMP,
-    n_vv_vacuum_ducts,
-    UCBPMP,
-    dlscal,
-    UCDUCT,
-    dia_vv_vacuum_ducts,
-    UCVALV,
-    m_vv_vacuum_duct_shield,
-    UCVDSH,
-    UCVIAC,
-    fkind,
-):
-    return calculate_vacuum_system_cost(
-        i_vacuum_pump_type,
-        n_vac_pumps_high,
-        UCCPMP,
-        UCTPMP,
-        n_vv_vacuum_ducts,
-        UCBPMP,
-        dlscal,
-        UCDUCT,
-        dia_vv_vacuum_ducts,
-        UCVALV,
-        m_vv_vacuum_duct_shield,
-        UCVDSH,
-        UCVIAC,
-        fkind,
-    )
-
-
-VacuumSystemCost = costs.function(
-    _vacuum_system_cost,
+# `.vacuum.i_vacuum_pump_type == 0`: turbomolecular pumps, `.costs.UCTPMP`.
+VacuumSystemCostTurbomolecular = costs.function(
+    calculate_vacuum_system_cost_for_pump,
     "c2241",
     "c2242",
     "c2243",
@@ -446,8 +496,28 @@ VacuumSystemCost = costs.function(
     "c2246",
     "c224",
     reads={
-        "i_vacuum_pump_type": vacuum,
         "n_vac_pumps_high": vacuum,
+        "uc_vac_pump": V.costs.UCTPMP,
+        "n_vv_vacuum_ducts": vacuum,
+        "dlscal": vacuum,
+        "dia_vv_vacuum_ducts": vacuum,
+        "m_vv_vacuum_duct_shield": vacuum,
+    },
+)
+
+# `.vacuum.i_vacuum_pump_type == 1`: compound cryopumps, `.costs.UCCPMP`.
+VacuumSystemCostCryopump = costs.function(
+    calculate_vacuum_system_cost_for_pump,
+    "c2241",
+    "c2242",
+    "c2243",
+    "c2244",
+    "c2245",
+    "c2246",
+    "c224",
+    reads={
+        "n_vac_pumps_high": vacuum,
+        "uc_vac_pump": V.costs.UCCPMP,
         "n_vv_vacuum_ducts": vacuum,
         "dlscal": vacuum,
         "dia_vv_vacuum_ducts": vacuum,
@@ -457,67 +527,45 @@ VacuumSystemCost = costs.function(
 
 
 # cottax node: `calculate_tf_coil_power_conditioning_cost` (Account 225.1).
-def _tf_coil_power_conditioning_cost(
-    uctfps,
-    tfckw,
-    tfcmw,
-    i_tf_sup,
-    uctfbr,
-    n_tf_coils,
-    c_tf_turn,
-    v_tf_coil_dump_quench_kv,
-    uctfsw,
-    UCTFDR,
-    e_tf_magnetic_stored_total_gj,
-    UCTFGR,
-    UCTFIC,
-    uctfbus,
-    m_tf_bus,
-    ucbus,
-    len_tf_bus,
-    fkind,
-):
-    return calculate_tf_coil_power_conditioning_cost(
-        uctfps,
-        tfckw,
-        tfcmw,
-        i_tf_sup,
-        uctfbr,
-        n_tf_coils,
-        c_tf_turn,
-        v_tf_coil_dump_quench_kv,
-        uctfsw,
-        UCTFDR,
-        e_tf_magnetic_stored_total_gj,
-        UCTFGR,
-        UCTFIC,
-        uctfbus,
-        m_tf_bus,
-        ucbus,
-        len_tf_bus,
-        fkind,
-    )
+_TF_COIL_POWER_CONDITIONING_COST_READS = {
+    "tfckw": tfcoil,
+    "tfcmw": tfcoil,
+    "n_tf_coils": tfcoil,
+    "c_tf_turn": tfcoil,
+    "v_tf_coil_dump_quench_kv": tfcoil,
+    "e_tf_magnetic_stored_total_gj": tfcoil,
+    "m_tf_bus": tfcoil,
+    "len_tf_bus": tfcoil,
+}
 
-
-TfCoilPowerConditioningCost = costs.function(
-    _tf_coil_power_conditioning_cost,
+# `.tfcoil.i_tf_sup == 1`: superconducting, with breakers and a superconducting bus.
+TfCoilPowerConditioningCostSuperconducting = costs.function(
+    calculate_tf_coil_power_conditioning_cost_superconducting,
     "c22511",
     "c22512",
     "c22513",
     "c22514",
     "c22515",
     "c2251",
-    reads={
-        "tfckw": tfcoil,
-        "tfcmw": tfcoil,
-        "i_tf_sup": tfcoil,
-        "n_tf_coils": tfcoil,
-        "c_tf_turn": tfcoil,
-        "v_tf_coil_dump_quench_kv": tfcoil,
-        "e_tf_magnetic_stored_total_gj": tfcoil,
-        "m_tf_bus": tfcoil,
-        "len_tf_bus": tfcoil,
-    },
+    reads=_restricted(
+        calculate_tf_coil_power_conditioning_cost_superconducting,
+        _TF_COIL_POWER_CONDITIONING_COST_READS,
+    ),
+)
+
+# `.tfcoil.i_tf_sup == 0`: resistive, bussing costed by mass.
+TfCoilPowerConditioningCostResistive = costs.function(
+    calculate_tf_coil_power_conditioning_cost_resistive,
+    "c22511",
+    "c22512",
+    "c22513",
+    "c22514",
+    "c22515",
+    "c2251",
+    reads=_restricted(
+        calculate_tf_coil_power_conditioning_cost_resistive,
+        _TF_COIL_POWER_CONDITIONING_COST_READS,
+    ),
 )
 
 
@@ -663,21 +711,19 @@ MaintenanceEquipmentCost = costs.function(_maintenance_equipment_cost, "c229")
 
 
 # cottax node: `calculate_turbine_plant_equipment_cost` (Account 23).
-def _turbine_plant_equipment_cost(
-    ireactor, ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
-):
-    return calculate_turbine_plant_equipment_cost(
-        ireactor, ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
-    )
-
-
-TurbinePlantEquipmentCost = costs.function(
-    _turbine_plant_equipment_cost,
+# `.costs.ireactor == 1`.
+TurbinePlantEquipmentCostReactor = costs.function(
+    calculate_turbine_plant_equipment_cost_reactor,
     "c23",
     reads={
         "i_blkt_coolant_type": fwbs,
         "p_plant_electric_gross_mw": heat_transport,
     },
+)
+
+# `.costs.ireactor == 0`: no turbine plant, `c23` zero and nothing read.
+TurbinePlantEquipmentCostNonReactor = costs.function(
+    calculate_turbine_plant_equipment_cost_non_reactor, "c23"
 )
 
 
@@ -753,37 +799,24 @@ MiscPlantEquipmentCost = costs.function(_misc_plant_equipment_cost, "c25")
 
 
 # cottax node: `calculate_heat_rejection_cost` (Account 26).
-def _heat_rejection_cost(
-    ireactor,
-    p_fusion_total_mw,
-    p_hcd_electric_total_mw,
-    tfcmw,
-    p_plant_primary_heat_mw,
-    p_plant_electric_gross_mw,
-    uchrs,
-    lsa,
-):
-    return calculate_heat_rejection_cost(
-        ireactor,
-        p_fusion_total_mw,
-        p_hcd_electric_total_mw,
-        tfcmw,
-        p_plant_primary_heat_mw,
-        p_plant_electric_gross_mw,
-        uchrs,
-        lsa,
-    )
+# `.costs.ireactor == 1`: the primary heat not turned into electricity.
+HeatRejectionCostReactor = costs.function(
+    calculate_heat_rejection_cost_reactor,
+    "c26",
+    reads={
+        "p_plant_primary_heat_mw": heat_transport,
+        "p_plant_electric_gross_mw": heat_transport,
+    },
+)
 
-
-HeatRejectionCost = costs.function(
-    _heat_rejection_cost,
+# `.costs.ireactor == 0`: fusion, heating and TF power, all rejected.
+HeatRejectionCostNonReactor = costs.function(
+    calculate_heat_rejection_cost_non_reactor,
     "c26",
     reads={
         "p_fusion_total_mw": physics,
         "p_hcd_electric_total_mw": heat_transport,
         "tfcmw": tfcoil,
-        "p_plant_primary_heat_mw": heat_transport,
-        "p_plant_electric_gross_mw": heat_transport,
     },
 )
 
@@ -795,53 +828,38 @@ HeatRejectionCost = costs.function(
 
 
 # cottax node: `calculate_first_wall_cost` (Account 221.1).
-def _first_wall_cost(lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp):
-    return calculate_first_wall_cost_magnetic_confinement(
-        lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp
-    )
-
-
-FirstWallCost = costs.function(
-    _first_wall_cost,
+# One occupant per `.costs.ifueltyp`, as `DivertorCost*`.
+FirstWallCostCapital = costs.function(
+    calculate_first_wall_cost_capital,
     "c2211",
     "fwallcst",
-    reads={
-        "a_fw_total": first_wall,
-    },
+    reads={"a_fw_total": first_wall},
+)
+FirstWallCostFuel = costs.function(
+    calculate_first_wall_cost_fuel,
+    "c2211",
+    "fwallcst",
+    reads={"a_fw_total": first_wall},
+)
+FirstWallCostCapitalThenFuel = costs.function(
+    calculate_first_wall_cost_capital_then_fuel,
+    "c2211",
+    "fwallcst",
+    reads={"a_fw_total": first_wall},
 )
 
 
 # cottax node: `calculate_blanket_cost` (Account 221.2).
-def _blanket_cost(
-    lsa,
-    m_blkt_beryllium,
-    ucblbe,
-    m_blkt_li2o,
-    ucblli2o,
-    m_blkt_steel_total,
-    ucblss,
-    m_blkt_vanadium,
-    ucblvd,
-    fkind,
-    ifueltyp,
-):
-    return calculate_blanket_cost_magnetic_confinement(
-        lsa,
-        m_blkt_beryllium,
-        ucblbe,
-        m_blkt_li2o,
-        ucblli2o,
-        m_blkt_steel_total,
-        ucblss,
-        m_blkt_vanadium,
-        ucblvd,
-        fkind,
-        ifueltyp,
-    )
+_BLANKET_COST_READS = {
+    "m_blkt_beryllium": fwbs,
+    "m_blkt_li2o": fwbs,
+    "m_blkt_steel_total": fwbs,
+    "m_blkt_vanadium": fwbs,
+}
 
-
-BlanketCost = costs.function(
-    _blanket_cost,
+# One occupant per `.costs.ifueltyp`, as `DivertorCost*`.
+BlanketCostCapital = costs.function(
+    calculate_blanket_cost_capital,
     "c22121",
     "c22122",
     "c22123",
@@ -851,12 +869,33 @@ BlanketCost = costs.function(
     "c22127",
     "c2212",
     "blkcst",
-    reads={
-        "m_blkt_beryllium": fwbs,
-        "m_blkt_li2o": fwbs,
-        "m_blkt_steel_total": fwbs,
-        "m_blkt_vanadium": fwbs,
-    },
+    reads=_BLANKET_COST_READS,
+)
+BlanketCostFuel = costs.function(
+    calculate_blanket_cost_fuel,
+    "c22121",
+    "c22122",
+    "c22123",
+    "c22124",
+    "c22125",
+    "c22126",
+    "c22127",
+    "c2212",
+    "blkcst",
+    reads=_BLANKET_COST_READS,
+)
+BlanketCostCapitalThenFuel = costs.function(
+    calculate_blanket_cost_capital_then_fuel,
+    "c22121",
+    "c22122",
+    "c22123",
+    "c22124",
+    "c22125",
+    "c22126",
+    "c22127",
+    "c2212",
+    "blkcst",
+    reads=_BLANKET_COST_READS,
 )
 
 
@@ -1057,8 +1096,8 @@ TfMagnetCostResistive = costs.function(
 # The PfMagnetCost family:
 # The Account 222.2 PF-magnet family.
 #
-# `n_cs_pf_coils` (the topology's coil count) and `i_pf_conductor` are reads, last in
-# every occupant: `.pf_coil.n_cs_pf_coils` and `.pf_coil.i_pf_conductor`.
+# `n_cs_pf_coils` (the topology's coil count) is a read, last in every occupant. Every
+# occupant is the superconducting arm: the converter refuses resistive PF coils.
 
 
 # `supercond_cost_model == PER_KG` (0) with a central solenoid -- the whole
@@ -1090,11 +1129,9 @@ def _pf_magnet_cost_per_kg(
     fncmass,
     fkind,
     n_cs_pf_coils,
-    i_pf_conductor,
 ):
-    return calculate_pf_magnet_cost_per_kg(
+    return calculate_pf_magnet_cost_per_kg_superconducting(
         n_cs_pf_coils,
-        i_pf_conductor,
         lsa,
         r_pf_coil_middle,
         n_pf_coil_turns,
@@ -1149,7 +1186,6 @@ PfMagnetCostPerKg = costs.function(
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
-        "i_pf_conductor": pf_coil,
     },
 )
 
@@ -1180,7 +1216,6 @@ PfMagnetCostPerKgCsWstNb3Sn = costs.function(
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
-        "i_pf_conductor": pf_coil,
     },
 )
 
@@ -1207,11 +1242,9 @@ def _pf_magnet_cost_per_kg_no_central_solenoid(
     fncmass,
     fkind,
     n_cs_pf_coils,
-    i_pf_conductor,
 ):
-    return calculate_pf_magnet_cost_per_kg_no_central_solenoid(
+    return calculate_pf_magnet_cost_per_kg_no_central_solenoid_superconducting(
         n_cs_pf_coils,
-        i_pf_conductor,
         lsa,
         r_pf_coil_middle,
         n_pf_coil_turns,
@@ -1251,7 +1284,6 @@ PfMagnetCostPerKgNoCentralSolenoid = costs.function(
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
-        "i_pf_conductor": pf_coil,
     },
 )
 
@@ -1285,11 +1317,9 @@ def _pf_magnet_cost_per_kam(
     fncmass,
     fkind,
     n_cs_pf_coils,
-    i_pf_conductor,
 ):
-    return calculate_pf_magnet_cost_per_kam(
+    return calculate_pf_magnet_cost_per_kam_superconducting(
         n_cs_pf_coils,
-        i_pf_conductor,
         lsa,
         r_pf_coil_middle,
         n_pf_coil_turns,
@@ -1343,7 +1373,6 @@ PfMagnetCostPerKam = costs.function(
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
-        "i_pf_conductor": pf_coil,
     },
 )
 
@@ -1371,11 +1400,9 @@ def _pf_magnet_cost_per_kam_no_central_solenoid(
     fncmass,
     fkind,
     n_cs_pf_coils,
-    i_pf_conductor,
 ):
-    return calculate_pf_magnet_cost_per_kam_no_central_solenoid(
+    return calculate_pf_magnet_cost_per_kam_no_central_solenoid_superconducting(
         n_cs_pf_coils,
-        i_pf_conductor,
         lsa,
         r_pf_coil_middle,
         n_pf_coil_turns,
@@ -1419,67 +1446,89 @@ PfMagnetCostPerKamNoCentralSolenoid = costs.function(
         "m_pf_coil_structure_total": pf_coil,
         "fncmass": structure,
         "n_cs_pf_coils": pf_coil,
-        "i_pf_conductor": pf_coil,
     },
 )
 
 
 # cottax node: `calculate_magnets_cost` (Account 222 total).
-def _magnets_cost(ife, c2221, c2222, c2223):
-    return calculate_magnets_cost(ife, c2221, c2222, c2223)
-
-
-MagnetsCost = costs.function(
-    _magnets_cost,
-    "c222",
-    reads={
-        "ife": ife,
-    },
-)
+MagnetsCost = costs.function(calculate_magnets_cost_magnetic_confinement, "c222")
 
 
 # cottax node: `calculate_power_injection_cost` (Account 223).
-def _power_injection_cost(
-    ucech,
-    p_hcd_ecrh_injected_total_mw,
-    i_hcd_primary,
-    uclh,
-    ucich,
-    p_hcd_lowhyb_injected_total_mw,
-    ucnbi,
-    p_beam_injected_mw,
-    ifueltyp,
-    fcdfuel,
-    fkind,
-):
-    return calculate_power_injection_cost_magnetic_confinement(
-        ucech,
-        p_hcd_ecrh_injected_total_mw,
-        i_hcd_primary,
-        uclh,
-        ucich,
-        p_hcd_lowhyb_injected_total_mw,
-        ucnbi,
-        p_beam_injected_mw,
-        ifueltyp,
-        fcdfuel,
-        fkind,
-    )
-
-
-PowerInjectionCost = costs.function(
-    _power_injection_cost,
+# `.costs.ifueltyp != 1`, `i_hcd_primary != 2` (Account 223.2 at `.costs.uclh`).
+PowerInjectionCostCapitalLowerHybrid = costs.function(
+    calculate_power_injection_cost_capital,
     "c2231",
     "c2232",
     "c2233",
     "c223",
     "cdcost",
-    reads={
-        "p_hcd_ecrh_injected_total_mw": current_drive,
-        "i_hcd_primary": current_drive,
-        "p_hcd_lowhyb_injected_total_mw": current_drive,
-        "p_beam_injected_mw": current_drive,
-    },
+    reads=_restricted(
+        calculate_power_injection_cost_capital,
+        {
+            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "uc_lower_hybrid": V.costs.uclh,
+            "p_hcd_lowhyb_injected_total_mw": current_drive,
+            "p_beam_injected_mw": current_drive,
+        },
+    ),
+)
+
+# `.costs.ifueltyp != 1`, `i_hcd_primary == 2` (Account 223.2 at `.costs.ucich`).
+PowerInjectionCostCapitalIonCyclotron = costs.function(
+    calculate_power_injection_cost_capital,
+    "c2231",
+    "c2232",
+    "c2233",
+    "c223",
+    "cdcost",
+    reads=_restricted(
+        calculate_power_injection_cost_capital,
+        {
+            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "uc_lower_hybrid": V.costs.ucich,
+            "p_hcd_lowhyb_injected_total_mw": current_drive,
+            "p_beam_injected_mw": current_drive,
+        },
+    ),
+)
+
+# `.costs.ifueltyp == 1`, `i_hcd_primary != 2` (Account 223.2 at `.costs.uclh`).
+PowerInjectionCostFuelLowerHybrid = costs.function(
+    calculate_power_injection_cost_fuel,
+    "c2231",
+    "c2232",
+    "c2233",
+    "c223",
+    "cdcost",
+    reads=_restricted(
+        calculate_power_injection_cost_fuel,
+        {
+            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "uc_lower_hybrid": V.costs.uclh,
+            "p_hcd_lowhyb_injected_total_mw": current_drive,
+            "p_beam_injected_mw": current_drive,
+        },
+    ),
+)
+
+# `.costs.ifueltyp == 1`, `i_hcd_primary == 2` (Account 223.2 at `.costs.ucich`).
+PowerInjectionCostFuelIonCyclotron = costs.function(
+    calculate_power_injection_cost_fuel,
+    "c2231",
+    "c2232",
+    "c2233",
+    "c223",
+    "cdcost",
+    reads=_restricted(
+        calculate_power_injection_cost_fuel,
+        {
+            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "uc_lower_hybrid": V.costs.ucich,
+            "p_hcd_lowhyb_injected_total_mw": current_drive,
+            "p_beam_injected_mw": current_drive,
+        },
+    ),
 )
 
 
@@ -1530,16 +1579,8 @@ EnergyStorageCostPulsedElectrowattOption2 = costs.function(
 
 
 # cottax node: `calculate_power_conditioning_cost` (Account 225 total).
-def _power_conditioning_cost(ife, c2251, c2252, c2253):
-    return calculate_power_conditioning_cost(ife, c2251, c2252, c2253)
-
-
 PowerConditioningCost = costs.function(
-    _power_conditioning_cost,
-    "c225",
-    reads={
-        "ife": ife,
-    },
+    calculate_power_conditioning_cost_magnetic_confinement, "c225"
 )
 
 
@@ -1680,189 +1721,105 @@ ConstructedCost = costs.function(_constructed_cost, "concost")
 
 # `.physics.itart == 0` -- the reference run's, and PROCESS's own default
 # (`physics_variables.py:994`).
-def _cost_of_electricity_conventional_aspect_ratio(
-    p_plant_electric_net_mw,
-    f_t_plant_available,
-    t_plant_pulse_burn,
-    t_plant_pulse_total,
-    concost,
-    fcap0,
-    fcr0,
-    discount_rate,
-    life_blkt,
-    fwallcst,
-    blkcst,
-    cfind,
-    lsa,
-    fcap0cp,
-    ifueltyp,
-    life_blkt_fpy,
-    life_plant,
-    life_div,
-    divcst,
-    life_div_fpy,
-    cdrlife_cal,
-    cdcost,
-    fcdfuel,
-    ucoam,
-    ucfuel,
-    f_plasma_fuel_helium3,
-    wtgpd,
-    uche3,
-    ucwst,
-    decomf,
-    dintrt,
-    dtlife,
-):
-    return calculate_cost_of_electricity_conventional_aspect_ratio(
-        p_plant_electric_net_mw,
-        f_t_plant_available,
-        t_plant_pulse_burn,
-        t_plant_pulse_total,
-        concost,
-        fcap0,
-        fcr0,
-        discount_rate,
-        life_blkt,
-        fwallcst,
-        blkcst,
-        cfind,
-        lsa,
-        fcap0cp,
-        ifueltyp,
-        life_blkt_fpy,
-        life_plant,
-        life_div,
-        divcst,
-        life_div_fpy,
-        cdrlife_cal,
-        cdcost,
-        fcdfuel,
-        ucoam,
-        ucfuel,
-        f_plasma_fuel_helium3,
-        wtgpd,
-        uche3,
-        ucwst,
-        decomf,
-        dintrt,
-        dtlife,
-    )
+_COST_OF_ELECTRICITY_READS = {
+    "p_plant_electric_net_mw": heat_transport,
+    "t_plant_pulse_burn": times,
+    "t_plant_pulse_total": times,
+    "life_blkt": fwbs,
+    "life_blkt_fpy": fwbs,
+    "f_plasma_fuel_helium3": physics,
+    "wtgpd": physics,
+}
 
-
-CostOfElectricityConventionalAspectRatio = costs.function(
-    _cost_of_electricity_conventional_aspect_ratio,
+# `.physics.itart == 0`; `.costs.ifueltyp == 0`.
+CostOfElectricityConventionalAspectRatioCapital = costs.function(
+    calculate_cost_of_electricity_conventional_aspect_ratio_capital,
     "moneyint",
     "capcost",
     "coecap",
     "coeoam",
     "coefuelt",
     "coe",
-    reads={
-        "p_plant_electric_net_mw": heat_transport,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "life_blkt": fwbs,
-        "life_blkt_fpy": fwbs,
-        "f_plasma_fuel_helium3": physics,
-        "wtgpd": physics,
-    },
+    reads=_restricted(
+        calculate_cost_of_electricity_conventional_aspect_ratio_capital,
+        _COST_OF_ELECTRICITY_READS,
+    ),
+)
+
+# `.physics.itart == 0`; `ifueltyp == 1`.
+CostOfElectricityConventionalAspectRatioFuel = costs.function(
+    calculate_cost_of_electricity_conventional_aspect_ratio_fuel,
+    "moneyint",
+    "capcost",
+    "coecap",
+    "coeoam",
+    "coefuelt",
+    "coe",
+    reads=_restricted(
+        calculate_cost_of_electricity_conventional_aspect_ratio_fuel,
+        _COST_OF_ELECTRICITY_READS,
+    ),
+)
+
+# `.physics.itart == 0`; `ifueltyp == 2`.
+CostOfElectricityConventionalAspectRatioCapitalThenFuel = costs.function(
+    calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel,
+    "moneyint",
+    "capcost",
+    "coecap",
+    "coeoam",
+    "coefuelt",
+    "coe",
+    reads=_restricted(
+        calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel,
+        _COST_OF_ELECTRICITY_READS,
+    ),
+)
+
+# `.physics.itart == 1`, the centrepost replaced too; `.costs.ifueltyp == 0`.
+CostOfElectricitySphericalTokamakCapital = costs.function(
+    calculate_cost_of_electricity_spherical_tokamak_capital,
+    "moneyint",
+    "capcost",
+    "coecap",
+    "coeoam",
+    "coefuelt",
+    "coe",
+    reads=_restricted(
+        calculate_cost_of_electricity_spherical_tokamak_capital,
+        _COST_OF_ELECTRICITY_READS,
+    ),
+)
+
+# `.physics.itart == 1`, the centrepost replaced too; `ifueltyp == 1`.
+CostOfElectricitySphericalTokamakFuel = costs.function(
+    calculate_cost_of_electricity_spherical_tokamak_fuel,
+    "moneyint",
+    "capcost",
+    "coecap",
+    "coeoam",
+    "coefuelt",
+    "coe",
+    reads=_restricted(
+        calculate_cost_of_electricity_spherical_tokamak_fuel, _COST_OF_ELECTRICITY_READS
+    ),
+)
+
+# `.physics.itart == 1`, the centrepost replaced too; `ifueltyp == 2`.
+CostOfElectricitySphericalTokamakCapitalThenFuel = costs.function(
+    calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel,
+    "moneyint",
+    "capcost",
+    "coecap",
+    "coeoam",
+    "coefuelt",
+    "coe",
+    reads=_restricted(
+        calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel,
+        _COST_OF_ELECTRICITY_READS,
+    ),
 )
 
 
 # `.physics.itart == 1` -- the spherical tokamak, which additionally pays to
 # replace its centrepost (`costs.py:2769-2783`).
-def _cost_of_electricity_spherical_tokamak(
-    p_plant_electric_net_mw,
-    f_t_plant_available,
-    t_plant_pulse_burn,
-    t_plant_pulse_total,
-    concost,
-    fcap0,
-    fcr0,
-    discount_rate,
-    life_blkt,
-    fwallcst,
-    blkcst,
-    cfind,
-    lsa,
-    fcap0cp,
-    ifueltyp,
-    life_blkt_fpy,
-    life_plant,
-    life_div,
-    divcst,
-    life_div_fpy,
-    cplife_cal,
-    cpstcst,
-    cplife,
-    cdrlife_cal,
-    cdcost,
-    fcdfuel,
-    ucoam,
-    ucfuel,
-    f_plasma_fuel_helium3,
-    wtgpd,
-    uche3,
-    ucwst,
-    decomf,
-    dintrt,
-    dtlife,
-):
-    return calculate_cost_of_electricity_spherical_tokamak(
-        p_plant_electric_net_mw,
-        f_t_plant_available,
-        t_plant_pulse_burn,
-        t_plant_pulse_total,
-        concost,
-        fcap0,
-        fcr0,
-        discount_rate,
-        life_blkt,
-        fwallcst,
-        blkcst,
-        cfind,
-        lsa,
-        fcap0cp,
-        ifueltyp,
-        life_blkt_fpy,
-        life_plant,
-        life_div,
-        divcst,
-        life_div_fpy,
-        cplife_cal,
-        cpstcst,
-        cplife,
-        cdrlife_cal,
-        cdcost,
-        fcdfuel,
-        ucoam,
-        ucfuel,
-        f_plasma_fuel_helium3,
-        wtgpd,
-        uche3,
-        ucwst,
-        decomf,
-        dintrt,
-        dtlife,
-    )
-
-
-CostOfElectricitySphericalTokamak = costs.function(
-    _cost_of_electricity_spherical_tokamak,
-    "moneyint",
-    "capcost",
-    "coecap",
-    "coeoam",
-    "coefuelt",
-    "coe",
-    reads={
-        "p_plant_electric_net_mw": heat_transport,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "life_blkt": fwbs,
-        "life_blkt_fpy": fwbs,
-        "f_plasma_fuel_helium3": physics,
-        "wtgpd": physics,
-    },
-)

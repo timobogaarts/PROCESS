@@ -90,6 +90,174 @@ def calculate_fw_blanket_shield_geometry(
         a_shld_inboard_surface, a_shld_outboard_surface, vol_shld_total, pnucloss,
         wallpf)`.
     """
+    if ipowerflow == 0:
+        return calculate_fw_blanket_shield_geometry_no_powerflow(
+            abktflnc,
+            pflux_fw_neutron_mw,
+            life_plant,
+            a_fw_total,
+            rminor,
+            dr_fw_plasma_gap_inboard,
+            dr_fw_inboard,
+            dr_fw_plasma_gap_outboard,
+            dr_fw_outboard,
+            a_plasma_surface,
+            fhole,
+            dr_blkt_inboard,
+            dr_blkt_outboard,
+            fvolsi,
+            fvolso,
+            dr_shld_inboard,
+            dr_shld_outboard,
+            p_neutron_total_mw,
+            stella_config_neutron_peakfactor,
+        )
+    return calculate_fw_blanket_shield_geometry_with_powerflow(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_plant,
+        a_fw_total,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_inboard,
+        dr_fw_plasma_gap_outboard,
+        dr_fw_outboard,
+        a_plasma_surface,
+        fhole,
+        f_ster_div_single,
+        f_a_fw_outboard_hcd,
+        dr_blkt_inboard,
+        dr_blkt_outboard,
+        fvolsi,
+        fvolso,
+        dr_shld_inboard,
+        dr_shld_outboard,
+        p_neutron_total_mw,
+        stella_config_neutron_peakfactor,
+    )
+
+
+def calculate_fw_blanket_shield_geometry_no_powerflow(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    a_fw_total,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    a_plasma_surface,
+    fhole,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    fvolsi,
+    fvolso,
+    dr_shld_inboard,
+    dr_shld_outboard,
+    p_neutron_total_mw,
+    stella_config_neutron_peakfactor,
+):
+    """S1 at `ipowerflow == 0`: the blanket area loses only the holes."""
+    return _fw_blanket_shield_geometry(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_plant,
+        a_fw_total,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_inboard,
+        dr_fw_plasma_gap_outboard,
+        dr_fw_outboard,
+        a_plasma_surface,
+        fhole,
+        1.0 - fhole,
+        dr_blkt_inboard,
+        dr_blkt_outboard,
+        fvolsi,
+        fvolso,
+        dr_shld_inboard,
+        dr_shld_outboard,
+        p_neutron_total_mw,
+        stella_config_neutron_peakfactor,
+    )
+
+
+def calculate_fw_blanket_shield_geometry_with_powerflow(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    a_fw_total,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    a_plasma_surface,
+    fhole,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    fvolsi,
+    fvolso,
+    dr_shld_inboard,
+    dr_shld_outboard,
+    p_neutron_total_mw,
+    stella_config_neutron_peakfactor,
+):
+    """S1 at `ipowerflow != 0`: the blanket area loses the divertor and the HCD
+    ports too.
+    """
+    return _fw_blanket_shield_geometry(
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_plant,
+        a_fw_total,
+        rminor,
+        dr_fw_plasma_gap_inboard,
+        dr_fw_inboard,
+        dr_fw_plasma_gap_outboard,
+        dr_fw_outboard,
+        a_plasma_surface,
+        fhole,
+        1.0 - fhole - f_ster_div_single - f_a_fw_outboard_hcd,
+        dr_blkt_inboard,
+        dr_blkt_outboard,
+        fvolsi,
+        fvolso,
+        dr_shld_inboard,
+        dr_shld_outboard,
+        p_neutron_total_mw,
+        stella_config_neutron_peakfactor,
+    )
+
+
+def _fw_blanket_shield_geometry(
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    a_fw_total,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    a_plasma_surface,
+    fhole,
+    f_a_blkt_covered,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    fvolsi,
+    fvolso,
+    dr_shld_inboard,
+    dr_shld_outboard,
+    p_neutron_total_mw,
+    stella_config_neutron_peakfactor,
+):
+    """S1's body, given the fraction of the blanket's area the `ipowerflow` arm
+    leaves covered.
+    """
     life_fw_fpy = jnp.minimum(abktflnc / pflux_fw_neutron_mw, life_plant)
 
     a_fw_inboard = 0.5 * a_fw_total
@@ -101,14 +269,7 @@ def calculate_fw_blanket_shield_geometry(
         + dr_fw_plasma_gap_outboard
         + dr_fw_outboard
     )
-    a_blkt_total_surface = jnp.where(
-        ipowerflow == 0,
-        a_plasma_surface * r1 / rminor * (1.0 - fhole),
-        a_plasma_surface
-        * r1
-        / rminor
-        * (1.0 - fhole - f_ster_div_single - f_a_fw_outboard_hcd),
-    )
+    a_blkt_total_surface = a_plasma_surface * r1 / rminor * f_a_blkt_covered
     a_blkt_inboard_surface = 0.5 * a_blkt_total_surface
     a_blkt_outboard_surface = 0.5 * a_blkt_total_surface
 

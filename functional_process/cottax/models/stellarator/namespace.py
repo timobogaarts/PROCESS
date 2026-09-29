@@ -61,7 +61,6 @@ from functional_process.cottax.models.stellarator.plasma_physics import (
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s1_s5 import (
     CryostatAndVvGeometry,
-    FwBlanketShieldGeometry,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s2 import (
     ExponentialAttenuationBlanketShieldPower,
@@ -200,8 +199,9 @@ class StellaratorFwbs(eqx.Module):
     resolved by `_blanket_mass_arm`.
     """
 
-    # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`), portable now, no blocker.
-    fw_blanket_shield_geometry: Explicit = FwBlanketShieldGeometry
+    # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`). S1's occupant is chosen by
+    # `.heat_transport.ipowerflow` (`FwBlanketShieldGeometry*`).
+    fw_blanket_shield_geometry: Explicit = dataclasses.field(kw_only=True)
     cryostat_and_vv_geometry: Explicit = CryostatAndVvGeometry
     # `st_fwbs` S3 (`stellarator_fwbs_s3.md`). Reads `.divertor.a_div_surface_total`,
     # which `Divertor` owns -- an ordinary acyclic edge, not a cycle: `Divertor`'s own

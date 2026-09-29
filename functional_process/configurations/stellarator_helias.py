@@ -36,21 +36,21 @@ from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,
     AuxiliaryComponentCoolingCost,
     AuxiliaryFacilityPowerCost,
-    BlanketCost,
+    BlanketCostCapital,
     ConstructedCost,
-    ConvertFpyToCalendar,
-    CostOfElectricityConventionalAspectRatio,
+    ConvertFpyToCalendarConventionalAspectRatio,
+    CostOfElectricityConventionalAspectRatioCapital,
     CryogenicSystemCost,
     DieselGeneratorsCost,
-    DivertorCost,
+    DivertorCostCapital,
     ElectricPlantEquipmentCost,
     EnergyStorageCostUnpulsed,
-    FirstWallCost,
+    FirstWallCostCapital,
     FuelHandlingCost,
     FuelProcessingCost,
     FuellingSystemCost,
     FusionPowerIslandCost,
-    HeatRejectionCost,
+    HeatRejectionCostReactor,
     HeatTransportSystemCost,
     IndirectCosts,
     InstrumentationAndControlCost,
@@ -60,18 +60,18 @@ from functional_process.cottax.models.costs.costs import (
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
     PowerConditioningCost,
-    PowerInjectionCost,
+    PowerInjectionCostCapitalLowerHybrid,
     ReactorCoolingSystemCost,
     ReactorCost,
     ShieldCost,
-    StructuresCost,
+    StructuresCostReactor,
     SwitchyardCost,
-    TfCoilPowerConditioningCost,
+    TfCoilPowerConditioningCostSuperconducting,
     TfMagnetCostSuperconductingPerKg,
     TotalPlantDirectCost,
     TransformersCost,
-    TurbinePlantEquipmentCost,
-    VacuumSystemCost,
+    TurbinePlantEquipmentCostReactor,
+    VacuumSystemCostCryopump,
     VacuumVesselAssemblyCost,
 )
 from functional_process.cottax.models.costs.namespace import Costs
@@ -144,11 +144,11 @@ from functional_process.cottax.models.power.electric_production import (
 from functional_process.cottax.models.power.namespace import Power
 from functional_process.cottax.models.power.tf_coil_power import TfPowerSuperconducting
 from functional_process.cottax.models.power.thermal_cryo import (
-    ComponentThermalPowersSummedSolidOther,
+    ComponentThermalPowersSummedSolidOtherShieldPrimary,
     CryoLoadsActive,
     CryoQLoadsSuperconductingTf,
     CryoQNuc,
-    DeltaEtaStepSummedSolidOther,
+    DeltaEtaStepSummedSolidOtherShieldPrimary,
     EtathLiqSupercriticalCo2,
     PFwBlktCoolantPumpMw,
     PFwDivHeatDepositedMwSummed,
@@ -228,7 +228,7 @@ from functional_process.cottax.models.stellarator.preset_config import (
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s1_s5 import (
     CryostatAndVvGeometry,
-    FwBlanketShieldGeometry,
+    FwBlanketShieldGeometryWithPowerflow,
 )
 from functional_process.cottax.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
@@ -243,7 +243,7 @@ from functional_process.cottax.models.stellarator.stellarator_fwbs_s4 import (
 from functional_process.cottax.models.stellarator.structure import StructureMasses
 from functional_process.cottax.models.total_process import StellaratorProcess
 from functional_process.cottax.models.vacuum.namespace import Vacuum
-from functional_process.cottax.models.vacuum.vacuum import VacuumOld
+from functional_process.cottax.models.vacuum.vacuum import VacuumOldCryopumpDwell
 from functional_process.models.stellarator.preset_config import machine_config_for_istell
 
 machine = StellaratorProcess(
@@ -259,21 +259,21 @@ machine = StellaratorProcess(
         stellarator_pulse_times=StellaratorPulseTimes,
     ),
     costs=Costs(
-        convert_fpy_to_calendar=ConvertFpyToCalendar,
-        structures_cost=StructuresCost,
-        first_wall_cost=FirstWallCost,
-        blanket_cost=BlanketCost,
+        convert_fpy_to_calendar=ConvertFpyToCalendarConventionalAspectRatio,
+        structures_cost=StructuresCostReactor,
+        first_wall_cost=FirstWallCostCapital,
+        blanket_cost=BlanketCostCapital,
         shield_cost=ShieldCost,
         reactor_structure_cost=None,
-        divertor_cost=DivertorCost,
+        divertor_cost=DivertorCostCapital,
         reactor_cost=ReactorCost,
         tf_magnet_cost_superconducting=TfMagnetCostSuperconductingPerKg,
         pf_magnet_cost=None,
         vacuum_vessel_assembly_cost=VacuumVesselAssemblyCost,
         magnets_cost=MagnetsCost,
-        power_injection_cost=PowerInjectionCost,
-        vacuum_system_cost=VacuumSystemCost,
-        tf_coil_power_conditioning_cost=TfCoilPowerConditioningCost,
+        power_injection_cost=PowerInjectionCostCapitalLowerHybrid,
+        vacuum_system_cost=VacuumSystemCostCryopump,
+        tf_coil_power_conditioning_cost=TfCoilPowerConditioningCostSuperconducting,
         pf_coil_power_conditioning_cost=None,
         energy_storage_cost=EnergyStorageCostUnpulsed,
         power_conditioning_cost=PowerConditioningCost,
@@ -289,7 +289,7 @@ machine = StellaratorProcess(
         instrumentation_and_control_cost=InstrumentationAndControlCost,
         maintenance_equipment_cost=MaintenanceEquipmentCost,
         fusion_power_island_cost=FusionPowerIslandCost,
-        turbine_plant_equipment_cost=TurbinePlantEquipmentCost,
+        turbine_plant_equipment_cost=TurbinePlantEquipmentCostReactor,
         switchyard_cost=SwitchyardCost,
         transformers_cost=TransformersCost,
         low_voltage_cost=LowVoltageCost,
@@ -297,11 +297,11 @@ machine = StellaratorProcess(
         auxiliary_facility_power_cost=AuxiliaryFacilityPowerCost,
         electric_plant_equipment_cost=ElectricPlantEquipmentCost,
         misc_plant_equipment_cost=MiscPlantEquipmentCost,
-        heat_rejection_cost=HeatRejectionCost,
+        heat_rejection_cost=HeatRejectionCostReactor,
         total_plant_direct_cost=TotalPlantDirectCost,
         indirect_costs=IndirectCosts,
         constructed_cost=ConstructedCost,
-        cost_of_electricity=CostOfElectricityConventionalAspectRatio,
+        cost_of_electricity=CostOfElectricityConventionalAspectRatioCapital,
     ),
     stellarator=Stellarator(
         machine_config=StellaratorMachineConfig,
@@ -335,7 +335,7 @@ machine = StellaratorProcess(
         fwbs=StellaratorFwbs(
             blanket_shield_power=DetailedPowerflowBlanketShieldPower,
             blanket_masses=BlanketComponentMasses,
-            fw_blanket_shield_geometry=FwBlanketShieldGeometry,
+            fw_blanket_shield_geometry=FwBlanketShieldGeometryWithPowerflow,
             cryostat_and_vv_geometry=CryostatAndVvGeometry,
             divertor_plate_mass=DivertorPlateMass,
             shield_mass=ShieldMass,
@@ -409,8 +409,8 @@ machine = StellaratorProcess(
     power=Power(
         pf_coil_power=None,
         tf_power=TfPowerSuperconducting,
-        component_thermal_powers=ComponentThermalPowersSummedSolidOther,
-        delta_eta_step=DeltaEtaStepSummedSolidOther,
+        component_thermal_powers=ComponentThermalPowersSummedSolidOtherShieldPrimary,
+        delta_eta_step=DeltaEtaStepSummedSolidOtherShieldPrimary,
         eta_turbine=None,
         etath_liq=EtathLiqSupercriticalCo2,
         temp_turbine_coolant_in=TempTurbineCoolantInFromLiquidBreeder,
@@ -426,7 +426,7 @@ machine = StellaratorProcess(
         tf_coil_envelope=TfCoilEnvelope,
     ),
     vacuum=Vacuum(
-        vacuum_old=VacuumOld,
+        vacuum_old=VacuumOldCryopumpDwell,
     ),
     availability=Availability(
         electric_production=PlantElectricProductionSingleCoolant,

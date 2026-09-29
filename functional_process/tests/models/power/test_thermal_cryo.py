@@ -549,35 +549,47 @@ _DELTA_ETA_SWITCH_COMBOS = [
         PumpingPowerModelTypes.USER_INPUT,
         0,
         ElectricConversionModelTypes.CCFE_HCPB_VALUE,
-        id="user_input-0-ccfe_hcpb",
+        1,
+        id="user_input-0-ccfe_hcpb-shield_primary",
     ),
     pytest.param(
         PumpingPowerModelTypes.FRACTION_OF_HEAT,
         1,
         ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR,
-        id="fraction_of_heat-1-ccfe_hcpb_with_divertor",
+        0,
+        id="fraction_of_heat-1-ccfe_hcpb_with_divertor-shield_secondary",
     ),
     pytest.param(
         PumpingPowerModelTypes.MECHANICAL,
         2,
         ElectricConversionModelTypes.STEAM_RANKINE_CYCLE,
-        id="mechanical-2-steam_rankine",
+        1,
+        id="mechanical-2-steam_rankine-shield_primary",
     ),
     pytest.param(
         PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
         0,
         ElectricConversionModelTypes.USER_INPUT,
-        id="mechanical_with_pressure_drop-0-user_input",
+        0,
+        id="mechanical_with_pressure_drop-0-user_input-shield_secondary",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    (
+        "i_p_coolant_pumping",
+        "i_blkt_dual_coolant",
+        "i_thermal_electric_conversion",
+        "i_shld_primary_heat",
+    ),
     _DELTA_ETA_SWITCH_COMBOS,
 )
 def test_delta_eta_step_to_graph_builds(
-    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_shld_primary_heat,
 ):
     """`to_graph(DeltaEtaStep arm)` succeeds, as **one plain node** -- the actual
     point of this split.
@@ -598,7 +610,10 @@ def test_delta_eta_step_to_graph_builds(
     `DELTA_ETA_STEP`.
     """
     arm = _delta_eta_step_arm(
-        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+        i_p_coolant_pumping,
+        i_blkt_dual_coolant,
+        i_thermal_electric_conversion,
+        i_shld_primary_heat,
     )
     node = DELTA_ETA_STEP[arm]
     graph = to_graph(node)
@@ -629,6 +644,7 @@ def _component_thermal_powers():
         PumpingPowerModelTypes.USER_INPUT,
         BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
         ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        1,
     )
     return COMPONENT_THERMAL_POWERS[arm]
 
@@ -689,6 +705,13 @@ def _delta_eta_step_kwargs(**overrides):
     return kwargs
 
 
+def _without_switch(kwargs):
+    """`kwargs` less `i_shld_primary_heat`: an occupant is one of its values, and no
+    occupant reads it.
+    """
+    return {k: v for k, v in kwargs.items() if k != "i_shld_primary_heat"}
+
+
 def _component_thermal_powers_call_kwargs(step_kwargs):
     """The subset of `calculate_component_thermal_powers`'s ~30 parameters that
     `DeltaEtaStep`'s inputs correspond to, plus fixed/irrelevant values for the
@@ -732,11 +755,19 @@ def _component_thermal_powers_call_kwargs(step_kwargs):
 
 
 @pytest.mark.parametrize(
-    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    (
+        "i_p_coolant_pumping",
+        "i_blkt_dual_coolant",
+        "i_thermal_electric_conversion",
+        "i_shld_primary_heat",
+    ),
     _DELTA_ETA_SWITCH_COMBOS,
 )
 def test_delta_eta_step_matches_calculate_component_thermal_powers(
-    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_shld_primary_heat,
 ):
     """`DeltaEtaStep` computes exactly the `delta_eta` element
     `calculate_component_thermal_powers` would, for the same inputs -- both call the
@@ -746,12 +777,15 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
     node-level split introduced no discrepancy versus the (unmodified, still
     separately tested) pure function.
     """
-    step_kwargs = _delta_eta_step_kwargs()
+    step_kwargs = _delta_eta_step_kwargs(i_shld_primary_heat=float(i_shld_primary_heat))
     arm = _delta_eta_step_arm(
-        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+        i_p_coolant_pumping,
+        i_blkt_dual_coolant,
+        i_thermal_electric_conversion,
+        i_shld_primary_heat,
     )
     node = DELTA_ETA_STEP[arm]
-    delta_eta_from_step = node(**step_kwargs)
+    delta_eta_from_step = node(**_without_switch(step_kwargs))
 
     full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
     full_result = calculate_component_thermal_powers(
@@ -798,11 +832,19 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
 
 
 @pytest.mark.parametrize(
-    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    (
+        "i_p_coolant_pumping",
+        "i_blkt_dual_coolant",
+        "i_thermal_electric_conversion",
+        "i_shld_primary_heat",
+    ),
     _DELTA_ETA_SWITCH_COMBOS,
 )
 def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
-    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_shld_primary_heat,
 ):
     """The entering `.power.delta_eta` value has **zero** effect on the value
     `DeltaEtaStep` produces -- not merely "small," exactly zero, confirmed by
@@ -821,10 +863,13 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     this project -- verify a cycle is real, don't assume it from the shape alone.
     """
     arm = _delta_eta_step_arm(
-        i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+        i_p_coolant_pumping,
+        i_blkt_dual_coolant,
+        i_thermal_electric_conversion,
+        i_shld_primary_heat,
     )
     node = DELTA_ETA_STEP[arm]
-    base_kwargs = _delta_eta_step_kwargs()
+    base_kwargs = _without_switch(_delta_eta_step_kwargs())
 
     def delta_eta_next(delta_eta):
         out = node(**{**base_kwargs, "delta_eta": delta_eta})
