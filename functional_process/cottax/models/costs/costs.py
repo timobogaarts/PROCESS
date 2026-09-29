@@ -444,9 +444,6 @@ def _reactor_structure_cost(gsmass, UCGSS, cmlsa_reactor_structure, fkind):
 ReactorStructureCost = costs.function(
     _reactor_structure_cost,
     "c2214",
-    reads={
-        "gsmass": structure,
-    },
 )
 
 
@@ -460,9 +457,6 @@ def _vacuum_vessel_assembly_cost(m_vv, uccryo, cmlsa_magnets, fkind):
 VacuumVesselAssemblyCost = costs.function(
     _vacuum_vessel_assembly_cost,
     "c2223",
-    reads={
-        "m_vv": fwbs,
-    },
 )
 
 
@@ -473,19 +467,16 @@ DivertorCostCapital = costs.function(
     calculate_divertor_cost_capital,
     "c2215",
     "divcst",
-    reads={"a_div_surface_total": divertor},
 )
 DivertorCostFuel = costs.function(
     calculate_divertor_cost_fuel,
     "c2215",
     "divcst",
-    reads={"a_div_surface_total": divertor},
 )
 DivertorCostCapitalThenFuel = costs.function(
     calculate_divertor_cost_capital_then_fuel,
     "c2215",
     "divcst",
-    reads={"a_div_surface_total": divertor},
 )
 
 
@@ -500,14 +491,7 @@ VacuumSystemCostTurbomolecular = costs.function(
     "c2245",
     "c2246",
     "c224",
-    reads={
-        "n_vac_pumps_high": vacuum,
-        "uc_vac_pump": V.costs.UCTPMP,
-        "n_vv_vacuum_ducts": vacuum,
-        "dlscal": vacuum,
-        "dia_vv_vacuum_ducts": vacuum,
-        "m_vv_vacuum_duct_shield": vacuum,
-    },
+    reads={"uc_vac_pump": V.costs.UCTPMP},
 )
 
 # `.vacuum.i_vacuum_pump_type == 1`: compound cryopumps, `.costs.UCCPMP`.
@@ -520,14 +504,7 @@ VacuumSystemCostCryopump = costs.function(
     "c2245",
     "c2246",
     "c224",
-    reads={
-        "n_vac_pumps_high": vacuum,
-        "uc_vac_pump": V.costs.UCCPMP,
-        "n_vv_vacuum_ducts": vacuum,
-        "dlscal": vacuum,
-        "dia_vv_vacuum_ducts": vacuum,
-        "m_vv_vacuum_duct_shield": vacuum,
-    },
+    reads={"uc_vac_pump": V.costs.UCCPMP},
 )
 
 
@@ -621,15 +598,6 @@ PfCoilPowerConditioningCost = costs.function(
     "c22526",
     "c22527",
     "c2252",
-    reads={
-        "peakmva": heat_transport,
-        "pfckts": pf_power,
-        "spfbusl": pf_power,
-        "acptmax": pf_power,
-        "srcktpm": pf_power,
-        "vpfskv": pf_power,
-        "ensxpfm": pf_power,
-    },
 )
 
 
@@ -663,13 +631,6 @@ ReactorCoolingSystemCost = costs.function(
     "cpp",
     "chx",
     "c2261",
-    reads={
-        "p_fw_div_heat_deposited_mw": heat_transport,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "n_primary_heat_exchangers": heat_transport,
-        "p_plant_primary_heat_mw": heat_transport,
-    },
 )
 
 
@@ -689,10 +650,6 @@ def _nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind):
 NuclearBuildingVentilationCost = costs.function(
     _nuclear_building_ventilation_cost,
     "c2274",
-    reads={
-        "volrci": buildings,
-        "wsvol": buildings,
-    },
 )
 
 
@@ -717,9 +674,6 @@ MaintenanceEquipmentCost = costs.function(_maintenance_equipment_cost, "c229")
 TurbinePlantEquipmentCostReactor = costs.function(
     calculate_turbine_plant_equipment_cost_reactor,
     "c23",
-    reads={
-        "p_plant_electric_gross_mw": heat_transport,
-    },
 )
 
 # `.costs.ireactor == 0`: no turbine plant, `c23` zero and nothing read.
@@ -748,10 +702,6 @@ def _transformers_cost(
 TransformersCost = costs.function(
     _transformers_cost,
     "c242",
-    reads={
-        "pacpmw": heat_transport,
-        "p_plant_electric_base_total_mw": heat_transport,
-    },
 )
 
 
@@ -763,9 +713,6 @@ def _low_voltage_cost(UCLV, tlvpmw, cmlsa_electrical_plant):
 LowVoltageCost = costs.function(
     _low_voltage_cost,
     "c243",
-    reads={
-        "tlvpmw": heat_transport,
-    },
 )
 
 
@@ -806,21 +753,12 @@ MiscPlantEquipmentCost = costs.function(_misc_plant_equipment_cost, "c25")
 HeatRejectionCostReactor = costs.function(
     calculate_heat_rejection_cost_reactor,
     "c26",
-    reads={
-        "p_plant_primary_heat_mw": heat_transport,
-        "p_plant_electric_gross_mw": heat_transport,
-    },
 )
 
 # `.costs.ireactor == 0`: fusion, heating and TF power, all rejected.
 HeatRejectionCostNonReactor = costs.function(
     calculate_heat_rejection_cost_non_reactor,
     "c26",
-    reads={
-        "p_fusion_total_mw": physics,
-        "p_hcd_electric_total_mw": heat_transport,
-        "tfcmw": tfcoil,
-    },
 )
 
 
@@ -836,19 +774,16 @@ FirstWallCostCapital = costs.function(
     calculate_first_wall_cost_capital,
     "c2211",
     "fwallcst",
-    reads={"a_fw_total": first_wall},
 )
 FirstWallCostFuel = costs.function(
     calculate_first_wall_cost_fuel,
     "c2211",
     "fwallcst",
-    reads={"a_fw_total": first_wall},
 )
 FirstWallCostCapitalThenFuel = costs.function(
     calculate_first_wall_cost_capital_then_fuel,
     "c2211",
     "fwallcst",
-    reads={"a_fw_total": first_wall},
 )
 
 
@@ -916,10 +851,6 @@ ShieldCost = costs.function(
     "c22131",
     "c22132",
     "c2213",
-    reads={
-        "whtshld": fwbs,
-        "wpenshld": fwbs,
-    },
 )
 
 
@@ -987,16 +918,6 @@ TfMagnetCostSuperconductingPerKg = costs.function(
     "c22214",
     "c22215",
     "c2221",
-    reads={
-        "m_tf_coil_superconductor": tfcoil,
-        "len_tf_coil": tfcoil,
-        "n_tf_coil_turns": tfcoil,
-        "m_tf_coil_copper": tfcoil,
-        "n_tf_coils": tfcoil,
-        "m_tf_coil_case": tfcoil,
-        "aintmass": structure,
-        "clgsmass": structure,
-    },
 )
 
 
@@ -1054,17 +975,7 @@ TfMagnetCostSuperconductingPerKam = costs.function(
     "c22214",
     "c22215",
     "c2221",
-    reads={
-        "j_crit_str_0_tf": tfcoil,
-        "j_crit_str_tf": tfcoil,
-        "len_tf_coil": tfcoil,
-        "n_tf_coil_turns": tfcoil,
-        "m_tf_coil_copper": tfcoil,
-        "n_tf_coils": tfcoil,
-        "m_tf_coil_case": tfcoil,
-        "aintmass": structure,
-        "clgsmass": structure,
-    },
+    reads={"j_crit_str_0_tf": tfcoil},
 )
 
 
@@ -1084,11 +995,6 @@ TfMagnetCostResistive = costs.function(
     "c22212",
     "c2221",
     "cpstcst",
-    reads={
-        "whtcp": tfcoil,
-        "whttflgs": tfcoil,
-        "itart": physics,
-    },
 )
 
 
@@ -1165,22 +1071,7 @@ PfMagnetCostPerKg = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={
-        "r_pf_coil_middle": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "fcupfsu": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "den_pf_conductor": pf_coil,
-        "den_cs_conductor": pf_coil,
-        "a_cs_cable_space": pf_coil,
-        "f_a_cs_void": pf_coil,
-        "fcuohsu": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "fncmass": structure,
-        "n_cs_pf_coils": pf_coil,
-    },
+    reads={"den_pf_conductor": pf_coil, "den_cs_conductor": pf_coil},
 )
 
 
@@ -1237,18 +1128,7 @@ PfMagnetCostPerKgNoCentralSolenoid = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={
-        "r_pf_coil_middle": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "fcupfsu": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "den_pf_conductor": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "fncmass": structure,
-        "n_cs_pf_coils": pf_coil,
-    },
+    reads={"den_pf_conductor": pf_coil},
 )
 
 
@@ -1319,24 +1199,7 @@ PfMagnetCostPerKam = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={
-        "r_pf_coil_middle": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "fcupfsu": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "j_crit_str_0_pf": pf_coil,
-        "j_crit_str_pf": pf_coil,
-        "j_crit_str_0_cs": pf_coil,
-        "a_cs_cable_space": pf_coil,
-        "f_a_cs_void": pf_coil,
-        "fcuohsu": pf_coil,
-        "j_crit_str_cs": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "fncmass": structure,
-        "n_cs_pf_coils": pf_coil,
-    },
+    reads={"j_crit_str_0_pf": pf_coil, "j_crit_str_0_cs": pf_coil},
 )
 
 
@@ -1394,19 +1257,7 @@ PfMagnetCostPerKamNoCentralSolenoid = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={
-        "r_pf_coil_middle": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "fcupfsu": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "j_crit_str_0_pf": pf_coil,
-        "j_crit_str_pf": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "fncmass": structure,
-        "n_cs_pf_coils": pf_coil,
-    },
+    reads={"j_crit_str_0_pf": pf_coil},
 )
 
 
@@ -1516,9 +1367,6 @@ def _energy_storage_cost_pulsed_electrowatt_option1(p_plant_electric_net_mw, fki
 EnergyStorageCostPulsedElectrowattOption1 = costs.function(
     _energy_storage_cost_pulsed_electrowatt_option1,
     "c2253",
-    reads={
-        "p_plant_electric_net_mw": heat_transport,
-    },
 )
 
 
@@ -1532,9 +1380,6 @@ def _energy_storage_cost_pulsed_electrowatt_option2(p_plant_electric_net_mw, fki
 EnergyStorageCostPulsedElectrowattOption2 = costs.function(
     _energy_storage_cost_pulsed_electrowatt_option2,
     "c2253",
-    reads={
-        "p_plant_electric_net_mw": heat_transport,
-    },
 )
 
 
@@ -1571,13 +1416,6 @@ AuxiliaryComponentCoolingCost = costs.function(
     _auxiliary_component_cooling_cost,
     "cppa",
     "c2262",
-    reads={
-        "p_hcd_electric_loss_mw": heat_transport,
-        "p_cryo_plant_electric_mw": heat_transport,
-        "vachtmw": heat_transport,
-        "p_tritium_plant_electric_mw": heat_transport,
-        "fachtmw": heat_transport,
-    },
 )
 
 
@@ -1591,10 +1429,6 @@ def _cryogenic_system_cost(cmlsa_heat_transport, uccry, temp_tf_cryo, helpow, fk
 CryogenicSystemCost = costs.function(
     _cryogenic_system_cost,
     "c2263",
-    reads={
-        "temp_tf_cryo": tfcoil,
-        "helpow": heat_transport,
-    },
 )
 
 
@@ -1617,10 +1451,6 @@ FuelProcessingCost = physics.function(
     _fuel_processing_cost,
     "wtgpd",
     V.costs.c2272,
-    reads={
-        "UCFPR": costs,
-        "fkind": costs,
-    },
 )
 
 
@@ -1634,11 +1464,6 @@ def _atmospheric_recovery_cost(f_plasma_fuel_tritium, UCDTC, volrci, wsvol, fkin
 AtmosphericRecoveryCost = costs.function(
     _atmospheric_recovery_cost,
     "c2273",
-    reads={
-        "f_plasma_fuel_tritium": physics,
-        "volrci": buildings,
-        "wsvol": buildings,
-    },
 )
 
 

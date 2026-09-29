@@ -7,8 +7,6 @@ solver `stresscl` calls (`:3659-3717`, `:4236-4670`).
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    build,
-    physics,
     superconducting_tfcoil,
     tfcoil,
 )
@@ -41,13 +39,6 @@ TfFieldAndForceClampedJoints = tfcoil.function(
     "vforce",
     "vforce_outboard",
     V.superconducting_tfcoil.vforce_inboard_tot,
-    reads={
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_outboard_in": superconducting_tfcoil,
-        "rmajor": physics,
-        "b_plasma_toroidal_on_axis": physics,
-    },
 )
 
 
@@ -153,21 +144,7 @@ TfStressPlaneStressBuckedCaseAveragedTurn = tfcoil.function(
     "str_wp",
     "casestr",
     "insstrain",
-    reads={
-        "r_tf_inboard_in": build,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "tan_theta_coil": superconducting_tfcoil,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "a_tf_coil_inboard_steel": superconducting_tfcoil,
-        "a_tf_plasma_case": superconducting_tfcoil,
-        "a_tf_coil_nose_case": superconducting_tfcoil,
-        "dx_tf_turn_cable_space_average": superconducting_tfcoil,
-        "dx_tf_side_case_average": superconducting_tfcoil,
-        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
-        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
-        "a_tf_wp_with_insulation": superconducting_tfcoil,
-    },
+    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
 )
 
 
@@ -263,21 +240,7 @@ TfStressPlaneStressBuckedCaseIntegerTurn = tfcoil.function(
     "str_wp",
     "casestr",
     "insstrain",
-    reads={
-        "r_tf_inboard_in": build,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "tan_theta_coil": superconducting_tfcoil,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "a_tf_coil_inboard_steel": superconducting_tfcoil,
-        "a_tf_plasma_case": superconducting_tfcoil,
-        "a_tf_coil_nose_case": superconducting_tfcoil,
-        "dr_tf_turn_cable_space": superconducting_tfcoil,
-        "dx_tf_side_case_average": superconducting_tfcoil,
-        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
-        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
-        "a_tf_wp_with_insulation": superconducting_tfcoil,
-    },
+    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
 )
 
 
@@ -366,20 +329,5 @@ TfStressExtendedPlaneStrainBuckedCaseAveragedTurn = tfcoil.function(
     "sig_tf_wp",
     "sig_tf_case",
     "str_wp",
-    reads={
-        "r_tf_inboard_in": build,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "tan_theta_coil": superconducting_tfcoil,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "a_tf_coil_inboard_steel": superconducting_tfcoil,
-        "a_tf_plasma_case": superconducting_tfcoil,
-        "a_tf_coil_nose_case": superconducting_tfcoil,
-        "dx_tf_turn_cable_space_average": superconducting_tfcoil,
-        "dx_tf_side_case_average": superconducting_tfcoil,
-        "dx_tf_wp_toroidal_average": superconducting_tfcoil,
-        "a_tf_coil_inboard_insulation": superconducting_tfcoil,
-        "a_tf_wp_with_insulation": superconducting_tfcoil,
-        "vforce_inboard_tot": superconducting_tfcoil,
-    },
+    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
 )

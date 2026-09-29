@@ -6,14 +6,8 @@ import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    constraints,
     costs,
-    divertor,
     fwbs,
-    physics,
-    tfcoil,
-    times,
-    vacuum,
 )
 from functional_process.models.availability.availability import (
     DAY_SECONDS,  # noqa: F401
@@ -108,10 +102,6 @@ from functional_process.vocabulary import TFConductorModel
 CpLifetimeSuperconducting = costs.function(
     calculate_cp_lifetime_superconducting,
     "cplife",
-    reads={
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-    },
 )
 
 
@@ -119,9 +109,6 @@ CpLifetimeSuperconducting = costs.function(
 CpLifetimeResistive = costs.function(
     calculate_cp_lifetime_resistive,
     "cplife",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-    },
 )
 
 
@@ -129,9 +116,6 @@ CpLifetimeResistive = costs.function(
 WardTaylorAvailability = costs.function(
     calculate_ward_taylor_availability,
     "f_t_plant_available",
-    reads={
-        "life_blkt_fpy": fwbs,
-    },
 )
 
 
@@ -145,10 +129,6 @@ WardTaylorAvailability = costs.function(
 CplifeAvailSuperconducting = costs.function(
     calculate_cplife_superconducting,
     "cplife",
-    reads={
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-    },
 )
 
 
@@ -157,9 +137,6 @@ CplifeAvailSuperconducting = costs.function(
 CplifeAvailResistive = costs.function(
     calculate_cplife_resistive,
     "cplife",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-    },
 )
 
 
@@ -207,10 +184,6 @@ def _cplife_avail_st_superconducting_adjusted(
 CplifeAvailStSuperconductingAdjusted = costs.iteration(
     _cplife_avail_st_superconducting_adjusted,
     "cplife",
-    reads={
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-    },
 )
 
 
@@ -229,10 +202,6 @@ def _cplife_avail_st_superconducting_unadjusted(
 CplifeAvailStSuperconductingUnadjusted = costs.iteration(
     _cplife_avail_st_superconducting_unadjusted,
     "cplife",
-    reads={
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-    },
 )
 
 
@@ -251,9 +220,6 @@ def _cplife_avail_st_resistive_adjusted(
 CplifeAvailStResistiveAdjusted = costs.iteration(
     _cplife_avail_st_resistive_adjusted,
     "cplife",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-    },
 )
 
 
@@ -267,9 +233,6 @@ def _cplife_avail_st_resistive_unadjusted(cpstflnc, pflux_fw_neutron_mw, life_pl
 CplifeAvailStResistiveUnadjusted = costs.iteration(
     _cplife_avail_st_resistive_unadjusted,
     "cplife",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-    },
 )
 
 
@@ -287,16 +250,6 @@ AvailNeutronFluence = fwbs.function(
     V.costs.bktcycles,
     V.costs.cpfact,
     V.costs.life_hcd_fpy,
-    reads={
-        "abktflnc": costs,
-        "pflux_fw_neutron_mw": physics,
-        "life_plant": costs,
-        "pflux_div_heat_load_mw": divertor,
-        "adivflnc": costs,
-        "t_plant_pulse_total": times,
-        "t_plant_pulse_burn": times,
-        "f_t_plant_available": costs,
-    },
 )
 
 
@@ -309,16 +262,6 @@ AvailDisplacementsPerAtom = fwbs.function(
     V.costs.bktcycles,
     V.costs.cpfact,
     V.costs.life_hcd_fpy,
-    reads={
-        "p_fusion_total_mw": physics,
-        "life_dpa": costs,
-        "life_plant": costs,
-        "pflux_div_heat_load_mw": divertor,
-        "adivflnc": costs,
-        "t_plant_pulse_total": times,
-        "t_plant_pulse_burn": times,
-        "f_t_plant_available": costs,
-    },
 )
 
 
@@ -401,17 +344,6 @@ Avail2NeutronFluenceConventional = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "p_fusion_total_mw": physics,
-        "pflux_fw_neutron_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -483,17 +415,6 @@ Avail2NeutronFluenceSphericalTokamak = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "p_fusion_total_mw": physics,
-        "pflux_fw_neutron_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -565,17 +486,6 @@ Avail2FusionPowerConventional = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "p_fusion_total_mw": physics,
-        "pflux_fw_neutron_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -646,17 +556,6 @@ Avail2FusionPowerSphericalTokamak = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "p_fusion_total_mw": physics,
-        "pflux_fw_neutron_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -752,19 +651,6 @@ AvailStNeutronFluenceConventionalSuperconducting = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -845,19 +731,6 @@ AvailStNeutronFluenceConventionalResistive = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -938,19 +811,6 @@ AvailStNeutronFluenceSphericalTokamakSuperconducting = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -1031,19 +891,6 @@ AvailStNeutronFluenceSphericalTokamakResistive = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -1124,19 +971,6 @@ AvailStFusionPowerConventionalSuperconducting = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -1217,19 +1051,6 @@ AvailStFusionPowerConventionalResistive = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -1310,19 +1131,6 @@ AvailStFusionPowerSphericalTokamakSuperconducting = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )
 
 
@@ -1403,17 +1211,4 @@ AvailStFusionPowerSphericalTokamakResistive = costs.function(
     "t_plant_operational_total_yrs",
     "f_t_plant_available",
     "cpfact",
-    reads={
-        "pflux_fw_neutron_mw": physics,
-        "p_fusion_total_mw": physics,
-        "pflux_div_heat_load_mw": divertor,
-        "neut_flux_cp": fwbs,
-        "flu_tf_neutron_fast_max": constraints,
-        "temp_tf_superconductor_margin_min": tfcoil,
-        "temp_cs_superconductor_margin_min": tfcoil,
-        "temp_margin": tfcoil,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_total": times,
-        "n_vac_pumps_high": vacuum,
-    },
 )

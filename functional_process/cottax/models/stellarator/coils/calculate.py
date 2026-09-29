@@ -91,12 +91,6 @@ CoilToroidalThickness = tfcoil.function(
 CoilRadialThickness = build.function(
     calculate_coil_radial_thickness,
     "dr_tf_inboard",
-    reads={
-        "dr_tf_nose_case": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dr_tf_plasma_case": tfcoil,
-        "dx_tf_wp_insulation": tfcoil,
-    },
 )
 
 
@@ -105,9 +99,6 @@ CoilCrossSectionalArea = tfcoil.function(
     calculate_coil_cross_sectional_area,
     "a_tf_leg_outboard",
     "a_tf_coil_inboard_case",
-    reads={
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -125,13 +116,6 @@ PlasmaFacingCoilArea = tfcoil.function(
 CoilCoilToroidalGap = tfcoil.function(
     select_coil_coil_toroidal_gap,
     "toroidalgap",
-    reads={
-        "stella_config_dmin": stellarator_config,
-        "r_coil_major": stellarator,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rmajor": stellarator_config,
-        "stella_config_coil_rminor": stellarator_config,
-    },
 )
 
 
@@ -142,12 +126,7 @@ CoilsSummaryVariables = tfcoil.function(
     "c_tf_total",
     "j_tf_coil_full_area",
     "r_b_tf_inboard_peak_symmetric",
-    reads={
-        "coilcurrent": stellarator,
-        "r_coil_major": stellarator,
-        "r_coil_minor": stellarator,
-        "awp_rad": V.tfcoil.dr_tf_wp_with_insulation,
-    },
+    reads={"coilcurrent": stellarator, "awp_rad": V.tfcoil.dr_tf_wp_with_insulation},
 )
 
 
@@ -155,13 +134,6 @@ CoilsSummaryVariables = tfcoil.function(
 StoredMagneticEnergy = tfcoil.function(
     calculate_stored_magnetic_energy,
     "e_tf_magnetic_stored_total_gj",
-    reads={
-        "stella_config_inductance": stellarator_config,
-        "f_st_rmajor": stellarator,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rminor": stellarator_config,
-        "f_st_n_coils": stellarator,
-    },
 )
 
 
@@ -178,9 +150,6 @@ CoilCurrent = stellarator.function(
     calculate_current,
     "coilcurrent",
     "f_st_i_total",
-    reads={
-        "stella_config_i0": stellarator_config,
-    },
 )
 
 
@@ -304,7 +273,7 @@ def _bi2212_winding_pack_intersect_inputs(
 Bi2212WindingPackIntersectInputs = stellarator.function(
     _bi2212_winding_pack_intersect_inputs,
     *_INTERSECT_OUTPUTS,
-    reads={**_INTERSECT_READS, "fhts": tfcoil, "j_tf_wp": tfcoil},
+    reads=_INTERSECT_READS,
 )
 
 
@@ -397,7 +366,7 @@ def _user_defined_nb3sn_winding_pack_intersect_inputs(
 UserDefinedNb3snWindingPackIntersectInputs = stellarator.function(
     _user_defined_nb3sn_winding_pack_intersect_inputs,
     *_INTERSECT_OUTPUTS,
-    reads={**_INTERSECT_READS, "bcritsc": tfcoil, "tcritsc": tfcoil},
+    reads=_INTERSECT_READS,
 )
 
 
@@ -531,7 +500,7 @@ def _durham_nbti_winding_pack_intersect_inputs(
 DurhamNbtiWindingPackIntersectInputs = stellarator.function(
     _durham_nbti_winding_pack_intersect_inputs,
     *_INTERSECT_OUTPUTS,
-    reads={**_INTERSECT_READS, "b_crit_upper_nbti": tfcoil, "t_crit_nbti": tfcoil},
+    reads=_INTERSECT_READS,
 )
 
 
@@ -599,15 +568,7 @@ WindingPackTotalSizePost = tfcoil.function(
     "a_tf_wp_steel",
     "a_tf_wp_no_insulation",
     "a_tf_wp_with_insulation",
-    reads={
-        "wp_width_r_min": stellarator,
-        "r_coil_major": stellarator,
-        "r_coil_minor": stellarator,
-        "coilcurrent": stellarator,
-        "stella_config_a1": stellarator_config,
-        "stella_config_a2": stellarator_config,
-        "stella_config_wp_ratio": stellarator_config,
-    },
+    reads={"wp_width_r_min": stellarator, "coilcurrent": stellarator},
 )
 
 
@@ -623,9 +584,6 @@ VerticalPorts = stellarator.function(
     "vporttmax",
     "vportpmax",
     "vportamax",
-    reads={
-        "stella_config_max_portsize_width": stellarator_config,
-    },
 )
 
 
@@ -635,9 +593,6 @@ HorizontalPorts = stellarator.function(
     "hporttmax",
     "hportpmax",
     "hportamax",
-    reads={
-        "stella_config_max_portsize_width": stellarator_config,
-    },
 )
 
 
@@ -645,11 +600,6 @@ HorizontalPorts = stellarator.function(
 ZTfInsideHalf = build.function(
     calculate_z_tf_inside_half,
     "z_tf_inside_half",
-    reads={
-        "stella_config_maximal_coil_height": stellarator_config,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rminor": stellarator_config,
-    },
 )
 
 
@@ -657,11 +607,6 @@ ZTfInsideHalf = build.function(
 LenTfCoil = tfcoil.function(
     calculate_len_tf_coil,
     "len_tf_coil",
-    reads={
-        "stella_config_coillength": stellarator_config,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rminor": stellarator_config,
-    },
 )
 
 
@@ -669,10 +614,4 @@ LenTfCoil = tfcoil.function(
 TfCryoArea = tfcoil.function(
     calculate_tfcryoarea,
     "tfcryoarea",
-    reads={
-        "stella_config_coilsurface": stellarator_config,
-        "f_st_rmajor": stellarator,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rminor": stellarator_config,
-    },
 )

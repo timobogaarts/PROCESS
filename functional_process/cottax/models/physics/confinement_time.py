@@ -2,7 +2,7 @@
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import current_drive, physics, stellarator
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.confinement_time import (
     calculate_confinement_time,
     calculate_double_and_triple_product,
@@ -198,9 +198,6 @@ def _plasma_power_loss_non_ignited_core_radiation(
 PlasmaPowerLossNonIgnitedCoreRadiation = physics.function(
     _plasma_power_loss_non_ignited_core_radiation,
     "p_plasma_loss_mw",
-    reads={
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 
@@ -230,9 +227,6 @@ def _iss04_confinement_time(
 Iss04ConfinementTime = physics.function(
     _iss04_confinement_time,
     "t_electron_confinement",
-    reads={
-        "iotabar": stellarator,
-    },
 )
 
 

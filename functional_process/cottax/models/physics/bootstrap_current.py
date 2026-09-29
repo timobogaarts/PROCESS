@@ -94,7 +94,6 @@ SauterBootstrapCurrentFraction = physics.function(
     V.current_drive.f_c_plasma_bootstrap_sauter,
     "j_plasma_bootstrap_sauter_profile",
     V.current_drive.f_c_plasma_bootstrap,
-    reads={"cboot": current_drive, "f_c_plasma_bootstrap_max": current_drive},
 )
 
 
@@ -113,11 +112,7 @@ NoDiamagneticCurrent = states(current_drive, "f_c_plasma_diamagnetic")
 SceneDiamagneticCurrent = current_drive.function(
     diamagnetic_fraction_scene,
     "f_c_plasma_diamagnetic",
-    reads={
-        "beta": V.physics.beta_total_vol_avg,
-        "q95": physics,
-        "q0": physics,
-    },
+    reads={"beta": V.physics.beta_total_vol_avg},
 )
 
 
@@ -148,7 +143,4 @@ PlasmaCurrentFractions = current_drive.function(
     "f_c_plasma_internal",
     V.physics.f_c_plasma_auxiliary,
     V.physics.f_c_plasma_inductive,
-    reads={
-        "f_c_plasma_non_inductive": physics,
-    },
 )

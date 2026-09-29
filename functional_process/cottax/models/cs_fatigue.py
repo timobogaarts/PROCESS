@@ -3,7 +3,7 @@
 import jax.numpy as jnp
 from jax import lax  # noqa: F401
 
-from functional_process.cottax.paths import cs_fatigue, pf_coil, physics
+from functional_process.cottax.paths import cs_fatigue
 from functional_process.models.cs_fatigue import (
     calculate_n_cycle,
     surface_stress_intensity_factor,  # noqa: F401
@@ -54,8 +54,4 @@ def calculate_cs_fatigue_n_cycle_gated(
 CsFatigue = cs_fatigue.function(
     calculate_cs_fatigue_n_cycle_gated,
     "n_cycle",
-    reads={
-        "f_c_plasma_inductive": physics,
-        "stress_hoop_cs_inner": pf_coil,
-    },
 )

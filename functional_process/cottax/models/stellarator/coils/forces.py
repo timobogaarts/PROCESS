@@ -4,8 +4,6 @@ Registry #11.
 """
 
 from functional_process.cottax.paths import (
-    stellarator,
-    stellarator_config,
     tfcoil,
 )
 from functional_process.models.stellarator.coils.forces import (
@@ -23,13 +21,6 @@ from functional_process.models.stellarator.coils.forces import (
 MaxForceDensity = tfcoil.function(
     calculate_max_force_density,
     "max_force_density",
-    reads={
-        "stella_config_max_force_density": stellarator_config,
-        "f_st_i_total": stellarator,
-        "f_st_n_coils": stellarator,
-        "stella_config_wp_bmax": stellarator_config,
-        "stella_config_wp_area": stellarator_config,
-    },
 )
 
 

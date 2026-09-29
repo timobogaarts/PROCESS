@@ -2,7 +2,7 @@
 `process/models/physics/physics.py`.
 """
 
-from functional_process.cottax.paths import current_drive, physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.pure_formulas import (
     calaculate_stored_thermal_energy,
     calculate_total_plasma_heating_power,
@@ -104,9 +104,6 @@ def _total_plasma_heating_power(
 TotalPlasmaHeatingPower = physics.function(
     _total_plasma_heating_power,
     "p_plasma_heating_total_mw",
-    reads={
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 

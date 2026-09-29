@@ -8,8 +8,6 @@ from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     physics,
-    stellarator,
-    stellarator_config,
 )
 from functional_process.models.stellarator.geometry import (
     calculate_default_aspect_ratio,
@@ -21,9 +19,6 @@ from functional_process.models.stellarator.geometry import (
 DefaultAspectRatio = physics.function(
     calculate_default_aspect_ratio,
     "aspect",
-    reads={
-        "stella_config_aspect_ref": stellarator_config,
-    },
 )
 
 
@@ -41,18 +36,6 @@ StellaratorScalingFactors = physics.function(
     V.stellarator.r_coil_major,
     V.stellarator.r_coil_minor,
     V.stellarator.f_coil_shape,
-    reads={
-        "f_st_coil_aspect": stellarator,
-        "stella_config_coilspermodule": stellarator_config,
-        "stella_config_symmetry": stellarator_config,
-        "stella_config_rmajor_ref": stellarator_config,
-        "stella_config_rminor_ref": stellarator_config,
-        "stella_config_aspect_ref": stellarator_config,
-        "stella_config_bt_ref": stellarator_config,
-        "stella_config_coil_rmajor": stellarator_config,
-        "stella_config_coil_rminor": stellarator_config,
-        "stella_config_min_plasma_coil_distance": stellarator_config,
-    },
 )
 
 
@@ -63,10 +46,4 @@ StellaratorPlasmaGeometry = physics.function(
     "a_plasma_surface",
     "a_plasma_poloidal",
     "a_plasma_surface_outboard",
-    reads={
-        "f_st_rmajor": stellarator,
-        "f_st_rminor": stellarator,
-        "stella_config_vol_plasma": stellarator_config,
-        "stella_config_plasma_surface": stellarator_config,
-    },
 )

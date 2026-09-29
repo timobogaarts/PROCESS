@@ -6,11 +6,7 @@ import jax.numpy as jnp  # noqa: F401
 import numpy as np  # noqa: F401
 
 from functional_process.cottax.paths import (
-    impurity_radiation,
     neoclassics,
-    physics,
-    stellarator,
-    stellarator_config,
 )
 from functional_process.models.safe_math import (
     safe_sqrt,  # noqa: F401
@@ -46,17 +42,6 @@ ProfileValues = neoclassics.function(
     "temperatures",
     "dr_densities",
     "dr_temperatures",
-    reads={
-        "temp_plasma_electron_on_axis_kev": physics,
-        "temp_plasma_ion_on_axis_kev": physics,
-        "alphat": physics,
-        "nd_plasma_electron_on_axis": physics,
-        "f_plasma_fuel_deuterium": physics,
-        "nd_plasma_ions_on_axis": physics,
-        "nd_plasma_alphas_thermal_vol_avg": physics,
-        "alphan": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -65,19 +50,4 @@ ProfileValues = neoclassics.function(
 EffectiveThermalDiffusivity = neoclassics.function(
     calculate_effective_thermal_diffusivity,
     "chi_process_e",
-    reads={
-        "vol_plasma": physics,
-        "f_st_rmajor": stellarator,
-        "radius_plasma_core_norm": impurity_radiation,
-        "rminor": physics,
-        "stella_config_rminor_ref": stellarator_config,
-        "a_plasma_surface": physics,
-        "f_p_alpha_plasma_deposited": physics,
-        "pden_alpha_total_mw": physics,
-        "pden_plasma_core_rad_mw": physics,
-        "nd_plasma_electron_on_axis": physics,
-        "temp_plasma_electron_on_axis_kev": physics,
-        "alphat": physics,
-        "alphan": physics,
-    },
 )

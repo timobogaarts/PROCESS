@@ -5,7 +5,7 @@ import dataclasses
 import equinox as eqx
 from cottax.interfaces import Explicit, V
 
-from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
+from functional_process.cottax.paths import blanket
 from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
@@ -34,11 +34,6 @@ from functional_process.models.shield import (
 DoubleNullShieldHalfHeight = blanket.function(
     calculate_shield_half_height_double_null,
     "dz_shld_half",
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-    },
 )
 
 
@@ -47,17 +42,6 @@ DoubleNullShieldHalfHeight = blanket.function(
 SingleNullShieldHalfHeight = blanket.function(
     calculate_shield_half_height_single_null,
     "dz_shld_half",
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "z_plasma_xpoint_upper": build,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "dz_blkt_upper": build,
-    },
 )
 
 
@@ -74,18 +58,6 @@ EllipticalShieldVolumes = blanket.function(
     "vol_shld_inboard",
     "vol_shld_outboard",
     V.fwbs.vol_shld_total,
-    reads={
-        "r_shld_inboard_inner": build,
-        "r_shld_outboard_outer": build,
-        "rmajor": physics,
-        "triang": physics,
-        "dr_shld_inboard": build,
-        "rminor": physics,
-        "dr_shld_outboard": build,
-        "dz_shld_upper": build,
-        "fvolsi": fwbs,
-        "fvolso": fwbs,
-    },
 )
 
 
@@ -97,21 +69,6 @@ DShapedShieldVolumes = blanket.function(
     "vol_shld_inboard",
     "vol_shld_outboard",
     V.fwbs.vol_shld_total,
-    reads={
-        "r_shld_inboard_inner": build,
-        "dr_shld_inboard": build,
-        "dr_fw_inboard": build,
-        "dr_fw_plasma_gap_inboard": build,
-        "rminor": physics,
-        "dr_fw_plasma_gap_outboard": build,
-        "dr_fw_outboard": build,
-        "dr_blkt_inboard": build,
-        "dr_blkt_outboard": build,
-        "dr_shld_outboard": build,
-        "dz_shld_upper": build,
-        "fvolsi": fwbs,
-        "fvolso": fwbs,
-    },
 )
 
 

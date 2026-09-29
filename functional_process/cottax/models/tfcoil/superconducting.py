@@ -5,9 +5,6 @@
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    build,
-    divertor,
-    fwbs,
     superconducting_tfcoil,
     tfcoil,
 )
@@ -92,14 +89,6 @@ SuperconductingTfWpGeometryRectangular = superconducting_tfcoil.function(
     "a_tf_wp_with_insulation",
     "a_tf_wp_no_insulation",
     "a_tf_wp_ground_insulation",
-    reads={
-        "r_tf_inboard_in": build,
-        "dr_tf_nose_case": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dx_tf_side_case_min": tfcoil,
-        "dx_tf_wp_insulation": tfcoil,
-        "dx_tf_wp_insertion_gap": tfcoil,
-    },
 )
 
 
@@ -117,14 +106,6 @@ SuperconductingTfWpGeometryDoubleRectangular = superconducting_tfcoil.function(
     "a_tf_wp_with_insulation",
     "a_tf_wp_no_insulation",
     "a_tf_wp_ground_insulation",
-    reads={
-        "r_tf_inboard_in": build,
-        "dr_tf_nose_case": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dx_tf_side_case_min": tfcoil,
-        "dx_tf_wp_insulation": tfcoil,
-        "dx_tf_wp_insertion_gap": tfcoil,
-    },
 )
 
 
@@ -142,14 +123,6 @@ SuperconductingTfWpGeometryTrapezoidal = superconducting_tfcoil.function(
     "a_tf_wp_with_insulation",
     "a_tf_wp_no_insulation",
     "a_tf_wp_ground_insulation",
-    reads={
-        "r_tf_inboard_in": build,
-        "dr_tf_nose_case": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dx_tf_side_case_min": tfcoil,
-        "dx_tf_wp_insulation": tfcoil,
-        "dx_tf_wp_insertion_gap": tfcoil,
-    },
 )
 
 
@@ -164,15 +137,7 @@ TfCaseAreasCircularFront = tfcoil.function(
     "a_tf_coil_outboard_case",
     V.superconducting_tfcoil.a_tf_plasma_case,
     V.superconducting_tfcoil.a_tf_coil_nose_case,
-    reads={
-        "a_tf_wp_with_insulation": superconducting_tfcoil,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "r_tf_inboard_out": build,
-        "tan_theta_coil": superconducting_tfcoil,
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_inboard_in": build,
-    },
+    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
 )
 
 
@@ -183,14 +148,7 @@ TfCaseAreasStraightFront = tfcoil.function(
     "a_tf_coil_outboard_case",
     V.superconducting_tfcoil.a_tf_plasma_case,
     V.superconducting_tfcoil.a_tf_coil_nose_case,
-    reads={
-        "a_tf_wp_with_insulation": superconducting_tfcoil,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "tan_theta_coil": superconducting_tfcoil,
-        "r_tf_wp_inboard_outer": superconducting_tfcoil,
-        "r_tf_wp_inboard_inner": superconducting_tfcoil,
-        "r_tf_inboard_in": build,
-    },
+    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
 )
 
 
@@ -203,10 +161,6 @@ DxTfSideCaseRectangular = superconducting_tfcoil.function(
     dx_tf_side_case_rectangular,
     "dx_tf_side_case_average",
     V.tfcoil.dx_tf_side_case_peak,
-    reads={
-        "dx_tf_side_case_min": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-    },
 )
 
 
@@ -215,10 +169,6 @@ DxTfSideCaseDoubleRectangular = superconducting_tfcoil.function(
     dx_tf_side_case_double_rectangular,
     "dx_tf_side_case_average",
     V.tfcoil.dx_tf_side_case_peak,
-    reads={
-        "dx_tf_side_case_min": tfcoil,
-        "dr_tf_wp_with_insulation": tfcoil,
-    },
 )
 
 
@@ -227,9 +177,6 @@ DxTfSideCaseTrapezoidal = superconducting_tfcoil.function(
     dx_tf_side_case_trapezoidal,
     "dx_tf_side_case_average",
     V.tfcoil.dx_tf_side_case_peak,
-    reads={
-        "dx_tf_side_case_min": tfcoil,
-    },
 )
 
 
@@ -411,17 +358,6 @@ CiccIntegerTurnGeometry = superconducting_tfcoil.function(
     "a_tf_turn_cable_space_effective",
     "f_a_tf_turn_cable_space_cooling",
     V.tfcoil.dx_tf_turn_general,
-    reads={
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dx_tf_wp_insulation": tfcoil,
-        "dx_tf_wp_insertion_gap": tfcoil,
-        "n_tf_wp_layers": tfcoil,
-        "n_tf_wp_pancakes": tfcoil,
-        "dx_tf_turn_steel": tfcoil,
-        "dx_tf_turn_insulation": tfcoil,
-        "dia_tf_turn_coolant_channel": tfcoil,
-        "f_a_tf_turn_cable_space_extra_void": tfcoil,
-    },
 )
 
 
@@ -437,9 +373,6 @@ CiccInboardAreasAndFractions = tfcoil.function(
     V.superconducting_tfcoil.f_a_tf_coil_inboard_steel,
     V.superconducting_tfcoil.a_tf_coil_inboard_insulation,
     V.superconducting_tfcoil.f_a_tf_coil_inboard_insulation,
-    reads={
-        "a_tf_wp_ground_insulation": superconducting_tfcoil,
-    },
 )
 
 
@@ -583,9 +516,6 @@ def _tf_coil_masses(arm):
         reads={
             "a_tf_wp_with_insulation": superconducting_tfcoil,
             "a_tf_wp_no_insulation": superconducting_tfcoil,
-            "z_tf_inside_half": build,
-            "dr_tf_inboard": build,
-            "den_steel": fwbs,
         },
     )
 
@@ -602,32 +532,6 @@ SuperconductingTfCoilAreasAndMassesSphericalTokamak = _tf_coil_masses("Spherical
 VvStressOnQuench = superconducting_tfcoil.function(
     calculate_vv_stress_on_quench,
     "vv_stress_quench",
-    reads={
-        "z_tf_inside_half": build,
-        "dr_tf_inboard": build,
-        "r_tf_inboard_mid": build,
-        "r_tf_outboard_mid": build,
-        "r_tf_inboard_out": build,
-        "tfa": tfcoil,
-        "z_plasma_xpoint_upper": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_shld_upper": build,
-        "dz_vv_upper": build,
-        "r_vv_inboard_out": build,
-        "dr_vv_outboard": build,
-        "dr_tf_outboard": build,
-        "dr_tf_shld_gap": build,
-        "dr_shld_thermal_outboard": build,
-        "dr_shld_vv_gap_outboard": build,
-        "len_tf_coil": tfcoil,
-        "theta1_coil": tfcoil,
-        "theta1_vv": tfcoil,
-        "n_tf_coils": tfcoil,
-        "n_tf_coil_turns": tfcoil,
-        "t_tf_superconductor_quench": tfcoil,
-        "dr_vv_shells": build,
-    },
 )
 
 
@@ -669,9 +573,6 @@ IterNb3snCiccSuperconductorProperties = tfcoil.function(
     V.superconducting_tfcoil.j_tf_superconductor_critical,
     V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
     V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
-    reads={
-        "a_tf_turn_cable_space_effective": superconducting_tfcoil,
-    },
 )
 
 
@@ -712,7 +613,6 @@ UserDefinedNb3snCiccSuperconductorProperties = tfcoil.function(
     V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
     V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
     reads={
-        "a_tf_turn_cable_space_effective": superconducting_tfcoil,
         "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
         "strain": V.tfcoil.str_wp,
         "temp_tf_coolant_peak_field": V.tfcoil.tftmp,
@@ -735,7 +635,6 @@ WstNb3snCiccSuperconductorProperties = tfcoil.function(
     V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
     V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
     reads={
-        "a_tf_turn_cable_space_effective": superconducting_tfcoil,
         "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
         "strain": V.tfcoil.str_wp,
         "temp_tf_coolant_peak_field": V.tfcoil.tftmp,
@@ -774,7 +673,6 @@ OldLubellNbtiCiccSuperconductorProperties = tfcoil.function(
     V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
     V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
     reads={
-        "a_tf_turn_cable_space_effective": superconducting_tfcoil,
         "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
         "temp_tf_coolant_peak_field": V.tfcoil.tftmp,
     },
@@ -818,7 +716,6 @@ DurhamNbtiCiccSuperconductorProperties = tfcoil.function(
     V.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain,
     V.superconducting_tfcoil.temp_tf_superconductor_critical_zero_field_strain,
     reads={
-        "a_tf_turn_cable_space_effective": superconducting_tfcoil,
         "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
         "strain": V.tfcoil.str_wp,
         "temp_tf_coolant_peak_field": V.tfcoil.tftmp,
@@ -908,9 +805,4 @@ OldLubellNbtiTfSuperconductorTemperatureMargin = tfcoil.function(
     calculate_old_lubell_nbti_temperature_margin,
     "temp_tf_superconductor_margin",
     "temp_margin",
-    reads={
-        "j_tf_superconductor": superconducting_tfcoil,
-        "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil,
-        "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil,
-    },
 )

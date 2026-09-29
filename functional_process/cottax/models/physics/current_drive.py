@@ -2,7 +2,7 @@
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import current_drive, heat_transport, physics
+from functional_process.cottax.paths import current_drive, heat_transport
 from functional_process.cottax.stated import states
 from functional_process.models.physics.current_drive import (
     calculate_current_drive_ecrh_primary_no_secondary,
@@ -32,10 +32,6 @@ __all__ = [
 HcdPrimaryEfficiencyUserInputEcrh = current_drive.function(
     user_input_electron_cyclotron_efficiency,
     "eta_cd_hcd_primary",
-    reads={
-        "nd_plasma_electrons_vol_avg": physics,
-        "rmajor": physics,
-    },
 )
 
 
@@ -64,13 +60,6 @@ def _hcd_primary_efficiency_freethy_ecrh_o_mode(
 HcdPrimaryEfficiencyFreethyEcrhOMode = current_drive.function(
     _hcd_primary_efficiency_freethy_ecrh_o_mode,
     "eta_cd_hcd_primary",
-    reads={
-        "temp_plasma_electron_vol_avg_kev": physics,
-        "n_charge_plasma_effective_vol_avg": physics,
-        "rmajor": physics,
-        "nd_plasma_electrons_vol_avg": physics,
-        "b_plasma_toroidal_on_axis": physics,
-    },
 )
 
 
@@ -92,9 +81,6 @@ HcdSecondaryDrivenCurrent = current_drive.function(
     hcd_secondary_driven_current,
     "c_hcd_secondary_driven",
     "f_c_plasma_hcd_secondary",
-    reads={
-        "plasma_current": physics,
-    },
 )
 
 
@@ -102,10 +88,6 @@ HcdSecondaryDrivenCurrent = current_drive.function(
 HcdPrimaryInjectedPower = current_drive.function(
     hcd_primary_injected_power_mw,
     "p_hcd_primary_injected_mw",
-    reads={
-        "f_c_plasma_auxiliary": physics,
-        "plasma_current": physics,
-    },
 )
 
 
@@ -182,8 +164,4 @@ HcdElectricTotalIgnited = heat_transport.function(
 FusionGain = current_drive.function(
     fusion_gain,
     "big_q_plasma",
-    reads={
-        "p_fusion_total_mw": physics,
-        "p_plasma_ohmic_mw": physics,
-    },
 )

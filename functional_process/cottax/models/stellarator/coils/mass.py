@@ -1,7 +1,6 @@
 """Pure-functional port of `process/models/stellarator/coils/mass.py` (registry #12)."""
 
 from functional_process.cottax.paths import (
-    fwbs,
     tfcoil,
 )
 from functional_process.models.stellarator.coils.mass import (
@@ -71,5 +70,4 @@ _COILS_MASS_OUTPUTS = (
 CoilsMass = tfcoil.function(
     _coils_mass,
     *_COILS_MASS_OUTPUTS,
-    reads={"den_steel": fwbs},
 )

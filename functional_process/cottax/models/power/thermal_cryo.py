@@ -310,31 +310,6 @@ ComponentThermalPowersSummedSolidCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -361,31 +336,6 @@ ComponentThermalPowersSummedSolidCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -414,31 +364,6 @@ ComponentThermalPowersSummedSolidOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -465,31 +390,6 @@ ComponentThermalPowersSummedSolidOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -519,31 +419,6 @@ ComponentThermalPowersSummedLiquidCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -570,31 +445,6 @@ ComponentThermalPowersSummedLiquidCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -624,31 +474,6 @@ ComponentThermalPowersSummedLiquidOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -675,31 +500,6 @@ ComponentThermalPowersSummedLiquidOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -728,31 +528,6 @@ ComponentThermalPowersSummedDualCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -779,31 +554,6 @@ ComponentThermalPowersSummedDualCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -832,31 +582,6 @@ ComponentThermalPowersSummedDualOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -883,31 +608,6 @@ ComponentThermalPowersSummedDualOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -937,31 +637,6 @@ ComponentThermalPowersMechSolidCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -988,31 +663,6 @@ ComponentThermalPowersMechSolidCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1042,31 +692,6 @@ ComponentThermalPowersMechSolidOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1093,31 +718,6 @@ ComponentThermalPowersMechSolidOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1147,31 +747,6 @@ ComponentThermalPowersMechLiquidCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1198,31 +773,6 @@ ComponentThermalPowersMechLiquidCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1252,31 +802,6 @@ ComponentThermalPowersMechLiquidOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1303,31 +828,6 @@ ComponentThermalPowersMechLiquidOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1357,31 +857,6 @@ ComponentThermalPowersMechDualCcfeShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1408,31 +883,6 @@ ComponentThermalPowersMechDualCcfeShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1462,31 +912,6 @@ ComponentThermalPowersMechDualOtherShieldPrimary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1513,31 +938,6 @@ ComponentThermalPowersMechDualOtherShieldSecondary = power.function(
     V.heat_transport.p_shld_secondary_heat_mw,
     V.heat_transport.p_hcd_secondary_heat_mw,
     V.heat_transport.n_primary_heat_exchangers,
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "eta_coolant_pump_electric": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_div_coolant_pump_mw": heat_transport,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_hcd_electric_total_mw": heat_transport,
-        "p_hcd_injected_total_mw": current_drive,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_nuc_pow_bz_liq": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_fw_hcd_nuclear_heat_mw": fwbs,
-        "p_fw_hcd_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -1569,52 +969,14 @@ ComponentThermalPowersMechDualOtherShieldSecondary = power.function(
 DeltaEtaStepSummedSolidCcfeShieldPrimary = power.function(
     calculate_delta_eta_next_summed_solid_ccfe_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepSummedSolidCcfeShieldSecondary = power.function(
     calculate_delta_eta_next_summed_solid_ccfe_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1624,52 +986,14 @@ DeltaEtaStepSummedSolidCcfeShieldSecondary = power.function(
 DeltaEtaStepSummedSolidOtherShieldPrimary = power.function(
     calculate_delta_eta_next_summed_solid_other_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepSummedSolidOtherShieldSecondary = power.function(
     calculate_delta_eta_next_summed_solid_other_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1679,52 +1003,14 @@ DeltaEtaStepSummedSolidOtherShieldSecondary = power.function(
 DeltaEtaStepSummedLiquidCcfeShieldPrimary = power.function(
     calculate_delta_eta_next_summed_liquid_ccfe_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepSummedLiquidCcfeShieldSecondary = power.function(
     calculate_delta_eta_next_summed_liquid_ccfe_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1734,52 +1020,14 @@ DeltaEtaStepSummedLiquidCcfeShieldSecondary = power.function(
 DeltaEtaStepSummedLiquidOtherShieldPrimary = power.function(
     calculate_delta_eta_next_summed_liquid_other_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepSummedLiquidOtherShieldSecondary = power.function(
     calculate_delta_eta_next_summed_liquid_other_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1789,52 +1037,14 @@ DeltaEtaStepSummedLiquidOtherShieldSecondary = power.function(
 DeltaEtaStepMechSolidCcfeShieldPrimary = power.function(
     calculate_delta_eta_next_mech_solid_ccfe_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepMechSolidCcfeShieldSecondary = power.function(
     calculate_delta_eta_next_mech_solid_ccfe_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1844,52 +1054,14 @@ DeltaEtaStepMechSolidCcfeShieldSecondary = power.function(
 DeltaEtaStepMechSolidOtherShieldPrimary = power.function(
     calculate_delta_eta_next_mech_solid_other_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepMechSolidOtherShieldSecondary = power.function(
     calculate_delta_eta_next_mech_solid_other_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1899,52 +1071,14 @@ DeltaEtaStepMechSolidOtherShieldSecondary = power.function(
 DeltaEtaStepMechLiquidCcfeShieldPrimary = power.function(
     calculate_delta_eta_next_mech_liquid_ccfe_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepMechLiquidCcfeShieldSecondary = power.function(
     calculate_delta_eta_next_mech_liquid_ccfe_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -1954,52 +1088,14 @@ DeltaEtaStepMechLiquidCcfeShieldSecondary = power.function(
 DeltaEtaStepMechLiquidOtherShieldPrimary = power.function(
     calculate_delta_eta_next_mech_liquid_other_shield_primary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
 DeltaEtaStepMechLiquidOtherShieldSecondary = power.function(
     calculate_delta_eta_next_mech_liquid_other_shield_secondary,
     "delta_eta",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-        "p_fw_blkt_coolant_pump_mw": primary_pumping,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "p_blkt_breeder_pump_mw": heat_transport,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_shld_coolant_pump_mw": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-        "p_div_coolant_pump_mw": heat_transport,
-        "delta_eta": V.power.delta_eta_in,
-    },
+    reads={"delta_eta": V.power.delta_eta_in},
 )
 
 
@@ -2024,9 +1120,6 @@ EtaTurbineCcfeHcpbValue = heat_transport.function(
 EtaTurbineCcfeHcpbValueWithDivertor = heat_transport.function(
     eta_turbine_ccfe_hcpb_value_with_divertor,
     "eta_turbine",
-    reads={
-        "delta_eta": power,
-    },
 )
 
 
@@ -2035,10 +1128,6 @@ EtaTurbineCcfeHcpbValueWithDivertor = heat_transport.function(
 EtaTurbineSteamRankineCycle = heat_transport.function(
     eta_turbine_steam_rankine_cycle,
     "eta_turbine",
-    reads={
-        "temp_blkt_coolant_out": fwbs,
-        "delta_eta": power,
-    },
 )
 
 
@@ -2047,9 +1136,6 @@ EtaTurbineSteamRankineCycle = heat_transport.function(
 EtaTurbineSupercriticalCo2 = heat_transport.function(
     eta_turbine_supercritical_co2,
     "eta_turbine",
-    reads={
-        "temp_blkt_coolant_out": fwbs,
-    },
 )
 
 
@@ -2062,9 +1148,6 @@ EtaTurbineSupercriticalCo2 = heat_transport.function(
 EtathLiqSupercriticalCo2 = heat_transport.function(
     etath_liq_supercritical_co2,
     "etath_liq",
-    reads={
-        "outlet_temp_liq": fwbs,
-    },
 )
 
 
@@ -2078,9 +1161,6 @@ EtathLiqSupercriticalCo2 = heat_transport.function(
 TempTurbineCoolantInFromLiquidBreeder = heat_transport.function(
     temp_turbine_coolant_in_from_liquid_breeder,
     "temp_turbine_coolant_in",
-    reads={
-        "outlet_temp_liq": fwbs,
-    },
 )
 
 
@@ -2090,9 +1170,6 @@ TempTurbineCoolantInFromLiquidBreeder = heat_transport.function(
 TempTurbineCoolantInFromBlanketCoolant = heat_transport.function(
     temp_turbine_coolant_in_from_blanket_coolant,
     "temp_turbine_coolant_in",
-    reads={
-        "temp_blkt_coolant_out": fwbs,
-    },
 )
 
 
@@ -2105,16 +1182,6 @@ TempTurbineCoolantInFromBlanketCoolant = heat_transport.function(
 PFwDivHeatDepositedMwSummed = heat_transport.function(
     calculate_p_fw_div_heat_deposited_mw_summed,
     "p_fw_div_heat_deposited_mw",
-    reads={
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "p_fw_rad_total_mw": fwbs,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-        "p_beam_shine_through_mw": current_drive,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-    },
 )
 
 
@@ -2123,10 +1190,6 @@ PFwDivHeatDepositedMwSummed = heat_transport.function(
 PFwBlktCoolantPumpMw = primary_pumping.function(
     calculate_p_fw_blkt_coolant_pump_mw_summed,
     "p_fw_blkt_coolant_pump_mw",
-    reads={
-        "p_fw_coolant_pump_mw": heat_transport,
-        "p_blkt_coolant_pump_mw": heat_transport,
-    },
 )
 
 
@@ -2154,15 +1217,6 @@ CryoQLoadsSuperconductingTf = power.function(
     "qac",
     "qcl",
     "qmisc",
-    reads={
-        "tfcryoarea": tfcoil,
-        "coldmass": structure,
-        "ensxpfm": pf_power,
-        "t_plant_pulse_plasma_present": times,
-        "c_tf_turn": tfcoil,
-        "n_tf_coils": tfcoil,
-        "qnuc": fwbs,
-    },
 )
 
 
@@ -2174,12 +1228,6 @@ CryoQLoadsResistiveTf = power.function(
     "qac",
     "qcl",
     "qmisc",
-    reads={
-        "coldmass": structure,
-        "ensxpfm": pf_power,
-        "t_plant_pulse_plasma_present": times,
-        "qnuc": fwbs,
-    },
 )
 
 
@@ -2195,16 +1243,6 @@ CryoLoadsActive = heat_transport.function(
     "p_cryo_plant_electric_mw",
     "helpow_cryal",
     V.tfcoil.cryo_cool_req,
-    reads={
-        "eff_tf_cryo": tfcoil,
-        "temp_tf_cryo": tfcoil,
-        "temp_cp_coolant_inlet": tfcoil,
-        "qss": power,
-        "qac": power,
-        "qcl": power,
-        "qmisc": power,
-        "qnuc": fwbs,
-    },
 )
 
 
@@ -2216,8 +1254,4 @@ CryoLoadsInactive = heat_transport.function(
     "p_cryo_plant_electric_mw",
     "helpow_cryal",
     V.tfcoil.cryo_cool_req,
-    reads={
-        "temp_tf_cryo": tfcoil,
-        "temp_cp_coolant_inlet": tfcoil,
-    },
 )

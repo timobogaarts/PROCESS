@@ -10,7 +10,6 @@ from functional_process.cottax.paths import (
     blanket,
     build,
     divertor,
-    fwbs,
     physics,
     tfcoil,
     times,
@@ -57,12 +56,6 @@ def _restricted(fn, reads):
 VacuumPumpingSimple = vacuum.function(
     calculate_vacuum_pumping_simple,
     "n_iter_vacuum_pumps",
-    reads={
-        "molflow_plasma_fuelling_required": physics,
-        "a_plasma_surface": physics,
-        "n_tf_coils": tfcoil,
-        "t_plant_pulse_dwell": times,
-    },
 )
 
 
@@ -199,28 +192,6 @@ VacuumVesselEllipticalSingleNull = blanket.function(
     "vol_vv_outboard",
     V.fwbs.vol_vv,
     V.fwbs.m_vv,
-    reads={
-        "z_tf_inside_half": build,
-        "dz_shld_vv_gap": build,
-        "dz_vv_lower": build,
-        "dz_blkt_upper": build,
-        "dz_shld_upper": build,
-        "z_plasma_xpoint_upper": build,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "r_shld_inboard_inner": build,
-        "r_shld_outboard_outer": build,
-        "dr_vv_inboard": build,
-        "dr_vv_outboard": build,
-        "dz_vv_upper": build,
-        "fvoldw": fwbs,
-        "den_steel": fwbs,
-    },
 )
 
 
@@ -234,21 +205,6 @@ VacuumVesselEllipticalDoubleNull = blanket.function(
     "vol_vv_outboard",
     V.fwbs.vol_vv,
     V.fwbs.m_vv,
-    reads={
-        "z_tf_inside_half": build,
-        "dz_shld_vv_gap": build,
-        "dz_vv_lower": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "r_shld_inboard_inner": build,
-        "r_shld_outboard_outer": build,
-        "dr_vv_inboard": build,
-        "dr_vv_outboard": build,
-        "dz_vv_upper": build,
-        "fvoldw": fwbs,
-        "den_steel": fwbs,
-    },
 )
 
 
@@ -263,16 +219,4 @@ VacuumVesselDShapedDoubleNull = blanket.function(
     "vol_vv_outboard",
     V.fwbs.vol_vv,
     V.fwbs.m_vv,
-    reads={
-        "z_tf_inside_half": build,
-        "dz_shld_vv_gap": build,
-        "dz_vv_lower": build,
-        "r_shld_inboard_inner": build,
-        "r_shld_outboard_outer": build,
-        "dr_vv_inboard": build,
-        "dr_vv_outboard": build,
-        "dz_vv_upper": build,
-        "fvoldw": fwbs,
-        "den_steel": fwbs,
-    },
 )

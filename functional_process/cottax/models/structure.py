@@ -5,13 +5,7 @@
 import jax.numpy as jnp  # noqa: F401
 
 from functional_process.cottax.paths import (
-    build,
-    divertor,
-    fwbs,
-    pf_coil,
-    physics,
     structure,
-    tfcoil,
 )
 from functional_process.models.structure import calculate_structure_masses
 
@@ -71,24 +65,4 @@ Structure = structure.function(
     "clgsmass",
     "coldmass",
     "gsmass",
-    reads={
-        "plasma_current": physics,
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-        "b_plasma_toroidal_on_axis": physics,
-        "dr_tf_inner_bore": build,
-        "dr_tf_outboard": build,
-        "dr_tf_inboard": build,
-        "z_tf_inside_half": build,
-        "whtshld": fwbs,
-        "m_div_plate": divertor,
-        "m_pf_coil_conductor_total": pf_coil,
-        "m_pf_coil_structure_total": pf_coil,
-        "m_tf_coils_total": tfcoil,
-        "m_fw_total": fwbs,
-        "m_blkt_total": fwbs,
-        "m_fw_blkt_div_coolant_total": fwbs,
-        "dewmkg": fwbs,
-    },
 )

@@ -1,11 +1,15 @@
 """Where the port's variables live: `.<area>.<field>`, the way PROCESS spells it. Each
-area is a cottax `Scope`: `physics.function(fn, 'rminor')` writes `.physics.rminor`, and a
-parameter reads its own name under the scope unless `reads=` says otherwise."""
+area is a scope (`Area`): `physics.function(fn, 'rminor')` writes `.physics.rminor`, and a
+parameter is read at its own name, in the area PROCESS keeps that field in
+(`vocabulary.fields`), the scope's own first. `reads=` is left for what that does not
+say: a place the port names itself in another area, or a renamed read."""
 
 import difflib
 from collections.abc import Iterable
 
-from cottax.interfaces import Scope, V
+from cottax.interfaces import place as place_of
+from cottax.interfaces.pytree.scope import Pytree
+from cottax.pytree.path import VarPath
 from jax.tree_util import GetAttrKey
 
 # `AREAS` -- every area PROCESS has, 36 of them. Was
@@ -15,6 +19,39 @@ from jax.tree_util import GetAttrKey
 # that expression, order included. Re-exported from here because every caller in the port
 # imports it from `paths`.
 from functional_process.vocabulary import AREAS
+from functional_process.vocabulary.fields import AREAS_OF
+
+
+PORT_PLACES = {
+    "a_tf_wp_no_insulation": "tfcoil",
+    "a_tf_wp_with_insulation": "tfcoil",
+}
+"""Quantities the port keeps in an area of its own choosing where PROCESS has a field of
+the same name elsewhere: the stellarator winding pack's two areas, locals of
+`winding_pack_total_size` PROCESS never stores (`superconducting_tfcoil` holds the
+tokamak's)."""
+
+
+class Area(Pytree):
+    """One area of the data structure, reading a name where PROCESS keeps it: in this
+    area if PROCESS has it here or has no such field (a quantity the port names), else
+    in the one area PROCESS has it in."""
+
+    area: str
+    by_name = True
+
+    def place(self, x):
+        if not isinstance(x, str):
+            return place_of(x)
+        areas = AREAS_OF.get(x, ())
+        if areas and self.area not in areas and PORT_PLACES.get(x) != self.area:
+            elsewhere = PORT_PLACES.get(x) or (areas[0] if len(areas) == 1 else None)
+            if elsewhere is None:
+                raise ValueError(
+                    f"{x!r} is a field of {areas}, not of {self.area!r}: name its place"
+                )
+            return VarPath((GetAttrKey(elsewhere), GetAttrKey(x)))
+        return VarPath((GetAttrKey(self.area), GetAttrKey(x)))
 
 
 class _Root:
@@ -38,7 +75,7 @@ class _Root:
             raise AttributeError(
                 f"{name!r} is not an area of this data structure.{hint}"
             )
-        return Scope(getattr(V, name), GetAttrKey)
+        return Area(name)
 
     def __repr__(self):
         return f"<PROCESS data structure: {len(self._names)} areas>"

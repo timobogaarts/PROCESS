@@ -7,10 +7,7 @@ from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     build,
-    constraints,
-    divertor,
     first_wall,
-    fwbs,
     physics,
 )
 from functional_process.models.engineering.ivc_functions import (
@@ -47,27 +44,6 @@ FirstWallSingleNull = first_wall.function(
     "a_fw_total",
     V.physics.p_fw_alpha_mw,
     V.physics.pflux_fw_neutron_mw,
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_blkt_upper": build,
-        "z_plasma_xpoint_upper": build,
-        "dz_fw_plasma_gap": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "f_ster_div_single": fwbs,
-        "f_a_fw_outboard_hcd": fwbs,
-        "p_alpha_total_mw": physics,
-        "f_p_alpha_plasma_deposited": physics,
-        "ffwal": physics,
-        "pflux_plasma_surface_neutron_avg_mw": physics,
-    },
 )
 
 
@@ -79,25 +55,6 @@ FirstWallDoubleNull = first_wall.function(
     "a_fw_total",
     V.physics.p_fw_alpha_mw,
     V.physics.pflux_fw_neutron_mw,
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_blkt_upper": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "f_ster_div_single": fwbs,
-        "f_a_fw_outboard_hcd": fwbs,
-        "p_alpha_total_mw": physics,
-        "f_p_alpha_plasma_deposited": physics,
-        "ffwal": physics,
-        "pflux_plasma_surface_neutron_avg_mw": physics,
-    },
 )
 
 
@@ -112,24 +69,6 @@ FirstWallDShapedDoubleNull = first_wall.function(
     "a_fw_total",
     V.physics.p_fw_alpha_mw,
     V.physics.pflux_fw_neutron_mw,
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_blkt_upper": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "f_ster_div_single": fwbs,
-        "f_a_fw_outboard_hcd": fwbs,
-        "p_alpha_total_mw": physics,
-        "f_p_alpha_plasma_deposited": physics,
-        "ffwal": physics,
-        "pflux_plasma_surface_neutron_avg_mw": physics,
-    },
 )
 
 
@@ -138,10 +77,6 @@ FirstWallGeometry = build.function(
     set_fw_geometry,
     "dr_fw_inboard",
     "dr_fw_outboard",
-    reads={
-        "radius_fw_channel": fwbs,
-        "dr_fw_wall": fwbs,
-    },
 )
 
 
@@ -151,7 +86,4 @@ RadiatedWallLoad = physics.function(
     calculate_radiated_wall_load_scaled_plasma_surface,
     "pflux_fw_rad_mw",
     V.constraints.pflux_fw_rad_max_mw,
-    reads={
-        "f_fw_rad_max": constraints,
-    },
 )

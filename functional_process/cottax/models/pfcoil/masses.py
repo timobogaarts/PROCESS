@@ -2,7 +2,7 @@
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import fwbs, pf_coil, physics
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_masses_from_elements,
@@ -29,11 +29,6 @@ PFCoilSizes = pf_coil.function(
     "z_pf_coil_upper",
     "z_pf_coil_lower",
     "r_pf_coil_outer_max",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-    },
 )
 
 
@@ -46,11 +41,6 @@ PFCoilSizesNoCentralSolenoid = pf_coil.function(
     "z_pf_coil_upper",
     "z_pf_coil_lower",
     "r_pf_coil_outer_max",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-    },
 )
 
 
@@ -82,7 +72,6 @@ PFCoilMasses = pf_coil.function(
         "bpf2_3": V.pf_coil.bpf2[3],
         "bpf2_4": V.pf_coil.bpf2[4],
         "bpf2_5": V.pf_coil.bpf2[5],
-        "den_steel": fwbs,
     },
 )
 
@@ -97,7 +86,4 @@ PFCoilMassesNoCentralSolenoid = pf_coil.function(
     "m_pf_coil_structure_total",
     "m_pf_coil_max",
     "ricpf",
-    reads={
-        "den_steel": fwbs,
-    },
 )

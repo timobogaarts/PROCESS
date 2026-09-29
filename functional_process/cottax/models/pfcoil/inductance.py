@@ -1,6 +1,6 @@
 """Mutual and self inductances of the PF coils, the CS and the plasma."""
 
-from functional_process.cottax.paths import build, pf_coil, physics
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,  # noqa: F401 -- re-exported for tests
     calculate_pf_cs_plasma_inductances_at_reference_width,
@@ -20,11 +20,6 @@ at `(rmajor, 0)`.
 PFCoilInductance = pf_coil.function(
     calculate_pf_cs_plasma_inductances_at_reference_width,
     "ind_pf_cs_plasma_mutual",
-    reads={
-        "rmajor": physics,
-        "ind_plasma": physics,
-        "dr_cs": build,
-    },
 )
 
 
@@ -32,8 +27,4 @@ PFCoilInductance = pf_coil.function(
 PFCoilInductanceNoCentralSolenoid = pf_coil.function(
     calculate_pf_plasma_inductances_no_central_solenoid_bound,
     "ind_pf_cs_plasma_mutual",
-    reads={
-        "rmajor": physics,
-        "ind_plasma": physics,
-    },
 )

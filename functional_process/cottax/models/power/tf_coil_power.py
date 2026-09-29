@@ -23,8 +23,6 @@ from functional_process.vocabulary import constants
 # these five without checking, a gap `_audit/formulas_split.md`'s name-preservation gate
 # should have caught and did not, until a later cluster-wide re-check with clean caches).
 __all__ = [
-    "From",
-    "OutputInto",
     "TfPowerResistive",
     "TfPowerSuperconducting",
     "buildings",
@@ -51,9 +49,6 @@ TfPowerResistive = tfcoil.function(
     "p_tf_joints_resistive_mw",
     "tfcmw",
     V.heat_transport.p_tf_electric_supplies_mw,
-    reads={
-        "etatf": heat_transport,
-    },
 )
 
 
@@ -65,8 +60,4 @@ TfPowerSuperconducting = tfcoil.function(
     "drarea",
     V.buildings.tfcbv,
     V.heat_transport.p_tf_electric_supplies_mw,
-    reads={
-        "rmajor": physics,
-        "etatf": heat_transport,
-    },
 )

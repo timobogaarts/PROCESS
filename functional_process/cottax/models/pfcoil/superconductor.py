@@ -2,7 +2,7 @@
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import pf_coil, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.superconductor import (
     calculate_cs_critical_current_densities,
     calculate_cs_critical_current_density_iter_nb3sn,
@@ -101,7 +101,6 @@ _CS_CRITICAL_CURRENT_DENSITIES = (
 CSCriticalCurrentDensitiesIterNb3Sn = pf_coil.function(
     _cs_critical_current_densities_iter_nb3sn,
     *_CS_CRITICAL_CURRENT_DENSITIES,
-    reads={"str_cs_con_res": tfcoil},
 )
 
 
@@ -109,7 +108,6 @@ CSCriticalCurrentDensitiesIterNb3Sn = pf_coil.function(
 CSCriticalCurrentDensitiesWstNb3Sn = pf_coil.function(
     _cs_critical_current_densities_wst_nb3sn,
     *_CS_CRITICAL_CURRENT_DENSITIES,
-    reads={"str_cs_con_res": tfcoil},
 )
 
 
@@ -187,7 +185,6 @@ def _cs_temperature_margin_wst_nb3sn(
 CSTemperatureMarginIterNb3Sn = pf_coil.function(
     _cs_temperature_margin_iter_nb3sn,
     "temp_cs_superconductor_margin",
-    reads={"str_cs_con_res": tfcoil},
 )
 
 
@@ -195,7 +192,6 @@ CSTemperatureMarginIterNb3Sn = pf_coil.function(
 CSTemperatureMarginWstNb3Sn = pf_coil.function(
     _cs_temperature_margin_wst_nb3sn,
     "temp_cs_superconductor_margin",
-    reads={"str_cs_con_res": tfcoil},
 )
 
 
@@ -216,12 +212,6 @@ PFStrandCriticalCurrentDensity = pf_coil.function(
 PFStrandCriticalCurrentDensityHazeltonZhaiRebco = pf_coil.function(
     calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_bound,
     "j_crit_str_pf",
-    reads={
-        "tftmp": tfcoil,
-        "dr_tf_hts_tape": superconducting_tfcoil,
-        "dx_tf_hts_tape_rebco": superconducting_tfcoil,
-        "dx_tf_hts_tape_total": superconducting_tfcoil,
-    },
 )
 
 

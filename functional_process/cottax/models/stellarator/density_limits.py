@@ -27,8 +27,5 @@ EcrhDensityLimit = stellarator.function(
     calculate_ecrh_density_limit_parabolic,
     "dlimit_ecrh",
     "bt_max_ecrh",
-    reads={
-        "gyro_frequency_max": V.stellarator.max_gyrotron_frequency,
-        "b_plasma_toroidal_on_axis": physics,
-    },
+    reads={"gyro_frequency_max": V.stellarator.max_gyrotron_frequency},
 )

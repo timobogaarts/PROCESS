@@ -4,7 +4,7 @@ coil's inner/outer edge.
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import pf_coil, physics
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.fields import (
     calculate_b_field_at_point,  # noqa: F401 -- re-exported for inductance.py / tests
     calculate_coil_current_waveform,  # noqa: F401 -- re-exported for tests
@@ -37,10 +37,6 @@ PFCoilPeakField = pf_coil.function(
     V.pf_coil.bpf2[3],
     V.pf_coil.bpf2[4],
     V.pf_coil.bpf2[5],
-    reads={
-        "rmajor": physics,
-        "plasma_current": physics,
-    },
 )
 
 
@@ -49,10 +45,6 @@ PFCoilPeakFieldNoCentralSolenoid = pf_coil.function(
     calculate_pf_coil_peak_fields_no_central_solenoid_bound,
     "b_pf_coil_peak",
     "bpf2",
-    reads={
-        "rmajor": physics,
-        "plasma_current": physics,
-    },
 )
 
 
@@ -95,8 +87,4 @@ CSCoilPeakField = pf_coil.function(
     "b_cs_self_outer_midplane",
     V.pf_coil.b_pf_coil_peak[6],
     V.pf_coil.bpf2[6],
-    reads={
-        "rmajor": physics,
-        "plasma_current": physics,
-    },
 )

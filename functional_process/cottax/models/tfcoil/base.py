@@ -6,8 +6,6 @@ inheritance.
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    build,
-    physics,
     superconducting_tfcoil,
     tfcoil,
 )
@@ -52,13 +50,6 @@ TfGlobalGeometryCircularCase = superconducting_tfcoil.function(
     V.tfcoil.a_tf_leg_outboard,
     V.tfcoil.dr_tf_full_midplane,
     V.tfcoil.dr_tf_internal_midplane,
-    reads={
-        "n_tf_coils": tfcoil,
-        "r_tf_inboard_out": build,
-        "r_tf_inboard_in": build,
-        "r_tf_outboard_mid": build,
-        "dr_tf_outboard": build,
-    },
 )
 
 
@@ -74,13 +65,6 @@ TfGlobalGeometryStraightCase = superconducting_tfcoil.function(
     V.tfcoil.a_tf_leg_outboard,
     V.tfcoil.dr_tf_full_midplane,
     V.tfcoil.dr_tf_internal_midplane,
-    reads={
-        "n_tf_coils": tfcoil,
-        "r_tf_inboard_out": build,
-        "r_tf_inboard_in": build,
-        "r_tf_outboard_mid": build,
-        "dr_tf_outboard": build,
-    },
 )
 
 
@@ -108,10 +92,6 @@ def _dr_tf_plasma_case_from_input(
 DrTfPlasmaCaseFromInput = tfcoil.function(
     _dr_tf_plasma_case_from_input,
     "dr_tf_plasma_case",
-    reads={
-        "r_tf_inboard_in": build,
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -119,10 +99,6 @@ DrTfPlasmaCaseFromInput = tfcoil.function(
 DrTfPlasmaCaseFromFraction = tfcoil.function(
     dr_tf_plasma_case_from_fraction,
     "dr_tf_plasma_case",
-    reads={
-        "dr_tf_inboard": build,
-        "r_tf_inboard_in": build,
-    },
 )
 
 
@@ -130,9 +106,6 @@ DrTfPlasmaCaseFromFraction = tfcoil.function(
 DxTfSideCaseMinFromFraction = tfcoil.function(
     dx_tf_side_case_min_from_fraction,
     "dx_tf_side_case_min",
-    reads={
-        "r_tf_inboard_in": build,
-    },
 )
 
 
@@ -140,9 +113,6 @@ DxTfSideCaseMinFromFraction = tfcoil.function(
 RBTfInboardPeak = tfcoil.function(
     calculate_r_b_tf_inboard_peak,
     "r_b_tf_inboard_peak",
-    reads={
-        "r_tf_inboard_out": build,
-    },
 )
 
 
@@ -153,10 +123,6 @@ TfCurrent = tfcoil.function(
     "c_tf_total",
     V.superconducting_tfcoil.c_tf_coil,
     "j_tf_coil_full_area",
-    reads={
-        "b_plasma_toroidal_on_axis": physics,
-        "rmajor": physics,
-    },
 )
 
 
@@ -172,15 +138,6 @@ TfCoilShapeDShapeSingleNull = tfcoil.function(
     "tfb",
     "r_tf_arc",
     "z_tf_arc",
-    reads={
-        "r_tf_inboard_out": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "r_tf_outboard_in": superconducting_tfcoil,
-        "z_tf_inside_half": build,
-        "z_tf_top": build,
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -192,14 +149,6 @@ TfCoilShapeDShapeDoubleNull = tfcoil.function(
     "tfb",
     "r_tf_arc",
     "z_tf_arc",
-    reads={
-        "r_tf_inboard_out": build,
-        "rmajor": physics,
-        "rminor": physics,
-        "r_tf_outboard_in": superconducting_tfcoil,
-        "z_tf_inside_half": build,
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -211,14 +160,6 @@ TfCoilShapePictureFrameTart = tfcoil.function(
     "tfb",
     "r_tf_arc",
     "z_tf_arc",
-    reads={
-        "r_cp_top": build,
-        "r_tf_outboard_in": superconducting_tfcoil,
-        "z_tf_inside_half": build,
-        "z_tf_top": build,
-        "dr_tf_inboard": build,
-        "r_tf_outboard_mid": build,
-    },
 )
 
 
@@ -230,9 +171,6 @@ TfCoilShapePictureFrameTart = tfcoil.function(
 TfCoilSelfInductanceDShape = tfcoil.function(
     tf_coil_self_inductance_d_shape,
     "ind_tf_coil",
-    reads={
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -240,12 +178,6 @@ TfCoilSelfInductanceDShape = tfcoil.function(
 TfCoilSelfInductancePictureFrame = tfcoil.function(
     tf_coil_self_inductance_picture_frame,
     "ind_tf_coil",
-    reads={
-        "z_tf_inside_half": build,
-        "dr_tf_outboard": build,
-        "r_tf_outboard_mid": build,
-        "r_tf_inboard_mid": build,
-    },
 )
 
 
@@ -264,12 +196,4 @@ GenericTfCoilAreaAndMasses = tfcoil.function(
     "tfocrn",
     "tficrn",
     "tfcryoarea",
-    reads={
-        "r_tf_inboard_out": build,
-        "r_tf_inboard_in": build,
-        "rad_tf_coil_inboard_toroidal_half": superconducting_tfcoil,
-        "tan_theta_coil": superconducting_tfcoil,
-        "r_tf_inboard_mid": build,
-        "r_tf_outboard_mid": build,
-    },
 )

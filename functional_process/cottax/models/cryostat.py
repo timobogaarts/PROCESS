@@ -5,7 +5,7 @@
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import build, fwbs, pf_coil
+from functional_process.cottax.paths import fwbs
 from functional_process.models.cryostat import (
     calculate_external_cryo_geometry,
     calculate_r_cryostat_inboard,  # noqa: F401
@@ -22,12 +22,4 @@ Cryostat = fwbs.function(
     "vol_cryostat_internal",
     "vol_cryostat",
     "dewmkg",
-    reads={
-        "r_pf_coil_outer": pf_coil,
-        "f_z_cryostat": build,
-        "z_pf_coil_upper": pf_coil,
-        "z_tf_inside_half": build,
-        "dr_tf_inboard": build,
-        "dr_cryostat": build,
-    },
 )

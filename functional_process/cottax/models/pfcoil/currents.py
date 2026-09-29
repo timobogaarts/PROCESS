@@ -3,7 +3,7 @@
 from cottax.interfaces import V
 
 from functional_process.cottax.models.pfcoil import REFERENCE_TOPOLOGY, PFLocation
-from functional_process.cottax.paths import build, pf_coil, physics
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.currents import (
     calculate_cs_flux_swing,  # noqa: F401 -- re-exported for tests
     calculate_cs_flux_swing_for_topology,  # noqa: F401 -- re-exported for tests
@@ -51,10 +51,6 @@ PFCoilInitiationCurrents = pf_coil.function(
     calculate_plasma_initiation_currents_reference,
     "ssq0",
     "ccl0",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -68,10 +64,6 @@ PFCoilInitiationCurrentsNoCentralSolenoid = pf_coil.function(
     calculate_plasma_initiation_currents_no_central_solenoid_bound,
     "ssq0",
     "ccl0",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -80,15 +72,6 @@ PFCoilEquilibriumCurrents = pf_coil.function(
     calculate_equilibrium_currents_reference,
     "ccls",
     V.physics.b_plasma_vertical_required,
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-        "aspect": physics,
-        "plasma_current": physics,
-        "beta_poloidal_vol_avg": physics,
-        "ind_plasma_internal_norm": physics,
-    },
 )
 
 
@@ -100,15 +83,6 @@ PFCoilEquilibriumCurrentsNoCentralSolenoid = pf_coil.function(
     calculate_equilibrium_currents_no_central_solenoid,
     "ccls",
     V.physics.b_plasma_vertical_required,
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-        "aspect": physics,
-        "plasma_current": physics,
-        "beta_poloidal_vol_avg": physics,
-        "ind_plasma_internal_norm": physics,
-    },
 )
 
 
@@ -120,11 +94,6 @@ PFCoilEquilibriumCurrentsNoCentralSolenoid = pf_coil.function(
 CSFluxSwing = pf_coil.function(
     calculate_cs_flux_swing_reference,
     "f_j_cs_start_end_flat_top",
-    reads={
-        "vs_plasma_ramp_required": physics,
-        "dr_cs_bore": build,
-        "dr_cs": build,
-    },
 )
 
 

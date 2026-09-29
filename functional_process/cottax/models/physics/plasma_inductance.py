@@ -7,7 +7,7 @@ import dataclasses
 import equinox as eqx
 from cottax.interfaces import Explicit
 
-from functional_process.cottax.paths import physics, times
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
@@ -50,10 +50,6 @@ PlasmaVoltSecondRequirements = physics.function(
     "vs_plasma_res_ramp",
     "vs_plasma_total_required",
     "v_plasma_loop_burn",
-    reads={
-        "t_plant_pulse_fusion_ramp": times,
-        "t_plant_pulse_burn": times,
-    },
 )
 
 

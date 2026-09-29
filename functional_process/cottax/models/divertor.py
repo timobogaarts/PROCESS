@@ -7,7 +7,7 @@ the stellarator graph's one non-`problem` cycle.
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import blanket, divertor, physics
+from functional_process.cottax.paths import divertor
 from functional_process.models.divertor import (
     calculate_divertor_heat_flux_split,
     calculate_divertor_heat_load_wade,
@@ -22,11 +22,6 @@ DivertorHeatFluxSplit = divertor.function(
     V.fwbs.f_ster_div_single,
     V.fwbs.p_div_nuclear_heat_total_mw,
     V.fwbs.p_div_rad_total_mw,
-    reads={
-        "deg_blkt_inboard_poloidal_plasma": blanket,
-        "p_plasma_neutron_mw": physics,
-        "p_plasma_rad_mw": physics,
-    },
 )
 
 
@@ -42,16 +37,7 @@ DivertorHeatFluxSplit = divertor.function(
 DivertorHeatLoadWadeSingleNull = divertor.function(
     calculate_divertor_heat_load_wade,
     "pflux_div_heat_load_mw",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "aspect": physics,
-        "b_plasma_toroidal_on_axis": physics,
-        "b_plasma_poloidal_average": V.physics.b_plasma_surface_poloidal_average,
-        "p_plasma_separatrix_mw": physics,
-        "nd_plasma_separatrix_electron": physics,
-        "rad_fraction_sol": physics,
-    },
+    reads={"b_plasma_poloidal_average": V.physics.b_plasma_surface_poloidal_average},
 )
 
 
@@ -61,15 +47,5 @@ DivertorHeatLoadWadeSingleNull = divertor.function(
 DivertorHeatLoadWadeDoubleNull = divertor.function(
     calculate_divertor_heat_load_wade_double_null,
     "pflux_div_heat_load_mw",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "aspect": physics,
-        "b_plasma_toroidal_on_axis": physics,
-        "b_plasma_poloidal_average": V.physics.b_plasma_surface_poloidal_average,
-        "p_plasma_separatrix_mw": physics,
-        "nd_plasma_separatrix_electron": physics,
-        "rad_fraction_sol": physics,
-        "f_p_div_lower": physics,
-    },
+    reads={"b_plasma_poloidal_average": V.physics.b_plasma_surface_poloidal_average},
 )

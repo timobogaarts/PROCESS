@@ -6,12 +6,7 @@ import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    constraints,
-    current_drive,
-    first_wall,
-    fwbs,
     physics,
-    stellarator,
 )
 from functional_process.models.safe_math import (
     safe_sqrt,  # noqa: F401
@@ -50,9 +45,6 @@ TotalField = physics.function(calculate_total_field, "b_plasma_total")
 PoloidalFieldFromRotationalTransform = physics.function(
     calculate_poloidal_field_from_rotational_transform,
     "b_plasma_surface_poloidal_average",
-    reads={
-        "iotabar": stellarator,
-    },
 )
 
 
@@ -109,10 +101,6 @@ NeutronWallLoadScaledPlasmaSurface = physics.function(
 NeutronWallLoadFirstWallAreaPre2014 = physics.function(
     calculate_neutron_wall_load_first_wall_area_pre_2014,
     "pflux_fw_neutron_mw",
-    reads={
-        "fhole": fwbs,
-        "a_fw_total": first_wall,
-    },
 )
 
 
@@ -121,12 +109,6 @@ NeutronWallLoadFirstWallAreaPre2014 = physics.function(
 NeutronWallLoadFirstWallAreaComprehensive2014 = physics.function(
     calculate_neutron_wall_load_first_wall_area_comprehensive_2014,
     "pflux_fw_neutron_mw",
-    reads={
-        "fhole": fwbs,
-        "a_fw_total": first_wall,
-        "f_a_fw_outboard_hcd": fwbs,
-        "f_ster_div_single": fwbs,
-    },
 )
 
 
@@ -142,9 +124,6 @@ HeatingAndRadiationPowerIgnited = physics.function(
     "psolradmw",
     "p_plasma_separatrix_mw",
     "p_fw_alpha_mw",
-    reads={
-        "f_rad": stellarator,
-    },
 )
 
 
@@ -156,10 +135,6 @@ HeatingAndRadiationPowerNonIgnited = physics.function(
     "psolradmw",
     "p_plasma_separatrix_mw",
     "p_fw_alpha_mw",
-    reads={
-        "f_rad": stellarator,
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 
@@ -174,10 +149,6 @@ RadiatedWallLoadScaledPlasmaSurface = physics.function(
     "pflux_fw_rad_mw",
     V.constraints.pflux_fw_rad_max_mw,
     "rad_fraction_total",
-    reads={
-        "f_fw_rad_max": constraints,
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 
@@ -187,12 +158,6 @@ RadiatedWallLoadFirstWallAreaPre2014 = physics.function(
     "pflux_fw_rad_mw",
     V.constraints.pflux_fw_rad_max_mw,
     "rad_fraction_total",
-    reads={
-        "fhole": fwbs,
-        "a_fw_total": first_wall,
-        "f_fw_rad_max": constraints,
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 
@@ -203,14 +168,6 @@ RadiatedWallLoadFirstWallAreaComprehensive2014 = physics.function(
     "pflux_fw_rad_mw",
     V.constraints.pflux_fw_rad_max_mw,
     "rad_fraction_total",
-    reads={
-        "fhole": fwbs,
-        "a_fw_total": first_wall,
-        "f_a_fw_outboard_hcd": fwbs,
-        "f_ster_div_single": fwbs,
-        "f_fw_rad_max": constraints,
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 

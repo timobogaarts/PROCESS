@@ -54,10 +54,6 @@ CrocoCableSpaceProperties = superconducting_tfcoil.function(
     V.tfcoil.a_tf_turn_cable_space_no_void,
     "a_tf_turn_cable_space_effective",
     V.tfcoil.a_tf_turn_steel,
-    reads={
-        "dx_tf_turn_conduit_full_average": tfcoil,
-        "dx_tf_turn_steel": tfcoil,
-    },
 )
 
 
@@ -107,10 +103,6 @@ CrocoInboardAreasAndFractions = tfcoil.function(
     V.superconducting_tfcoil.f_a_tf_coil_inboard_steel,
     V.superconducting_tfcoil.a_tf_coil_inboard_insulation,
     V.superconducting_tfcoil.f_a_tf_coil_inboard_insulation,
-    reads={
-        "a_tf_wp_ground_insulation": superconducting_tfcoil,
-        "a_tf_croco_strand": superconducting_tfcoil,
-    },
 )
 
 
@@ -119,9 +111,6 @@ CrocoInboardAreasAndFractions = tfcoil.function(
 CrocoTurnCableSpaceCoolingFraction = superconducting_tfcoil.function(
     croco_turn_cable_space_cooling_fraction,
     "f_a_tf_turn_cable_space_cooling",
-    reads={
-        "a_tf_turn_cable_space_no_void": tfcoil,
-    },
 )
 
 
@@ -146,10 +135,6 @@ HazeltonZhaiRebcoCrocoSuperconductorProperties = tfcoil.function(
         "b_tf_inboard_peak": V.tfcoil.b_tf_inboard_peak_with_ripple,
         "cur_tf_turn": V.tfcoil.c_tf_turn,
         "temp_tf_peak": V.tfcoil.tftmp,
-        "dr_tf_hts_tape": superconducting_tfcoil,
-        "dx_tf_hts_tape_rebco": superconducting_tfcoil,
-        "dx_tf_hts_tape_total": superconducting_tfcoil,
-        "a_tf_croco_strand": superconducting_tfcoil,
     },
 )
 
@@ -172,7 +157,6 @@ DurhamRebcoCrocoSuperconductorProperties = tfcoil.function(
         "cur_tf_turn": V.tfcoil.c_tf_turn,
         "temp_tf_peak": V.tfcoil.tftmp,
         "strain": V.tfcoil.str_wp,
-        "a_tf_croco_strand": superconducting_tfcoil,
     },
 )
 
@@ -182,11 +166,6 @@ DurhamRebcoCrocoTemperatureMargin = tfcoil.function(
     calculate_durham_rebco_croco_temperature_margin,
     "temp_tf_superconductor_margin",
     "temp_margin",
-    reads={
-        "j_tf_superconductor": superconducting_tfcoil,
-        "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil,
-        "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil,
-    },
 )
 
 
@@ -195,12 +174,4 @@ HazeltonZhaiRebcoCrocoTemperatureMargin = tfcoil.function(
     calculate_hazelton_zhai_rebco_croco_temperature_margin,
     "temp_tf_superconductor_margin",
     "temp_margin",
-    reads={
-        "j_tf_superconductor": superconducting_tfcoil,
-        "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil,
-        "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil,
-        "dr_tf_hts_tape": superconducting_tfcoil,
-        "dx_tf_hts_tape_rebco": superconducting_tfcoil,
-        "dx_tf_hts_tape_total": superconducting_tfcoil,
-    },
 )

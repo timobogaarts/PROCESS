@@ -4,7 +4,7 @@ vertical build.
 
 import jax.numpy as jnp  # noqa: F401
 
-from functional_process.cottax.paths import build, divertor, physics, tfcoil
+from functional_process.cottax.paths import build, tfcoil
 from functional_process.models.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,
@@ -42,10 +42,6 @@ PlasmaXpointHeights = build.function(
     calculate_z_plasma_xpoint,
     "z_plasma_xpoint_upper",
     "z_plasma_xpoint_lower",
-    reads={
-        "rminor": physics,
-        "kappa": physics,
-    },
 )
 
 
@@ -58,14 +54,6 @@ DivertorGeometryConventional = build.function(
     calculate_divertor_geometry_conventional,
     "dz_xpoint_divertor",
     "rspo",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "kappa": physics,
-        "triang": physics,
-        "betai": divertor,
-        "betao": divertor,
-    },
 )
 
 
@@ -73,9 +61,6 @@ DivertorGeometryConventional = build.function(
 DivertorGeometrySphericalTokamak = build.function(
     calculate_divertor_geometry_spherical_tokamak,
     "dz_xpoint_divertor",
-    reads={
-        "rminor": physics,
-    },
 )
 
 
@@ -83,9 +68,6 @@ DivertorGeometrySphericalTokamak = build.function(
 ZTfInsideHalf = build.function(
     calculate_z_tf_inside_half,
     "z_tf_inside_half",
-    reads={
-        "dz_divertor": divertor,
-    },
 )
 
 
@@ -113,11 +95,6 @@ BlktUpperThickness = build.function(calculate_dz_blkt_upper, "dz_blkt_upper")
 DrTfInboardFromWindingPack = build.function(
     calculate_dr_tf_inboard,
     "dr_tf_inboard",
-    reads={
-        "dr_tf_wp_with_insulation": tfcoil,
-        "dr_tf_plasma_case": tfcoil,
-        "dr_tf_nose_case": tfcoil,
-    },
 )
 
 
@@ -125,9 +102,6 @@ DrTfInboardFromWindingPack = build.function(
 DrTfWpWithInsulationFromInboardBuild = tfcoil.function(
     calculate_dr_tf_wp_with_insulation,
     "dr_tf_wp_with_insulation",
-    reads={
-        "dr_tf_inboard": build,
-    },
 )
 
 
@@ -157,10 +131,6 @@ TfInboardRadiiNoCsPrecomp = build.function(
 ShldInboardInnerRadius = build.function(
     calculate_r_shld_inboard_inner,
     "r_shld_inboard_inner",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -168,10 +138,6 @@ ShldInboardInnerRadius = build.function(
 ShldOutboardOuterRadius = build.function(
     calculate_r_shld_outboard_outer,
     "r_shld_outboard_outer",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -198,13 +164,7 @@ TfOutboardMidUnrippled = build.function(
 TfOutboardMidDShape = build.function(
     calculate_r_tf_outboard_mid_dshape,
     "r_tf_outboard_mid",
-    reads={
-        "ripple_b_tf_plasma_edge_max": tfcoil,
-        "n_tf_coils": tfcoil,
-        "rmajor": physics,
-        "rminor": physics,
-        "dx_tf_wp_conductor_max": tfcoil,
-    },
+    reads={"dx_tf_wp_conductor_max": tfcoil},
 )
 
 
@@ -213,11 +173,6 @@ TfOutboardMidDShape = build.function(
 TfOutboardEdgeRipple = tfcoil.function(
     calculate_ripple_b_tf_plasma_edge_fitted,
     "ripple_b_tf_plasma_edge",
-    reads={
-        "r_tf_outboard_mid": build,
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -226,12 +181,6 @@ TfOutboardEdgeRipple = tfcoil.function(
 TfOutboardMidPictureFrame = build.function(
     calculate_r_tf_outboard_mid_picture_frame,
     "r_tf_outboard_mid",
-    reads={
-        "ripple_b_tf_plasma_edge_max": tfcoil,
-        "n_tf_coils": tfcoil,
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -241,11 +190,6 @@ TfOutboardMidPictureFrame = build.function(
 TfOutboardEdgeRipplePictureFrame = tfcoil.function(
     calculate_ripple_b_tf_plasma_edge_picture_frame,
     "ripple_b_tf_plasma_edge",
-    reads={
-        "r_tf_outboard_mid": build,
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -272,9 +216,6 @@ VacuumVesselAndShieldRadiiTfOutsideCs = build.function(
 RadialBuildToPlasmaCentre = build.function(
     calculate_rbld,
     "rbld",
-    reads={
-        "rminor": physics,
-    },
 )
 
 

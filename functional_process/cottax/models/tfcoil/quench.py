@@ -4,7 +4,7 @@
 into (`process/models/tfcoil/quench.py`).
 """
 
-from functional_process.cottax.paths import constraints, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import tfcoil
 from functional_process.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,  # noqa: F401 -- re-exported for tests
     calculate_quench_protection_current_density,  # noqa: F401 -- re-exported for tests
@@ -34,10 +34,6 @@ from functional_process.models.tfcoil.quench import (
 TfCoilQuenchHeatCurrentDensity = tfcoil.function(
     calculate_tf_coil_quench_heat_current_density,
     "j_tf_wp_quench_heat_max",
-    reads={
-        "f_a_tf_turn_cable_space_cooling": superconducting_tfcoil,
-        "flu_tf_neutron_fast_max": constraints,
-    },
 )
 
 

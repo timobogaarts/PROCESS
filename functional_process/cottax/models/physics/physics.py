@@ -2,7 +2,7 @@
 
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import current_drive, physics, times
+from functional_process.cottax.paths import physics, times
 from functional_process.models.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
@@ -60,9 +60,6 @@ TotalRadiationPower = physics.function(
 SeparatrixPowerNonIgnited = physics.function(
     calculate_separatrix_power,
     "p_plasma_separatrix_mw_raw",
-    reads={
-        "p_hcd_injected_total_mw": current_drive,
-    },
 )
 
 
@@ -81,9 +78,6 @@ PulseRampTimesPulsedDefault = times.function(
     calculate_pulsed_plant_ramp_times,
     "t_plant_pulse_plasma_current_ramp_up",
     "t_plant_pulse_plasma_current_ramp_down",
-    reads={
-        "plasma_current": physics,
-    },
 )
 
 
@@ -95,9 +89,6 @@ PulseRampTimesContinuousDefault = times.function(
     "t_plant_pulse_plasma_current_ramp_up",
     "t_plant_pulse_coil_precharge",
     "t_plant_pulse_plasma_current_ramp_down",
-    reads={
-        "plasma_current": physics,
-    },
 )
 
 

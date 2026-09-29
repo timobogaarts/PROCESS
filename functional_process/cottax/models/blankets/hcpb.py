@@ -114,9 +114,6 @@ FirstWallCoolantVoidFractions = fwbs.function(
     calculate_fw_coolant_void_fractions,
     "f_a_fw_coolant_inboard",
     "f_a_fw_coolant_outboard",
-    reads={
-        "dr_fw_inboard": build,
-    },
 )
 
 
@@ -130,10 +127,6 @@ DivertorSurfaceAndPlateMassSingleNull = divertor.function(
     calculate_divertor_surface_and_plate_mass_single_null,
     "a_div_surface_total",
     "m_div_plate",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -142,10 +135,6 @@ DivertorSurfaceAndPlateMassDoubleNull = divertor.function(
     calculate_divertor_surface_and_plate_mass_double_null,
     "a_div_surface_total",
     "m_div_plate",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-    },
 )
 
 
@@ -170,17 +159,6 @@ ComponentMasses = fwbs.function(
     "m_blkt_steel_total",
     "m_blkt_total",
     "armour_fw_bl_mass",
-    reads={
-        "a_div_surface_total": divertor,
-        "f_vol_div_coolant": divertor,
-        "dx_div_plate": divertor,
-        "a_fw_inboard": first_wall,
-        "a_fw_outboard": first_wall,
-        "a_fw_total": first_wall,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "a_plasma_surface": physics,
-    },
 )
 
 
@@ -201,28 +179,6 @@ NuclearHeatingMagnetsConventional = ccfe_hcpb.function(
     "x_shield",
     "tfc_nuc_heating",
     "p_tf_nuclear_heat_mw_unnormalised",
-    reads={
-        "radius_fw_channel": fwbs,
-        "dx_fw_module": fwbs,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "den_steel": fwbs,
-        "m_blkt_total": fwbs,
-        "vol_blkt_total": fwbs,
-        "whtshld": fwbs,
-        "vol_shld_total": fwbs,
-        "dr_vv_inboard": build,
-        "dr_vv_outboard": build,
-        "m_vv": fwbs,
-        "vol_vv": fwbs,
-        "dr_blkt_outboard": build,
-        "dr_blkt_inboard": build,
-        "dr_shld_outboard": build,
-        "dr_shld_inboard": build,
-        "fw_armour_thickness": fwbs,
-        "m_tf_coils_total": tfcoil,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -238,26 +194,6 @@ NuclearHeatingMagnetsSphericalTokamak = ccfe_hcpb.function(
     "x_shield",
     "tfc_nuc_heating",
     "p_tf_nuclear_heat_mw_unnormalised",
-    reads={
-        "radius_fw_channel": fwbs,
-        "dx_fw_module": fwbs,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-        "den_steel": fwbs,
-        "m_blkt_total": fwbs,
-        "vol_blkt_total": fwbs,
-        "whtshld": fwbs,
-        "vol_shld_total": fwbs,
-        "dr_vv_inboard": build,
-        "dr_vv_outboard": build,
-        "m_vv": fwbs,
-        "vol_vv": fwbs,
-        "dr_blkt_outboard": build,
-        "dr_shld_outboard": build,
-        "fw_armour_thickness": fwbs,
-        "whttflgs": tfcoil,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -265,10 +201,6 @@ NuclearHeatingMagnetsSphericalTokamak = ccfe_hcpb.function(
 NuclearHeatingFw = ccfe_hcpb.function(
     nuclear_heating_fw,
     "p_fw_nuclear_heat_total_mw_unnormalised",
-    reads={
-        "m_fw_total": fwbs,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -277,10 +209,6 @@ NuclearHeatingBlanket = ccfe_hcpb.function(
     nuclear_heating_blanket,
     "p_blkt_nuclear_heat_total_mw_unnormalised",
     "exp_blanket",
-    reads={
-        "m_blkt_total": fwbs,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -296,12 +224,6 @@ NuclearHeatingShieldConventional = ccfe_hcpb.function(
     "exp_shield1",
     "exp_shield2",
     "shld_u_nuc_heating",
-    reads={
-        "dr_shld_outboard": build,
-        "dr_shld_inboard": build,
-        "whtshld": fwbs,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -312,11 +234,6 @@ NuclearHeatingShieldSphericalTokamak = ccfe_hcpb.function(
     "exp_shield1",
     "exp_shield2",
     "shld_u_nuc_heating",
-    reads={
-        "dr_shld_outboard": build,
-        "whtshld": fwbs,
-        "p_fusion_total_mw": physics,
-    },
 )
 
 
@@ -340,16 +257,6 @@ CentrepostNeutronicsSphericalTokamakSuperconducting = ccfe_hcpb.function(
     V.fwbs.pnuc_cp_tf,
     "p_cp_shield_nuclear_heat_mw_fit",
     V.fwbs.pnuc_cp,
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "dr_fw_plasma_gap_inboard": build,
-        "z_plasma_xpoint_upper": build,
-        "r_sh_inboard_out": build,
-        "p_neutron_total_mw": physics,
-        "dr_shld_inboard": build,
-    },
 )
 
 
@@ -368,11 +275,6 @@ NuclearHeatingRenormalisationSingleNullConventional = ccfe_hcpb.function(
     V.fwbs.p_shld_nuclear_heat_mw,
     V.fwbs.p_tf_nuclear_heat_mw,
     V.fwbs.p_blkt_multiplication_mw,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_p_blkt_multiplication": fwbs,
-        "p_neutron_total_mw": physics,
-    },
 )
 
 
@@ -386,11 +288,6 @@ NuclearHeatingRenormalisationDoubleNullConventional = ccfe_hcpb.function(
     V.fwbs.p_shld_nuclear_heat_mw,
     V.fwbs.p_tf_nuclear_heat_mw,
     V.fwbs.p_blkt_multiplication_mw,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_p_blkt_multiplication": fwbs,
-        "p_neutron_total_mw": physics,
-    },
 )
 
 
@@ -405,12 +302,6 @@ NuclearHeatingRenormalisationSingleNullSphericalTokamak = ccfe_hcpb.function(
     V.fwbs.p_tf_nuclear_heat_mw,
     V.fwbs.p_cp_shield_nuclear_heat_mw,
     V.fwbs.p_blkt_multiplication_mw,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_p_blkt_multiplication": fwbs,
-        "p_neutron_total_mw": physics,
-        "pnuc_cp_tf": fwbs,
-    },
 )
 
 
@@ -425,12 +316,6 @@ NuclearHeatingRenormalisationDoubleNullSphericalTokamak = ccfe_hcpb.function(
     V.fwbs.p_tf_nuclear_heat_mw,
     V.fwbs.p_cp_shield_nuclear_heat_mw,
     V.fwbs.p_blkt_multiplication_mw,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_p_blkt_multiplication": fwbs,
-        "p_neutron_total_mw": physics,
-        "pnuc_cp_tf": fwbs,
-    },
 )
 
 
@@ -441,13 +326,6 @@ FirstWallRadiationPowers = fwbs.function(
     "p_fw_rad_total_mw",
     "psurffwo",
     "psurffwi",
-    reads={
-        "p_plasma_rad_mw": physics,
-        "a_fw_outboard": first_wall,
-        "a_fw_total": first_wall,
-        "p_beam_orbit_loss_mw": current_drive,
-        "p_fw_alpha_mw": physics,
-    },
 )
 
 
@@ -457,18 +335,4 @@ PumpingPowerMechanicalWithPressureDrop = primary_pumping.function(
     "p_fw_blkt_coolant_pump_mw",
     V.heat_transport.p_shld_coolant_pump_mw,
     V.heat_transport.p_div_coolant_pump_mw,
-    reads={
-        "etaiso": fwbs,
-        "p_fw_nuclear_heat_total_mw": fwbs,
-        "psurffwi": fwbs,
-        "psurffwo": fwbs,
-        "p_blkt_nuclear_heat_total_mw": fwbs,
-        "f_p_shld_coolant_pump_total_heat": heat_transport,
-        "p_shld_nuclear_heat_mw": fwbs,
-        "p_cp_shield_nuclear_heat_mw": fwbs,
-        "f_p_div_coolant_pump_total_heat": heat_transport,
-        "p_plasma_separatrix_mw": physics,
-        "p_div_nuclear_heat_total_mw": fwbs,
-        "p_div_rad_total_mw": fwbs,
-    },
 )

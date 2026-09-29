@@ -25,22 +25,15 @@ from functional_process.models.engineering.ivc_functions import dshellarea, dshe
 # `dshellvol`/`jnp`, which are unused now that their real uses left with the functions
 # (see `power/electric_production.py`'s commit for why a partial list is the wrong move).
 __all__ = [
-    "BlanketAreas",
-    "BlanketCoverageFactors",
     "BlanketCoverageFactorsDoubleNull",
     "BlanketCoverageFactorsSingleNull",
-    "BlanketHalfHeight",
     "BlanketHalfHeightDoubleNull",
     "BlanketHalfHeightSingleNull",
     "BlanketInboardPoloidalAngle",
-    "BlanketVolumes",
     "DShapedBlanketAreas",
     "DShapedBlanketVolumes",
     "EllipticalBlanketAreas",
     "EllipticalBlanketVolumes",
-    "ExplicitFunction",
-    "From",
-    "OutputInto",
     "apply_coverage_factors_double_null",
     "apply_coverage_factors_single_null",
     "blanket",
@@ -70,17 +63,6 @@ __all__ = [
 BlanketHalfHeightSingleNull = blanket.function(
     calculate_blkt_half_height_single_null,
     "dz_blkt_half",
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_blkt_upper": build,
-        "z_plasma_xpoint_upper": build,
-        "dr_fw_plasma_gap_inboard": build,
-        "dr_fw_plasma_gap_outboard": build,
-        "dr_fw_inboard": build,
-        "dr_fw_outboard": build,
-    },
 )
 
 
@@ -88,12 +70,6 @@ BlanketHalfHeightSingleNull = blanket.function(
 BlanketHalfHeightDoubleNull = blanket.function(
     calculate_blkt_half_height_double_null,
     "dz_blkt_half",
-    reads={
-        "z_plasma_xpoint_lower": build,
-        "dz_xpoint_divertor": build,
-        "dz_divertor": divertor,
-        "dz_blkt_upper": build,
-    },
 )
 
 
@@ -114,12 +90,6 @@ EllipticalBlanketAreas = build.function(
     "a_blkt_inboard_surface_full_coverage",
     "a_blkt_outboard_surface_full_coverage",
     "a_blkt_total_surface_full_coverage",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "dz_blkt_half": blanket,
-    },
 )
 
 
@@ -129,10 +99,6 @@ DShapedBlanketAreas = build.function(
     "a_blkt_inboard_surface_full_coverage",
     "a_blkt_outboard_surface_full_coverage",
     "a_blkt_total_surface_full_coverage",
-    reads={
-        "rminor": physics,
-        "dz_blkt_half": blanket,
-    },
 )
 
 
@@ -142,19 +108,6 @@ EllipticalBlanketVolumes = fwbs.function(
     "vol_blkt_inboard_full_coverage",
     "vol_blkt_outboard_full_coverage",
     "vol_blkt_total_full_coverage",
-    reads={
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "r_shld_inboard_inner": build,
-        "dr_shld_inboard": build,
-        "dr_blkt_inboard": build,
-        "r_shld_outboard_outer": build,
-        "dr_shld_outboard": build,
-        "dr_blkt_outboard": build,
-        "dz_blkt_half": blanket,
-        "dz_blkt_upper": build,
-    },
 )
 
 
@@ -164,19 +117,6 @@ DShapedBlanketVolumes = fwbs.function(
     "vol_blkt_inboard_full_coverage",
     "vol_blkt_outboard_full_coverage",
     "vol_blkt_total_full_coverage",
-    reads={
-        "r_shld_inboard_inner": build,
-        "dr_shld_inboard": build,
-        "dr_blkt_inboard": build,
-        "dr_fw_inboard": build,
-        "dr_fw_plasma_gap_inboard": build,
-        "rminor": physics,
-        "dr_fw_plasma_gap_outboard": build,
-        "dr_fw_outboard": build,
-        "dz_blkt_half": blanket,
-        "dr_blkt_outboard": build,
-        "dz_blkt_upper": build,
-    },
 )
 
 
@@ -194,12 +134,6 @@ BlanketCoverageFactorsSingleNull = build.function(
     V.fwbs.vol_blkt_inboard,
     "a_blkt_inboard_surface",
     V.fwbs.vol_blkt_total,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_a_fw_outboard_hcd": fwbs,
-        "vol_blkt_total_full_coverage": fwbs,
-        "vol_blkt_inboard_full_coverage": fwbs,
-    },
 )
 
 
@@ -212,12 +146,6 @@ BlanketCoverageFactorsDoubleNull = build.function(
     V.fwbs.vol_blkt_inboard,
     "a_blkt_inboard_surface",
     V.fwbs.vol_blkt_total,
-    reads={
-        "f_ster_div_single": fwbs,
-        "f_a_fw_outboard_hcd": fwbs,
-        "vol_blkt_total_full_coverage": fwbs,
-        "vol_blkt_inboard_full_coverage": fwbs,
-    },
 )
 
 
@@ -225,8 +153,4 @@ BlanketCoverageFactorsDoubleNull = build.function(
 BlanketInboardPoloidalAngle = blanket.function(
     calculate_blkt_inboard_poloidal_plasma_angle,
     "deg_blkt_inboard_poloidal_plasma",
-    reads={
-        "rminor": physics,
-        "dr_fw_plasma_gap_inboard": build,
-    },
 )

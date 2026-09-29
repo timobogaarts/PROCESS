@@ -1,12 +1,7 @@
 """Pure-functional port of `Stellarator.st_strc` (chunk 1D of unit #1)."""
 
 from functional_process.cottax.paths import (
-    fwbs,
-    physics,
-    stellarator,
-    stellarator_config,
     structure,
-    tfcoil,
 )
 from functional_process.models.safe_math import (
     safe_pow,  # noqa: F401
@@ -22,17 +17,4 @@ StructureMasses = structure.function(
     "aintmass",
     "clgsmass",
     "coldmass",
-    reads={
-        "stella_config_coilsurface": stellarator_config,
-        "f_st_rmajor": stellarator,
-        "r_coil_minor": stellarator,
-        "stella_config_coil_rminor": stellarator_config,
-        "dx_tf_inboard_out_toroidal": tfcoil,
-        "len_tf_coil": tfcoil,
-        "n_tf_coils": tfcoil,
-        "b_plasma_toroidal_on_axis": physics,
-        "den_steel": fwbs,
-        "m_tf_coils_total": tfcoil,
-        "dewmkg": fwbs,
-    },
 )

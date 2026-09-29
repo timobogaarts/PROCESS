@@ -14,10 +14,7 @@ from functional_process.cottax.models.pfcoil import (
     PFCoilTopology,
 )
 from functional_process.cottax.paths import (
-    pf_coil,
     pf_power,
-    physics,
-    times,
 )
 from functional_process.models.power.pf_coil_power import (
     COILS_IN_GROUP_WITH_CS,
@@ -61,7 +58,6 @@ __all__ = [
     "SPHERICAL_TOKAMAK_TOPOLOGY",
     "VPFSKV_KV",
     "PFCoilTopology",
-    "PfCoilPowerSupplies",
     "PfCoilPowerSuppliesNoCentralSolenoid",
     "PfCoilPowerSuppliesReference",
     "calculate_pf_coil_power_supplies",
@@ -101,27 +97,6 @@ PfCoilPowerSuppliesReference = pf_power.function(
     "acptmax",
     "spsmva",
     V.pf_coil.p_pf_electric_supplies_mw,
-    reads={
-        "rmajor": physics,
-        "c_pf_coil_turn_peak_input": pf_coil,
-        "rhopfbus": pf_coil,
-        "rho_pf_coil": pf_coil,
-        "r_pf_coil_middle": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "c_pf_cs_coil_pulse_end_ma": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "c_pf_coil_turn": pf_coil,
-        "ind_pf_cs_plasma_mutual": pf_coil,
-        "etapsu": pf_coil,
-        "p_plasma_ohmic_mw": physics,
-        "t_plant_pulse_coil_precharge": times,
-        "t_plant_pulse_plasma_current_ramp_up": times,
-        "t_plant_pulse_fusion_ramp": times,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_plasma_current_ramp_down": times,
-    },
 )
 
 
@@ -139,25 +114,4 @@ PfCoilPowerSuppliesNoCentralSolenoid = pf_power.function(
     "acptmax",
     "spsmva",
     V.pf_coil.p_pf_electric_supplies_mw,
-    reads={
-        "rmajor": physics,
-        "c_pf_coil_turn_peak_input": pf_coil,
-        "rhopfbus": pf_coil,
-        "rho_pf_coil": pf_coil,
-        "r_pf_coil_middle": pf_coil,
-        "j_pf_coil_wp_peak": pf_coil,
-        "f_a_pf_coil_void": pf_coil,
-        "c_pf_cs_coils_peak_ma": pf_coil,
-        "c_pf_cs_coil_pulse_end_ma": pf_coil,
-        "n_pf_coil_turns": pf_coil,
-        "c_pf_coil_turn": pf_coil,
-        "ind_pf_cs_plasma_mutual": pf_coil,
-        "etapsu": pf_coil,
-        "p_plasma_ohmic_mw": physics,
-        "t_plant_pulse_coil_precharge": times,
-        "t_plant_pulse_plasma_current_ramp_up": times,
-        "t_plant_pulse_fusion_ramp": times,
-        "t_plant_pulse_burn": times,
-        "t_plant_pulse_plasma_current_ramp_down": times,
-    },
 )

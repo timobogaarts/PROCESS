@@ -3,10 +3,7 @@
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    build,
     pf_coil,
-    physics,
-    superconducting_tfcoil,
 )
 from functional_process.models.pfcoil.geometry import (
     calculate_cs_geometry,  # noqa: F401 -- re-exported for tests
@@ -43,11 +40,6 @@ CSCoilGeometry = pf_coil.function(
     "a_cs_toroidal",
     "dz_cs_full",
     "dr_cs_full",
-    reads={
-        "z_tf_inside_half": build,
-        "dr_cs": build,
-        "dr_cs_bore": build,
-    },
 )
 
 
@@ -69,14 +61,6 @@ PFCoilPlacement = pf_coil.function(
     "r_pf_outside_tf_midplane",
     "r_pf_coil_middle_group_array",
     "z_pf_coil_middle_group_array",
-    reads={
-        "r_tf_outboard_out": superconducting_tfcoil,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "z_tf_top": build,
-        "dz_tf_upper_lower_midplane": build,
-    },
 )
 
 
@@ -92,14 +76,6 @@ PFCoilPlacementSphericalTokamak = pf_coil.function(
     "r_pf_outside_tf_midplane",
     "r_pf_coil_middle_group_array",
     "z_pf_coil_middle_group_array",
-    reads={
-        "r_tf_outboard_out": superconducting_tfcoil,
-        "rmajor": physics,
-        "rminor": physics,
-        "triang": physics,
-        "z_tf_top": build,
-        "dz_tf_upper_lower_midplane": build,
-    },
 )
 
 

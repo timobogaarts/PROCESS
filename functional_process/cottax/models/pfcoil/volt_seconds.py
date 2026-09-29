@@ -1,6 +1,6 @@
 """The PF/CS volt-second accounting: per-turn current waveforms and `PFCoil.vsec`."""
 
-from functional_process.cottax.paths import pf_coil, physics
+from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.volt_seconds import (
     calculate_pf_coil_turn_currents,  # noqa: F401 -- re-exported for tests
     calculate_pf_coil_turn_currents_no_central_solenoid,
@@ -14,9 +14,6 @@ from functional_process.models.pfcoil.volt_seconds import (
 PFCoilTurnCurrents = pf_coil.function(
     calculate_pf_coil_turn_currents_reference,
     "c_pf_coil_turn",
-    reads={
-        "plasma_current": physics,
-    },
 )
 
 
@@ -27,9 +24,6 @@ PFCoilTurnCurrents = pf_coil.function(
 PFCoilTurnCurrentsNoCentralSolenoid = pf_coil.function(
     calculate_pf_coil_turn_currents_no_central_solenoid,
     "c_pf_coil_turn",
-    reads={
-        "plasma_current": physics,
-    },
 )
 
 

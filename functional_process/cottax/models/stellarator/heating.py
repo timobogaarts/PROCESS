@@ -5,7 +5,6 @@ from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     current_drive,
-    physics,
 )
 from functional_process.models.stellarator.heating import (
     calculate_beam_current,
@@ -51,8 +50,4 @@ BeamCurrent = current_drive.function(calculate_beam_current, "c_beam_total")
 FusionGain = current_drive.function(
     calculate_fusion_gain,
     "big_q_plasma",
-    reads={
-        "p_fusion_total_mw": physics,
-        "p_plasma_ohmic_mw": physics,
-    },
 )
