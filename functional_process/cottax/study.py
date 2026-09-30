@@ -34,7 +34,6 @@ from cottax.driver_contracts import RootFinding
 from cottax.jax_execution.solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
-    CloseFunctionalCycles,
     Eq,
     GaussSeidel,
     Le,
@@ -345,11 +344,7 @@ def block_graph(
     fields. `reports`: whether the top's contract asks its steps, verdict and status
     back."""
     model = problem_model(configuration)
-    # An architecture places what lies on its top's cycle; a cycle of the machine off
-    # it (upstream of a root find, say) is closed by the same rule, on its own.
     plan = Plan(model.graph) + _architecture(arm, rule)
-    if any(len(c) > 1 for c in plan.graph.graph.components if TOP not in c):
-        plan = plan + CloseFunctionalCycles(rule, cx.closing)
     top = plan.graph[TOP]
     chosen = drivers_for(plan.graph, skip=(TOP,))
     if isinstance(configuration.problem, Optimisation):
