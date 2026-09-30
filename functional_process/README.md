@@ -52,7 +52,6 @@ functional_process/
                           native.py (a configuration's solve state, no DataStructure)
     architectures/        contracts.py drivers.py reading.py host_cache.py (the port's
                           drivers, as cottax contracts and their implementations)
-    visualization/        grouping.py: the grouped DSM the notebooks draw
 
   tests/
     models/               one case per ported unit, mirroring models/; sample points
