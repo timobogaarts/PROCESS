@@ -1,6 +1,8 @@
 """Table 6 -- the same MDF under OpenMDAO, through cottax's own export
-(`study.openmdao`, `cottax.export.openmdao`): one jitted component per model, its
-partials by `jax.jacfwd` where the jaxpr says they are nonzero; a group per nested solve
+(`study.openmdao`, `cottax.export.openmdao`) of the optimiser's cycle, what each
+iteration re-runs, with what it reads from outside run once and held (no partial is
+taken in it): one jitted component per model, its partials by `jax.jacfwd` where the
+jaxpr says they are nonzero; a group per nested solve
 (`NonlinearBlockGS` for a fixed point, `NewtonSolver` for a root find, `DirectSolver` in
 each); SLSQP as the driver, in units of the design's starts.
 

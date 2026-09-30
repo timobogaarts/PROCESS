@@ -542,21 +542,25 @@ def study(configuration: Configuration, arm: str, cold=None, **how) -> dict:
 # ---------------------------------------------------------------- one problem, posed
 
 
+def before(graph, inputs, problem=TOP) -> dict:
+    """`inputs` and every place computed before `problem`'s cycle, run once: what the
+    cycle reads from outside. `problem` is outermost."""
+    cycle = set(graph.cycle_of(problem))
+    upstream = [n for n in graph.graph.ancestors(cycle) if n not in cycle]
+    env = dict(inputs)
+    if upstream:
+        sub = graph.subgraph(upstream)
+        env.update(
+            solve(sub, OrderedMap((v, inputs[v]) for v in sub.graph.boundary_inputs))
+        )
+    return env
+
+
 def posed(graph, inputs, problem=TOP) -> tuple:
     """`(posed, context, data)`: what a run of `graph` at `inputs` hands `problem`'s
     driver, without solving it -- what runs before it once, then the problem posed as
     `cottax.execution.run` poses it. `problem` is outermost."""
-    cycle = set(graph.cycle_of(problem))
-    before = [n for n in graph.graph.ancestors(cycle) if n not in cycle]
-    env = dict(inputs)
-    if before:
-        upstream = graph.subgraph(before)
-        env.update(
-            solve(
-                upstream,
-                OrderedMap((v, inputs[v]) for v in upstream.graph.boundary_inputs),
-            )
-        )
+    env = before(graph, inputs, problem)
     interior = next(
         s.interior
         for s in proved(graph).steps
@@ -589,10 +593,12 @@ def posed(graph, inputs, problem=TOP) -> tuple:
 
 
 def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=RULE):
-    """`arm` of `configuration` as cottax's OpenMDAO export: the same graph and values
-    `assemble` builds, the top answered by OpenMDAO's SLSQP in units of its design's
-    starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or Gauss-Seidel.
-    `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it back."""
+    """`arm` of `configuration` as cottax's OpenMDAO export: the top's cycle of the graph
+    `assemble` builds -- what every iteration re-runs -- with what it reads from outside
+    run once and handed in; the top answered by OpenMDAO's SLSQP in units of its
+    design's starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or
+    Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
+    back."""
     from cottax.driver_contracts import ConstrainedMinimiser  # noqa: PLC0415
     from cottax.export.openmdao import (  # noqa: PLC0415
         DEFAULT_SOLVERS,
@@ -622,6 +628,14 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
         **dict(DEFAULT_SOLVERS),
         ConstrainedMinimiser: OMSLSQP(scaled=True),
     })
+    env = before(graph, inputs)
+    cycle = graph.subgraph(graph.cycle_of(TOP))
+    outside = OrderedMap((v, env[v]) for v in cycle.graph.boundary_inputs)
+    # Every input is held while SLSQP moves the design, which the top owns: no
+    # derivative is asked in one, so none is taken.
     return OpenMDAOExport(
-        Inputs(OpenMDAOGraph(graph), inputs), PytreeCodec(), solvers=solvers
+        Inputs(OpenMDAOGraph(cycle), outside),
+        PytreeCodec(),
+        solvers=solvers,
+        constants=tuple(outside),
     )
