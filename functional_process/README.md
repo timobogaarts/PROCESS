@@ -61,15 +61,9 @@ functional_process/
     test_architectures.py every architecture on every configuration, cold, against
     reference_architectures.txt   this pin
     test_configurations.py  every configuration is still its input file, converted
-    test_cottax_surface.py  every cottax name the port imports -- modules, paper_tests
-                          and notebook cells -- read off its own imports and asked of
-                          cottax at once: a re-port starts from the whole diff, not
-                          one ImportError
-    examples/             the notebooks run and their RESULT has not moved
     _harness/             the unit-case contracts (tiers, sampling, tolerances, FD)
     conftest.py           --fp-fuzz, --fp-gradients, --fp-write-pin
 
-  architecture_examples/  one notebook per architecture: the recipe, its DSM, a solve
   deliberate_divergences.md   every place the port knowingly differs from PROCESS
 ```
 
