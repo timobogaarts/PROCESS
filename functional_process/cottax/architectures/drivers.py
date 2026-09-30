@@ -13,7 +13,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optimistix as optx
 from cottax.relational import Le
 from cottax.pytree.path import VarPath
 from jax.flatten_util import ravel_pytree
@@ -803,48 +802,6 @@ def condition_scale(conditions: Gaps, start):
             else jnp.ones(1)
         )
     return jnp.concatenate(scales)
-
-
-class MdfNewtonDriver(NewtonDriver):
-    """Undamped optimistix Newton from a `Start`, reporting its verdict instead of
-    raising it."""
-
-    rtol: float = 1e-4
-    atol: float = 1e-4
-
-    max_steps: int = 256
-
-    needs = frozenset({Start})
-    provides = frozenset({Steps, Converged, Status})
-    computes = (Steps, Converged, Status)
-
-    def solve(self, gaps: Gaps, data) -> tuple:
-        """The root of `gaps` started from `data[Start]`, then the verdict."""
-        start = data.get(Start)
-        if start is None:
-            raise ValueError(
-                f"MdfNewtonDriver needs a starting value for every design variable "
-                f"({', '.join(v.spelling for v in gaps.unknowns)})"
-            )
-        require_square("MdfNewtonDriver", gaps, start)
-        flat_guess, unravel = ravel_pytree(start)
-
-        def residual(flat, args=None):
-            return flat_gaps(gaps, unravel(flat))
-
-        solution = optx.root_find(
-            residual,
-            optx.Newton(rtol=self.rtol, atol=self.atol),
-            flat_guess,
-            throw=False,
-            max_steps=self.max_steps,
-        )
-        return (
-            *unravel(solution.value),
-            solution.stats["num_steps"],
-            solution.result == optx.RESULTS.successful,
-            getattr(solution.result, "_value", jnp.asarray(-1)),
-        )
 
 
 class SafeguardedNewtonDriver(NewtonDriver):

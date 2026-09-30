@@ -30,6 +30,7 @@ from cottax.core.plan import Plan, Rename
 from cottax.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
+from cottax.driver_contracts import RootFinding
 from cottax.jax_execution.solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
@@ -52,11 +53,7 @@ from functional_process.cottax.architectures.contracts import (
     Status,
     Steps,
 )
-from functional_process.cottax.architectures.drivers import (
-    MdfNewtonDriver,
-    SweepDriver,
-    VmconDriver,
-)
+from functional_process.cottax.architectures.drivers import SweepDriver, VmconDriver
 from functional_process.cottax.input.native import state_of
 from functional_process.cottax.models.constraints import MERIT, held
 from functional_process.cottax.problem import TOP, problem_model
@@ -343,7 +340,7 @@ def block_graph(
     reports=True,
 ):
     """The problem under `arm`, every cycle cut by `rule` and every problem driven: the
-    top by `optimiser` (or, for a root find, `MdfNewtonDriver`), recording its iterates
+    top by `optimiser` (or, for a root find, cottax's `Newton`), recording its iterates
     into `trace`. `optimiser` is a driver class, or a partial of one, taking VMCON's
     fields. `reports`: whether the top's contract asks its steps, verdict and status
     back."""
@@ -368,10 +365,7 @@ def block_graph(
             ),
         )
     else:
-        chosen[TOP] = (
-            PortRootFinding(reports=(Steps, Converged) if reports else ()),
-            MdfNewtonDriver(),
-        )
+        chosen[TOP] = (RootFinding(steps=reports), Newton())
     return model, driven(plan, chosen).graph
 
 
@@ -481,7 +475,18 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
     trace.clear()
     problem_ = configuration.problem
     started = time.perf_counter()
-    out = solve(graph, assembled.inputs)
+    try:
+        out = solve(graph, assembled.inputs)
+    except eqx.EquinoxRuntimeError:
+        # cottax's Newton raises when it does not converge: the row says so.
+        if isinstance(configuration.problem, Optimisation) or assembled.arm == "MDA":
+            raise
+        return {
+            "status": "not-converged",
+            "iterations": None,
+            "seconds": time.perf_counter() - started,
+            "x": (),
+        }
     seconds = time.perf_counter() - started
     if assembled.arm == "MDA":
         return {
@@ -517,11 +522,7 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
             result = conditions(configuration, out)
     else:
         iterations = int(np.asarray(out[reported[Steps]]))
-        status = (
-            "converged"
-            if bool(np.asarray(out[reported[Converged]]))
-            else "not-converged"
-        )
+        status = "converged"
         result = conditions(configuration, out)
     return {
         "status": status,
