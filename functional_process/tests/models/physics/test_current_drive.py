@@ -263,7 +263,7 @@ class TestCurrentDriveFreethyEcrhPrimaryNoSecondary(Tier1Contract):
 
 
 def _paths(node):
-    return [i.spelling for i in node.reads.values()], [o.spelling for o in node.outputs]
+    return [i.spelling for i in (r.place for r in node.function_reads)], [o.spelling for o in node.function_outputs]
 
 
 def test_the_ecrh_efficiency_occupant_reads_three_variables():
@@ -472,7 +472,7 @@ def test_the_three_boundary_reads_are_produced():
         HcdInjectedPowerTotal,
         HcdElectricTotalNonIgnited,
     ):
-        owned.update(o.spelling for o in node.outputs)
+        owned.update(o.spelling for o in node.function_outputs)
 
     assert {
         ".current_drive.p_hcd_ecrh_injected_total_mw",

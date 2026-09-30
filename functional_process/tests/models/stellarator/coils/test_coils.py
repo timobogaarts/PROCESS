@@ -504,7 +504,7 @@ def test_intersect_has_no_port_for_xin():
     `intersect`'s own 5-argument signature -- confirming `coils.md`'s open question 2
     directly rather than merely asserting it.
     """
-    assert len(Intersect.reads) == 4
+    assert len(Intersect.function_reads) == 4
     assert intersect.__code__.co_argcount == 5
 
 

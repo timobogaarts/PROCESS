@@ -406,7 +406,14 @@ def _agree(name, slots):
     rng = np.random.default_rng(0)
     checked = 0
     for slot, declaration, dispatch in _chosen(name, slots):
-        places = dict(declaration.reads.items())
+        places = {
+            parameter: read.place
+            for parameter, read in zip(
+                inspect.signature(declaration.fn).parameters,
+                declaration.function_reads,
+                strict=True,
+            )
+        }
         leaf_of = {}
         for parameter, place in places.items():
             leaf = getattr(place.segments[-1], "name", None)

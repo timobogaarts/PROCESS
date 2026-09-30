@@ -160,7 +160,7 @@ def reads_only_its_own_statement():
     from functional_process.cottax.stated import STATED
 
     def check(node):
-        assert list(node.reads.values()) == [STATED(out) for out in node.outputs]
+        assert list((r.place for r in node.function_reads)) == [STATED(out) for out in node.function_outputs]
         return node
 
     return check

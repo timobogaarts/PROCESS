@@ -595,7 +595,7 @@ def problem_from_indat(input_file: str | Imported, switches: dict[str, int], mac
     reached |= set(design)
 
     def constant(c) -> bool:
-        return not reached & set(c.reads.values())
+        return not reached & set((r.place for r in c.function_reads))
 
     if refused := [c for c in equalities if constant(c)]:
         raise ValueError(

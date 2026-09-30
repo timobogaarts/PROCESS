@@ -38,7 +38,7 @@ def relax(u, k):
     return 0.5 * u + k
 
 
-Relax = toy.iteration(relax, "u")
+Relax = toy.fixed_point(relax, "u")
 
 
 def test_picard_driver_drives_a_fixed_point_node_end_to_end():

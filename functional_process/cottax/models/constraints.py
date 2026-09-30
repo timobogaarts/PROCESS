@@ -194,7 +194,7 @@ def constraint_places(cid: int) -> tuple:
 def held(constraint):
     """The value a constraint declaration's requirement holds: its normalised
     residual."""
-    return constraint.outputs[1]
+    return constraint.function_outputs[1]
 
 
 def _constraint(cid: int, fn, **chosen):

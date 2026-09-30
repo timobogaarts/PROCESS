@@ -486,7 +486,7 @@ def test_impurity_radiation_totals_assembles_alone():
     graph = to_graph(node)
     assert graph.definitions
 
-    read = set(node.reads.values())
+    read = set((r.place for r in node.function_reads))
     for i in range(14):
         idx_path = place(V.impurity_radiation.f_nd_impurity_electron_array[i])
         assert idx_path in read

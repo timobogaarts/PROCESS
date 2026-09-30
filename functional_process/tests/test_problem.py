@@ -46,7 +46,7 @@ def _chosen(name):
         *getattr(problem, "inequalities", ()),
         *getattr(problem, "evaluated", ()),
     ]
-    by_id = {c.outputs[1].segments[-1].name: c for c in chosen}
+    by_id = {c.function_outputs[1].segments[-1].name: c for c in chosen}
     pairs = [
         (getattr(constraints, f"constraint_{cid}"), by_id[f"c{cid}"])
         for cid in stated.icc
@@ -78,7 +78,9 @@ def test_each_declaration_is_the_branch_processes_switches_take(name):
             for p in inspect.signature(dispatch).parameters
         }
         values = []
-        for parameter, place in declaration.reads.items():
+        parameters = inspect.signature(declaration.fn).parameters
+        for parameter, read in zip(parameters, declaration.function_reads, strict=True):
+            place = read.place
             leaf = place.segments[-1].name
             values.append(arguments[leaf] if leaf in arguments else arguments[parameter])
         np.testing.assert_allclose(

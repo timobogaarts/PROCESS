@@ -368,7 +368,7 @@ def close(configuration, condition: str, var: str, *, bracket=None) -> Closed:
     others = getattr(problem, "inequalities", ()) or getattr(problem, "evaluated", ())
     merit = problem.minimise or problem.maximise
     report = {
-        "objective": merit.outputs[0],
+        "objective": merit.function_outputs[0],
         "equalities": tuple(held(c) for c in problem.equalities),
         "inequalities": tuple(held(c) for c in others),
         "closing": {cond.spelling: unknown.spelling},
@@ -451,7 +451,7 @@ def read_the_input_file(machine: str) -> Plan:
                 f"{len(problem.equalities)} equalities and "
                 f"{len(inequalities)} inequalities, "
                 f"{'minimising' if problem.minimise is not None else 'maximising'} "
-                f"{merit.outputs[0].spelling}; "
+                f"{merit.function_outputs[0].spelling}; "
                 f"`values` is PROCESS's own converged answer"
             ),
         )

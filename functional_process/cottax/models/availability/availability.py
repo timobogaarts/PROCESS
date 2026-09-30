@@ -172,7 +172,7 @@ CplifeAvailResistive = costs.function(
 # superconducting centrepost lifetime, availability-adjusted -- the same formula as
 # `CplifeAvailSuperconducting` (`.costs.cplife`'s `avail()`/`avail_2()` producer),
 # same `fn`, different node shape (`FixedPointFunction`, not `ExplicitFunction`).
-CplifeAvailStSuperconductingAdjusted = costs.iteration(
+CplifeAvailStSuperconductingAdjusted = costs.fixed_point(
     calculate_cplife_superconducting,
     "cplife",
 )
@@ -181,7 +181,7 @@ CplifeAvailStSuperconductingAdjusted = costs.iteration(
 # `i_tf_sup == SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh
 # superconducting centrepost lifetime, unadjusted -- the same formula as
 # `CpLifetimeSuperconducting`.
-CplifeAvailStSuperconductingUnadjusted = costs.iteration(
+CplifeAvailStSuperconductingUnadjusted = costs.fixed_point(
     calculate_cp_lifetime_superconducting,
     "cplife",
 )
@@ -190,7 +190,7 @@ CplifeAvailStSuperconductingUnadjusted = costs.iteration(
 # `i_tf_sup != SUPERCONDUCTING`, `itart == SPHERICAL_TOKAMAK`: the fresh resistive
 # centrepost lifetime, availability-adjusted -- the same formula as
 # `CplifeAvailResistive`.
-CplifeAvailStResistiveAdjusted = costs.iteration(
+CplifeAvailStResistiveAdjusted = costs.fixed_point(
     calculate_cplife_resistive,
     "cplife",
 )
@@ -198,7 +198,7 @@ CplifeAvailStResistiveAdjusted = costs.iteration(
 
 # `i_tf_sup != SUPERCONDUCTING`, `itart != SPHERICAL_TOKAMAK`: the fresh resistive
 # centrepost lifetime, unadjusted -- the same formula as `CpLifetimeResistive`.
-CplifeAvailStResistiveUnadjusted = costs.iteration(
+CplifeAvailStResistiveUnadjusted = costs.fixed_point(
     calculate_cp_lifetime_resistive,
     "cplife",
 )

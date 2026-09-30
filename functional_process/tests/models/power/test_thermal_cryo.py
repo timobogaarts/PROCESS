@@ -619,8 +619,8 @@ def test_delta_eta_step_to_graph_builds(
     graph = to_graph(node)
     cls_name = node.fn.__name__
     assert {n.spelling for n in graph.nodes} == {f"['{cls_name}']"}
-    assert ".power.delta_eta" in {o.spelling for o in node.outputs}
-    reads = {i.spelling for i in node.reads.values()}
+    assert ".power.delta_eta" in {o.spelling for o in node.function_outputs}
+    reads = {i.spelling for i in (r.place for r in node.function_reads)}
     assert ".power.delta_eta_in" in reads
     assert ".power.delta_eta" not in reads
 
@@ -654,8 +654,8 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
     change is the finding.**
     """
     node = _component_thermal_powers()
-    owned = {o.spelling for o in node.outputs}
-    read = {i.spelling for i in node.reads.values()}
+    owned = {o.spelling for o in node.function_outputs}
+    read = {i.spelling for i in (r.place for r in node.function_reads)}
     for path in _SIX_SELF_LOOP_VARPATHS:
         assert path not in owned
     assert ".primary_pumping.p_fw_blkt_coolant_pump_mw" in read
@@ -1332,7 +1332,7 @@ def test_cryo_split_ownership_is_a_partition():
         )
     ]
 
-    owned = [{o.spelling for o in n.outputs} for n in (qnuc_node, q_node, loads)]
+    owned = [{o.spelling for o in n.function_outputs} for n in (qnuc_node, q_node, loads)]
     assert owned[0] == {".fwbs.qnuc"}
     assert owned[1] == {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     assert owned[2] == {
@@ -1345,7 +1345,7 @@ def test_cryo_split_ownership_is_a_partition():
     assert (owned[0] | owned[1]) & owned[2] == set()
 
     # `CryoLoads` must still *read* every `q*` -- it builds `helpow` from them.
-    read = {i.spelling for i in loads.reads.values()}
+    read = {i.spelling for i in (r.place for r in loads.function_reads)}
     assert owned[0] | owned[1] <= read
 
 
@@ -1467,8 +1467,8 @@ def test_cryo_q_nuc_has_no_self_read_on_the_computing_arm(
         assert occupant is None
         return
     node = occupant
-    assert {o.spelling for o in node.outputs} == {".fwbs.qnuc"}
-    assert ".fwbs.qnuc" not in {i.spelling for i in node.reads.values()}
+    assert {o.spelling for o in node.function_outputs} == {".fwbs.qnuc"}
+    assert ".fwbs.qnuc" not in {i.spelling for i in (r.place for r in node.function_reads)}
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
@@ -1476,8 +1476,8 @@ def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
     owned = {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     for arm in (0, 1):
         node = CRYO_Q_LOADS[arm]
-        assert {o.spelling for o in node.outputs} == owned
-        assert owned & {i.spelling for i in node.reads.values()} == set()
+        assert {o.spelling for o in node.function_outputs} == owned
+        assert owned & {i.spelling for i in (r.place for r in node.function_reads)} == set()
     assert (
         CRYO_Q_LOADS[
             _cryo_q_loads_arm(

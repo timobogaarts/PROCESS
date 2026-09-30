@@ -24,19 +24,19 @@ def problem_model(configuration: Configuration):
         )
         merit = problem.minimise or problem.maximise
         sense = "minimise" if problem.minimise is not None else "maximise"
-        slots = {"merit": merit} | {
-            f"require_{held(c).segments[-1].name}": r
-            for c, r in zip(constraints, requirements, strict=True)
-        }
+        slots = {"merit": merit}
         top = cx.optimise(
             design=problem.design,
             subject_to=requirements,
-            **{sense: merit.outputs[0]},
+            **{sense: merit.function_outputs[0]},
         )
     else:
         constraints = (*problem.equalities, *problem.evaluated)
         slots = {}
-        top = cx.root_find([held(c) for c in problem.equalities], problem.design)
+        top = cx.satisfy(
+            design=problem.design,
+            subject_to=[cx.requirement(held(c), cx.Eq) for c in problem.equalities],
+        )
     bodies = {held(c).segments[-1].name: c for c in constraints}
     return cx.declare(configuration.machine, bodies | slots | {"Opt": top})
 

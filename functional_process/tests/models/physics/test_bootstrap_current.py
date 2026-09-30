@@ -1013,7 +1013,7 @@ def test_nodes_assemble_and_the_sauter_arm_does_not_read_triangularity():
     })
     assert len(graph.definitions) == 4
 
-    read = set(node.reads.values())
+    read = set((r.place for r in node.function_reads))
     assert physics.place("triang") not in read
     assert physics.place("rminor") in read
     assert physics.place("n_plasma_profile_elements") in read
@@ -1029,5 +1029,5 @@ def test_zero_arms_own_their_fields_and_state_them():
     run this code".
     """
     for node in (NoDiamagneticCurrent, NoPfirschSchluterCurrent):
-        assert list(node.reads.values()) == [STATED(out) for out in node.outputs]
+        assert list((r.place for r in node.function_reads)) == [STATED(out) for out in node.function_outputs]
         assert float(node(0.0)) == pytest.approx(0.0, abs=0.0)

@@ -958,8 +958,8 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
     read follows from the law, which is why `CONFINEMENT_SCALING` is keyed on
     `i_confinement_time` and not on `istell`.
     """
-    iss04 = [i.spelling for i in Iss04ConfinementTime.reads.values()]
-    ipb98 = [i.spelling for i in IterIpb98y2ConfinementTime.reads.values()]
+    iss04 = [i.spelling for i in (r.place for r in Iss04ConfinementTime.function_reads)]
+    ipb98 = [i.spelling for i in (r.place for r in IterIpb98y2ConfinementTime.function_reads)]
 
     assert ".stellarator.iotabar" in iss04
     assert ".physics.q95" not in iss04
@@ -970,7 +970,7 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
 
     # Same output either way -- one field, whichever law owns it -- which is what makes
     # them genuine alternatives for one slot.
-    assert Iss04ConfinementTime.outputs == IterIpb98y2ConfinementTime.outputs
+    assert Iss04ConfinementTime.function_outputs == IterIpb98y2ConfinementTime.function_outputs
 
 
 def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
@@ -983,9 +983,9 @@ def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
     built -- one read more, nothing else, and the same owned field either way, which is
     what makes them alternatives for one slot rather than two different nodes.
     """
-    ignited = [i.spelling for i in PlasmaPowerLossIgnitedCoreRadiation.reads.values()]
+    ignited = [i.spelling for i in (r.place for r in PlasmaPowerLossIgnitedCoreRadiation.function_reads)]
     non_ignited = [
-        i.spelling for i in PlasmaPowerLossNonIgnitedCoreRadiation.reads.values()
+        i.spelling for i in (r.place for r in PlasmaPowerLossNonIgnitedCoreRadiation.function_reads)
     ]
 
     assert set(non_ignited) - set(ignited) == {".current_drive.p_hcd_injected_total_mw"}
@@ -996,8 +996,8 @@ def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
     assert ".physics.pden_plasma_rad_mw" not in ignited + non_ignited
 
     assert (
-        PlasmaPowerLossIgnitedCoreRadiation.outputs
-        == PlasmaPowerLossNonIgnitedCoreRadiation.outputs
+        PlasmaPowerLossIgnitedCoreRadiation.function_outputs
+        == PlasmaPowerLossNonIgnitedCoreRadiation.function_outputs
     )
 
 

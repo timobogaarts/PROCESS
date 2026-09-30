@@ -1072,8 +1072,8 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
     graph = to_graph(node)
     body = graph[_name(node)]
     assert isinstance(body, Implemented)
-    assert set(node.outputs) == {CPLIFE_VAR}
-    assert CPLIFE_VAR not in set(node.reads.values())
+    assert set(node.function_outputs) == {CPLIFE_VAR}
+    assert CPLIFE_VAR not in set((r.place for r in node.function_reads))
     assert graph.graph.is_acyclic
 
 
@@ -1116,7 +1116,7 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     avail_node = AvailNeutronFluence
     graph = to_graph(cplife_node, avail_node)
     assert isinstance(graph[_name(avail_node)], Implemented)
-    assert CPLIFE_VAR not in set(avail_node.reads.values())
+    assert CPLIFE_VAR not in set((r.place for r in avail_node.function_reads))
     assert graph.graph.is_acyclic
 
 

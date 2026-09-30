@@ -31,7 +31,7 @@ from typing import Any
 
 import equinox as eqx
 import numpy as np
-from cottax.interfaces.wrappers import Wrapper
+from cottax.interfaces.declarations import Wrapper
 from cottax.pytree.path import VarPath
 from jax.tree_util import GetAttrKey, SequenceKey
 
