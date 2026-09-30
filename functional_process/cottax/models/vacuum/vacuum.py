@@ -8,11 +8,7 @@ from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
     blanket,
-    build,
-    divertor,
     physics,
-    tfcoil,
-    times,
     vacuum,
 )
 from functional_process.models.engineering.ivc_functions import (
@@ -83,27 +79,9 @@ DuctFeasibility = vacuum.satisfy(
 # `.vacuum.i_vacuum_pump_type` x `.vacuum.i_vac_pump_dwell` arm (the pump type decides
 # the pump speeds, the dwell switch the pumping time).
 _VACUUM_OLD_READS = {
-    "p_fusion_total_mw": physics.place("p_fusion_total_mw"),
-    "rmajor": physics.place("rmajor"),
-    "rminor": physics.place("rminor"),
-    "dr_fw_plasma_gap_inboard": build.place("dr_fw_plasma_gap_inboard"),
-    "dr_fw_plasma_gap_outboard": build.place("dr_fw_plasma_gap_outboard"),
-    "a_plasma_surface": physics.place("a_plasma_surface"),
-    "vol_plasma": physics.place("vol_plasma"),
-    "dr_shld_outboard": build.place("dr_shld_outboard"),
-    "dr_shld_inboard": build.place("dr_shld_inboard"),
-    "dr_tf_inboard": build.place("dr_tf_inboard"),
-    "r_shld_inboard_inner": build.place("r_shld_inboard_inner"),
-    "dr_shld_vv_gap_inboard": build.place("dr_shld_vv_gap_inboard"),
-    "dr_vv_inboard": build.place("dr_vv_inboard"),
-    "n_tf_coils": tfcoil.place("n_tf_coils"),
-    "t_plant_pulse_dwell": times.place("t_plant_pulse_dwell"),
-    "n_divertors": divertor.place("n_divertors"),
     "molflow_plasma_fuelling_required": physics.place(
         "molflow_plasma_fuelling_required"
     ),
-    "m_fuel_amu": physics.place("m_fuel_amu"),
-    "t_plant_pulse_coil_precharge": times.place("t_plant_pulse_coil_precharge"),
 }
 
 VacuumOldTurbomolecularDwell = vacuum.function(

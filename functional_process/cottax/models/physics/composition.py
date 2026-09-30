@@ -6,7 +6,7 @@
 import jax.numpy as jnp
 from cottax.interfaces import V
 
-from functional_process.cottax.paths import current_drive, impurity_radiation, physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.composition import (
     H_INDEX,
     HE_INDEX,
@@ -263,10 +263,6 @@ _COMPOSITION_READS = {
     "f_nd_impurity_electron_array_13": V.impurity_radiation.f_nd_impurity_electron_array[
         13
     ],
-    "temp_impurity_keV_array": impurity_radiation.place("temp_impurity_keV_array"),
-    "impurity_arr_zav": impurity_radiation.place("impurity_arr_zav"),
-    "f_beam_tritium": current_drive.place("f_beam_tritium"),
-    "m_impurity_amu_array": impurity_radiation.place("m_impurity_amu_array"),
 }
 
 

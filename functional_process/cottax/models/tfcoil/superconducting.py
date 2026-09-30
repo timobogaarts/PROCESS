@@ -278,18 +278,11 @@ _PEAK_B_TF_INBOARD_WITH_RIPPLE_OUTPUTS = (
     "f_b_tf_inboard_peak_ripple_symmetric",
     V.tfcoil.b_tf_inboard_peak_with_ripple,
 )
-_PEAK_B_TF_INBOARD_WITH_RIPPLE_READS = {
-    "n_tf_coils": tfcoil.place("n_tf_coils"),
-    "dx_tf_wp_primary_toroidal": tfcoil.place("dx_tf_wp_primary_toroidal"),
-    "b_tf_inboard_peak_symmetric": tfcoil.place("b_tf_inboard_peak_symmetric"),
-}
-
 
 # `round(n_tf_coils) == 16` -- `large_tokamak_eval.IN.DAT:377` sets exactly 16.
 PeakBTfInboardWithRipple16Coils = superconducting_tfcoil.function(
     _peak_b_tf_inboard_with_ripple_16_coils,
     *_PEAK_B_TF_INBOARD_WITH_RIPPLE_OUTPUTS,
-    reads=_PEAK_B_TF_INBOARD_WITH_RIPPLE_READS,
 )
 
 
@@ -297,7 +290,6 @@ PeakBTfInboardWithRipple16Coils = superconducting_tfcoil.function(
 PeakBTfInboardWithRipple18Coils = superconducting_tfcoil.function(
     _peak_b_tf_inboard_with_ripple_18_coils,
     *_PEAK_B_TF_INBOARD_WITH_RIPPLE_OUTPUTS,
-    reads=_PEAK_B_TF_INBOARD_WITH_RIPPLE_READS,
 )
 
 
@@ -305,7 +297,6 @@ PeakBTfInboardWithRipple18Coils = superconducting_tfcoil.function(
 PeakBTfInboardWithRipple20Coils = superconducting_tfcoil.function(
     _peak_b_tf_inboard_with_ripple_20_coils,
     *_PEAK_B_TF_INBOARD_WITH_RIPPLE_OUTPUTS,
-    reads=_PEAK_B_TF_INBOARD_WITH_RIPPLE_READS,
 )
 
 
@@ -779,7 +770,6 @@ def _temperature_margin_with_strain_wst_nb3sn(
 
 
 _TEMPERATURE_MARGIN_WITH_STRAIN_READS = {
-    "j_tf_superconductor": superconducting_tfcoil.place("j_tf_superconductor"),
     "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil.place(
         "b_tf_superconductor_critical_zero_temp_strain"
     ),

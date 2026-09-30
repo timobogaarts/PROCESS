@@ -338,14 +338,6 @@ def _restricted(fn, reads):
     return {name: place for name, place in reads.items() if name in taken}
 
 
-# cottax node: `convert_fpy_to_calendar`.
-_CONVERT_FPY_TO_CALENDAR_READS = {
-    "life_plant": costs.place("life_plant"),
-    "f_t_plant_available": costs.place("f_t_plant_available"),
-    "life_div_fpy": costs.place("life_div_fpy"),
-    "cplife": costs.place("cplife"),
-}
-
 # `.physics.itart != 1`: no centrepost, `cplife_cal` is zero.
 ConvertFpyToCalendarConventionalAspectRatio = fwbs.function(
     convert_fpy_to_calendar_conventional_aspect_ratio,
@@ -353,10 +345,6 @@ ConvertFpyToCalendarConventionalAspectRatio = fwbs.function(
     V.costs.cdrlife_cal,
     V.costs.life_div,
     V.costs.cplife_cal,
-    reads=_restricted(
-        convert_fpy_to_calendar_conventional_aspect_ratio,
-        _CONVERT_FPY_TO_CALENDAR_READS,
-    ),
 )
 
 # `.physics.itart == 1`: the centrepost's calendar lifetime too.
@@ -366,24 +354,8 @@ ConvertFpyToCalendarSphericalTokamak = fwbs.function(
     V.costs.cdrlife_cal,
     V.costs.life_div,
     V.costs.cplife_cal,
-    reads=_restricted(
-        convert_fpy_to_calendar_spherical_tokamak, _CONVERT_FPY_TO_CALENDAR_READS
-    ),
 )
 
-
-# cottax node: `calculate_structures_cost` (Account 21).
-_STRUCTURES_COST_READS = {
-    "rbvol": buildings.place("rbvol"),
-    "rmbvol": buildings.place("rmbvol"),
-    "wsvol": buildings.place("wsvol"),
-    "triv": buildings.place("triv"),
-    "elevol": buildings.place("elevol"),
-    "admvol": buildings.place("admvol"),
-    "convol": buildings.place("convol"),
-    "shovol": buildings.place("shovol"),
-    "cryvol": buildings.place("cryvol"),
-}
 
 # `.costs.ireactor == 1`: with a turbine building.
 StructuresCostReactor = costs.function(
@@ -402,7 +374,6 @@ StructuresCostReactor = costs.function(
     "c2174",
     "c217",
     "c21",
-    reads=_STRUCTURES_COST_READS,
 )
 
 # `.costs.ireactor == 0`: no turbine building, `c213` zero.
@@ -422,7 +393,6 @@ StructuresCostNonReactor = costs.function(
     "c2174",
     "c217",
     "c21",
-    reads=_STRUCTURES_COST_READS,
 )
 
 
@@ -492,18 +462,6 @@ VacuumSystemCostCryopump = costs.function(
 )
 
 
-# cottax node: `calculate_tf_coil_power_conditioning_cost` (Account 225.1).
-_TF_COIL_POWER_CONDITIONING_COST_READS = {
-    "tfckw": tfcoil.place("tfckw"),
-    "tfcmw": tfcoil.place("tfcmw"),
-    "n_tf_coils": tfcoil.place("n_tf_coils"),
-    "c_tf_turn": tfcoil.place("c_tf_turn"),
-    "v_tf_coil_dump_quench_kv": tfcoil.place("v_tf_coil_dump_quench_kv"),
-    "e_tf_magnetic_stored_total_gj": tfcoil.place("e_tf_magnetic_stored_total_gj"),
-    "m_tf_bus": tfcoil.place("m_tf_bus"),
-    "len_tf_bus": tfcoil.place("len_tf_bus"),
-}
-
 # `.tfcoil.i_tf_sup == 1`: superconducting, with breakers and a superconducting bus.
 TfCoilPowerConditioningCostSuperconducting = costs.function(
     calculate_tf_coil_power_conditioning_cost_superconducting,
@@ -513,10 +471,6 @@ TfCoilPowerConditioningCostSuperconducting = costs.function(
     "c22514",
     "c22515",
     "c2251",
-    reads=_restricted(
-        calculate_tf_coil_power_conditioning_cost_superconducting,
-        _TF_COIL_POWER_CONDITIONING_COST_READS,
-    ),
 )
 
 # `.tfcoil.i_tf_sup == 0`: resistive, bussing costed by mass.
@@ -528,10 +482,6 @@ TfCoilPowerConditioningCostResistive = costs.function(
     "c22514",
     "c22515",
     "c2251",
-    reads=_restricted(
-        calculate_tf_coil_power_conditioning_cost_resistive,
-        _TF_COIL_POWER_CONDITIONING_COST_READS,
-    ),
 )
 
 
@@ -671,14 +621,6 @@ FirstWallCostCapitalThenFuel = costs.function(
 )
 
 
-# cottax node: `calculate_blanket_cost` (Account 221.2).
-_BLANKET_COST_READS = {
-    "m_blkt_beryllium": fwbs.place("m_blkt_beryllium"),
-    "m_blkt_li2o": fwbs.place("m_blkt_li2o"),
-    "m_blkt_steel_total": fwbs.place("m_blkt_steel_total"),
-    "m_blkt_vanadium": fwbs.place("m_blkt_vanadium"),
-}
-
 # One occupant per `.costs.ifueltyp`, as `DivertorCost*`.
 BlanketCostCapital = costs.function(
     calculate_blanket_cost_capital,
@@ -691,7 +633,6 @@ BlanketCostCapital = costs.function(
     "c22127",
     "c2212",
     "blkcst",
-    reads=_BLANKET_COST_READS,
 )
 BlanketCostFuel = costs.function(
     calculate_blanket_cost_fuel,
@@ -704,7 +645,6 @@ BlanketCostFuel = costs.function(
     "c22127",
     "c2212",
     "blkcst",
-    reads=_BLANKET_COST_READS,
 )
 BlanketCostCapitalThenFuel = costs.function(
     calculate_blanket_cost_capital_then_fuel,
@@ -717,7 +657,6 @@ BlanketCostCapitalThenFuel = costs.function(
     "c22127",
     "c2212",
     "blkcst",
-    reads=_BLANKET_COST_READS,
 )
 
 
@@ -1068,7 +1007,6 @@ PowerInjectionCostCapitalLowerHybrid = costs.function(
             "p_hcd_lowhyb_injected_total_mw": current_drive.place(
                 "p_hcd_lowhyb_injected_total_mw"
             ),
-            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1091,7 +1029,6 @@ PowerInjectionCostCapitalIonCyclotron = costs.function(
             "p_hcd_lowhyb_injected_total_mw": current_drive.place(
                 "p_hcd_lowhyb_injected_total_mw"
             ),
-            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1114,7 +1051,6 @@ PowerInjectionCostFuelLowerHybrid = costs.function(
             "p_hcd_lowhyb_injected_total_mw": current_drive.place(
                 "p_hcd_lowhyb_injected_total_mw"
             ),
-            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1137,7 +1073,6 @@ PowerInjectionCostFuelIonCyclotron = costs.function(
             "p_hcd_lowhyb_injected_total_mw": current_drive.place(
                 "p_hcd_lowhyb_injected_total_mw"
             ),
-            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1236,16 +1171,6 @@ ConstructedCost = costs.function(calculate_constructed_cost, "concost")
 
 # `.physics.itart == 0` -- the reference run's, and PROCESS's own default
 # (`physics_variables.py:994`).
-_COST_OF_ELECTRICITY_READS = {
-    "p_plant_electric_net_mw": heat_transport.place("p_plant_electric_net_mw"),
-    "t_plant_pulse_burn": times.place("t_plant_pulse_burn"),
-    "t_plant_pulse_total": times.place("t_plant_pulse_total"),
-    "life_blkt": fwbs.place("life_blkt"),
-    "life_blkt_fpy": fwbs.place("life_blkt_fpy"),
-    "f_plasma_fuel_helium3": physics.place("f_plasma_fuel_helium3"),
-    "wtgpd": physics.place("wtgpd"),
-}
-
 # `.physics.itart == 0`; `.costs.ifueltyp == 0`.
 CostOfElectricityConventionalAspectRatioCapital = costs.function(
     calculate_cost_of_electricity_conventional_aspect_ratio_capital,
@@ -1255,10 +1180,6 @@ CostOfElectricityConventionalAspectRatioCapital = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_conventional_aspect_ratio_capital,
-        _COST_OF_ELECTRICITY_READS,
-    ),
 )
 
 # `.physics.itart == 0`; `ifueltyp == 1`.
@@ -1270,10 +1191,6 @@ CostOfElectricityConventionalAspectRatioFuel = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_conventional_aspect_ratio_fuel,
-        _COST_OF_ELECTRICITY_READS,
-    ),
 )
 
 # `.physics.itart == 0`; `ifueltyp == 2`.
@@ -1285,10 +1202,6 @@ CostOfElectricityConventionalAspectRatioCapitalThenFuel = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_conventional_aspect_ratio_capital_then_fuel,
-        _COST_OF_ELECTRICITY_READS,
-    ),
 )
 
 # `.physics.itart == 1`, the centrepost replaced too; `.costs.ifueltyp == 0`.
@@ -1300,10 +1213,6 @@ CostOfElectricitySphericalTokamakCapital = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_spherical_tokamak_capital,
-        _COST_OF_ELECTRICITY_READS,
-    ),
 )
 
 # `.physics.itart == 1`, the centrepost replaced too; `ifueltyp == 1`.
@@ -1315,9 +1224,6 @@ CostOfElectricitySphericalTokamakFuel = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_spherical_tokamak_fuel, _COST_OF_ELECTRICITY_READS
-    ),
 )
 
 # `.physics.itart == 1`, the centrepost replaced too; `ifueltyp == 2`.
@@ -1329,10 +1235,6 @@ CostOfElectricitySphericalTokamakCapitalThenFuel = costs.function(
     "coeoam",
     "coefuelt",
     "coe",
-    reads=_restricted(
-        calculate_cost_of_electricity_spherical_tokamak_capital_then_fuel,
-        _COST_OF_ELECTRICITY_READS,
-    ),
 )
 
 

@@ -26,9 +26,7 @@ from functional_process.cottax.models.stellarator.coils.quench import (
 )
 from functional_process.cottax.paths import (
     build,
-    constraints,
     stellarator,
-    stellarator_config,
     tfcoil,
 )
 from functional_process.models.physics.superconductors import (
@@ -171,22 +169,10 @@ _CROCO_REBCO = (150.0, 20.0)
 # Every occupant reads these, at these places; the Bi2212, user-defined Nb3Sn and
 # Durham NbTi occupants read two more, from `.tfcoil`.
 _INTERSECT_READS = {
-    "r_coil_major": stellarator.place("r_coil_major"),
-    "r_coil_minor": stellarator.place("r_coil_minor"),
     "coilcurrent": stellarator.place("coilcurrent"),
-    "n_tf_coils": tfcoil.place("n_tf_coils"),
-    "stella_config_a1": stellarator_config.place("stella_config_a1"),
-    "stella_config_a2": stellarator_config.place("stella_config_a2"),
-    "stella_config_wp_ratio": stellarator_config.place("stella_config_wp_ratio"),
-    "tftmp": tfcoil.place("tftmp"),
-    "tmargmin": tfcoil.place("tmargmin"),
-    "f_a_tf_turn_cable_copper": tfcoil.place("f_a_tf_turn_cable_copper"),
     "f_a_tf_turn_cable_space_extra_void": tfcoil.place(
         "f_a_tf_turn_cable_space_extra_void"
     ),
-    "f_j_tf_wp_critical_max": constraints.place("f_j_tf_wp_critical_max"),
-    "a_tf_turn_cable_space_no_void": tfcoil.place("a_tf_turn_cable_space_no_void"),
-    "dx_tf_turn_general": tfcoil.place("dx_tf_turn_general"),
 }
 _INTERSECT_OUTPUTS = ("wp_width_r", "lhs", "rhs", "wp_width_r_min_guess")
 

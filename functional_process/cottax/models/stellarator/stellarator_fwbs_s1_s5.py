@@ -6,11 +6,7 @@ import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces import V
 
 from functional_process.cottax.paths import (
-    build,
-    costs,
-    first_wall,
     fwbs,
-    physics,
     stellarator_config,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
@@ -23,21 +19,6 @@ from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
 # cottax node: `calculate_fw_blanket_shield_geometry` (S1), one occupant per
 # `.heat_transport.ipowerflow`.
 _FW_BLANKET_SHIELD_GEOMETRY_READS = {
-    "abktflnc": costs.place("abktflnc"),
-    "pflux_fw_neutron_mw": physics.place("pflux_fw_neutron_mw"),
-    "life_plant": costs.place("life_plant"),
-    "a_fw_total": first_wall.place("a_fw_total"),
-    "rminor": physics.place("rminor"),
-    "dr_fw_plasma_gap_inboard": build.place("dr_fw_plasma_gap_inboard"),
-    "dr_fw_inboard": build.place("dr_fw_inboard"),
-    "dr_fw_plasma_gap_outboard": build.place("dr_fw_plasma_gap_outboard"),
-    "dr_fw_outboard": build.place("dr_fw_outboard"),
-    "a_plasma_surface": physics.place("a_plasma_surface"),
-    "dr_blkt_inboard": build.place("dr_blkt_inboard"),
-    "dr_blkt_outboard": build.place("dr_blkt_outboard"),
-    "dr_shld_inboard": build.place("dr_shld_inboard"),
-    "dr_shld_outboard": build.place("dr_shld_outboard"),
-    "p_neutron_total_mw": physics.place("p_neutron_total_mw"),
     "stella_config_neutron_peakfactor": stellarator_config.place(
         "stella_config_neutron_peakfactor"
     ),
