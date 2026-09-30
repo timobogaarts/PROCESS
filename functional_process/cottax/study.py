@@ -253,10 +253,16 @@ def cold_state(configuration: Configuration) -> dict:
     return {_place(k): v for k, v in out.items()}
 
 
-def mda_graph(model, rule=RULE, fixed_point=picard):
-    """`model` with every cycle closed by `rule` and every problem driven."""
+def mda_plan(model, rule=RULE, fixed_point=picard) -> Plan:
+    """`model` with every cycle closed by `rule` and every problem driven, as the plan
+    that does it."""
     plan = Plan(model.graph) + cx.mda(rule)
-    return driven(plan, drivers_for(plan.graph, fixed_point)).graph
+    return driven(plan, drivers_for(plan.graph, fixed_point))
+
+
+def mda_graph(model, rule=RULE, fixed_point=picard):
+    """`mda_plan`'s graph."""
+    return mda_plan(model, rule, fixed_point).graph
 
 
 def conditions(configuration: Configuration, out) -> dict:
@@ -329,7 +335,7 @@ def condition_scale(node, env, floor=1e-12) -> tuple:
     return tuple(scales)
 
 
-def block_graph(
+def block_plan(
     configuration: Configuration,
     arm: str,
     env,
@@ -337,13 +343,16 @@ def block_graph(
     rule=RULE,
     optimiser=VmconDriver,
     reports=True,
-):
-    """The problem under `arm`, every cycle cut by `rule` and every problem driven: the
-    top by `optimiser` (or, for a root find, cottax's `Newton`), recording its iterates
-    into `trace`. `optimiser` is a driver class, or a partial of one, taking VMCON's
-    fields. `reports`: whether the top's contract asks its steps, verdict and status
-    back."""
-    model = problem_model(configuration)
+    *,
+    model=None,
+) -> Plan:
+    """The problem under `arm`, every cycle cut by `rule` and every problem driven, as
+    the plan that does it: the top by `optimiser` (or, for a root find, cottax's
+    `Newton`), recording its iterates into `trace`. `optimiser` is a driver class, or a
+    partial of one, taking VMCON's fields. `reports`: whether the top's contract asks
+    its steps, verdict and status back. `env` (an MDA at the design) scales the
+    coupling conditions; `{}` leaves them at 1. `model` is `problem_model`'s, if made."""
+    model = problem_model(configuration) if model is None else model
     plan = Plan(model.graph) + _architecture(arm, rule)
     top = plan.graph[TOP]
     chosen = drivers_for(plan.graph, skip=(TOP,))
@@ -361,7 +370,13 @@ def block_graph(
         )
     else:
         chosen[TOP] = (RootFinding(steps=reports), Newton())
-    return model, driven(plan, chosen).graph
+    return driven(plan, chosen)
+
+
+def block_graph(configuration: Configuration, arm: str, env, trace: list, **how):
+    """`(problem_model, block_plan's graph)`; `how` is `block_plan`'s."""
+    model = problem_model(configuration)
+    return model, block_plan(configuration, arm, env, trace, model=model, **how).graph
 
 
 def _recorder(trace):
@@ -450,7 +465,9 @@ def assemble(
     if arm == "MDA":
         return Assembled(arm, mda, mda_inputs, env, [])
     trace: list = []
-    block_model, graph = block_graph(configuration, arm, env, trace, rule, optimiser)
+    block_model, graph = block_graph(
+        configuration, arm, env, trace, rule=rule, optimiser=optimiser
+    )
     inputs = block_values(
         graph,
         state,
@@ -610,7 +627,9 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     model = machine_model(configuration)
     mda = mda_graph(model, rule)
     env = solve(mda, values(mda, state, model.given, cold))
-    block_model, graph = block_graph(configuration, arm, env, [], rule, reports=False)
+    block_model, graph = block_graph(
+        configuration, arm, env, [], rule=rule, reports=False
+    )
     inputs = block_values(
         graph,
         state,

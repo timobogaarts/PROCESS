@@ -28,7 +28,7 @@ def graph_of(configuration, arm, rule):
     scaling is left at one (which moves no edge)."""
     if arm == "MDA":
         return study.mda_graph(study.machine_model(configuration), rule)
-    return study.block_graph(configuration, arm, {}, [], rule)[1]
+    return study.block_graph(configuration, arm, {}, [], rule=rule)[1]
 
 
 def top_of(graph) -> dict:
