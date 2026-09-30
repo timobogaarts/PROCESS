@@ -32,9 +32,11 @@ ImpurityRadiationTotals = impurity_radiation.function(
     "pden_impurity_rad_total_mw",
     "pden_impurity_core_rad_total_mw",
     reads={
-        "radius_plasma_profile_norm": physics,
-        "nd_plasma_electron_profile": physics,
-        "temp_plasma_electron_profile_kev": physics,
+        "radius_plasma_profile_norm": physics.place("radius_plasma_profile_norm"),
+        "nd_plasma_electron_profile": physics.place("nd_plasma_electron_profile"),
+        "temp_plasma_electron_profile_kev": physics.place(
+            "temp_plasma_electron_profile_kev"
+        ),
         "f_nd_impurity_electron_array_0": V.impurity_radiation.f_nd_impurity_electron_array[
             0
         ],
@@ -88,7 +90,11 @@ PlasmaRadiationPowers = physics.function(
     "pden_plasma_outer_rad_mw_unclipped",
     "pden_plasma_rad_mw",
     reads={
-        "pden_impurity_rad_total_mw": impurity_radiation,
-        "pden_impurity_core_rad_total_mw": impurity_radiation,
+        "pden_impurity_rad_total_mw": impurity_radiation.place(
+            "pden_impurity_rad_total_mw"
+        ),
+        "pden_impurity_core_rad_total_mw": impurity_radiation.place(
+            "pden_impurity_core_rad_total_mw"
+        ),
     },
 )

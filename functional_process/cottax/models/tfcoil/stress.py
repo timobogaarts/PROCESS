@@ -144,7 +144,11 @@ TfStressPlaneStressBuckedCaseAveragedTurn = tfcoil.function(
     "str_wp",
     "casestr",
     "insstrain",
-    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
+    reads={
+        "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+            "a_tf_wp_with_insulation"
+        )
+    },
 )
 
 
@@ -240,7 +244,11 @@ TfStressPlaneStressBuckedCaseIntegerTurn = tfcoil.function(
     "str_wp",
     "casestr",
     "insstrain",
-    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
+    reads={
+        "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+            "a_tf_wp_with_insulation"
+        )
+    },
 )
 
 
@@ -329,5 +337,9 @@ TfStressExtendedPlaneStrainBuckedCaseAveragedTurn = tfcoil.function(
     "sig_tf_wp",
     "sig_tf_case",
     "str_wp",
-    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
+    reads={
+        "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+            "a_tf_wp_with_insulation"
+        )
+    },
 )

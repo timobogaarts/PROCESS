@@ -23,22 +23,24 @@ from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
 # cottax node: `calculate_fw_blanket_shield_geometry` (S1), one occupant per
 # `.heat_transport.ipowerflow`.
 _FW_BLANKET_SHIELD_GEOMETRY_READS = {
-    "abktflnc": costs,
-    "pflux_fw_neutron_mw": physics,
-    "life_plant": costs,
-    "a_fw_total": first_wall,
-    "rminor": physics,
-    "dr_fw_plasma_gap_inboard": build,
-    "dr_fw_inboard": build,
-    "dr_fw_plasma_gap_outboard": build,
-    "dr_fw_outboard": build,
-    "a_plasma_surface": physics,
-    "dr_blkt_inboard": build,
-    "dr_blkt_outboard": build,
-    "dr_shld_inboard": build,
-    "dr_shld_outboard": build,
-    "p_neutron_total_mw": physics,
-    "stella_config_neutron_peakfactor": stellarator_config,
+    "abktflnc": costs.place("abktflnc"),
+    "pflux_fw_neutron_mw": physics.place("pflux_fw_neutron_mw"),
+    "life_plant": costs.place("life_plant"),
+    "a_fw_total": first_wall.place("a_fw_total"),
+    "rminor": physics.place("rminor"),
+    "dr_fw_plasma_gap_inboard": build.place("dr_fw_plasma_gap_inboard"),
+    "dr_fw_inboard": build.place("dr_fw_inboard"),
+    "dr_fw_plasma_gap_outboard": build.place("dr_fw_plasma_gap_outboard"),
+    "dr_fw_outboard": build.place("dr_fw_outboard"),
+    "a_plasma_surface": physics.place("a_plasma_surface"),
+    "dr_blkt_inboard": build.place("dr_blkt_inboard"),
+    "dr_blkt_outboard": build.place("dr_blkt_outboard"),
+    "dr_shld_inboard": build.place("dr_shld_inboard"),
+    "dr_shld_outboard": build.place("dr_shld_outboard"),
+    "p_neutron_total_mw": physics.place("p_neutron_total_mw"),
+    "stella_config_neutron_peakfactor": stellarator_config.place(
+        "stella_config_neutron_peakfactor"
+    ),
 }
 
 FwBlanketShieldGeometryNoPowerflow = fwbs.function(

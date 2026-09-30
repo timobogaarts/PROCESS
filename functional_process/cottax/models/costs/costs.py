@@ -340,10 +340,10 @@ def _restricted(fn, reads):
 
 # cottax node: `convert_fpy_to_calendar`.
 _CONVERT_FPY_TO_CALENDAR_READS = {
-    "life_plant": costs,
-    "f_t_plant_available": costs,
-    "life_div_fpy": costs,
-    "cplife": costs,
+    "life_plant": costs.place("life_plant"),
+    "f_t_plant_available": costs.place("f_t_plant_available"),
+    "life_div_fpy": costs.place("life_div_fpy"),
+    "cplife": costs.place("cplife"),
 }
 
 # `.physics.itart != 1`: no centrepost, `cplife_cal` is zero.
@@ -374,15 +374,15 @@ ConvertFpyToCalendarSphericalTokamak = fwbs.function(
 
 # cottax node: `calculate_structures_cost` (Account 21).
 _STRUCTURES_COST_READS = {
-    "rbvol": buildings,
-    "rmbvol": buildings,
-    "wsvol": buildings,
-    "triv": buildings,
-    "elevol": buildings,
-    "admvol": buildings,
-    "convol": buildings,
-    "shovol": buildings,
-    "cryvol": buildings,
+    "rbvol": buildings.place("rbvol"),
+    "rmbvol": buildings.place("rmbvol"),
+    "wsvol": buildings.place("wsvol"),
+    "triv": buildings.place("triv"),
+    "elevol": buildings.place("elevol"),
+    "admvol": buildings.place("admvol"),
+    "convol": buildings.place("convol"),
+    "shovol": buildings.place("shovol"),
+    "cryvol": buildings.place("cryvol"),
 }
 
 # `.costs.ireactor == 1`: with a turbine building.
@@ -494,14 +494,14 @@ VacuumSystemCostCryopump = costs.function(
 
 # cottax node: `calculate_tf_coil_power_conditioning_cost` (Account 225.1).
 _TF_COIL_POWER_CONDITIONING_COST_READS = {
-    "tfckw": tfcoil,
-    "tfcmw": tfcoil,
-    "n_tf_coils": tfcoil,
-    "c_tf_turn": tfcoil,
-    "v_tf_coil_dump_quench_kv": tfcoil,
-    "e_tf_magnetic_stored_total_gj": tfcoil,
-    "m_tf_bus": tfcoil,
-    "len_tf_bus": tfcoil,
+    "tfckw": tfcoil.place("tfckw"),
+    "tfcmw": tfcoil.place("tfcmw"),
+    "n_tf_coils": tfcoil.place("n_tf_coils"),
+    "c_tf_turn": tfcoil.place("c_tf_turn"),
+    "v_tf_coil_dump_quench_kv": tfcoil.place("v_tf_coil_dump_quench_kv"),
+    "e_tf_magnetic_stored_total_gj": tfcoil.place("e_tf_magnetic_stored_total_gj"),
+    "m_tf_bus": tfcoil.place("m_tf_bus"),
+    "len_tf_bus": tfcoil.place("len_tf_bus"),
 }
 
 # `.tfcoil.i_tf_sup == 1`: superconducting, with breakers and a superconducting bus.
@@ -673,10 +673,10 @@ FirstWallCostCapitalThenFuel = costs.function(
 
 # cottax node: `calculate_blanket_cost` (Account 221.2).
 _BLANKET_COST_READS = {
-    "m_blkt_beryllium": fwbs,
-    "m_blkt_li2o": fwbs,
-    "m_blkt_steel_total": fwbs,
-    "m_blkt_vanadium": fwbs,
+    "m_blkt_beryllium": fwbs.place("m_blkt_beryllium"),
+    "m_blkt_li2o": fwbs.place("m_blkt_li2o"),
+    "m_blkt_steel_total": fwbs.place("m_blkt_steel_total"),
+    "m_blkt_vanadium": fwbs.place("m_blkt_vanadium"),
 }
 
 # One occupant per `.costs.ifueltyp`, as `DivertorCost*`.
@@ -761,7 +761,7 @@ TfMagnetCostSuperconductingPerKam = costs.function(
     "c22214",
     "c22215",
     "c2221",
-    reads={"j_crit_str_0_tf": tfcoil},
+    reads={"j_crit_str_0_tf": tfcoil.place("j_crit_str_0_tf")},
 )
 
 
@@ -849,7 +849,10 @@ PfMagnetCostPerKg = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={"den_pf_conductor": pf_coil, "den_cs_conductor": pf_coil},
+    reads={
+        "den_pf_conductor": pf_coil.place("den_pf_conductor"),
+        "den_cs_conductor": pf_coil.place("den_cs_conductor"),
+    },
 )
 
 
@@ -906,7 +909,7 @@ PfMagnetCostPerKgNoCentralSolenoid = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={"den_pf_conductor": pf_coil},
+    reads={"den_pf_conductor": pf_coil.place("den_pf_conductor")},
 )
 
 
@@ -977,7 +980,10 @@ PfMagnetCostPerKam = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={"j_crit_str_0_pf": pf_coil, "j_crit_str_0_cs": pf_coil},
+    reads={
+        "j_crit_str_0_pf": pf_coil.place("j_crit_str_0_pf"),
+        "j_crit_str_0_cs": pf_coil.place("j_crit_str_0_cs"),
+    },
 )
 
 
@@ -1035,7 +1041,7 @@ PfMagnetCostPerKamNoCentralSolenoid = costs.function(
     "c22223",
     "c22224",
     "c2222",
-    reads={"j_crit_str_0_pf": pf_coil},
+    reads={"j_crit_str_0_pf": pf_coil.place("j_crit_str_0_pf")},
 )
 
 
@@ -1055,10 +1061,14 @@ PowerInjectionCostCapitalLowerHybrid = costs.function(
     reads=_restricted(
         calculate_power_injection_cost_capital,
         {
-            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "p_hcd_ecrh_injected_total_mw": current_drive.place(
+                "p_hcd_ecrh_injected_total_mw"
+            ),
             "uc_lower_hybrid": V.costs.uclh,
-            "p_hcd_lowhyb_injected_total_mw": current_drive,
-            "p_beam_injected_mw": current_drive,
+            "p_hcd_lowhyb_injected_total_mw": current_drive.place(
+                "p_hcd_lowhyb_injected_total_mw"
+            ),
+            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1074,10 +1084,14 @@ PowerInjectionCostCapitalIonCyclotron = costs.function(
     reads=_restricted(
         calculate_power_injection_cost_capital,
         {
-            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "p_hcd_ecrh_injected_total_mw": current_drive.place(
+                "p_hcd_ecrh_injected_total_mw"
+            ),
             "uc_lower_hybrid": V.costs.ucich,
-            "p_hcd_lowhyb_injected_total_mw": current_drive,
-            "p_beam_injected_mw": current_drive,
+            "p_hcd_lowhyb_injected_total_mw": current_drive.place(
+                "p_hcd_lowhyb_injected_total_mw"
+            ),
+            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1093,10 +1107,14 @@ PowerInjectionCostFuelLowerHybrid = costs.function(
     reads=_restricted(
         calculate_power_injection_cost_fuel,
         {
-            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "p_hcd_ecrh_injected_total_mw": current_drive.place(
+                "p_hcd_ecrh_injected_total_mw"
+            ),
             "uc_lower_hybrid": V.costs.uclh,
-            "p_hcd_lowhyb_injected_total_mw": current_drive,
-            "p_beam_injected_mw": current_drive,
+            "p_hcd_lowhyb_injected_total_mw": current_drive.place(
+                "p_hcd_lowhyb_injected_total_mw"
+            ),
+            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1112,10 +1130,14 @@ PowerInjectionCostFuelIonCyclotron = costs.function(
     reads=_restricted(
         calculate_power_injection_cost_fuel,
         {
-            "p_hcd_ecrh_injected_total_mw": current_drive,
+            "p_hcd_ecrh_injected_total_mw": current_drive.place(
+                "p_hcd_ecrh_injected_total_mw"
+            ),
             "uc_lower_hybrid": V.costs.ucich,
-            "p_hcd_lowhyb_injected_total_mw": current_drive,
-            "p_beam_injected_mw": current_drive,
+            "p_hcd_lowhyb_injected_total_mw": current_drive.place(
+                "p_hcd_lowhyb_injected_total_mw"
+            ),
+            "p_beam_injected_mw": current_drive.place("p_beam_injected_mw"),
         },
     ),
 )
@@ -1215,13 +1237,13 @@ ConstructedCost = costs.function(calculate_constructed_cost, "concost")
 # `.physics.itart == 0` -- the reference run's, and PROCESS's own default
 # (`physics_variables.py:994`).
 _COST_OF_ELECTRICITY_READS = {
-    "p_plant_electric_net_mw": heat_transport,
-    "t_plant_pulse_burn": times,
-    "t_plant_pulse_total": times,
-    "life_blkt": fwbs,
-    "life_blkt_fpy": fwbs,
-    "f_plasma_fuel_helium3": physics,
-    "wtgpd": physics,
+    "p_plant_electric_net_mw": heat_transport.place("p_plant_electric_net_mw"),
+    "t_plant_pulse_burn": times.place("t_plant_pulse_burn"),
+    "t_plant_pulse_total": times.place("t_plant_pulse_total"),
+    "life_blkt": fwbs.place("life_blkt"),
+    "life_blkt_fpy": fwbs.place("life_blkt_fpy"),
+    "f_plasma_fuel_helium3": physics.place("f_plasma_fuel_helium3"),
+    "wtgpd": physics.place("wtgpd"),
 }
 
 # `.physics.itart == 0`; `.costs.ifueltyp == 0`.

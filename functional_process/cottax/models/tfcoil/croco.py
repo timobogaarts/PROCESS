@@ -42,7 +42,7 @@ CrocoAveragedTurnGeometryFromCurrentPerTurn = tfcoil.function(
     "dx_tf_turn_conduit_full_average",
     V.superconducting_tfcoil.dx_tf_turn_cable_space_average,
     reads={
-        "a_tf_wp_no_insulation": superconducting_tfcoil,
+        "a_tf_wp_no_insulation": superconducting_tfcoil.place("a_tf_wp_no_insulation"),
     },
 )
 

@@ -177,7 +177,7 @@ def _reads(fn, chosen) -> dict:
     """Each parameter of `fn` at the place its name lives, or at the place `chosen`
     names for it."""
     return {
-        p: area_of(chosen[p]).place(chosen[p]) if p in chosen else area_of(p)
+        p: area_of(chosen[p]).place(chosen[p]) if p in chosen else area_of(p).place(p)
         for p in inspect.signature(fn).parameters
     }
 

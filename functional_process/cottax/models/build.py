@@ -164,7 +164,7 @@ TfOutboardMidUnrippled = build.function(
 TfOutboardMidDShape = build.function(
     calculate_r_tf_outboard_mid_dshape,
     "r_tf_outboard_mid",
-    reads={"dx_tf_wp_conductor_max": tfcoil},
+    reads={"dx_tf_wp_conductor_max": tfcoil.place("dx_tf_wp_conductor_max")},
 )
 
 

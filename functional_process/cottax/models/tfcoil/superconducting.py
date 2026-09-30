@@ -137,7 +137,11 @@ TfCaseAreasCircularFront = tfcoil.function(
     "a_tf_coil_outboard_case",
     V.superconducting_tfcoil.a_tf_plasma_case,
     V.superconducting_tfcoil.a_tf_coil_nose_case,
-    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
+    reads={
+        "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+            "a_tf_wp_with_insulation"
+        )
+    },
 )
 
 
@@ -148,7 +152,11 @@ TfCaseAreasStraightFront = tfcoil.function(
     "a_tf_coil_outboard_case",
     V.superconducting_tfcoil.a_tf_plasma_case,
     V.superconducting_tfcoil.a_tf_coil_nose_case,
-    reads={"a_tf_wp_with_insulation": superconducting_tfcoil},
+    reads={
+        "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+            "a_tf_wp_with_insulation"
+        )
+    },
 )
 
 
@@ -185,7 +193,7 @@ TfWpCurrents = tfcoil.function(
     tf_wp_currents,
     "j_tf_wp",
     reads={
-        "a_tf_wp_no_insulation": superconducting_tfcoil,
+        "a_tf_wp_no_insulation": superconducting_tfcoil.place("a_tf_wp_no_insulation"),
     },
 )
 
@@ -271,9 +279,9 @@ _PEAK_B_TF_INBOARD_WITH_RIPPLE_OUTPUTS = (
     V.tfcoil.b_tf_inboard_peak_with_ripple,
 )
 _PEAK_B_TF_INBOARD_WITH_RIPPLE_READS = {
-    "n_tf_coils": tfcoil,
-    "dx_tf_wp_primary_toroidal": tfcoil,
-    "b_tf_inboard_peak_symmetric": tfcoil,
+    "n_tf_coils": tfcoil.place("n_tf_coils"),
+    "dx_tf_wp_primary_toroidal": tfcoil.place("dx_tf_wp_primary_toroidal"),
+    "b_tf_inboard_peak_symmetric": tfcoil.place("b_tf_inboard_peak_symmetric"),
 }
 
 
@@ -331,7 +339,7 @@ CiccAveragedTurnGeometryFromCurrentPerTurn = tfcoil.function(
     V.superconducting_tfcoil.a_tf_turn_cable_space_effective,
     V.superconducting_tfcoil.f_a_tf_turn_cable_space_cooling,
     reads={
-        "a_tf_wp_no_insulation": superconducting_tfcoil,
+        "a_tf_wp_no_insulation": superconducting_tfcoil.place("a_tf_wp_no_insulation"),
     },
 )
 
@@ -514,8 +522,12 @@ def _tf_coil_masses(arm):
         body,
         *outputs,
         reads={
-            "a_tf_wp_with_insulation": superconducting_tfcoil,
-            "a_tf_wp_no_insulation": superconducting_tfcoil,
+            "a_tf_wp_with_insulation": superconducting_tfcoil.place(
+                "a_tf_wp_with_insulation"
+            ),
+            "a_tf_wp_no_insulation": superconducting_tfcoil.place(
+                "a_tf_wp_no_insulation"
+            ),
         },
     )
 
@@ -767,9 +779,13 @@ def _temperature_margin_with_strain_wst_nb3sn(
 
 
 _TEMPERATURE_MARGIN_WITH_STRAIN_READS = {
-    "j_tf_superconductor": superconducting_tfcoil,
-    "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil,
-    "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil,
+    "j_tf_superconductor": superconducting_tfcoil.place("j_tf_superconductor"),
+    "b_tf_superconductor_critical_zero_temp_strain": superconducting_tfcoil.place(
+        "b_tf_superconductor_critical_zero_temp_strain"
+    ),
+    "temp_tf_superconductor_critical_zero_field_strain": superconducting_tfcoil.place(
+        "temp_tf_superconductor_critical_zero_field_strain"
+    ),
 }
 
 
