@@ -31,7 +31,7 @@ from cottax.core.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
 from cottax.relational.contracts import RootFinding
-from cottax.relational.jax_solvers import Newton, Picard
+from cottax.relational.consumers.jax_solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
     Eq,
@@ -612,7 +612,7 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
     back."""
     from cottax.relational.contracts import ConstrainedMinimiser  # noqa: PLC0415
-    from cottax.relational.openmdao_solvers import OMSLSQP, SOLVERS  # noqa: PLC0415
+    from cottax.relational.consumers.openmdao_solvers import OMSLSQP, SOLVERS  # noqa: PLC0415
     from cottax.export.openmdao import (  # noqa: PLC0415
         OpenMDAOExport,
         OpenMDAOGraph,
