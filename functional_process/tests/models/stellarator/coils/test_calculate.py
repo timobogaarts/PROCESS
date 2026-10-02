@@ -25,13 +25,13 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-import cottax.interfaces as cx
+import cottax.cx as cx
 from cottax.core import problems
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.plan import Plan
-from cottax.execution import CallableGraph, Inputs, run
-from cottax.interfaces import N, to_graph
-from cottax.visualization.sequencing import shape_of
+from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.cx import N, to_graph
+from cottax.consumers.visualization.sequencing import shape_of
 
 from functional_process.cottax.architectures.contracts import PortRootFinding, Start
 from functional_process.cottax.architectures.reading import GapsDriver

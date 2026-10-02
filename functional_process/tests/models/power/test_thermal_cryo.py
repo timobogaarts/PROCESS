@@ -13,7 +13,7 @@ import inspect
 import jax
 import pytest
 from cottax.core import Function
-from cottax.interfaces import V, place, to_graph
+from cottax.cx import V, place, to_graph
 
 from functional_process.cottax.input.indat import (
     COMPONENT_THERMAL_POWERS,

@@ -1,6 +1,6 @@
 """The coils' superconductor properties -- `superconpf`'s ITER Nb3Sn and NbTi arms."""
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.superconductor import (

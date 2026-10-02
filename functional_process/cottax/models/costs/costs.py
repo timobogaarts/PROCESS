@@ -6,7 +6,7 @@ import inspect
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     buildings,

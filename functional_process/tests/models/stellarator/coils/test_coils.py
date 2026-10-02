@@ -2,16 +2,16 @@
 
 from types import MappingProxyType
 
-import cottax.interfaces as cx
+import cottax.cx as cx
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan
-from cottax.execution import CallableGraph, Inputs, run
-from cottax.interfaces import V
-from cottax.visualization.sequencing import shape_of
+from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.cx import V
+from cottax.consumers.visualization.sequencing import shape_of
 
 from functional_process.cottax.architectures.contracts import (
     CurveLhs,

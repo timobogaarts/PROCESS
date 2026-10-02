@@ -52,7 +52,7 @@ non-finite, which the check steps aside for.
 
 import numpy as np
 import pytest
-from cottax.interfaces import to_graph
+from cottax.cx import to_graph
 
 from functional_process.cottax.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,

@@ -3,7 +3,7 @@
 `.physics.pflux_fw_neutron_mw`, `tokamak_boundary.md`'s three reads of this slot.
 """
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     build,

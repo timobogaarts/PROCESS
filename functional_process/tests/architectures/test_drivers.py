@@ -3,15 +3,15 @@ contract, answered by cottax's `Picard`, end to end through `run`; VMCON's desig
 scaling; and the SQP drivers' refusal of an objective the design cannot move.
 """
 
-import cottax.interfaces as cx
+import cottax.cx as cx
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.plan import Plan
-from cottax.execution import CallableGraph, Inputs, run
-from cottax.relational.consumers.jax_solvers import Picard
-from cottax.interfaces import N, Scope, V
+from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.relational.consumers.execution.jax_solvers import Picard
+from cottax.cx import N, Scope, V
 from cottax.relational import Eq, Relation
 from jax.tree_util import GetAttrKey
 

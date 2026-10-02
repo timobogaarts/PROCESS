@@ -2,7 +2,7 @@
 `CROCOSuperconductingTFCoil`, the cross-conductor (CroCo) REBCO-tape TF coil.
 """
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import superconducting_tfcoil, tfcoil
 from functional_process.cottax.stated import states

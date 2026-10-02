@@ -20,7 +20,7 @@ but reached on the tokamak (`caller.py:331`), which adds two more units here:
 
 from types import MappingProxyType
 
-import cottax.interfaces as cx
+import cottax.cx as cx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -29,8 +29,8 @@ import pytest
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.plan import Combine, Plan
 from cottax.core.driven import Driver
-from cottax.execution import CallableGraph, Inputs, run
-from cottax.interfaces import N
+from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.cx import N
 from cottax.core.realisation import Implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
 

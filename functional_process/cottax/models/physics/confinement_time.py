@@ -1,6 +1,6 @@
 """Pure-functional port of `process/models/physics/confinement_time.py`."""
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import physics
 from functional_process.models.physics.confinement_time import (

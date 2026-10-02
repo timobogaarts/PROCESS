@@ -6,7 +6,7 @@ Which cost nodes this machine has, and their settings.
 import dataclasses
 
 import equinox as eqx
-from cottax.interfaces import Explicit
+from cottax.cx import Explicit
 
 from functional_process.cottax.models.costs.costs import (
     AtmosphericRecoveryCost,

@@ -1,5 +1,5 @@
 """Table 6 -- the same MDF under OpenMDAO, through cottax's own export
-(`study.openmdao`, `cottax.export.openmdao`) of the optimiser's cycle, what each
+(`study.openmdao`, `cottax.consumers.openmdao`) of the optimiser's cycle, what each
 iteration re-runs, with what it reads from outside run once and held (no partial is
 taken in it): one jitted component per model, its partials by `jax.jacfwd` where the
 jaxpr says they are nonzero; a group per nested solve
@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 import openmdao.api as om
-from cottax.export.openmdao.component import ProblemComponent
+from cottax.consumers.openmdao.component import ProblemComponent
 from openmdao.core.component import Component
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

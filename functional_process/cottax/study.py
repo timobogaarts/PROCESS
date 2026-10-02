@@ -23,15 +23,15 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import cottax.interfaces as cx
+import cottax.cx as cx
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.core import Solve
-from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
+from cottax.consumers.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
 from cottax.relational.contracts import RootFinding
-from cottax.relational.consumers.jax_solvers import Newton, Picard
+from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
     Eq,
@@ -571,7 +571,7 @@ def before(graph, inputs, problem=TOP) -> dict:
 def posed(graph, inputs, problem=TOP) -> tuple:
     """`(posed, context, data)`: what a run of `graph` at `inputs` hands `problem`'s
     driver, without solving it -- what runs before it once, then the problem posed as
-    `cottax.execution.run` poses it. `problem` is outermost."""
+    `cottax.consumers.execution.run` poses it. `problem` is outermost."""
     env = before(graph, inputs, problem)
     interior = next(
         s.interior
@@ -613,12 +613,12 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     back."""
     from cottax.relational.contracts import ConstrainedMinimiser  # noqa: PLC0415
     from cottax.relational.consumers.openmdao import SOLVERS  # noqa: PLC0415
-    from cottax.export.openmdao import (  # noqa: PLC0415
+    from cottax.consumers.openmdao import (  # noqa: PLC0415
         OMSLSQP,
         OpenMDAOExport,
         OpenMDAOGraph,
     )
-    from cottax.pytree.codec import PytreeCodec  # noqa: PLC0415
+    from cottax.pytree.consumers.json import PytreeCodec  # noqa: PLC0415
 
     if arm not in arms(configuration) or arm == "MDA":
         raise ValueError(f"{configuration.name}: no {arm} arm to export")

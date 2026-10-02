@@ -1,6 +1,6 @@
 """Pure-functional port of `process/models/physics/radiation_power.py`."""
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import impurity_radiation, physics
 from functional_process.models.physics.radiation_power import (

@@ -1,6 +1,6 @@
 """What current each PF coil group carries, at each of the three time points."""
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.models.pfcoil import REFERENCE_TOPOLOGY, PFLocation
 from functional_process.cottax.paths import pf_coil

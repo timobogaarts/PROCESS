@@ -5,7 +5,7 @@ field `Physics.run` derives from them.
 import dataclasses
 
 import equinox as eqx
-from cottax.interfaces import Explicit, V
+from cottax.cx import Explicit, V
 
 from functional_process.cottax.models.stellarator.plasma_physics import (
     calculate_total_field,

@@ -2,7 +2,7 @@
 `CICCSuperconductingTFCoil` and the `SuperconductingTFCoil` layer above it.
 """
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     superconducting_tfcoil,

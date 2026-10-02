@@ -3,7 +3,7 @@
 Unit #2.
 """
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     build,

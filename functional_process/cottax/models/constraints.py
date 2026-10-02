@@ -20,7 +20,7 @@ model computes and no input states.
 
 import inspect
 
-from cottax.interfaces import Scope, V
+from cottax.cx import Scope, V
 from jax.tree_util import GetAttrKey
 
 from functional_process.models import constraints as C

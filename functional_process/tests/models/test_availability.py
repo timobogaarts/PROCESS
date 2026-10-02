@@ -18,7 +18,7 @@ regression in its output would show up as a value mismatch downstream.
 import functools
 
 import pytest
-from cottax.interfaces import N, minted, node, to_graph
+from cottax.cx import N, minted, node, to_graph
 from cottax.core.realisation import Implemented
 from cottax.relational import is_fixed_point
 

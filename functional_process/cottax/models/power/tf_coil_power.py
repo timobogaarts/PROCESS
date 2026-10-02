@@ -4,7 +4,7 @@
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import buildings, heat_transport, physics, tfcoil
 from functional_process.models.power.tf_coil_power import (

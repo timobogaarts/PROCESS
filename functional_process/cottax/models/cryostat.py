@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import fwbs
 from functional_process.models.cryostat import (

@@ -15,9 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-import cottax.interfaces as cx  # noqa: E402
-from cottax.interfaces import Eq, Le  # noqa: E402
-from cottax.visualization import render_html  # noqa: E402
+import cottax.cx as cx  # noqa: E402
+from cottax.cx import Eq, Le  # noqa: E402
+from cottax.consumers.visualization import render_html  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
 from functional_process.cottax import study  # noqa: E402

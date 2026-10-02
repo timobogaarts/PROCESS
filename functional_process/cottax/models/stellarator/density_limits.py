@@ -1,7 +1,7 @@
 """Pure-functional port of `process/models/stellarator/density_limits.py`."""
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     physics,

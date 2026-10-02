@@ -9,7 +9,7 @@ parameter by position and a variadic parameter reads nothing.
 
 from __future__ import annotations
 
-from cottax.interfaces import Explicit, Scope, absolute
+from cottax.cx import Explicit, Scope, absolute
 from cottax.pytree.mint import Minted
 
 __all__ = ["STATED", "states"]

@@ -16,7 +16,7 @@ about the profile objects. If a ported function secretly needed something else o
 """
 
 import numpy as np
-from cottax.interfaces import to_graph
+from cottax.cx import to_graph
 
 from functional_process.cottax.models.physics.plasma_profiles import (
     PedestalProfileValues,

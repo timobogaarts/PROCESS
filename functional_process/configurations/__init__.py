@@ -31,7 +31,7 @@ from typing import Any
 
 import equinox as eqx
 import numpy as np
-from cottax.interfaces.declarations import Wrapper
+from cottax.consumers.interfaces.declarations import Wrapper
 from cottax.pytree.path import VarPath
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -134,7 +134,7 @@ class Speller:
 
     def place(self, path: VarPath) -> str:
         """`path` as `place(V...)`, its imports recorded."""
-        self.imports.setdefault("cottax.interfaces", set()).update({"V", "place"})
+        self.imports.setdefault("cottax.cx", set()).update({"V", "place"})
         keys = []
         for key in path.segments:
             if isinstance(key, GetAttrKey):

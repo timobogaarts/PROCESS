@@ -5,7 +5,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.interfaces import Explicit, V
+from cottax.cx import Explicit, V
 
 from functional_process.cottax.paths import physics
 from functional_process.models.physics.density_limit import (

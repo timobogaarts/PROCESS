@@ -4,7 +4,7 @@
 solver `stresscl` calls (`:3659-3717`, `:4236-4670`).
 """
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     superconducting_tfcoil,

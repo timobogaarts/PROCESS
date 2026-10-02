@@ -4,7 +4,7 @@ import dataclasses
 
 import equinox as eqx
 from functional_process.cottax.models.namespace import Build, Divertor
-from cottax.interfaces import Explicit
+from cottax.cx import Explicit
 
 from functional_process.cottax.models.blankets.namespace import CcfeHcpb
 from functional_process.cottax.models.cryostat import Cryostat

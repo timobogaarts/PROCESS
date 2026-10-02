@@ -1,6 +1,6 @@
 """Where the CS and the PF coils are: cross-sections, filament placement, coil centres."""
 
-from cottax.interfaces import V
+from cottax.cx import V
 
 from functional_process.cottax.paths import (
     pf_coil,

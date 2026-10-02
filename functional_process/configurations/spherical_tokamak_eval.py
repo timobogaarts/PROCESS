@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/spherical_tokamak_eval.IN.DAT` by
 
 import numpy as np
 
-from cottax.interfaces import V, place
+from cottax.cx import V, place
 from functional_process.configurations import Configuration, RootFinding
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
