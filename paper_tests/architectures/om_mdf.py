@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 import openmdao.api as om
-from cottax.export.openmdao.component import ProblemComponent
+from cottax.relational.openmdao_solvers import ProblemComponent
 from openmdao.core.component import Component
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

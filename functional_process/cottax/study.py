@@ -612,9 +612,8 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
     back."""
     from cottax.relational.contracts import ConstrainedMinimiser  # noqa: PLC0415
+    from cottax.relational.openmdao_solvers import OMSLSQP, SOLVERS  # noqa: PLC0415
     from cottax.export.openmdao import (  # noqa: PLC0415
-        DEFAULT_SOLVERS,
-        OMSLSQP,
         OpenMDAOExport,
         OpenMDAOGraph,
     )
@@ -639,7 +638,7 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
         nested_given=arm in ("MDF", "IDF"),
     )
     solvers = OrderedMap({
-        **dict(DEFAULT_SOLVERS),
+        **dict(SOLVERS),
         ConstrainedMinimiser: OMSLSQP(scaled=True),
     })
     env = before(graph, inputs)
