@@ -30,7 +30,7 @@ from cottax.core.maths.plan import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
-from cottax.driver_contracts import RootFinding
+from cottax.relational.contracts import RootFinding
 from cottax.jax_execution.solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
@@ -611,7 +611,7 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     design's starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or
     Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
     back."""
-    from cottax.driver_contracts import ConstrainedMinimiser  # noqa: PLC0415
+    from cottax.relational.contracts import ConstrainedMinimiser  # noqa: PLC0415
     from cottax.export.openmdao import (  # noqa: PLC0415
         DEFAULT_SOLVERS,
         OMSLSQP,

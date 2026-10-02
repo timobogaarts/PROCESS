@@ -6,13 +6,11 @@ A contract's reports are what the graph holds a place for, so they are the contr
 chosen where a problem is driven; an implementation computes what it can.
 """
 
-from cottax.core.driven import Driver, PerProblem, PerUnknown, Role
-from cottax.driver_contracts import (
+from cottax.core.driven import Driver, PerProblem, PerUnknown, Role, Start, Steps
+from cottax.relational.contracts import (
     ConstrainedMinimiser,
     FixedPointIterator,
     RootFinder,
-    Start,
-    Steps,
 )
 from cottax.relational import is_root_find
 
