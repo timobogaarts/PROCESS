@@ -31,7 +31,7 @@ from cottax.core.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
 from cottax.relational.contracts import RootFinding
-from cottax.jax_execution.solvers import Newton, Picard
+from cottax.relational.jax_solvers import Newton, Picard
 from cottax.pytree.mint import unminted
 from cottax.relational import (
     Eq,

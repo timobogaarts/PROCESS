@@ -24,8 +24,8 @@ import jax
 from cottax.core.frozen import AbstractClassVar, Frozen
 from cottax.core.driven import Driver
 from cottax.execution import ByRole, Context, DriverImplementation, Posed, Unknowns
-from cottax.jax_execution.solvers import NotSquare
-from cottax.jax_execution.solvers.canonical_nlp import Box, box
+from cottax.relational.jax_solvers import NotSquare
+from cottax.relational.jax_solvers.canonical_nlp import Box, box
 from cottax.relational import Le, Max, Relation
 from jax.tree_util import GetAttrKey, register_pytree_with_keys
 

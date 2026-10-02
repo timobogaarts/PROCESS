@@ -10,7 +10,7 @@ import pytest
 from cottax.core.frozen import OrderedMap
 from cottax.core.maths.plan import Plan
 from cottax.execution import CallableGraph, Inputs, run
-from cottax.jax_execution.solvers import Picard
+from cottax.relational.jax_solvers import Picard
 from cottax.interfaces import N, Scope, V
 from cottax.relational import Eq, Relation
 from jax.tree_util import GetAttrKey

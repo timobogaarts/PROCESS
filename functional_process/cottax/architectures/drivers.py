@@ -1367,7 +1367,7 @@ class VmconDriver(GapsDriver[PortMinimisation]):
 
         def host(live, flat_start):
             """One VMCON solve, on the host, on concrete NumPy."""
-            # **Compiled, and deliberately unlike `cottax.jax_execution.solvers.SLSQP`**, which
+            # **Compiled, and deliberately unlike `cottax.relational.jax_solvers.SLSQP`**, which
             # leaves its inner model eager. An SQP iteration here converges a whole
             # PROCESS block; running it op by op costs far more than the one trace it
             # replaces, and the `pure_callback` boundary is per *solve*, not per
