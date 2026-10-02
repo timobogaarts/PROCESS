@@ -8,7 +8,7 @@ import difflib
 from collections.abc import Iterable
 
 from cottax.interfaces import DeclarationSurface, Shipped
-from cottax.interfaces.relational.pytree.scope import PytreeNames
+from cottax.pytree.consumers.interface.naming import PytreeNames
 from cottax.pytree.path import VarPath
 from jax.tree_util import GetAttrKey
 
