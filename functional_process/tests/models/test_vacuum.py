@@ -27,11 +27,11 @@ import numpy as np
 import optimistix as optx
 import pytest
 from cottax.core.frozen import OrderedMap
-from cottax.core.plan import Combine, Plan
-from cottax.driven import Driver
+from cottax.core.maths.plan import Combine, Plan
+from cottax.core.driven import Driver
 from cottax.execution import CallableGraph, Inputs, run
 from cottax.interfaces import N
-from cottax.realisation import Implemented
+from cottax.core.realisation import Implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
 
 from functional_process.cottax.architectures.contracts import PortRootFinding, Start

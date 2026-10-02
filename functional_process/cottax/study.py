@@ -25,9 +25,9 @@ import jax.numpy as jnp
 import numpy as np
 import cottax.interfaces as cx
 from cottax.core.frozen import OrderedMap
-from cottax.core.kinds import is_problem
-from cottax.core.plan import Plan, Rename
-from cottax.driven import is_driven
+from cottax.core.maths.kinds import is_problem
+from cottax.core.maths.plan import Plan, Rename
+from cottax.core.driven import is_driven
 from cottax.core import Solve
 from cottax.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
 from cottax.driver_contracts import RootFinding

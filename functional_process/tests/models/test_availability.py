@@ -19,7 +19,7 @@ import functools
 
 import pytest
 from cottax.interfaces import N, minted, node, to_graph
-from cottax.realisation import Implemented
+from cottax.core.realisation import Implemented
 from cottax.relational import is_fixed_point
 
 from functional_process.cottax.models.availability.availability import (

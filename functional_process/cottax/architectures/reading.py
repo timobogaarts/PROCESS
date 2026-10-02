@@ -22,7 +22,7 @@ from typing import Any
 
 import jax
 from cottax.core.frozen import AbstractClassVar, Frozen
-from cottax.driven import Driver
+from cottax.core.driven import Driver
 from cottax.execution import ByRole, Context, DriverImplementation, Posed, Unknowns
 from cottax.jax_execution.solvers import NotSquare
 from cottax.jax_execution.solvers.canonical_nlp import Box, box

@@ -28,7 +28,7 @@ import pytest
 import cottax.interfaces as cx
 from cottax.core import problems
 from cottax.core.frozen import OrderedMap
-from cottax.core.plan import Plan
+from cottax.core.maths.plan import Plan
 from cottax.execution import CallableGraph, Inputs, run
 from cottax.interfaces import N, to_graph
 from cottax.visualization.sequencing import shape_of

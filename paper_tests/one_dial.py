@@ -62,10 +62,10 @@ import cottax.interfaces as cx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax import ExecutableGraph, Function, Minted, NodePath, OrderedMap, VarPath  # noqa: E402
-from cottax.core.executable import RequirementUnanswered  # noqa: E402
+from cottax.core.maths.executable import RequirementUnanswered  # noqa: E402
 from cottax.core.frozen import violations  # noqa: E402
-from cottax.core.plan import Cut, Determine, Insert  # noqa: E402
-from cottax.core.plan import Plan as Ops  # noqa: E402
+from cottax.core.maths.plan import Cut, Determine, Insert  # noqa: E402
+from cottax.core.maths.plan import Plan as Ops  # noqa: E402
 from cottax.mdao_architectures import CloseFunctionalCycles  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
