@@ -618,7 +618,6 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
         OpenMDAOExport,
         OpenMDAOGraph,
     )
-    from cottax.pytree.consumers.json import PytreeCodec  # noqa: PLC0415
 
     if arm not in arms(configuration) or arm == "MDA":
         raise ValueError(f"{configuration.name}: no {arm} arm to export")
@@ -649,7 +648,6 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     # derivative is asked in one, so none is taken.
     return OpenMDAOExport(
         Inputs(OpenMDAOGraph(cycle), outside),
-        PytreeCodec(),
         solvers=solvers,
         constants=tuple(outside),
     )

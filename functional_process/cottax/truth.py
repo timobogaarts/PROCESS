@@ -7,7 +7,7 @@ identity read off PROCESS's own source. A copy (`^hat.x`, `^start.x`) reads the 
 copies.
 """
 
-from cottax.pytree.crossings import get_at
+from cottax.pytree.crossings import read_at
 from cottax.pytree.mint import unminted
 
 from functional_process.cottax.input.indat import STATED_VALUES
@@ -173,5 +173,5 @@ def ground_truth(data, var):
     known = KNOWN_MINT_VALUES.get(var.spelling)
     if known is not None:
         return known(data)
-    value = get_at(data, unminted(var).segments)
+    value = read_at(data, unminted(var).segments)
     return UNWRITTEN_BY_PROCESS if value is None else value
