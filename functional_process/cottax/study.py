@@ -29,7 +29,9 @@ from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.core import Solve
-from cottax.consumers.execution import CallableGraph, Inputs, InteriorConditionMap, Posed, run
+from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.consumers.execution.run import InteriorConditionMap
+from cottax.consumers.execution.interface_types import Posed
 from cottax.relational.contracts import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree.mint import unminted
