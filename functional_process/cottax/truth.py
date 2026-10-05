@@ -7,8 +7,7 @@ identity read off PROCESS's own source. A copy (`^hat.x`, `^start.x`) reads the 
 copies.
 """
 
-from cottax.pytree.crossings import read_at
-from cottax.pytree.mint import unminted
+from cottax.pytree import read_at, unminted
 
 from functional_process.cottax.input.indat import STATED_VALUES
 

@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from cottax.consumers.declaration.interface_types import Wrapper
-from cottax.pytree.path import NodePath
+from cottax.pytree import NodePath
 from jax.tree_util import DictKey
 
 from functional_process.tests.port_reference.fingerprint import node

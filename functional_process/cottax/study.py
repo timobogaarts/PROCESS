@@ -25,15 +25,15 @@ import jax.numpy as jnp
 import numpy as np
 import cottax.cx as cx
 from cottax.core.frozen import OrderedMap
-from cottax.core.maths.kinds import is_problem
-from cottax.core.maths.plan import Plan, Rename
+from cottax.core import is_problem
+from cottax.core import Plan, Rename
 from cottax.core.driven import is_driven
-from cottax.consumers.execution import CallableGraph, Inputs, condition_map, run
-from cottax.consumers.execution.interface_types import Posed
+from cottax.consumers.execution import CallableGraph, run
+from cottax.consumers.execution.interface_types import ConditionMap, Posed
 from cottax.relational.contracts import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
-from cottax.pytree.mint import unminted
-from cottax.core import GaussSeidel, GaussSeidelMinimal
+from cottax.pytree import unminted
+from cottax.core import GaussSeidel, GaussSeidelMinimal, GraphWithValues
 from cottax.relational import (
     Eq,
     Le,
@@ -210,7 +210,7 @@ def values(graph, state, given=OrderedMap(), cold=None) -> OrderedMap:
 
 @eqx.filter_jit
 def _run(graph, inputs):
-    return run(Inputs(graph, inputs))
+    return run(GraphWithValues(graph, inputs))
 
 
 @functools.cache
@@ -238,7 +238,7 @@ def cold_state(configuration: Configuration) -> dict:
     model = machine_model(configuration)
     mda = mda_graph(model, RULE)
     shaped = eqx.filter_eval_shape(
-        lambda v: run(Inputs(CallableGraph(mda), v)),
+        lambda v: run(GraphWithValues(CallableGraph(mda), v)),
         values(mda, state, model.given),
     )
     zeros = {
@@ -567,13 +567,49 @@ def before(graph, inputs, problem=TOP) -> dict:
     return env
 
 
+class Interior(ConditionMap):
+    """A problem's conditions as a function of its unknowns at a fixed context: one run
+    of its interior (`graph.interior(problem)`, proved callable), the conditions read
+    off every place. A value: it hashes and compares by its graph and places."""
+
+    interior: CallableGraph
+    unknowns: tuple
+    context_places: tuple
+    """What the interior reads from outside, the unknowns aside, then what the condition
+    reads that the interior does not compute (a parameter): where `context` goes."""
+    conditions: tuple
+    """The condition's reads, its conditions then its parameters."""
+
+    @classmethod
+    def of(cls, graph, problem) -> "Interior":
+        node = graph[problem]
+        interior = graph.interior(problem)
+        solved = set(node.unknowns)
+        produced = set(interior.graph.owned_variables)
+        fixed = tuple(
+            dict.fromkeys(
+                p
+                for p in (*interior.graph.boundary_inputs, *node.condition.reads)
+                if p not in solved and p not in produced
+            )
+        )
+        return cls(CallableGraph(interior), node.unknowns, fixed, node.condition.reads)
+
+    def __call__(self, unknowns, context) -> tuple:
+        given = dict(zip(self.context_places, context, strict=True))
+        given.update(zip(self.unknowns, unknowns, strict=True))
+        inputs = self.interior.graph.graph.boundary_inputs
+        ran = run(GraphWithValues(self.interior, OrderedMap((p, given[p]) for p in inputs)))
+        return tuple(ran[p] if p in ran else given[p] for p in self.conditions)
+
+
 def posed(graph, inputs, problem=TOP) -> tuple:
     """`(posed, context, data)`: what a run of `graph` at `inputs` hands `problem`'s
     driver, without solving it -- what runs before it once, then the problem posed as
-    `cottax.consumers.execution.run` poses it. `problem` is outermost."""
+    a function of its unknowns (`Interior`). `problem` is outermost."""
     env = before(graph, inputs, problem)
     node = graph[problem]
-    conditions_ = condition_map(proved(graph), problem)
+    conditions_ = Interior.of(graph, problem)
     fixed = conditions_.context_places
     data = {
         role: tuple(env[p] for p in slot)
@@ -632,7 +668,7 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     # Every input is held while SLSQP moves the design, which the top owns: no
     # derivative is asked in one, so none is taken.
     return OpenMDAOExport(
-        Inputs(OpenMDAOGraph(cycle), outside),
+        GraphWithValues(OpenMDAOGraph(cycle), outside),
         solvers=solvers,
         constants=tuple(outside),
     )

@@ -32,7 +32,7 @@ import numpy as np  # noqa: E402
 
 jax.config.update("jax_enable_x64", True)  # PROCESS is float64; the Picards NaN without it
 
-from cottax.relational.cutting import GaussSeidel, Jacobi  # noqa: E402
+from cottax.core import GaussSeidel, Jacobi  # noqa: E402
 from jax.flatten_util import ravel_pytree  # noqa: E402
 
 from functional_process import configurations  # noqa: E402

@@ -8,8 +8,8 @@ import difflib
 from collections.abc import Iterable
 
 from cottax.cx import DeclarationSurface, Shipped
-from cottax.pytree.consumers.declaration.names import PytreeNames
-from cottax.pytree.path import VarPath
+from cottax.pytree.consumers.declaration import PytreeNames
+from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey
 
 # `AREAS` -- every area PROCESS has, 36 of them. Was

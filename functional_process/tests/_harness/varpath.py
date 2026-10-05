@@ -1,6 +1,6 @@
 """Build cottax `VarPath`s from PROCESS's own `.area.field` spelling."""
 
-from cottax.pytree.path import VarPath
+from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey
 
 

@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 
 from cottax.cx import to_graph
-from cottax.pytree.path import VarPath
+from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey, SequenceKey
 
 from functional_process.configurations import (

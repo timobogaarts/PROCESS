@@ -66,9 +66,9 @@ from cottax.core.frozen import OrderedMap  # noqa: E402
 from cottax.pytree import Minted, NodePath, VarPath  # noqa: E402
 from cottax.core.maths.executable import RequirementUnanswered  # noqa: E402
 from cottax.core.frozen import violations  # noqa: E402
-from cottax.core.maths.plan import Cut, Determine, Insert  # noqa: E402
-from cottax.core.maths.plan import Plan as Ops  # noqa: E402
-from cottax.relational.cutting import CloseFunctionalCycles  # noqa: E402
+from cottax.core import Cut, Determine, Insert  # noqa: E402
+from cottax.core import Plan as Ops  # noqa: E402
+from cottax.relational import CloseFunctionalCycles  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

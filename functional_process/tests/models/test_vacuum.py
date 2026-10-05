@@ -27,9 +27,10 @@ import numpy as np
 import optimistix as optx
 import pytest
 from cottax.core.frozen import OrderedMap
-from cottax.core.maths.plan import Combine, Plan
+from cottax.core import Combine, Plan
 from cottax.core.driven import Driver
-from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.consumers.execution import CallableGraph, run
+from cottax.core import GraphWithValues
 from cottax.cx import N
 from cottax.core.realisation import Implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
@@ -322,7 +323,7 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
 
     for sample in _duct_diameter_samples():
         kw = sample.kwargs
-        out = run(Inputs(graph, OrderedMap({**starts, **_duct_diameter_env(kw)})))
+        out = run(GraphWithValues(graph, OrderedMap({**starts, **_duct_diameter_env(kw)})))
         expected = solve_duct_diameter(
             kw["l1"], kw["l2"], kw["l3"], kw["xmult_i"], kw["ceff_i"]
         )
@@ -340,7 +341,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
     kw = sample.kwargs
-    out = run(Inputs(graph, OrderedMap({**starts, **_duct_diameter_env(kw)})))
+    out = run(GraphWithValues(graph, OrderedMap({**starts, **_duct_diameter_env(kw)})))
     residual = duct_diameter_residual(out[vpath(".vacuum.d_duct")], **kw)
     assert abs(float(residual)) < 1e-8
 
@@ -519,7 +520,7 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
         vpath(".vacuum.a1max"): a1max,
         vpath(".vacuum.s_i"): s_i,
     }
-    out = run(Inputs(callable_graph, OrderedMap(env)))
+    out = run(GraphWithValues(callable_graph, OrderedMap(env)))
 
     d_duct = out[vpath(".vacuum.d_duct")]
     ceff_i = out[vpath(".vacuum.ceff_i")]

@@ -8,8 +8,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.core.frozen import OrderedMap
-from cottax.core.maths.plan import Plan
-from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.core import Plan
+from cottax.consumers.execution import CallableGraph, run
+from cottax.core import GraphWithValues
 from cottax.relational.consumers.execution.jax_solvers import Picard
 from cottax.cx import N, Scope, V
 from cottax.relational import Eq, Relation
@@ -58,7 +59,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     # unknown's name: writing the latter would be seeding the answer.
     (start,) = driven[problem].data[driven[problem].driver.takes.index(Start)]
     out = run(
-        Inputs(
+        GraphWithValues(
             CallableGraph(driven),
             OrderedMap({start: jnp.asarray(0.0), toy.place("k"): jnp.asarray(3.0)}),
         )

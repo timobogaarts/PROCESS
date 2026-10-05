@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.relational import Le
-from cottax.pytree.path import VarPath
+from cottax.pytree import VarPath
 from jax.flatten_util import ravel_pytree
 
 from functional_process.cottax.architectures.contracts import (

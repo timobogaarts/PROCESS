@@ -7,9 +7,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.core.frozen import OrderedMap
-from cottax.core.maths.kinds import is_problem
-from cottax.core.maths.plan import Plan
-from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.core import is_problem, Plan
+from cottax.consumers.execution import CallableGraph, run
+from cottax.core import GraphWithValues
 from cottax.cx import V
 from cottax.consumers.visualization.kinds import problem_type_of
 
@@ -556,7 +556,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             slot(CurveLhs): jnp.asarray(kwargs["y1"]),
             slot(CurveRhs): jnp.asarray(kwargs["y2"]),
         }
-        out = run(Inputs(callable_graph, OrderedMap(env)))
+        out = run(GraphWithValues(callable_graph, OrderedMap(env)))
         want = intersect(
             jnp.asarray(kwargs["x1"]),
             jnp.asarray(kwargs["y1"]),

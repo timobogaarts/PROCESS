@@ -26,10 +26,10 @@ import numpy as np
 import optimistix as optx
 import pytest
 import cottax.cx as cx
-from cottax.core import problems
+from cottax.core import GraphWithValues, problems
 from cottax.core.frozen import OrderedMap
-from cottax.core.maths.plan import Plan
-from cottax.consumers.execution import CallableGraph, Inputs, run
+from cottax.core import Plan
+from cottax.consumers.execution import CallableGraph, run
 from cottax.cx import N, to_graph
 from cottax.consumers.visualization.kinds import problem_type_of
 
@@ -1125,7 +1125,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     # out (a run refuses a value the graph neither reads nor computes).
     inputs = driven.graph.boundary_inputs
     out = run(
-        Inputs(
+        GraphWithValues(
             CallableGraph(driven),
             OrderedMap({p: v for p, v in env.items() if p in inputs}),
         )
