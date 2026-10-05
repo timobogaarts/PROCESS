@@ -5,7 +5,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.cx import Explicit, V
+from cottax.relational_pytree import Explicit, V
 
 from functional_process.cottax.paths import physics
 from functional_process.models.physics.scrape_off_layer import (

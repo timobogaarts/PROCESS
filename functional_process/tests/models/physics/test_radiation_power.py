@@ -20,7 +20,7 @@ would otherwise overwrite the profile arrays a case needs to control.
 """
 
 import numpy as np
-from cottax.cx import V, place, to_graph
+from cottax.relational_pytree import V, place, to_graph
 
 from functional_process.cottax.models.physics.radiation_power import (
     ImpurityRadiationTotals,

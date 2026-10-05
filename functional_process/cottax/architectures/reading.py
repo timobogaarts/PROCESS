@@ -22,10 +22,10 @@ from typing import Any
 
 import jax
 from cottax.core.frozen import AbstractClassVar, Frozen
-from cottax.core.driven import Driver
+from cottax.core.driven import DriverContract
 from cottax.consumers.execution.interface_types import ByRole, Context, Posed, Unknowns
 from cottax.consumers.execution.interface import DriverImplementation
-from cottax.relational.consumers.canonical_nlp import Box, NotSquare, box
+from cottax.relational_pytree import Box, NotSquare, box
 from cottax.relational import Le, Max, Relation
 from jax.tree_util import GetAttrKey, register_pytree_with_keys
 
@@ -154,7 +154,7 @@ class NextValues(Reading):
         return tuple(at[update[u]] for u in self.unknowns)
 
 
-class PortDriver[D: Driver](DriverImplementation[D]):
+class PortDriver[D: DriverContract](DriverImplementation[D]):
     """
     The level the port's drivers implement: a reading of the posed problem (`read`), then
     `solve(reading, data)`, which returns the unknowns and then one value per role in
@@ -179,14 +179,14 @@ class PortDriver[D: Driver](DriverImplementation[D]):
         return answer[:n], {role: (reported[role],) for role in posed.reports}
 
 
-class GapsDriver[D: Driver](PortDriver[D]):
+class GapsDriver[D: DriverContract](PortDriver[D]):
     """A port driver reading every relation as a gap."""
 
     def read(self, posed: Posed, context: Context) -> Gaps:
         return Gaps(posed, context)
 
 
-class IterationDriver[D: Driver](PortDriver[D]):
+class IterationDriver[D: DriverContract](PortDriver[D]):
     """A port driver reading `u = g(u)` as where each unknown goes next."""
 
     def read(self, posed: Posed, context: Context) -> NextValues:

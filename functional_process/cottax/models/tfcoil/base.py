@@ -3,7 +3,7 @@ coil layer that `SuperconductingTFCoil.run_base_superconducting_tf` reaches by
 inheritance.
 """
 
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import (
     superconducting_tfcoil,

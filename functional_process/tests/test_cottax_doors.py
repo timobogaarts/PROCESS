@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOOR = re.compile(
-    r"cottax\.(cx|core|core\.(driven|realisation|frozen)|relational|pytree"
+    r"cottax\.(relational_pytree|core|core\.(driven|realisation|frozen)|relational|pytree"
     r"|consumers\.(execution|json|openmdao|declaration|visualization|pickle"
     r"|visualization\.latex)"
     r"|consumers\.(execution|json|openmdao|declaration|visualization)"
@@ -19,13 +19,10 @@ DOOR = re.compile(
 )
 
 KNOWN = {
-    ("cottax/architectures/contracts.py", "cottax.relational.contracts"),
-    ("cottax/study.py", "cottax.relational.contracts"),
-    ("cottax/architectures/reading.py", "cottax.relational.consumers.canonical_nlp"),
-    ("tests/models/stellarator/coils/test_calculate.py", "cottax.consumers.visualization.kinds"),
-    ("tests/models/stellarator/coils/test_coils.py", "cottax.consumers.visualization.kinds"),
+    ("paper_tests/one_dial.py", "cottax.core.maths.executable"),
+    ("paper_tests/architectures/om_mdf.py", "cottax.consumers.openmdao.component"),
 }
-"""Internals no door offers yet: `(file under functional_process/, module)`."""
+"""Internals no door offers yet: `(file under the repo, module)`."""
 
 
 def cottax_imports(path: Path):
@@ -38,8 +35,9 @@ def cottax_imports(path: Path):
 
 def test_cottax_is_imported_through_its_doors():
     found = {
-        (path.relative_to(ROOT).as_posix(), module)
-        for path in ROOT.rglob("*.py")
+        (path.relative_to(ROOT.parent).as_posix(), module)
+        for scanned in (ROOT, ROOT.parent / "paper_tests")
+        for path in scanned.rglob("*.py")
         for module in cottax_imports(path)
         if module.startswith("cottax.") and not DOOR.fullmatch(module)
     }

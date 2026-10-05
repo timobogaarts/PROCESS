@@ -1,6 +1,6 @@
 """Pure-functional port of the **tokamak arm** of `process/models/physics/physics.py`."""
 
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import physics, times
 from functional_process.models.physics.physics import (

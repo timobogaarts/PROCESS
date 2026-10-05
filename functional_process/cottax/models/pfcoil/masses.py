@@ -1,6 +1,6 @@
 """How big each coil has to be, and what it weighs."""
 
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.masses import (

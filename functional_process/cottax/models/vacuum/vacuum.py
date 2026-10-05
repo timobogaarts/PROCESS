@@ -4,7 +4,7 @@ import inspect
 
 import jax  # noqa: F401
 import jax.numpy as jnp  # noqa: F401
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import (
     blanket,

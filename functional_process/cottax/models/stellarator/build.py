@@ -3,7 +3,7 @@
 Unit #2.
 """
 
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import (
     build,

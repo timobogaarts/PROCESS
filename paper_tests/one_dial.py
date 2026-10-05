@@ -58,7 +58,7 @@ import jax
 
 jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float64
 
-import cottax.cx as cx  # noqa: E402
+import cottax.relational_pytree as cx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.core import ExecutableGraph, Function  # noqa: E402
@@ -336,7 +336,7 @@ class Closed:
     def root_find_reports(self, out) -> dict:
         """`{condition: (steps, converged, residual, unknown)}` out of a run's values."""
         node = self.graph[self.place]
-        reported = dict(zip(node.driver.reports, (s[0] for s in node.reports), strict=True))
+        reported = dict(zip(node.contract.reports, (s[0] for s in node.reports), strict=True))
         return {
             cond: (
                 int(np.asarray(out[reported[Steps]])),
@@ -691,7 +691,7 @@ def _inputs(plan: Plan, dial: float | None = None) -> OrderedMap:
     for v in graph.graph.boundary_inputs:
         if v.spelling in plan.values:
             given[v] = jnp.asarray(plan.values[v.spelling], dtype=jnp.float64)
-    for role, slot in zip(node.driver.takes, node.data, strict=True):
+    for role, slot in zip(node.contract.takes, node.data, strict=True):
         for place, unknown in zip(slot, node.unknowns, strict=True):
             if role is Start and unknown.spelling in plan.values:
                 given[place] = jnp.asarray(plan.values[unknown.spelling], dtype=jnp.float64)

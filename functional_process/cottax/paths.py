@@ -7,7 +7,7 @@ say: a place the port names itself in another area, or a renamed read."""
 import difflib
 from collections.abc import Iterable
 
-from cottax.cx import DeclarationSurface, Shipped
+from cottax.relational_pytree import DeclarationSurface, Shipped
 from cottax.pytree.consumers.declaration import PytreeNames
 from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey

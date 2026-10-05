@@ -5,7 +5,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.cx import Explicit
+from cottax.relational_pytree import Explicit
 
 from functional_process.cottax.models.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,

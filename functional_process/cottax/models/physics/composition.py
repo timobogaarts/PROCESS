@@ -4,7 +4,7 @@
 """
 
 import jax.numpy as jnp
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import physics
 from functional_process.models.physics.composition import (

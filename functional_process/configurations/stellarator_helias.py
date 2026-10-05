@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/stellarator_helias.IN.DAT` by
 
 import numpy as np
 
-from cottax.cx import V, place
+from cottax.relational_pytree import V, place
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,

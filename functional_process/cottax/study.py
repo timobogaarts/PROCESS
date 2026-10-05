@@ -23,14 +23,14 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import cottax.cx as cx
+import cottax.relational_pytree as cx
 from cottax.core.frozen import OrderedMap
 from cottax.core import is_problem
 from cottax.core import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.consumers.execution import CallableGraph, run
 from cottax.consumers.execution.interface_types import ConditionMap, Posed
-from cottax.relational.contracts import RootFinding
+from cottax.relational_pytree import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree import unminted
 from cottax.core import GaussSeidel, GaussSeidelMinimal, GraphWithValues
@@ -130,8 +130,8 @@ def starts(graph) -> dict:
     """`{start place: the unknown it starts}` over every driven problem in `graph`."""
     pairs = {}
     for node in graph.definitions.values():
-        if is_driven(node) and Start in node.driver.takes:
-            slot = node.data[node.driver.takes.index(Start)]
+        if is_driven(node) and Start in node.contract.takes:
+            slot = node.data[node.contract.takes.index(Start)]
             pairs.update(zip(slot, node.unknowns, strict=True))
     return pairs
 
@@ -141,9 +141,9 @@ def _supplied(plan):
     owners = graph.graph.owners
     by_spelling = {v.spelling: v for v in owners}
     for name, node in graph.definitions.items():
-        if not (is_driven(node) and Start in node.driver.takes):
+        if not (is_driven(node) and Start in node.contract.takes):
             continue
-        slot = node.data[node.driver.takes.index(Start)]
+        slot = node.data[node.contract.takes.index(Start)]
         onto = []
         for start, unknown in zip(slot, node.unknowns, strict=True):
             target = by_spelling.get(SUPPLIED_STARTS.get(unknown.spelling, ""))
@@ -397,7 +397,7 @@ def block_values(graph, state, given, env, design, nested_given: bool) -> Ordere
     anything else from the state, else `env`. `GIVEN_STARTS` applies to the starts of
     problems nested under the top where `nested_given`."""
     started = starts(graph)
-    top_starts = set(graph[TOP].data[graph[TOP].driver.takes.index(Start)])
+    top_starts = set(graph[TOP].data[graph[TOP].contract.takes.index(Start)])
     out = {}
     for var in graph.graph.boundary_inputs:
         if var in given:
@@ -508,7 +508,7 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
             **conditions(configuration, out),
         }
     top = graph[TOP]
-    reported = dict(zip(top.driver.reports, (s[0] for s in top.reports), strict=True))
+    reported = dict(zip(top.contract.reports, (s[0] for s in top.reports), strict=True))
     x = tuple(float(np.asarray(out[u])) for u in problem_.design)
     if isinstance(problem_, Optimisation):
         iterations, _f, _eq, _ie = (
@@ -613,10 +613,10 @@ def posed(graph, inputs, problem=TOP) -> tuple:
     fixed = conditions_.context_places
     data = {
         role: tuple(env[p] for p in slot)
-        for role, slot in zip(node.driver.takes, node.data, strict=True)
+        for role, slot in zip(node.contract.takes, node.data, strict=True)
     }
     return (
-        Posed(node.condition, node.driver.reports, conditions_),
+        Posed(node.condition, node.contract.reports, conditions_),
         tuple(env[p] for p in fixed),
         data,
     )
@@ -632,12 +632,13 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     design's starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or
     Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
     back."""
-    from cottax.relational.contracts import ConstrainedMinimiser  # noqa: PLC0415
+    from cottax.relational_pytree import ConstrainedMinimiser  # noqa: PLC0415
     from cottax.relational.consumers.openmdao import SOLVERS  # noqa: PLC0415
     from cottax.consumers.openmdao import (  # noqa: PLC0415
         OMSLSQP,
         OpenMDAOExport,
         OpenMDAOGraph,
+        Sizing,
     )
 
     if arm not in arms(configuration) or arm == "MDA":
@@ -668,7 +669,7 @@ def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=
     # Every input is held while SLSQP moves the design, which the top owns: no
     # derivative is asked in one, so none is taken.
     return OpenMDAOExport(
-        GraphWithValues(OpenMDAOGraph(cycle), outside),
+        Sizing(GraphWithValues(OpenMDAOGraph(cycle), outside)),
         solvers=solvers,
         constants=tuple(outside),
     )

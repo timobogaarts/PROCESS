@@ -3,7 +3,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.cx import Explicit, V
+from cottax.relational_pytree import Explicit, V
 
 from functional_process.cottax.paths import blanket
 from functional_process.models.engineering.ivc_functions import (

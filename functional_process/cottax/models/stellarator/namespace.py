@@ -3,7 +3,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.cx import Explicit, Implicit
+from cottax.relational_pytree import Explicit, Implicit
 
 from functional_process.cottax.models.stellarator.build import (
     Build,

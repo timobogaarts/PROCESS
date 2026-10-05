@@ -61,7 +61,7 @@ def node(name, d) -> dict:
             out["body"] = body(d.implementation)
             out["settings"] = settings(d.implementation)
         if hasattr(d, "driver"):
-            out["driver"] = type(d.driver).__name__
+            out["driver"] = type(d.contract).__name__
             out["data"] = [[place(p) for p in slot] for slot in d.data]
             out["reports"] = [[place(p) for p in slot] for slot in d.reports]
         inner = next((getattr(d, f) for f in ("node", "function", "condition")

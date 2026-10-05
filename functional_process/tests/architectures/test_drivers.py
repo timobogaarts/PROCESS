@@ -3,7 +3,7 @@ contract, answered by cottax's `Picard`, end to end through `run`; VMCON's desig
 scaling; and the SQP drivers' refusal of an objective the design cannot move.
 """
 
-import cottax.cx as cx
+import cottax.relational_pytree as cx
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -12,7 +12,7 @@ from cottax.core import Plan
 from cottax.consumers.execution import CallableGraph, run
 from cottax.core import GraphWithValues
 from cottax.relational.consumers.execution.jax_solvers import Picard
-from cottax.cx import N, Scope, V
+from cottax.relational_pytree import N, Scope, V
 from cottax.relational import Eq, Relation
 from jax.tree_util import GetAttrKey
 
@@ -49,7 +49,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     the wiring, not about a model.
     """
     graph = cx.to_graph({"relax": Relax})
-    problem = cx.minted.problem(N["relax"])
+    problem = cx.minted_node("problem", N["relax"])
     driven = (
         Plan(graph)
         + cx.assign(graph, problem, PortFixedPointIteration())
@@ -57,7 +57,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     ).graph
     # The start is read at the problem's own `Start` place (`^start.toy.u`), not at the
     # unknown's name: writing the latter would be seeding the answer.
-    (start,) = driven[problem].data[driven[problem].driver.takes.index(Start)]
+    (start,) = driven[problem].data[driven[problem].contract.takes.index(Start)]
     out = run(
         GraphWithValues(
             CallableGraph(driven),

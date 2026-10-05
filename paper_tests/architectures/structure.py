@@ -15,8 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-import cottax.cx as cx  # noqa: E402
-from cottax.cx import Eq, Le  # noqa: E402
+import cottax.relational_pytree as cx  # noqa: E402
+from cottax.relational_pytree import Eq, Le  # noqa: E402
 from cottax.consumers.visualization import render_html  # noqa: E402
 
 from functional_process import configurations  # noqa: E402

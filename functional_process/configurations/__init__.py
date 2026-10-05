@@ -134,7 +134,7 @@ class Speller:
 
     def place(self, path: VarPath) -> str:
         """`path` as `place(V...)`, its imports recorded."""
-        self.imports.setdefault("cottax.cx", set()).update({"V", "place"})
+        self.imports.setdefault("cottax.relational_pytree", set()).update({"V", "place"})
         keys = []
         for key in path.segments:
             if isinstance(key, GetAttrKey):

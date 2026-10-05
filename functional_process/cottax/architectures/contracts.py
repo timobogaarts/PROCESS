@@ -6,8 +6,8 @@ A contract's reports are what the graph holds a place for, so they are the contr
 chosen where a problem is driven; an implementation computes what it can.
 """
 
-from cottax.core.driven import Driver, PerProblem, PerUnknown, Role, Start, Steps
-from cottax.relational.contracts import (
+from cottax.core.driven import DriverContract, PerProblem, PerUnknown, Role, Start, Steps
+from cottax.relational_pytree import (
     ConstrainedMinimiser,
     FixedPointIterator,
     RootFinder,
@@ -95,7 +95,7 @@ class PortMinimisation(ConstrainedMinimiser):
         return (Start,)
 
 
-class BracketedRootFinding(Driver):
+class BracketedRootFinding(DriverContract):
     """A single-unknown root find answered by bracketing, from a `Start` and, if
     `bracket`, a `Bracket`."""
 
@@ -108,7 +108,7 @@ class BracketedRootFinding(Driver):
         return (Start, Bracket) if self.bracket else (Start,)
 
 
-class IntersectRootFinding(Driver):
+class IntersectRootFinding(DriverContract):
     """A root find that is the crossing of two sampled curves, taking the samples."""
 
     accepts = staticmethod(is_root_find)

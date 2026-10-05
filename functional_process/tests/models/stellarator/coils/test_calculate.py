@@ -25,13 +25,13 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-import cottax.cx as cx
+import cottax.relational_pytree as cx
 from cottax.core import GraphWithValues, problems
 from cottax.core.frozen import OrderedMap
 from cottax.core import Plan
 from cottax.consumers.execution import CallableGraph, run
-from cottax.cx import N, to_graph
-from cottax.consumers.visualization.kinds import problem_type_of
+from cottax.relational_pytree import N, to_graph
+from cottax.relational import is_root_find
 
 from functional_process.cottax.architectures.contracts import PortRootFinding, Start
 from functional_process.cottax.architectures.reading import GapsDriver
@@ -944,9 +944,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     assert not graph.graph.is_acyclic
     blocks = [graph.subgraph(c) for c in graph.graph.components]
     (block,) = [b for b in blocks if problems(b.definitions)]
-    assert tuple(problem_type_of(block[p]) for p in problems(block.definitions)) == (
-        "root-find",
-    )
+    assert tuple(is_root_find(block[p]) for p in problems(block.definitions)) == (True,)
 
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
@@ -1111,7 +1109,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    problem = cx.minted.problem(N["Intersect"])
+    problem = cx.minted_node("problem", N["Intersect"])
     driven = (
         Plan(graph)
         + cx.assign(graph, problem, PortRootFinding())
@@ -1119,7 +1117,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     ).graph
     # The contract takes a `Start`, at `^start.stellarator.wp_width_r_min`; bisection
     # reads only its shape, so the bracket's midpoint.
-    (start,) = driven[problem].data[driven[problem].driver.takes.index(Start)]
+    (start,) = driven[problem].data[driven[problem].contract.takes.index(Start)]
     env[start] = jax.numpy.asarray(0.5 * (driver.lower + driver.upper))
     # A value at exactly each input: the materials this occupant does not read are left
     # out (a run refuses a value the graph neither reads nor computes).

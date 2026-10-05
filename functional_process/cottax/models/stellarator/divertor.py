@@ -1,7 +1,7 @@
 """Pure-functional port of `st_div` (registry unit #4, `divertor.py`)."""
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.cx import V
+from cottax.relational_pytree import V
 
 from functional_process.cottax.paths import (
     divertor,

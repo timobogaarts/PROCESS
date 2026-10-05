@@ -3,7 +3,7 @@ problem names, and at `TOP` the optimisation (or the root find) over them. Nothi
 chosen here: the configuration names every declaration.
 """
 
-import cottax.cx as cx
+import cottax.relational_pytree as cx
 
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.constraints import held

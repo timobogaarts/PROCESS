@@ -14,7 +14,7 @@ disagree.
 import inspect
 
 import numpy as np
-from cottax.cx import V, place, to_graph
+from cottax.relational_pytree import V, place, to_graph
 
 from functional_process.cottax.input.indat import PLASMA_COMPOSITION
 from functional_process.cottax.models.physics.composition import (

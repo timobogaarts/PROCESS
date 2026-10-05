@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import equinox as eqx
-from cottax.cx import to_graph
+from cottax.relational_pytree import to_graph
 
 from functional_process.configurations import Configuration
 from functional_process.cottax.input.importer import Imported, read_indat
