@@ -204,7 +204,7 @@ class Plan:
 
 BUILT_MINT = Minted("built")
 """The namespace a frozen build output's copy is minted in: `.vacuum.n_vac_pumps_high`
--> `^built.vacuum.n_vac_pumps_high`, as the `Naming` a `Cut` takes."""
+-> `^built.vacuum.n_vac_pumps_high`, as the `PlaceToPlace` a `Cut` takes."""
 COND = Minted("cond")
 CHECK = NodePath((GetAttrKey("Built"),))
 
@@ -238,7 +238,7 @@ class Capacity:
 
 def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
     """`var`'s readers rewired to `^built.<var>` (one `Cut` with the `BUILT_MINT`
-    naming), so what the rest of the machine is sized from is a boundary input fixed
+    `copy_of`), so what the rest of the machine is sized from is a boundary input fixed
     the day the machine was built -- while the producer still computes what *this*
     world would ask for, and one `Insert` states the two against each other as
     `.Built.<name>`, owning the capacity inequality `^cond.built.<var>` (implemented by
