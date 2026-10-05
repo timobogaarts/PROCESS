@@ -6,7 +6,7 @@
   machine with each cycle closed (`cx.mda`), `MDF` / `IDF` / `SAND` the problem at
   `problem.TOP` with the architecture around it. Every cycle is cut by `RULE`.
 - **The drivers**: every problem answered by the port's own algorithm for its shape
-  (`drivers_for`): Picard for a fixed point, a seeded Newton for a root find, VMCON for
+  (`driven`): Picard for a fixed point, a seeded Newton for a root find, VMCON for
   the optimisation.
 - **The values**: every boundary input from the configuration's state (`truth`), a
   given value where the model gives one, and a start from the value of the place it
@@ -25,7 +25,6 @@ import jax.numpy as jnp
 import numpy as np
 import cottax.relational_pytree as cx
 from cottax.core.frozen import OrderedMap
-from cottax.core import is_problem
 from cottax.core import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.consumers.execution import CallableGraph, run
@@ -34,12 +33,7 @@ from cottax.relational_pytree import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree import unminted
 from cottax.core import GaussSeidel, GaussSeidelMinimal, GraphWithValues
-from cottax.relational import (
-    Eq,
-    Le,
-    is_equalities,
-    is_fixed_point,
-)
+from cottax.relational import Le, programme
 
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.architectures.contracts import (
@@ -101,28 +95,15 @@ def picard():
     return Picard(rtol=1e-6, atol=1e-8)
 
 
-def drivers_for(graph, fixed_point=picard, skip=()):
-    """`{problem: (contract, implementation)}` for every problem in `graph` not yet
-    driven and not in `skip`, by its shape."""
-    chosen = {}
-    for name, node in graph.definitions.items():
-        if not is_problem(node) or is_driven(node) or name in skip:
-            continue
-        if is_fixed_point(node):
-            chosen[name] = (PortFixedPointIteration(), fixed_point())
-        elif is_equalities(node):
-            chosen[name] = (PortRootFinding(), Newton())
-        else:
-            raise TypeError(f"{name.spelling}: no default driver for {node!r}")
-    return chosen
-
-
-def driven(plan, chosen):
-    """`plan` with each problem assigned its contract and implemented, then the starts
-    `SUPPLIED_STARTS` names read off the nodes that compute them."""
-    for name, (contract, implementation) in chosen.items():
-        plan = plan + cx.assign(plan.graph, name, contract)
-    plan = plan + cx.implement({name: impl for name, (_c, impl) in chosen.items()})
+def driven(plan, fixed_point=picard):
+    """`plan` with every problem not yet driven answered by its shape -- `fixed_point()`
+    for a fixed point, Newton for a root find -- then the starts `SUPPLIED_STARTS` names
+    read off the nodes that compute them."""
+    plan = plan + cx.Drive(
+        (fixed_point(), Newton()),
+        (PortFixedPointIteration(), PortRootFinding()),
+        cx.default_places,
+    )
     return _supplied(plan)
 
 
@@ -255,8 +236,7 @@ def cold_state(configuration: Configuration) -> dict:
 def mda_plan(model, rule=RULE, fixed_point=picard) -> Plan:
     """`model` with every cycle closed by `rule` and every problem driven, as the plan
     that does it."""
-    plan = Plan(model.graph) + cx.mda(rule)
-    return driven(plan, drivers_for(plan.graph, fixed_point))
+    return driven(Plan(model.graph) + cx.mda(rule), fixed_point)
 
 
 def mda_graph(model, rule=RULE, fixed_point=picard):
@@ -288,10 +268,6 @@ ARMS = ("MDA", "MDF", "IDF", "SAND")
 
 MAX_ITER = 500
 """SQP iterations an optimising arm allows itself."""
-
-TOLERANCE = 1.0e-6
-"""The convergence parameter below which a trace's last iterate counts as converged:
-`VmconDriver`'s own reading of PROCESS's `epsvmc` when none is set."""
 
 
 def arms(configuration: Configuration) -> tuple[str, ...]:
@@ -354,22 +330,20 @@ def block_plan(
     model = problem_model(configuration) if model is None else model
     plan = Plan(model.graph) + _architecture(arm, rule)
     top = plan.graph[TOP]
-    chosen = drivers_for(plan.graph, skip=(TOP,))
     if isinstance(configuration.problem, Optimisation):
-        held_relations = [r for r in top.relations if not _is_bound(top, r)]
-        chosen[TOP] = (
-            PortMinimisation(reports=(Steps, Converged, Status) if reports else ()),
-            optimiser(
-                n_equality=sum(r.op is Eq for r in held_relations),
-                n_inequality=sum(r.op is Le for r in held_relations),
-                condition_scale=condition_scale(top, env),
-                callback=_recorder(trace),
-                max_iter=MAX_ITER,
-            ),
+        nlp = programme(top)
+        contract = PortMinimisation(reports=(Steps, Converged, Status) if reports else ())
+        implementation = optimiser(
+            n_equality=len(nlp.equalities),
+            n_inequality=len(nlp.inequalities),
+            condition_scale=condition_scale(top, env),
+            callback=_recorder(trace),
+            max_iter=MAX_ITER,
         )
     else:
-        chosen[TOP] = (RootFinding(steps=reports), Newton())
-    return driven(plan, chosen)
+        contract, implementation = RootFinding(steps=reports), Newton()
+    plan = plan + cx.assign(plan.graph, TOP, contract)
+    return driven(plan + cx.implement({TOP: implementation}))
 
 
 def block_graph(configuration: Configuration, arm: str, env, trace: list, **how):
@@ -495,6 +469,9 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
         return {
             "status": "not-converged",
             "iterations": None,
+            "objf": None,
+            "max_eq": None,
+            "min_ie": None,
             "seconds": time.perf_counter() - started,
             "x": (),
         }
@@ -508,31 +485,28 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
             **conditions(configuration, out),
         }
     top = graph[TOP]
-    reported = dict(zip(top.contract.reports, (s[0] for s in top.reports), strict=True))
+    reported = {
+        role: np.asarray(out[slot[0]])
+        for role, slot in zip(top.contract.reports, top.reports, strict=True)
+    }
+    iterations = int(reported[Steps])
     x = tuple(float(np.asarray(out[u])) for u in problem_.design)
     if isinstance(problem_, Optimisation):
-        iterations, _f, _eq, _ie = (
-            (len(trace), *trace[-1][2:]) if trace else (0, None, None, None)
-        )
         status = (
-            "no-step"
-            if not trace
-            else "converged"
-            if trace[-1][1] <= TOLERANCE
+            "converged"
+            if reported[Converged]
+            else "no-step"
+            if not iterations
             else f"cap({MAX_ITER})"
-            if len(trace) >= MAX_ITER
+            if iterations >= MAX_ITER
             else "stopped"
         )
-        if trace:
-            result = {
-                "objf": trace[-1][2],
-                "max_eq": trace[-1][3],
-                "min_ie": trace[-1][4],
-            }
-        else:
-            result = conditions(configuration, out)
+        result = (
+            dict(zip(("objf", "max_eq", "min_ie"), trace[-1][2:], strict=True))
+            if trace
+            else conditions(configuration, out)
+        )
     else:
-        iterations = int(np.asarray(out[reported[Steps]]))
         status = "converged"
         result = conditions(configuration, out)
     return {

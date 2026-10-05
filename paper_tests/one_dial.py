@@ -64,11 +64,11 @@ import numpy as np  # noqa: E402
 from cottax.core import ExecutableGraph, Function  # noqa: E402
 from cottax.core.frozen import OrderedMap  # noqa: E402
 from cottax.pytree import Minted, NodePath, VarPath  # noqa: E402
-from cottax.core.maths.executable import RequirementUnanswered  # noqa: E402
+from cottax.core.refusal_kinds import RequirementUnanswered  # noqa: E402
 from cottax.core.frozen import violations  # noqa: E402
 from cottax.core import Cut, Determine, Insert  # noqa: E402
 from cottax.core import Plan as Ops  # noqa: E402
-from cottax.relational import CloseFunctionalCycles  # noqa: E402
+from cottax.consumers.architectures import CloseFunctionalCycles  # noqa: E402
 from jax.tree_util import GetAttrKey  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -358,14 +358,14 @@ def close(configuration, condition: str, var: str, *, bracket=None) -> Closed:
     plan = closed_at(model.graph, cond, unknown) + cx.mdf(place, study.RULE)
     if any(len(c) > 1 for c in plan.graph.graph.components if place not in c):
         plan = plan + CloseFunctionalCycles(study.RULE, cx.closing)
-    chosen = study.drivers_for(plan.graph, skip=(place,))
-    chosen[place] = (
+    contract, implementation = (
         (PortRootFinding(reports=(Steps, Converged)), SafeguardedNewtonDriver())
         if bracket is None
         else (BracketedRootFinding(reports=(Steps, Converged), bracket=True),
               BracketedRootDriver())
     )
-    graph = study.driven(plan, chosen).graph
+    plan = plan + cx.assign(plan.graph, place, contract)
+    graph = study.driven(plan + cx.implement({place: implementation})).graph
     problem = configuration.problem
     others = getattr(problem, "inequalities", ()) or getattr(problem, "evaluated", ())
     merit = problem.minimise or problem.maximise

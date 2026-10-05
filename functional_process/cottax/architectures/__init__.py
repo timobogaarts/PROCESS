@@ -1,2 +1,2 @@
-"""The architectures: `cottax.relational.architectures` over the models, and what runs
+"""The architectures: `cottax.consumers.architectures` over the models, and what runs
 them."""

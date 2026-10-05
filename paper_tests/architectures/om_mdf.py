@@ -32,12 +32,10 @@ from __future__ import annotations
 
 import sys
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
 import openmdao.api as om
-from cottax.consumers.openmdao.component import ProblemComponent
 from openmdao.core.component import Component
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,15 +48,16 @@ KINDS = {om.NonlinearBlockGS: "fixed", om.NewtonSolver: "root"}
 """The solver of a group the export iterates, by the kind of problem it answers."""
 
 
-def problem_of(configuration, args, once=False) -> om.Problem:
-    """The MDF of `configuration` as the export's `om.Problem`, set up; `once` swaps every
+def problem_of(configuration, args, once=False) -> tuple:
+    """The MDF of `configuration`: the export and its `om.Problem`, set up; `once` swaps every
     solver for `NonlinearRunOnce` before its first run."""
-    problem = study.openmdao(configuration, "MDF", rule=bench.SCHEMES[args.scheme]).problem()
+    export = study.openmdao(configuration, "MDF", rule=bench.SCHEMES[args.scheme])
+    problem = export.problem()
     if once:
         for group in problem.model.system_iter(recurse=True, include_self=True, typ=om.Group):
             group.nonlinear_solver = om.NonlinearRunOnce()
             group.linear_solver = om.LinearRunOnce()
-    return problem
+    return export, problem
 
 
 def components(problem) -> int:
@@ -77,19 +76,6 @@ def sweeps(problem) -> tuple[int, str]:
     return sum(n for _, n in per), "|".join(f"{k}:{n}" for k, n in per)
 
 
-@contextmanager
-def warm(problem):
-    """Every group left where its last run converged: the start guess switched off."""
-    solves = list(problem.model.system_iter(recurse=True, typ=ProblemComponent))
-    for c in solves:
-        c.guess_nonlinear = lambda *a: None
-    try:
-        yield
-    finally:
-        for c in solves:
-            del c.guess_nonlinear
-
-
 def once(args):
     """`--once`: one pass over the components, warm -- `out/openmdao_once/`."""
     rows = []
@@ -97,7 +83,7 @@ def once(args):
         configuration = configurations.load(name_)
         if bench.is_root_find(configuration):
             continue
-        prob, setup_s = bench.timed(problem_of, configuration, args, once=True)
+        (_, prob), setup_s = bench.timed(problem_of, configuration, args, once=True)
         _, cold_s = bench.timed(prob.run_model)
         pass_s = bench.median_seconds(prob.run_model, args.repeats)
         rows.append({
@@ -119,11 +105,11 @@ def main():
         configuration = configurations.load(name_)
         if bench.is_root_find(configuration):
             continue
-        prob, setup_s = bench.timed(problem_of, configuration, args)
+        (export, prob), setup_s = bench.timed(problem_of, configuration, args)
         _, cold_s = bench.timed(prob.run_model)
         total, by_group = sweeps(prob)
         restart_s = bench.median_seconds(prob.run_model, args.repeats)
-        with warm(prob):
+        with export.warm_starts(prob):
             model_s = bench.median_seconds(prob.run_model, args.repeats)
             warm_sweeps, _ = sweeps(prob)
             totals_s = bench.median_seconds(lambda: prob.compute_totals(), args.repeats)

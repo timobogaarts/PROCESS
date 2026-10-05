@@ -9,20 +9,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOOR = re.compile(
-    r"cottax\.(relational_pytree|core|core\.(driven|realisation|frozen)|relational|pytree"
-    r"|consumers\.(execution|json|openmdao|declaration|visualization|pickle"
+    r"cottax\.(relational_pytree|core|core\.(driven|realisation|frozen|refusal_kinds)|relational|pytree"
+    r"|consumers\.(execution|json|openmdao|declaration|visualization|architectures|pickle"
     r"|visualization\.latex)"
-    r"|consumers\.(execution|json|openmdao|declaration|visualization)"
+    r"|consumers\.(execution|json|openmdao|declaration|visualization|architectures)"
     r"\.(interface|interface_types|refusals)"
-    r"|(relational|pytree)\.consumers\.(execution|json|openmdao|declaration|visualization)"
+    r"|(relational|pytree)\.consumers\.(execution|json|openmdao|declaration|visualization|architectures)"
     r"|relational\.consumers\.execution\.jax_solvers)"
 )
 
-KNOWN = {
-    ("paper_tests/one_dial.py", "cottax.core.maths.executable"),
-    ("paper_tests/architectures/om_mdf.py", "cottax.consumers.openmdao.component"),
-}
-"""Internals no door offers yet: `(file under the repo, module)`."""
+KNOWN: set[tuple[str, str]] = set()
+"""Internals no door offers yet: `(file under the repo, module)`. None are left."""
 
 
 def cottax_imports(path: Path):
