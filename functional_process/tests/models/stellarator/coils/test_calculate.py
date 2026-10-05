@@ -31,7 +31,7 @@ from cottax.core.frozen import OrderedMap
 from cottax.core.maths.plan import Plan
 from cottax.consumers.execution import CallableGraph, Inputs, run
 from cottax.cx import N, to_graph
-from cottax.consumers.visualization.xdsm import problem_type_of
+from cottax.consumers.visualization.kinds import problem_type_of
 
 from functional_process.cottax.architectures.contracts import PortRootFinding, Start
 from functional_process.cottax.architectures.reading import GapsDriver

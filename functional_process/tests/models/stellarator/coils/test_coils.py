@@ -11,7 +11,7 @@ from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan
 from cottax.consumers.execution import CallableGraph, Inputs, run
 from cottax.cx import V
-from cottax.consumers.visualization.xdsm import problem_type_of
+from cottax.consumers.visualization.kinds import problem_type_of
 
 from functional_process.cottax.architectures.contracts import (
     CurveLhs,

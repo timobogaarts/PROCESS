@@ -28,18 +28,15 @@ from cottax.core.frozen import OrderedMap
 from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan, Rename
 from cottax.core.driven import is_driven
-from cottax.core import Solve
-from cottax.consumers.execution import CallableGraph, Inputs, run
-from cottax.consumers.execution.run import InteriorConditionMap
+from cottax.consumers.execution import CallableGraph, Inputs, condition_map, run
 from cottax.consumers.execution.interface_types import Posed
 from cottax.relational.contracts import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree.mint import unminted
+from cottax.core import GaussSeidel, GaussSeidelMinimal
 from cottax.relational import (
     Eq,
-    GaussSeidel,
     Le,
-    GaussSeidelMinimal,
     is_equalities,
     is_fixed_point,
 )
@@ -575,23 +572,9 @@ def posed(graph, inputs, problem=TOP) -> tuple:
     driver, without solving it -- what runs before it once, then the problem posed as
     `cottax.consumers.execution.run` poses it. `problem` is outermost."""
     env = before(graph, inputs, problem)
-    interior = next(
-        s.interior
-        for s in proved(graph).steps
-        if isinstance(s, Solve) and s.problem == problem
-    )
     node = graph[problem]
-    produced = set(interior.graph.graph.owned_variables)
-    fixed = tuple(
-        dict.fromkeys(
-            p
-            for p in (*interior.graph.graph.boundary_inputs, *node.condition.reads)
-            if p not in node.unknowns and p not in produced
-        )
-    )
-    conditions_ = InteriorConditionMap(
-        interior, node.unknowns, fixed, node.condition.reads
-    )
+    conditions_ = condition_map(proved(graph), problem)
+    fixed = conditions_.context_places
     data = {
         role: tuple(env[p] for p in slot)
         for role, slot in zip(node.driver.takes, node.data, strict=True)

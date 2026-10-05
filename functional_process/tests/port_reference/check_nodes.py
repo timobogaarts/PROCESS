@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-from cottax.consumers.declaration.interface import Wrapper
+from cottax.consumers.declaration.interface_types import Wrapper
 from cottax.pytree.path import NodePath
 from jax.tree_util import DictKey
 
