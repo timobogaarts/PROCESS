@@ -11,7 +11,7 @@ from cottax.core.maths.kinds import is_problem
 from cottax.core.maths.plan import Plan
 from cottax.consumers.execution import CallableGraph, Inputs, run
 from cottax.cx import V
-from cottax.consumers.visualization.sequencing import shape_of
+from cottax.consumers.visualization.xdsm import problem_type_of
 
 from functional_process.cottax.architectures.contracts import (
     CurveLhs,
@@ -481,7 +481,7 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     assert len(graph.definitions) == 2
     assert not graph.graph.is_acyclic
     (problem,) = _problems(graph)
-    assert shape_of(graph[problem]) == "root-find"
+    assert problem_type_of(graph[problem]) == "root-find"
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():
