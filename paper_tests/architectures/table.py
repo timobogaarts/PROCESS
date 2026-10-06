@@ -165,7 +165,7 @@ def main():
             st, it = structure[(name, arm)], iteration[(name, arm)]
             v, s = solves["vmcon"].get((name, arm)), solves["slsqp"].get((name, arm))
             lines.append(" & ".join([
-                arm,
+                f"cottax {arm}",
                 st["unknowns"], st["equalities"], st["inequalities"], it["block_nodes"],
                 marked(v), marked(s),
                 fixed(1e-3 * float(it["serial_us"])),
@@ -202,7 +202,7 @@ def main():
         st, it = structure[(name, "MDF")], iteration[(name, "MDF")]
         v = solves["vmcon"].get((name, "MDF"))
         lines.append(" & ".join([
-            "MDF",
+            "cottax MDF",
             st["unknowns"], st["equalities"], st["inequalities"], it["block_nodes"],
             marked(v), "--",
             fixed(1e-3 * float(it["serial_us"])),
@@ -277,7 +277,7 @@ def openmdao(args):
         r"\begin{tabular}{l" + first + "r" + bar + "rrr" + bar + "rrr}",
         r"\toprule",
         r"\rule{0pt}{2.4ex} & & \multicolumn{3}{c}{evaluation (ms)} & \multicolumn{3}{c}{Jacobian (ms)} \\",
-        r"machine & models & port & OpenMDAO & PROCESS & port & OpenMDAO & PROCESS \\[0.3ex]",
+        r"machine & models & cottax & OpenMDAO & PROCESS & cottax & OpenMDAO & PROCESS \\[0.3ex]",
         r"\midrule",
     ]
     for name in bench.NAMES:

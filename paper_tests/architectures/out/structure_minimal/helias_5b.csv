@@ -1,6 +1,6 @@
-# structure.py, 2026-09-23, tcn693.local.snellius.surf.nl (x86_64), PROCESS d73da449+dirty, cottax 078fb9f
+# structure.py, 2026-10-06, tcn542.local.snellius.surf.nl (x86_64), PROCESS a69d6abd, cottax 8ba473d
 configuration,problem,arm,nodes,cycles,cut_variables,problems,nested,steps,unknowns,objectives,equalities,inequalities
-helias_5b,optimise,MDA,157,3,3,3,0,148,0,0,0,0
-helias_5b,optimise,MDF,158,3,3,4,2,85,3,1,2,2
-helias_5b,optimise,IDF,156,3,3,2,0,85,6,1,5,2
-helias_5b,optimise,SAND,156,3,3,2,0,85,6,1,5,2
+helias_5b,optimise,MDA,157,2,3,3,0,148,0,0,0,0
+helias_5b,optimise,MDF,158,2,3,4,2,85,3,1,2,2
+helias_5b,optimise,IDF,156,2,3,2,0,85,6,1,5,2
+helias_5b,optimise,SAND,156,2,3,2,0,85,6,1,5,2

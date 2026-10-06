@@ -1,4 +1,4 @@
-# solve.py, 2026-09-23, tcn708.local.snellius.surf.nl (x86_64), PROCESS d73da449+dirty, cottax 078fb9f
-configuration,arm,optimiser,status,iterations,objf,max_eq,min_ie,assemble_s,cold_s,warm_s,solve_s,values,jacobians,fused,model_s,note
-large_tokamak_eval,MDA,slsqp,evaluated,0,,0.006098258574406268,-1.989929371054076,1.1090806629508734,15.257408012985252,0.03517538099549711,0.0329149590106681,0,0,0,0,
-large_tokamak_eval,MDF,slsqp,converged,3,,3.530509218307998e-14,-1.989929371054076,1.1640018783509731e-05,13.40615804598201,0.05024642497301102,0.011608078959397972,0,0,0,0,
+# solve.py, 2026-10-06, tcn548.local.snellius.surf.nl (x86_64), PROCESS a69d6abd, cottax 8ba473d
+configuration,arm,optimiser,status,iterations,objf,max_eq,min_ie,assemble_s,cold_s,warm_s,solve_s,values,jacobians,fused,model_s
+large_tokamak_eval,MDA,slsqp,evaluated,0,,0.006098258574406268,-1.989929371054076,6.62585803901311,0.010008770041167736,0.009442286973353475,0.007858292025048286,0,0,0,0
+large_tokamak_eval,MDF,slsqp,converged,3,,3.530509218307998e-14,-1.989929371054076,0.6333481859765016,12.818984687968623,0.010948178998660296,0.009133314015343785,0,0,0,0

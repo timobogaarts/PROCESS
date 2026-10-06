@@ -1,44 +1,44 @@
-% table.py, 2026-09-23, PC-Timo (x86_64), PROCESS ecd519a1, cottax 078fb9f
+% table.py, 2026-10-06, PC-Timo (x86_64), PROCESS a69d6abd, cottax 8ba473d
 \setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}
 \begin{tabular}{l@{\hspace{6pt}\vrule width 0.8pt\hspace{6pt}}rrrr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}rrrrrr@{\hspace{4pt}\vrule width 0.2pt\hspace{4pt}}r}
 \toprule
 \rule{0pt}{2.4ex}Optimization arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & VMCON it & SLSQP it & eval (ms) & jac (ms) & VMCON (ms) & model & SLSQP (ms) & model & $f^*$ \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{stellarator\_helias} & & & & & & & & & & & & & \\
-MDF & 8 & 2 & 12 & 122 & \checkmark\ 40 & \checkmark\ 27 & 0.24 & 0.50 & 480 & 99 & 100 & 55 & 1.218 \\
-IDF & 11 & 5 & 12 & 120 & \checkmark\ 47 & \checkmark\ 17 & 0.24 & 0.53 & 570 & 110 & 70 & 31 & 1.218 \\
-SAND & 12 & 6 & 12 & 119 & \checkmark\ 23 & \checkmark\ 17 & 0.25 & 0.55 & 300 & 56 & 72 & 31 & 1.218 \\
-PROCESS & 8 & 2 & 12 & -- & \checkmark\ 82 & -- & 48 & 1200 & 190000 & 190000 & -- & -- & 1.215 \\[0.3ex]
+cottax MDF & 8 & 2 & 12 & 122 & \checkmark\ 40 & \checkmark\ 26 & 0.24 & 0.51 & 460 & 100 & 79 & 55 & 1.218 \\
+cottax IDF & 11 & 5 & 12 & 120 & \checkmark\ 47 & \checkmark\ 16 & 0.24 & 0.54 & 550 & 110 & 53 & 29 & 1.218 \\
+cottax SAND & 12 & 6 & 12 & 119 & \checkmark\ 23 & \checkmark\ 16 & 0.26 & 0.56 & 290 & 56 & 52 & 29 & 1.218 \\
+PROCESS & 8 & 2 & 12 & -- & \checkmark\ 82 & -- & 41 & 1100 & 180000 & 180000 & -- & -- & 1.215 \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{helias\_5b} & & & & & & & & & & & & & \\
-MDF & 3 & 2 & 2 & 73 & \checkmark\ 4 & \checkmark\ 5 & 0.23 & 0.29 & 73 & 6.9 & 40 & 5.8 & 0.7642 \\
-IDF & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 5 & 0.22 & 0.41 & 73 & 7.2 & 42 & 6.2 & 0.7642 \\
-SAND & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 5 & 0.22 & 0.41 & 73 & 7.8 & 40 & 7.0 & 0.7642 \\
-PROCESS & 3 & 2 & 2 & -- & \checkmark\ 4 & -- & 40 & 380 & 3600 & 3200 & -- & -- & 0.7635 \\[0.3ex]
+cottax MDF & 3 & 2 & 2 & 73 & \checkmark\ 4 & \checkmark\ 4 & 0.23 & 0.30 & 54 & 6.9 & 23 & 6.1 & 0.7642 \\
+cottax IDF & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 4 & 0.23 & 0.39 & 56 & 6.7 & 24 & 6.4 & 0.7642 \\
+cottax SAND & 6 & 5 & 2 & 71 & \checkmark\ 4 & \checkmark\ 4 & 0.23 & 0.41 & 56 & 7.5 & 24 & 6.5 & 0.7642 \\
+PROCESS & 3 & 2 & 2 & -- & \checkmark\ 4 & -- & 44 & 440 & 3400 & 3100 & -- & -- & 0.7635 \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{large\_tokamak\_nof} & & & & & & & & & & & & & \\
-MDF & 20 & 3 & 23 & 178 & \checkmark\ 8 & \checkmark\ 8 & 0.40 & 1.8 & 180 & 48 & 78 & 30 & 1.600 \\
-SAND & 26 & 9 & 23 & 174 & \checkmark\ 9 & \checkmark\ 10 & 0.38 & 2.2 & 210 & 68 & 97 & 48 & 1.600 \\
-PROCESS & 20 & 3 & 23 & -- & \checkmark\ 8 & -- & 25 & 1700 & 28000 & 27000 & -- & -- & 1.600 \\[0.3ex]
+cottax MDF & 20 & 3 & 23 & 177 & \checkmark\ 8 & \checkmark\ 7 & 0.38 & 2.2 & 160 & 51 & 59 & 30 & 1.600 \\
+cottax SAND & 26 & 9 & 23 & 173 & \checkmark\ 9 & \checkmark\ 9 & 0.37 & 2.2 & 190 & 67 & 77 & 50 & 1.600 \\
+PROCESS & 20 & 3 & 23 & -- & \checkmark\ 8 & -- & 21 & 1300 & 23000 & 22000 & -- & -- & 1.600 \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{low\_aspect\_ratio\_DEMO} & & & & & & & & & & & & & \\
-MDF & 19 & 4 & 21 & 180 & \checkmark\ 11 & \checkmark\ 12 & 1.1 & 4.6 & 290 & 130 & 140 & 84 & -0.4063 \\
-SAND & 24 & 9 & 21 & 177 & \checkmark\ 19 & \checkmark\ 22 & 1.1 & 4.7 & 480 & 230 & 230 & 180 & -0.4063 \\
-PROCESS & 19 & 4 & 21 & -- & \checkmark\ 16 & -- & 27 & 1800 & 54000 & 53000 & -- & -- & -0.4063 \\[0.3ex]
+cottax MDF & 19 & 4 & 21 & 178 & \checkmark\ 11 & \checkmark\ 11 & 1.1 & 4.8 & 270 & 130 & 120 & 83 & -0.4063 \\
+cottax SAND & 24 & 9 & 21 & 175 & \checkmark\ 19 & \checkmark\ 21 & 1.1 & 4.7 & 470 & 240 & 210 & 180 & -0.4063 \\
+PROCESS & 19 & 4 & 21 & -- & \checkmark\ 16 & -- & 27 & 1800 & 49000 & 48000 & -- & -- & -0.4063 \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{st\_regression} & & & & & & & & & & & & & \\
-MDF & 14 & 3 & 15 & 155 & \checkmark\ 10 & \checkmark\ 11 & 0.35 & 1.1 & 180 & 41 & 75 & 29 & -16.59 \\
-SAND & 17 & 6 & 15 & 153 & \checkmark\ 25 & \checkmark\ 82 & 0.32 & 1.2 & 420 & 130 & 400 & 340 & -16.59 \\
-PROCESS & 14 & 3 & 15 & -- & \checkmark\ 10 & -- & 24 & 1200 & 25000 & 25000 & -- & -- & -16.59 \\[0.3ex]
+cottax MDF & 14 & 3 & 15 & 154 & \checkmark\ 10 & \checkmark\ 11 & 0.35 & 1.1 & 160 & 41 & 55 & 30 & -16.59 \\
+cottax SAND & 17 & 6 & 15 & 152 & \checkmark\ 25 & \checkmark\ 81 & 0.33 & 1.2 & 400 & 130 & 380 & 340 & -16.59 \\
+PROCESS & 14 & 3 & 15 & -- & \checkmark\ 10 & -- & 27 & 1200 & 25000 & 24000 & -- & -- & -16.59 \\[0.3ex]
 \midrule\midrule
 \rule{0pt}{2.4ex}Evaluation arm & $n$ & $m_\mathrm{eq}$ & $m_\mathrm{ineq}$ & nodes & Newton it & Powell it & eval (ms) & jac (ms) & Newton (ms) & model & Powell (ms) & \multicolumn{1}{r@{\hspace{8.2pt}}}{model} & \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{large\_tokamak\_eval} & & & & & & & & & & & & \multicolumn{1}{r@{\hspace{8.2pt}}}{} & \\
-MDF & 2 & 2 & 23 & 34 & \checkmark\ 3 & -- & 0.17 & 0.20 & 51 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
-PROCESS & 2 & 2 & 23 & -- & -- & \checkmark\ 10 & 27 & 210 & -- & -- & 890 & \multicolumn{1}{r@{\hspace{8.2pt}}}{370} & \\[0.3ex]
+cottax MDF & 2 & 2 & 0 & 34 & \checkmark\ 3 & -- & 0.17 & 0.23 & 11 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
+PROCESS & 2 & 2 & 0 & -- & -- & \checkmark\ 10 & 21 & 150 & -- & -- & 740 & \multicolumn{1}{r@{\hspace{8.2pt}}}{280} & \\[0.3ex]
 \midrule
 \rule{0pt}{2.4ex}\texttt{spherical\_tokamak\_eval} & & & & & & & & & & & & \multicolumn{1}{r@{\hspace{8.2pt}}}{} & \\
-MDF & 3 & 3 & 15 & 38 & \checkmark\ 2 & -- & 0.17 & 0.25 & 50 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
-PROCESS & 3 & 3 & 15 & -- & -- & \checkmark\ 10 & 26 & 280 & -- & -- & 890 & \multicolumn{1}{r@{\hspace{8.2pt}}}{350} & \\[0.3ex]
+cottax MDF & 3 & 3 & 0 & 38 & \checkmark\ 2 & -- & 0.17 & 0.27 & 9.7 & -- & -- & \multicolumn{1}{r@{\hspace{8.2pt}}}{--} & \\
+PROCESS & 3 & 3 & 0 & -- & -- & \checkmark\ 10 & 24 & 250 & -- & -- & 820 & \multicolumn{1}{r@{\hspace{8.2pt}}}{300} & \\[0.3ex]
 \bottomrule
 \end{tabular}

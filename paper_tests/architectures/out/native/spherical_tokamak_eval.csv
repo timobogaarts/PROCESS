@@ -1,3 +1,3 @@
-# native.py, 2026-09-23, tcn773.local.snellius.surf.nl (x86_64), PROCESS ecd519a1, cottax 078fb9f
+# native.py, 2026-10-06, tcn585.local.snellius.surf.nl (x86_64), PROCESS a69d6abd, cottax 8ba473d
 configuration,design,constraints,pass_ms,loop_ms,gradient_ms,iterations,fsolve_evaluations,evaluations,gradients,model_s,objf,max_eq,min_ie,convergence,solve_s
-spherical_tokamak_eval,3,18,10.63194707967341,25.747107807546854,280.8636848349124,0,10,11,0,0.3469653339125216,0.5886069969146374,7.771561172376096e-14,-0.007040511699619945,0.0,0.8881611181423068
+spherical_tokamak_eval,3,18,13.26176302973181,24.33393197134137,246.4408950181678,0,10,11,0,0.29814446688396856,0.5886069969146374,7.771561172376096e-14,-0.007040511699619945,0.0,0.8170718039618805
