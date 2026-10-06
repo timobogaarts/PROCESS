@@ -15,8 +15,8 @@
 # machine, and PROCESS itself, is timed on the same kind of core.
 #
 # Per machine, in the order run_all.sh uses: structure, iteration, solve (vmcon, then
-# slsqp), native (PROCESS's own run). Each is its own process (XLA's JIT runs out of
-# section memory once enough programs are compiled in one).
+# slsqp), native (PROCESS's own run), om_mdf (the MDF under OpenMDAO). Each is its own
+# process (XLA's JIT runs out of section memory once enough programs are compiled in one).
 #
 # Submit (after sync_to_cluster.sh and pin.sh):
 #     cd ~/arch_run/PROCESS/paper_tests/cluster && mkdir -p logs && sbatch job_tables.sh
@@ -53,7 +53,7 @@ mkdir -p paper_tests/cluster/logs
     else
         RUN=("structure.py --scheme $SCHEME" "iteration.py --scheme $SCHEME"
              "solve.py --scheme $SCHEME --optimiser vmcon" "solve.py --scheme $SCHEME --optimiser slsqp"
-             "native.py")
+             "native.py" "om_mdf.py")
     fi
     for script in "${RUN[@]}"; do
         echo "== $(date '+%F %T') $script $NAME"

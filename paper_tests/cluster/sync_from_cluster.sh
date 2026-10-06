@@ -1,10 +1,8 @@
 #!/bin/bash
-# Run LOCALLY. Pulls the cluster's paper_tests/out/ (the flexibility runs' per-draw
-# JSONs) and the job logs down into paper_tests/out/ and paper_tests/cluster/logs/.
+# Run LOCALLY. Pulls the cluster's paper_tests/out/, the job logs and the architecture
+# tables' csvs down (REMOTE_HOME=/home/tbogaarts/arch_run for the architecture jobs).
 # Additive, no --delete (the shape of
-# ~/blanket_optimization/scripts/rsync_from_cluster_add.sh). The per-draw JSONs are
-# not tracked; `flexibility.py --figures` condenses them to the .npz/_summary pairs
-# that are.
+# ~/blanket_optimization/scripts/rsync_from_cluster_add.sh).
 set -u
 HOST="snellius.surf.nl"
 REMOTE="${REMOTE_HOME:-/home/tbogaarts}/PROCESS/paper_tests"

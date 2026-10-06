@@ -1,45 +1,45 @@
-# Running the flexibility analysis on Snellius (CPU)
+# The architecture tables on Snellius (CPU, and the batched table's H100)
 
-`flexibility.py` at N = 262144, three hfact sigmas, on one exclusive `rome` node each:
-96 workers, ~6 min a task. Everything here is self-contained; nothing in `~/PROCESS` or
-`~/jaxgraph` is touched by the sync beyond mirroring it.
+The paper's tables (`paper_tests/architectures/`, `table.py`) measured on one kind of
+core. The jobs run from a mirror of `~/PROCESS` at `~/arch_run/PROCESS`, on a cottax
+exported at one commit (`pin.sh`), so a later sync of `~/jaxgraph` moves nothing they run.
 
 | file | runs where | what |
 |---|---|---|
-| `sync_to_cluster.sh` | laptop | mirror `~/jaxgraph` + `~/PROCESS` to `snellius:/home/tbogaarts/` (y / d = dry-run); never sends `paper_tests/out/` |
-| `setup_venv.sh` | Snellius login node, once | modules, `$HOME/cottaxvenv`, editable cottax and PROCESS |
-| `env.sh` | sourced by the job | the `module load`s, venv activation, the cache directory |
-| `job_flex.sh` | `sbatch` | the array job: task i = sigma 0.10 / 0.05 / 0.02; `ORDER`, `REQUIRE_NET`, `N`, `WORKERS` as environment |
-| `sync_from_cluster.sh` | laptop | pull the cluster's `paper_tests/out/` down (additive, into `out/`; the logs into `cluster/logs/`) |
+| `sync_to_cluster.sh` | laptop | mirror `~/PROCESS` (and `~/jaxgraph`, unless `SYNC_SRC`) to the cluster (y / d = dry-run); never sends the cluster's own `out/` or logs |
+| `pin.sh` | laptop | export `~/jaxgraph` at `COTTAX` (default HEAD, `src` clean) to `~/cottax_<commit>`, write `pins.env` naming both commits |
+| `setup_venv.sh` | login node, once | modules, `$HOME/cottaxvenv`: jax, equinox, optimistix, openmdao pinned; cottax and PROCESS editable |
+| `env.sh` | sourced by the jobs | the `module load`s, venv activation, the cache directory |
+| `job_pin.sh` | `sbatch` | the port's pin (`test_architectures.py -m tier4`) on the pinned cottax |
+| `job_tables.sh` | `sbatch` | the serial tables, one machine per array task: structure, iteration, solve (vmcon, slsqp), native, om_mdf; `SCRIPTS` reruns a subset |
+| `job_batched.sh` | `sbatch -p genoa` / `-p gpu_h100` | the batched table |
+| `sync_from_cluster.sh` | laptop | pull the cluster's csvs and logs down (additive) |
 
 ```bash
-# laptop
-bash ~/PROCESS/paper_tests/cluster/sync_to_cluster.sh                # d first, then y
+# laptop (Snellius takes ssh only from an allowed network: the VPN)
+REMOTE_HOME=/home/tbogaarts/arch_run SYNC_SRC=PROCESS bash ~/PROCESS/paper_tests/cluster/sync_to_cluster.sh
+REMOTE_HOME=/home/tbogaarts/arch_run bash ~/PROCESS/paper_tests/cluster/pin.sh
 
-# Snellius (ssh snellius.surf.nl); the port tracks cottax 6b1d540 and the mirror's
-# ~/jaxgraph has moved past it, so the job puts a read-only export first on PYTHONPATH
-mkdir -p ~/cottax_head && git -C ~/jaxgraph archive 6b1d540 src | tar -x -C ~/cottax_head
-bash ~/PROCESS/paper_tests/cluster/setup_venv.sh                     # once
-cd ~/PROCESS/paper_tests/cluster && mkdir -p logs
-sbatch --export=ALL,ORDER=hfact job_flex.sh                          # can it be run
-sbatch --export=ALL,ORDER=hfact,REQUIRE_NET=982.4 job_flex.sh        # at rated power
-squeue -u $USER; tail -f logs/flex_n262144_s0.10_hfact.log
+# Snellius
+cd ~/arch_run/PROCESS/paper_tests/cluster && mkdir -p logs
+sbatch job_pin.sh                       # first: the pin passes here as on the laptop
+sbatch job_tables.sh
+sbatch -p genoa --cpus-per-task=24 job_batched.sh
+
+# laptop
+REMOTE_HOME=/home/tbogaarts/arch_run bash ~/PROCESS/paper_tests/cluster/sync_from_cluster.sh
 ```
 
-Results land in the cluster's `paper_tests/out/` as `flex_n<N>_s<sigma>_hfact[_req982.4]
-.json` (one row per draw, ~10 MB); `flexibility.py --figures` condenses them to the
-`.npz` + `_summary.json` pairs that are tracked, and draws the figures.
+Every csv is stamped with the two commits in `pins.env`.
 
 ## Environment facts
 
 - Python 3.13.5 (module) against 3.12 locally; cottax needs >= 3.12. `pip install -e
   ~/PROCESS` is a pure-Python hatchling install (`hatch-vcs` reports `0.0.0` without
-  `.git`, which is excluded from the sync). The full `process` package is required:
-  `common.process_reference` runs PROCESS's own VMCON once to fill
-  `~/.cache/functional_process/` (a minute or two, on the CPU, inside the first job).
-- `~/PROCESS` on the cluster is an rsync mirror, not a checkout: edit locally, sync,
-  never edit there.
-- The job pins every thread pool to one thread (`OMP_NUM_THREADS=1` and friends): 96
-  workers each spawning 128 OpenBLAS threads thrash the node, and OpenBLAS's reduction
-  order depends on the thread count, which SLSQP's iterates can see.
-- 96 workers rather than 128: a worker's peak RSS is 2.25 GB and the node has 224 GB.
+  `.git`, which the sync excludes). The full `process` package is required: the harness
+  runs PROCESS's own VMCON once per input file to fill `~/.cache/functional_process/`.
+- The mirror is an rsync copy, not a checkout: edit locally, sync, never edit there.
+- Every thread pool is pinned to one thread (`OMP_NUM_THREADS=1` and friends):
+  OpenBLAS's reduction order depends on the thread count, and the SQPs see the last bits.
+- An existing `cottaxvenv` without OpenMDAO takes `pip install openmdao==3.45.1`;
+  `setup_venv.sh` refuses to overwrite a venv.

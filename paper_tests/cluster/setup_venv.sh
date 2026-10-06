@@ -23,6 +23,8 @@ JAX_VERSION="${JAX_VERSION:-0.11.1}"
 EQUINOX_VERSION="${EQUINOX_VERSION:-0.13.8}"
 OPTIMISTIX_VERSION="${OPTIMISTIX_VERSION:-0.1.0}"
 LINEAX_VERSION="${LINEAX_VERSION:-0.1.1}"
+# om_mdf.py's OpenMDAO, the version process_port runs.
+OPENMDAO_VERSION="${OPENMDAO_VERSION:-3.45.1}"
 
 # shellcheck disable=SC1091
 source "$HERE/env.sh"           # modules only: the venv does not exist yet
@@ -41,6 +43,7 @@ pip install "equinox==$EQUINOX_VERSION" "optimistix==$OPTIMISTIX_VERSION" "linea
 # pytest is a *runtime* import of the port (functional_process/cottax/_harness/__init__.py
 # -> contracts.py), so it is installed without PROCESS's whole [test] extra (jupyter).
 pip install pytest
+pip install "openmdao==$OPENMDAO_VERSION"
 pip install -e "$HOME/jaxgraph[solvers]"
 pip install -e "$HOME/PROCESS"
 # Re-assert the jax pin last (the README's recipe installs jax[cuda] last for this
@@ -63,7 +66,9 @@ print("devices", jax.devices(), "(CpuDevice on a login node; the H100 appears in
 print("cottax", cottax.__file__)
 import process
 print("process", process.__file__)
-import functional_process.cottax.mda as mda
-print("functional_process.cottax.mda", mda.__file__)
+import openmdao
+print("openmdao", openmdao.__version__)
+import functional_process.cottax.study as study
+print("functional_process.cottax.study", study.__file__)
 PY
 echo "== ok: $VENV"
