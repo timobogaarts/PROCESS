@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
 import cottax.relational_pytree as cx  # noqa: E402
+from cottax.core import is_problem  # noqa: E402
 from cottax.relational_pytree import Eq, Le  # noqa: E402
 from cottax.consumers.visualization import render_html  # noqa: E402
 
@@ -69,7 +70,7 @@ def main():
                 "nodes": len(graph.nodes),
                 "cycles": len(closures),             # one closure per cycle the scheme opens
                 "cut_variables": sum(len(c.cuts) for c in closures),
-                "problems": sum(study.is_problem(graph[n]) for n in graph.nodes),
+                "problems": sum(is_problem(graph[n]) for n in graph.nodes),
                 "nested": len(graph.within),
                 "steps": len(study.proved(graph).steps),
                 **top_of(graph),
