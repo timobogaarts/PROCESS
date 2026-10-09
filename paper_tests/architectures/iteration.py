@@ -7,7 +7,11 @@ Jacobian goes through the converged solve (implicit differentiation); for IDF an
 it is one pass of the models, the coupling copies being the optimiser's own. The `MDA`
 row is the analysis alone (`study.mda_graph`), run once from the file's design. `serial_us` is one evaluation with no dispatch
 in it (`serial_jacobian_us` one Jacobian): `SERIAL_K` evaluations chained inside one program, each design fed by the last
-result, per evaluation. The compile time of each
+result, per evaluation. `eager_walk_ms` and `eager_ms` are the same evaluation with
+nothing compiled across nodes (`eager.eager_graph`): every body compiled on its own and
+cottax walking the graph in Python, the nested solves compiled (`eager_walk_ms`) or
+stepped from Python as well (`eager_ms`, the same optimistix solver and tolerances, its
+steps in `eager_steps`); each is checked against the compiled evaluation. The compile time of each
 program is reported beside it, since a cold run pays it once; `block_nodes` is how much
 of the graph the unknowns reach -- what one iteration re-runs -- the rest being context
 computed once.
@@ -28,6 +32,7 @@ The problem is `study.assemble`'s arm, posed as its driver is handed it
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -38,6 +43,7 @@ from jax.flatten_util import ravel_pytree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
+import eager  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
 from functional_process.cottax import study  # noqa: E402
@@ -108,10 +114,36 @@ def mda_row(assembled, args) -> dict:
         "unknowns": 0,
         "block_nodes": len(graph.nodes),
         **fd_columns(None, None, None, args),
+        **eager_columns(None, args),
     }
 
 
 SERIAL_K = 100
+
+
+def eager_columns(assembled, args) -> dict:
+    """The evaluation at the arm's start with nothing compiled across nodes: the walk
+    eager with the nested solves compiled, then the solves stepped from Python too. Each
+    is checked to give the compiled evaluation's every condition."""
+    if assembled is None:
+        return {"eager_walk_ms": float("nan"), "eager_ms": float("nan"), "eager_steps": "-"}
+    gaps, x, unravel = bench.block(assembled)
+    reference = np.concatenate([np.ravel(v) for v in jax.tree.leaves(
+        jax.jit(lambda x: gaps(*unravel(x)))(x))])
+    out = {}
+    for column, solvers in (("eager_walk_ms", False), ("eager_ms", True)):
+        graph = eager.eager_graph(assembled.graph, solvers=solvers)
+        e_gaps, _, e_unravel = bench.block(dataclasses.replace(assembled, graph=graph))
+        evaluate = lambda: e_gaps(*e_unravel(x))  # noqa: E731
+        got = np.concatenate([np.ravel(v) for v in jax.tree.leaves(evaluate())])
+        scale = float(np.max(np.abs(reference)))
+        if not np.allclose(got, reference, rtol=1e-9, atol=1e-9 * scale):
+            raise AssertionError(f"{column}: the eager evaluation is not the compiled one")
+        eager.STEPS.clear()
+        evaluate()
+        steps = "|".join(f"{kind}:{n}" for kind, n in eager.STEPS) or "-"
+        out[column] = 1e3 * bench.median_seconds(evaluate, args.repeats)
+    return {**out, "eager_steps": steps}
 
 
 def in_program_serial(gaps, unravel, x, jacobian=False):
@@ -151,6 +183,7 @@ def optimiser_row(assembled, args) -> dict:
         "unknowns": int(np.size(x)),
         "block_nodes": bench.block_nodes(assembled.graph),   # what the unknowns reach
         **fd_columns(values, jacobian, x, args),
+        **eager_columns(assembled, args),
     }
 
 
