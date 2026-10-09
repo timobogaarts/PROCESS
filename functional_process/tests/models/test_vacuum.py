@@ -35,7 +35,7 @@ from cottax.assemblies.jax import N
 from cottax.core.realisation import Implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
 
-from functional_process.cottax.architectures.contracts import PortRootFinding, Start
+from functional_process.cottax.architectures.contracts import SURFACE, PortRootFinding, Start
 from functional_process.cottax.architectures.reading import GapsDriver
 from functional_process.cottax.models.vacuum.vacuum import (
     DuctDiameterRootFind,
@@ -236,7 +236,7 @@ class _NewtonRootFindDriver(GapsDriver[PortRootFinding]):
 
 
 _ROOT_FIND = N["DuctDiameterRootFind"]
-"""Where `DuctDiameterRootFind`'s body is bound; its problem is `cx.absolute.minted_node("problem", ...)` of it."""
+"""Where `DuctDiameterRootFind`'s body is bound; its problem is `cx.absolute.minted_node("solve", ...)` of it."""
 
 
 def _drive(graph, at, contract, implementation, starts):
@@ -245,7 +245,7 @@ def _drive(graph, at, contract, implementation, starts):
     unknown `i`.
     """
     driven = (
-        Plan(graph) + cx.absolute.assign(at, contract) + cx.absolute.implement({at: implementation})
+        Plan(graph) + SURFACE.assign(at, contract) + cx.absolute.implement({at: implementation})
     ).graph
     node = driven[cx.absolute.node(at)]
     places = node.data[node.contract.takes.index(Start)]
@@ -258,7 +258,7 @@ def _duct_diameter_root_find_driven():
     """`DuctDiameterRootFind` driven by `_NewtonRootFindDriver` from `d = 1.0`."""
     return _drive(
         cx.absolute.declare({"DuctDiameterRootFind": DuctDiameterRootFind}).graph,
-        cx.absolute.minted_node("problem", _ROOT_FIND),
+        cx.absolute.minted_node("solve", _ROOT_FIND),
         PortRootFinding(),
         _NewtonRootFindDriver(),
         (1.0,),
@@ -295,7 +295,7 @@ def test_duct_diameter_root_find_builds_cleanly():
     exactly what the body owns (its residual).
     """
     g = cx.absolute.declare({"DuctDiameterRootFind": DuctDiameterRootFind}).graph
-    name, problem_name = cx.absolute.node(_ROOT_FIND), cx.absolute.minted_node("problem", _ROOT_FIND)
+    name, problem_name = cx.absolute.node(_ROOT_FIND), cx.absolute.minted_node("solve", _ROOT_FIND)
 
     assert set(g.nodes) == {name, problem_name}
     body, problem = g[name], g[problem_name]
@@ -383,7 +383,7 @@ def test_duct_feasibility_forms_one_combined_cycle_with_the_root_find():
         "['DuctFeasibility']",
         "['DuctFeasibilityConditions']",
         "['DuctDiameterRootFind']",
-        "^problem['DuctDiameterRootFind']",
+        "^solve['DuctDiameterRootFind']",
     }
 
 
@@ -398,7 +398,7 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     """
     graph = _duct_feasibility_graph()
     feasibility = graph[cx.absolute.node(N["DuctFeasibility"])]
-    root_find_problem = graph[cx.absolute.minted_node("problem", _ROOT_FIND)]
+    root_find_problem = graph[cx.absolute.minted_node("solve", _ROOT_FIND)]
     assert is_feasibility(feasibility)
     assert is_root_find(root_find_problem)
 
@@ -500,9 +500,9 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     # `DuctFeasibility + DuctDiameterRootFind`'s problem, bound where `DuctFeasibility`
     # was: unknowns `(ceff_i, d_duct)`, in that order.
     merged = (
-        Plan(graph) + Combine(name, (name, cx.absolute.minted_node("problem", _ROOT_FIND)), RelationalCondition)
+        Plan(graph) + Combine(name, (name, cx.absolute.minted_node("solve", _ROOT_FIND)), RelationalCondition)
     ).graph
-    assert merged[name] == graph[name] + graph[cx.absolute.minted_node("problem", _ROOT_FIND)]
+    assert merged[name] == graph[name] + graph[cx.absolute.minted_node("solve", _ROOT_FIND)]
 
     callable_graph, starts = _drive(
         merged,

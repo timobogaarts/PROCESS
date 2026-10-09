@@ -33,7 +33,7 @@ from cottax.consumers.execution import CallableGraph, run
 from cottax.assemblies.jax import N, absolute
 from cottax.relational import is_root_find
 
-from functional_process.cottax.architectures.contracts import PortRootFinding, Start
+from functional_process.cottax.architectures.contracts import SURFACE, PortRootFinding, Start
 from functional_process.cottax.architectures.reading import GapsDriver
 from functional_process.cottax.models.stellarator.coils import (
     calculate as ported_calculate,
@@ -980,7 +980,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     assert {n.spelling for n in cycle} == {
         "['Bi2212WindingPackIntersectInputs']",
         "['Intersect']",
-        "^problem['Intersect']",
+        "^solve['Intersect']",
         "['WindingPackTotalSizePost']",
     }
 
@@ -996,7 +996,7 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
         (cycle,) = graph.graph.cycles
         assert {n.spelling for n in cycle} == {
             "['Intersect']",
-            "^problem['Intersect']",
+            "^solve['Intersect']",
         }, material
 
 
@@ -1109,10 +1109,10 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    problem = cx.absolute.minted_node("problem", N["Intersect"])
+    problem = cx.absolute.minted_node("solve", N["Intersect"])
     driven = (
         Plan(graph)
-        + cx.absolute.assign(problem, PortRootFinding())
+        + SURFACE.assign(problem, PortRootFinding())
         + cx.absolute.implement({problem: driver})
     ).graph
     # The contract takes a `Start`, at `^start.stellarator.wp_width_r_min`; bisection

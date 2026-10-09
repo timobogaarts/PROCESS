@@ -17,6 +17,7 @@ from cottax.relational import Eq, Relation
 from jax.tree_util import GetAttrKey
 
 from functional_process.cottax.architectures.contracts import (
+    SURFACE,
     PortFixedPointIteration,
     Start,
 )
@@ -49,10 +50,10 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     the wiring, not about a model.
     """
     graph = cx.absolute.declare({"relax": Relax}).graph
-    problem = cx.absolute.minted_node("problem", N["relax"])
+    problem = cx.absolute.minted_node("solve", N["relax"])
     driven = (
         Plan(graph)
-        + cx.absolute.assign(problem, PortFixedPointIteration())
+        + SURFACE.assign(problem, PortFixedPointIteration())
         + cx.absolute.implement({problem: Picard(rtol=1e-12, atol=1e-14)})
     ).graph
     # The start is read at the problem's own `Start` place (`^start.toy.u`), not at the

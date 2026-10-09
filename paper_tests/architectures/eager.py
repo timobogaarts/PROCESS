@@ -37,10 +37,7 @@ from cottax.core.realisation import (
 )
 from cottax.core.frozen import OrderedMap
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
-from cottax.relational.consumers.execution.jax_solvers.canonical_nlp import (
-    canonical,
-    next_values,
-)
+from cottax.assemblies.jax import canonical
 import contextlib
 import types
 
@@ -123,8 +120,15 @@ def _stepped(kind, solver, fn, y0, args, max_steps):
 
 
 def _update(u, args):
+    """Picard's function, `u <- g(u)`: each unknown's relation's right side, as
+    cottax's own Picard reads it (`canonical_nlp.next_values`)."""
     posed, context = args
-    return next_values(posed.condition, u, posed.conditions(u, context))
+    condition = posed.condition
+    value = dict(zip(condition.unknowns, u)) | dict(
+        zip(condition.reads, posed.conditions(u, context))
+    )
+    update = {r.lhs: r.rhs for r in condition.relations}
+    return tuple(value[update[unknown]] for unknown in condition.unknowns)
 
 
 def _residuals(u, args):

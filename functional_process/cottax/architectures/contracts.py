@@ -6,13 +6,19 @@ A contract's reports are what the graph holds a place for, so they are the contr
 chosen where a problem is driven; an implementation computes what it can.
 """
 
+import dataclasses
+
 from cottax.core.driven import DriverContract, PerProblem, PerUnknown, Role, Start, Steps
+from cottax.core.frozen import OrderedMap
+import cottax.assemblies.jax as cx
 from cottax.assemblies.jax import (
     ConstrainedMinimiser,
     FixedPointIterator,
     RootFinder,
 )
 from cottax.relational import is_root_find
+
+from functional_process.cottax.architectures import mints
 
 __all__ = [
     "Bracket",
@@ -25,6 +31,8 @@ __all__ = [
     "PortFixedPointIteration",
     "PortMinimisation",
     "PortRootFinding",
+    "ROLE_PLACES",
+    "SURFACE",
     "Start",
     "Status",
     "Steps",
@@ -55,6 +63,23 @@ class CurveLhs(PerUnknown):
 
 class CurveRhs(PerUnknown):
     """The right curve's values at `CurveX`."""
+
+
+ROLE_PLACES = cx.absolute.role_places | cx.RolePlaces(
+    OrderedMap((
+        (Converged, cx.Minted(mints.Converged())),
+        (Status, cx.Minted(mints.Status())),
+        (Bracket, cx.Minted(mints.Bracket())),
+        (CurveX, cx.Minted(mints.CurveX())),
+        (CurveLhs, cx.Minted(mints.CurveLhs())),
+        (CurveRhs, cx.Minted(mints.CurveRhs())),
+    ))
+)
+"""Where every role a port contract takes or reports goes: the shipped surface's rules
+(`Start`, `Steps`, ...) and one per port role, at `^<role>` as before cottax asked a rule."""
+
+SURFACE = dataclasses.replace(cx.absolute, role_places=ROLE_PLACES)
+"""`cx.absolute` placing the port's roles too: `SURFACE.assign(problem, contract)`."""
 
 
 def is_single_unknown_root_find(node) -> bool:

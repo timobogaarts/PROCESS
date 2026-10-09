@@ -14,6 +14,7 @@ from cottax.assemblies.jax import V
 from cottax.relational import is_root_find
 
 from functional_process.cottax.architectures.contracts import (
+    SURFACE,
     CurveLhs,
     CurveRhs,
     CurveX,
@@ -523,7 +524,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     (problem,) = _problems(graph)
     driven = (
         Plan(graph)
-        + cx.absolute.assign(problem, IntersectRootFinding())
+        + SURFACE.assign(problem, IntersectRootFinding())
         + cx.absolute.implement({problem: IntersectBisectionNewtonPolish()})
     ).graph
     node = driven[problem]

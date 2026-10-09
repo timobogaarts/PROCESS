@@ -31,12 +31,14 @@ from cottax.consumers.execution import CallableGraph, run
 from cottax.consumers.execution.interface_types import ConditionMap, Posed
 from cottax.assemblies.jax import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
-from cottax.pytree import unminted
+from cottax.core import unminted
 from cottax.core import GaussSeidel, GaussSeidelMinimal, GraphWithValues
 from cottax.relational import Le, programme
 
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.architectures.contracts import (
+    ROLE_PLACES,
+    SURFACE,
     Converged,
     PortFixedPointIteration,
     PortMinimisation,
@@ -102,7 +104,7 @@ def driven(plan, fixed_point=picard):
     plan = plan + cx.Drive(
         (fixed_point(), Newton()),
         (PortFixedPointIteration(), PortRootFinding()),
-        cx.default_places,
+        ROLE_PLACES,
     )
     return _supplied(plan)
 
@@ -342,7 +344,7 @@ def block_plan(
         )
     else:
         contract, implementation = RootFinding(steps=reports), Newton()
-    plan = plan + cx.absolute.assign(TOP, contract)
+    plan = plan + SURFACE.assign(TOP, contract)
     return driven(plan + cx.absolute.implement({TOP: implementation}))
 
 

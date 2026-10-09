@@ -1087,7 +1087,7 @@ def test_cplife_avail_st_to_graph_assembles():
     node = CplifeAvailStSuperconductingAdjusted
     body, solved = (
         graph[_name(node)],
-        graph[absolute.minted_node("problem", _name(node))],
+        graph[absolute.minted_node("solve", _name(node))],
     )
     assert isinstance(body, Implemented)
     assert is_fixed_point(solved)
