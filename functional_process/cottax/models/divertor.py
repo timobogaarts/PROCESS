@@ -5,7 +5,7 @@ the stellarator graph's one non-`problem` cycle.
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import divertor
 from functional_process.models.divertor import (

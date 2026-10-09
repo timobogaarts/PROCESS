@@ -25,12 +25,12 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-import cottax.relational_pytree as cx
+import cottax.assemblies.jax as cx
 from cottax.core import GraphWithValues, problems
 from cottax.core.frozen import OrderedMap
 from cottax.core import Plan
 from cottax.consumers.execution import CallableGraph, run
-from cottax.relational_pytree import N, to_graph
+from cottax.assemblies.jax import N, absolute
 from cottax.relational import is_root_find
 
 from functional_process.cottax.architectures.contracts import PortRootFinding, Start
@@ -269,7 +269,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     )
 
     node = ZTfInsideHalf
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
 
     owned = {out for out in node.function_outputs}
@@ -316,7 +316,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     from functional_process.cottax.models.stellarator.coils.calculate import LenTfCoil
 
     node = LenTfCoil
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
 
     owned = {out for out in node.function_outputs}
@@ -367,7 +367,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     from functional_process.cottax.models.stellarator.coils.calculate import TfCryoArea
 
     node = TfCryoArea
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
 
     owned = {out for out in node.function_outputs}
@@ -807,7 +807,7 @@ class TestWindingPackTotalSize(Tier2Contract):
 # through the two of them plus `coils.py`'s `Intersect` in between -- a genuine
 # multi-node cycle, the same "Shape A" shape as `Divertor`/`AFwTotalWithPowerflow`
 # (`_audit/next_steps.md` §5). No `FixedPointFunction`/`Cut` needed: `Blocking`/
-# `to_graph()` finds the SCC on its own. These checks are the actual point of the split:
+# `absolute.declare().graph` finds the SCC on its own. These checks are the actual point of the split:
 # prove the shape is legal and the cycle actually forms, don't just assert it.
 # ---------------------------------------------------------------------------
 
@@ -846,7 +846,7 @@ def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occup
     owned by none of them (that is `WindingPackTotalSizePost`'s).
     """
     node = occupant
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
     owned = {out.spelling for out in node.function_outputs}
     assert owned == {
@@ -923,7 +923,7 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
     computes, no longer discarded now that `WindingPackJTfWp` is gone.
     """
     node = WindingPackTotalSizePost
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
     owned = {out for out in node.function_outputs}
     j_tf_wp_path = tfcoil.place("j_tf_wp")
@@ -938,7 +938,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     docstring).
     """
     pre = IterNb3snWindingPackIntersectInputs
-    graph = to_graph({"pre": pre, "Intersect": Intersect})
+    graph = absolute.declare({"pre": pre, "Intersect": Intersect}).graph
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
     assert not graph.graph.is_acyclic
@@ -969,11 +969,11 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     """
     post = WindingPackTotalSizePost
 
-    graph = to_graph({
+    graph = absolute.declare({
         "Bi2212WindingPackIntersectInputs": Bi2212WindingPackIntersectInputs,
         "Intersect": Intersect,
         "WindingPackTotalSizePost": post,
-    })
+    }).graph
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
     assert not graph.graph.is_acyclic
     (cycle,) = graph.graph.cycles
@@ -987,11 +987,11 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     for material, occupant in _WINDING_PACK_OCCUPANTS.items():
         if material is SuperconductorModel.BI2212:
             continue
-        graph = to_graph({
+        graph = absolute.declare({
             "occupant": occupant,
             "Intersect": Intersect,
             "WindingPackTotalSizePost": post,
-        })
+        }).graph
         assert len(graph.definitions) == 4
         (cycle,) = graph.graph.cycles
         assert {n.spelling for n in cycle} == {
@@ -1097,11 +1097,11 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
 
     pre = _WINDING_PACK_OCCUPANTS[SuperconductorModel(int(i_tf_sc_mat))]
     post = WindingPackTotalSizePost
-    graph = to_graph({
+    graph = absolute.declare({
         "pre": pre,
         "Intersect": Intersect,
         "WindingPackTotalSizePost": post,
-    })
+    }).graph
     # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that
     # function's own `lo`/`hi` (`i_tf_sc_mat == 6` uses a different lower bound, not hit
     # here since this test uses material 1).
@@ -1109,11 +1109,11 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    problem = cx.minted_node("problem", N["Intersect"])
+    problem = cx.absolute.minted_node("problem", N["Intersect"])
     driven = (
         Plan(graph)
-        + cx.assign(graph, problem, PortRootFinding())
-        + cx.implement({problem: driver})
+        + cx.absolute.assign(problem, PortRootFinding())
+        + cx.absolute.implement({problem: driver})
     ).graph
     # The contract takes a `Start`, at `^start.stellarator.wp_width_r_min`; bisection
     # reads only its shape, so the bracket's midpoint.

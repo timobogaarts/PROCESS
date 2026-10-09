@@ -29,7 +29,7 @@ the problem statement.
 Every step below is one named procedure taking a `Plan` and returning a `Plan`, and
 records the graph operations it applied. `report(plan)` prints the recipe. The file's
 problem is `problem.problem_model`; the closed machine is `study.machine_model` with the
-root find as the top of `cx.mdf`; every run is `study.solve`.
+root find as the top of `cx.absolute.mdf`; every run is `study.solve`.
 
     PY=~/miniconda3/envs/process_port/bin/python      # see ../CLAUDE.md for the env
     export JAX_PLATFORMS=cpu PYTHONPATH=~/PROCESS:~/jaxgraph/src
@@ -58,7 +58,7 @@ import jax
 
 jax.config.update("jax_enable_x64", True)  # before any array: PROCESS is float64
 
-import cottax.relational_pytree as cx  # noqa: E402
+import cottax.assemblies.jax as cx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.core import ExecutableGraph, Function  # noqa: E402
@@ -260,7 +260,7 @@ def freeze(graph, var: VarPath, check: str) -> tuple[object, dict]:
         Ops(graph)
         + Cut(var, readers, BUILT_MINT)
         + Insert(OrderedMap({place: Function((var, built_of(var)), (condition,))}))
-        + cx.implement({place: Capacity(1.0 if check == "above" else -1.0)})
+        + cx.absolute.implement({place: Capacity(1.0 if check == "above" else -1.0)})
     )
     return plan.graph, {
         "place": var.spelling,
@@ -290,7 +290,7 @@ def closed_at(graph, condition: VarPath, var: VarPath) -> Ops:
     place = place_for(condition)
     return (
         Ops(graph)
-        + Insert(OrderedMap({place: cx.requirement(condition, cx.Eq)}))
+        + Insert(OrderedMap({place: cx.absolute.requirement(condition, cx.Eq)}))
         + Determine(place, (var,))
     )
 
@@ -304,14 +304,14 @@ def cycle_of(graph, condition: VarPath, var: VarPath) -> tuple[NodePath, ...]:
 
 def analysis(configuration):
     """The machine with every constraint body and the merit, each of its cycles closed
-    (`cx.mda`), nothing driven: what a closure's cycle is priced on."""
-    return (Ops(study.machine_model(configuration).graph) + cx.mda(study.RULE)).graph
+    (`cx.absolute.mda`), nothing driven: what a closure's cycle is priced on."""
+    return (Ops(study.machine_model(configuration).graph) + cx.absolute.mda(study.RULE)).graph
 
 
 @dataclass(frozen=True)
 class Closed:
     """The machine with `condition` closed by `var`: a root find at `place`, every
-    cycle on it closed and nested in it (`cx.mdf` with the root find as its top), the
+    cycle on it closed and nested in it (`cx.absolute.mdf` with the root find as its top), the
     rest closed on its own, every problem driven. The design is held -- it is a
     boundary input -- so one run is PROCESS's machine at that design."""
 
@@ -355,17 +355,17 @@ def close(configuration, condition: str, var: str, *, bracket=None) -> Closed:
     model = study.machine_model(configuration)
     cond, unknown = _var(model.graph, condition), _var(model.graph, var)
     place = place_for(cond)
-    plan = closed_at(model.graph, cond, unknown) + cx.mdf(place, study.RULE)
+    plan = closed_at(model.graph, cond, unknown) + cx.absolute.mdf(place, study.RULE)
     if any(len(c) > 1 for c in plan.graph.graph.components if place not in c):
-        plan = plan + CloseFunctionalCycles(study.RULE, cx.closing)
+        plan = plan + CloseFunctionalCycles(study.RULE, cx.absolute.closing)
     contract, implementation = (
         (PortRootFinding(reports=(Steps, Converged)), SafeguardedNewtonDriver())
         if bracket is None
         else (BracketedRootFinding(reports=(Steps, Converged), bracket=True),
               BracketedRootDriver())
     )
-    plan = plan + cx.assign(plan.graph, place, contract)
-    graph = study.driven(plan + cx.implement({place: implementation})).graph
+    plan = plan + cx.absolute.assign(place, contract)
+    graph = study.driven(plan + cx.absolute.implement({place: implementation})).graph
     problem = configuration.problem
     others = getattr(problem, "inequalities", ()) or getattr(problem, "evaluated", ())
     merit = problem.minimise or problem.maximise
@@ -395,7 +395,7 @@ def refusal(graph, condition: VarPath) -> str:
         If the graph does not refuse, which would mean something can still move it.
     """
     place = place_for(condition)
-    trial = (Ops(graph) + Insert(OrderedMap({place: cx.requirement(condition, cx.Eq)}))).graph
+    trial = (Ops(graph) + Insert(OrderedMap({place: cx.absolute.requirement(condition, cx.Eq)}))).graph
     return REFUSAL + next(
         v.message
         for v in violations(ExecutableGraph, trial)

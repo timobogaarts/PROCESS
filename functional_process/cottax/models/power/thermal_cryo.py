@@ -4,7 +4,7 @@
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import (
     current_drive,

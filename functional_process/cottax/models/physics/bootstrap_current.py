@@ -1,6 +1,6 @@
 """Pure-functional port of the tokamak bootstrap-current chain."""
 
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import current_drive, physics
 from functional_process.cottax.stated import states

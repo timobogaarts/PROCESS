@@ -20,7 +20,7 @@ would otherwise overwrite the profile arrays a case needs to control.
 """
 
 import numpy as np
-from cottax.relational_pytree import V, place, to_graph
+from cottax.assemblies.jax import V, absolute
 
 from functional_process.cottax.models.physics.radiation_power import (
     ImpurityRadiationTotals,
@@ -483,12 +483,12 @@ def test_impurity_radiation_totals_assembles_alone():
     them the whole-array `VarPath`.
     """
     node = ImpurityRadiationTotals
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
 
     read = set((r.place for r in node.function_reads))
     for i in range(14):
-        idx_path = place(V.impurity_radiation.f_nd_impurity_electron_array[i])
+        idx_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[i])
         assert idx_path in read
     whole_array_path = impurity_radiation.place("f_nd_impurity_electron_array")
     assert whole_array_path not in read
@@ -501,11 +501,11 @@ def test_impurity_radiation_totals_assembles_with_all_three_nodes():
     `ImpurityRadiationTotals` is (see that class's own docstring), so this is the shape
     a later consolidation pass would register.
     """
-    graph = to_graph(
+    graph = absolute.declare(
         SynchrotronRadiationPower,
         ImpurityRadiationTotals,
         PlasmaRadiationPowers,
-    )
+    ).graph
     assert graph.definitions
     assert len(graph.definitions) == 3
 

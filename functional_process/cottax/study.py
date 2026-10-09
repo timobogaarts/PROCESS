@@ -3,7 +3,7 @@
 `problem.problem_model` is what the input file states; this is how it is answered.
 
 - **The graph**: the configuration's model, and the architecture's op over it: `MDA` the
-  machine with each cycle closed (`cx.mda`), `MDF` / `IDF` / `SAND` the problem at
+  machine with each cycle closed (`cx.absolute.mda`), `MDF` / `IDF` / `SAND` the problem at
   `problem.TOP` with the architecture around it. Every cycle is cut by `RULE`.
 - **The drivers**: every problem answered by the port's own algorithm for its shape
   (`driven`): Picard for a fixed point, a seeded Newton for a root find, VMCON for
@@ -23,13 +23,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import cottax.relational_pytree as cx
+import cottax.assemblies.jax as cx
 from cottax.core.frozen import OrderedMap
 from cottax.core import Plan, Rename
 from cottax.core.driven import is_driven
 from cottax.consumers.execution import CallableGraph, run
 from cottax.consumers.execution.interface_types import ConditionMap, Posed
-from cottax.relational_pytree import RootFinding
+from cottax.assemblies.jax import RootFinding
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
 from cottax.pytree import unminted
 from cottax.core import GaussSeidel, GaussSeidelMinimal, GraphWithValues
@@ -84,7 +84,7 @@ def machine_model(configuration: Configuration):
     bodies = {held(c).segments[-1].name: c for c in constraints}
     if isinstance(problem, Optimisation):
         bodies["merit"] = problem.minimise or problem.maximise
-    return cx.declare(configuration.machine, bodies)
+    return cx.absolute.declare(configuration.machine, bodies)
 
 
 # ---------------------------------------------------------------- the drivers
@@ -236,7 +236,7 @@ def cold_state(configuration: Configuration) -> dict:
 def mda_plan(model, rule=RULE, fixed_point=picard) -> Plan:
     """`model` with every cycle closed by `rule` and every problem driven, as the plan
     that does it."""
-    return driven(Plan(model.graph) + cx.mda(rule), fixed_point)
+    return driven(Plan(model.graph) + cx.absolute.mda(rule), fixed_point)
 
 
 def mda_graph(model, rule=RULE, fixed_point=picard):
@@ -277,7 +277,7 @@ def arms(configuration: Configuration) -> tuple[str, ...]:
 
 
 def _architecture(arm: str, rule=RULE):
-    return {"MDF": cx.mdf, "IDF": cx.idf, "SAND": cx.sand}[arm](TOP, rule)
+    return {"MDF": cx.absolute.mdf, "IDF": cx.absolute.idf, "SAND": cx.absolute.sand}[arm](TOP, rule)
 
 
 def _is_bound(node, r) -> bool:
@@ -342,8 +342,8 @@ def block_plan(
         )
     else:
         contract, implementation = RootFinding(steps=reports), Newton()
-    plan = plan + cx.assign(plan.graph, TOP, contract)
-    return driven(plan + cx.implement({TOP: implementation}))
+    plan = plan + cx.absolute.assign(TOP, contract)
+    return driven(plan + cx.absolute.implement({TOP: implementation}))
 
 
 def block_graph(configuration: Configuration, arm: str, env, trace: list, **how):
@@ -590,60 +590,7 @@ def posed(graph, inputs, problem=TOP) -> tuple:
         for role, slot in zip(node.contract.takes, node.data, strict=True)
     }
     return (
-        Posed(node.condition, node.contract.reports, conditions_),
+        Posed(node.condition, node.contract.reports, conditions_, fixed),
         tuple(env[p] for p in fixed),
         data,
-    )
-
-
-# ---------------------------------------------------------------- OpenMDAO
-
-
-def openmdao(configuration: Configuration, arm: str = "MDF", cold=None, *, rule=RULE):
-    """`arm` of `configuration` as cottax's OpenMDAO export: the top's cycle of the graph
-    `assemble` builds -- what every iteration re-runs -- with what it reads from outside
-    run once and handed in; the top answered by OpenMDAO's SLSQP in units of its
-    design's starts (PROCESS's `x / x_start`), a solve by OpenMDAO's Newton or
-    Gauss-Seidel. `.problem()` builds the `om.Problem`; `.values_in(problem)` reads it
-    back."""
-    from cottax.relational_pytree import ConstrainedMinimiser  # noqa: PLC0415
-    from cottax.relational.consumers.openmdao import SOLVERS  # noqa: PLC0415
-    from cottax.consumers.openmdao import (  # noqa: PLC0415
-        OMSLSQP,
-        OpenMDAOExport,
-        OpenMDAOGraph,
-        Sizing,
-    )
-
-    if arm not in arms(configuration) or arm == "MDA":
-        raise ValueError(f"{configuration.name}: no {arm} arm to export")
-    cold = cold_state(configuration) if cold is None else cold
-    state = state_of(configuration)
-    model = machine_model(configuration)
-    mda = mda_graph(model, rule)
-    env = solve(mda, values(mda, state, model.given, cold))
-    block_model, graph = block_graph(
-        configuration, arm, env, [], rule=rule, reports=False
-    )
-    inputs = block_values(
-        graph,
-        state,
-        block_model.given,
-        env,
-        set(configuration.problem.design),
-        nested_given=arm in ("MDF", "IDF"),
-    )
-    solvers = OrderedMap({
-        **dict(SOLVERS),
-        ConstrainedMinimiser: OMSLSQP(scaled=True),
-    })
-    env = before(graph, inputs)
-    cycle = graph.subgraph(graph.cycle_of(TOP))
-    outside = OrderedMap((v, env[v]) for v in cycle.graph.boundary_inputs)
-    # Every input is held while SLSQP moves the design, which the top owns: no
-    # derivative is asked in one, so none is taken.
-    return OpenMDAOExport(
-        Sizing(GraphWithValues(OpenMDAOGraph(cycle), outside)),
-        solvers=solvers,
-        constants=tuple(outside),
     )

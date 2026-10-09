@@ -52,7 +52,7 @@ non-finite, which the check steps aside for.
 
 import numpy as np
 import pytest
-from cottax.relational_pytree import to_graph
+from cottax.assemblies.jax import absolute
 
 from functional_process.cottax.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
@@ -1005,12 +1005,12 @@ def test_nodes_assemble_and_the_sauter_arm_does_not_read_triangularity():
     leaving it inert.
     """
     node = SauterBootstrapCurrentFraction
-    graph = to_graph({
+    graph = absolute.declare({
         "sauter": node,
         "no_diamagnetic": NoDiamagneticCurrent,
         "no_pfirsch_schluter": NoPfirschSchluterCurrent,
         "fractions": PlasmaCurrentFractions,
-    })
+    }).graph
     assert len(graph.definitions) == 4
 
     read = set((r.place for r in node.function_reads))

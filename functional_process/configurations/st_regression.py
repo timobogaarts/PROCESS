@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/st_regression.IN.DAT` by
 
 import numpy as np
 
-from cottax.relational_pytree import V, place
+from cottax.assemblies.jax import V, absolute
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
@@ -915,20 +915,23 @@ values = {
 
 problem = Optimisation(
     design={
-        place(V.physics.temp_plasma_electron_vol_avg_kev): (5.0, 25.0),
-        place(V.physics.beta_total_vol_avg): (0.01, 1.0),
-        place(V.physics.nd_plasma_electrons_vol_avg): (5e19, 5e20),
-        place(V.physics.hfact): (0.8, 1.2),
-        place(V.build.dr_cs): (0.03, 0.5),
-        place(V.physics.q95): (3.0, 20.0),
-        place(V.build.dr_bore): (0.1, 0.8),
-        place(V.tfcoil.dr_tf_nose_case): (0.01, 0.5),
-        place(V.build.dr_shld_inboard): (0.01, 1.0),
-        place(V.physics.f_nd_alpha_thermal_electron): (0.001, 1.0),
-        place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (1e-08, 0.01),
-        place(V.tfcoil.dr_tf_wp_with_insulation): (0.4, 0.8),
-        place(V.physics.f_nd_plasma_pedestal_greenwald): (0.1, 1.0),
-        place(V.physics.f_nd_plasma_separatrix_greenwald): (0.001, 0.1),
+        absolute.place(V.physics.temp_plasma_electron_vol_avg_kev): (5.0, 25.0),
+        absolute.place(V.physics.beta_total_vol_avg): (0.01, 1.0),
+        absolute.place(V.physics.nd_plasma_electrons_vol_avg): (5e19, 5e20),
+        absolute.place(V.physics.hfact): (0.8, 1.2),
+        absolute.place(V.build.dr_cs): (0.03, 0.5),
+        absolute.place(V.physics.q95): (3.0, 20.0),
+        absolute.place(V.build.dr_bore): (0.1, 0.8),
+        absolute.place(V.tfcoil.dr_tf_nose_case): (0.01, 0.5),
+        absolute.place(V.build.dr_shld_inboard): (0.01, 1.0),
+        absolute.place(V.physics.f_nd_alpha_thermal_electron): (0.001, 1.0),
+        absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (
+            1e-08,
+            0.01,
+        ),
+        absolute.place(V.tfcoil.dr_tf_wp_with_insulation): (0.4, 0.8),
+        absolute.place(V.physics.f_nd_plasma_pedestal_greenwald): (0.1, 1.0),
+        absolute.place(V.physics.f_nd_plasma_separatrix_greenwald): (0.001, 0.1),
     },
     equalities=(Constraint1, Constraint2HeatedCoreRadiation, Constraint11),
     inequalities=(

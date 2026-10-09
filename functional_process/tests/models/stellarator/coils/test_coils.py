@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 
-import cottax.relational_pytree as cx
+import cottax.assemblies.jax as cx
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -10,7 +10,7 @@ from cottax.core.frozen import OrderedMap
 from cottax.core import is_problem, Plan
 from cottax.consumers.execution import CallableGraph, run
 from cottax.core import GraphWithValues
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 from cottax.relational import is_root_find
 
 from functional_process.cottax.architectures.contracts import (
@@ -477,7 +477,7 @@ def test_intersect_declares_a_body_and_a_root_find_problem():
     body (an `ImplementedFunction`) and the root-find problem it feeds -- the pair a
     `residual` wrapper declares.
     """
-    graph = cx.to_graph(Intersect)
+    graph = cx.absolute.declare(Intersect).graph
     assert len(graph.definitions) == 2
     assert not graph.graph.is_acyclic
     (problem,) = _problems(graph)
@@ -490,8 +490,8 @@ def test_intersect_body_reads_the_unknown_back_without_owning_it():
     copy; the separate root-find problem is the one that owns
     `.stellarator.wp_width_r_min`.
     """
-    body, problem = cx.to_graph(Intersect).definitions.values()
-    unknown = cx.place(V.stellarator.wp_width_r_min)
+    body, problem = cx.absolute.declare(Intersect).graph.definitions.values()
+    unknown = cx.absolute.place(V.stellarator.wp_width_r_min)
     assert unknown in body.reads
     assert unknown not in body.owns
     assert problem.owns == (unknown,)
@@ -519,19 +519,19 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     this is checking the *port's own* two ways of getting an answer agree, not a fresh
     correctness claim about `intersect` itself.
     """
-    graph = cx.to_graph(Intersect)
+    graph = cx.absolute.declare(Intersect).graph
     (problem,) = _problems(graph)
     driven = (
         Plan(graph)
-        + cx.assign(graph, problem, IntersectRootFinding())
-        + cx.implement({problem: IntersectBisectionNewtonPolish()})
+        + cx.absolute.assign(problem, IntersectRootFinding())
+        + cx.absolute.implement({problem: IntersectBisectionNewtonPolish()})
     ).graph
     node = driven[problem]
     slot = lambda role: node.data[node.contract.takes.index(role)][0]  # noqa: E731
-    wp_width_r_path = cx.place(V.stellarator.wp_width_r)
-    lhs_path = cx.place(V.stellarator.lhs)
-    rhs_path = cx.place(V.stellarator.rhs)
-    wp_width_r_min_path = cx.place(V.stellarator.wp_width_r_min)
+    wp_width_r_path = cx.absolute.place(V.stellarator.wp_width_r)
+    lhs_path = cx.absolute.place(V.stellarator.lhs)
+    rhs_path = cx.absolute.place(V.stellarator.rhs)
+    wp_width_r_min_path = cx.absolute.place(V.stellarator.wp_width_r_min)
     callable_graph = CallableGraph(driven)
 
     for sample in _intersect_samples():

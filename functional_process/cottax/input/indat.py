@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import equinox as eqx
-from cottax.relational_pytree import to_graph
+from cottax.assemblies.jax import absolute
 
 from functional_process.configurations import Configuration
 from functional_process.cottax.input.importer import Imported, read_indat
@@ -4699,7 +4699,7 @@ at PROCESS's own default).
 
 def graph_for(machine=None):
     """The assembled graph for one machine; `REFERENCE_MACHINE` if unstated."""
-    return to_graph(REFERENCE_MACHINE if machine is None else machine)
+    return absolute.declare(REFERENCE_MACHINE if machine is None else machine).graph
 
 
 GRAPH = graph_for()

@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/large_tokamak_eval.IN.DAT` by
 
 import numpy as np
 
-from cottax.relational_pytree import V, place
+from cottax.assemblies.jax import V, absolute
 from functional_process.configurations import Configuration, RootFinding
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
@@ -950,8 +950,8 @@ values = {
 
 problem = RootFinding(
     design=(
-        place(V.physics.temp_plasma_electron_vol_avg_kev),
-        place(V.physics.nd_plasma_electrons_vol_avg),
+        absolute.place(V.physics.temp_plasma_electron_vol_avg_kev),
+        absolute.place(V.physics.nd_plasma_electrons_vol_avg),
     ),
     equalities=(Constraint1, Constraint2HeatedCoreRadiation),
     evaluated=(

@@ -1,7 +1,7 @@
 """Pure-functional port of `process/models/stellarator/heating.py` (registry unit #5)."""
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import (
     current_drive,

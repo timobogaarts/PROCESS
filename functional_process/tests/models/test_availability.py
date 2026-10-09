@@ -18,7 +18,7 @@ regression in its output would show up as a value mismatch downstream.
 import functools
 
 import pytest
-from cottax.relational_pytree import N, minted_node, node, to_graph
+from cottax.assemblies.jax import N, absolute
 from cottax.core.realisation import Implemented
 from cottax.relational import is_fixed_point
 
@@ -1050,7 +1050,7 @@ CPLIFE_VAR = costs.place("cplife")
 
 def _name(wrapper):
     """Where `to_graph` binds a loose wrapper: its function's name."""
-    return node(N[wrapper.fn.__name__])
+    return absolute.node(N[wrapper.fn.__name__])
 
 
 @pytest.mark.parametrize(
@@ -1069,7 +1069,7 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
     The old assertion was `not graph.is_acyclic`; it is the opposite now, deliberately.
     """
     node = occupant
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     body = graph[_name(node)]
     assert isinstance(body, Implemented)
     assert set(node.function_outputs) == {CPLIFE_VAR}
@@ -1083,9 +1083,12 @@ def test_cplife_avail_st_to_graph_assembles():
     docstring), so the resulting body+problem pair is acyclic: a degenerate `FixedPoint`
     that converges in one iteration regardless of its starting guess.
     """
-    graph = to_graph(CplifeAvailStSuperconductingAdjusted)
+    graph = absolute.declare(CplifeAvailStSuperconductingAdjusted).graph
     node = CplifeAvailStSuperconductingAdjusted
-    body, solved = graph[_name(node)], graph[minted_node("problem", _name(node))]
+    body, solved = (
+        graph[_name(node)],
+        graph[absolute.minted_node("problem", _name(node))],
+    )
     assert isinstance(body, Implemented)
     assert is_fixed_point(solved)
     assert solved.owns == (CPLIFE_VAR,)
@@ -1106,7 +1109,7 @@ def test_branch_node_to_graph_assembles(node):
     """`Avail`/`Avail2`/`AvailSt` no longer own `.costs.cplife` -- `to_graph` on each,
     standalone, no longer raises the pre-split `reads [...], which it also owns` error.
     """
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert isinstance(graph[_name(node)], Implemented)
 
 
@@ -1114,7 +1117,7 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     """The intended full wiring, and what the switch split changed about it."""
     cplife_node = CplifeAvailSuperconducting
     avail_node = AvailNeutronFluence
-    graph = to_graph(cplife_node, avail_node)
+    graph = absolute.declare(cplife_node, avail_node).graph
     assert isinstance(graph[_name(avail_node)], Implemented)
     assert CPLIFE_VAR not in set((r.place for r in avail_node.function_reads))
     assert graph.graph.is_acyclic
@@ -1126,6 +1129,6 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
     """
     cplife_node = CplifeAvailStSuperconductingAdjusted
     avail_st_node = AvailStNeutronFluenceSphericalTokamakSuperconducting
-    graph = to_graph(cplife_node, avail_st_node)
+    graph = absolute.declare(cplife_node, avail_st_node).graph
     assert isinstance(graph[_name(avail_st_node)], Implemented)
     assert graph.graph.is_acyclic

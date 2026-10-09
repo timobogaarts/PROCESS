@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.models.pfcoil import (
     N_COILS_IN_GROUP,

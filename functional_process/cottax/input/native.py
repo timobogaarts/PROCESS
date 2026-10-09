@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from cottax.relational_pytree import to_graph
+from cottax.assemblies.jax import absolute
 from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey, SequenceKey
 
@@ -590,7 +590,7 @@ def problem_from_indat(input_file: str | Imported, switches: dict[str, int], mac
                 f"{len(equalities)} against {len(design)}"
             )
         return RootFinding(tuple(design), equalities, inequalities)
-    graph = to_graph(machine).graph
+    graph = absolute.declare(machine).graph.graph
     reached = {p for n in graph.reach(tuple(design)) for p in graph[n].owns}
     reached |= set(design)
 

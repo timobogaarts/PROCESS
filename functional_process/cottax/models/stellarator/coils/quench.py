@@ -4,7 +4,7 @@ Registry #14.
 """
 
 import jax.numpy as jnp  # noqa: F401
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import (
     superconducting_tfcoil,

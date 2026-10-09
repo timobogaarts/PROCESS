@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/large_tokamak_nof.IN.DAT` by
 
 import numpy as np
 
-from cottax.relational_pytree import V, place
+from cottax.assemblies.jax import V, absolute
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
@@ -946,26 +946,29 @@ values = {
 
 problem = Optimisation(
     design={
-        place(V.physics.b_plasma_toroidal_on_axis): (0.01, 30.0),
-        place(V.physics.rmajor): (8.0, 9.0),
-        place(V.physics.temp_plasma_electron_vol_avg_kev): (5.5055, 100.0),
-        place(V.physics.beta_total_vol_avg): (0.001, 1.0),
-        place(V.physics.nd_plasma_electrons_vol_avg): (2e19, 1e21),
-        place(V.physics.hfact): (0.1, 1.2),
-        place(V.build.dr_cs): (0.3, 10.0),
-        place(V.physics.q95): (3.0, 50.0),
-        place(V.build.dr_bore): (0.1, 10.0),
-        place(V.pf_coil.j_cs_flat_top_end): (100000.0, 100000000.0),
-        place(V.physics.f_c_plasma_non_inductive): (0.001, 1.0),
-        place(V.tfcoil.t_tf_superconductor_quench): (0.1, 100.0),
-        place(V.tfcoil.dr_tf_nose_case): (0.05, 1.0),
-        place(V.tfcoil.dx_tf_turn_steel): (0.008, 0.1),
-        place(V.tfcoil.f_a_tf_turn_cable_copper): (0.5, 0.94),
-        place(V.tfcoil.c_tf_turn): (65000.0, 90000.0),
-        place(V.physics.f_nd_alpha_thermal_electron): (0.05, 0.1),
-        place(V.pf_coil.f_a_cs_turn_steel): (0.001, 0.95),
-        place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (1e-08, 0.01),
-        place(V.tfcoil.dr_tf_wp_with_insulation): (0.4, 2.0),
+        absolute.place(V.physics.b_plasma_toroidal_on_axis): (0.01, 30.0),
+        absolute.place(V.physics.rmajor): (8.0, 9.0),
+        absolute.place(V.physics.temp_plasma_electron_vol_avg_kev): (5.5055, 100.0),
+        absolute.place(V.physics.beta_total_vol_avg): (0.001, 1.0),
+        absolute.place(V.physics.nd_plasma_electrons_vol_avg): (2e19, 1e21),
+        absolute.place(V.physics.hfact): (0.1, 1.2),
+        absolute.place(V.build.dr_cs): (0.3, 10.0),
+        absolute.place(V.physics.q95): (3.0, 50.0),
+        absolute.place(V.build.dr_bore): (0.1, 10.0),
+        absolute.place(V.pf_coil.j_cs_flat_top_end): (100000.0, 100000000.0),
+        absolute.place(V.physics.f_c_plasma_non_inductive): (0.001, 1.0),
+        absolute.place(V.tfcoil.t_tf_superconductor_quench): (0.1, 100.0),
+        absolute.place(V.tfcoil.dr_tf_nose_case): (0.05, 1.0),
+        absolute.place(V.tfcoil.dx_tf_turn_steel): (0.008, 0.1),
+        absolute.place(V.tfcoil.f_a_tf_turn_cable_copper): (0.5, 0.94),
+        absolute.place(V.tfcoil.c_tf_turn): (65000.0, 90000.0),
+        absolute.place(V.physics.f_nd_alpha_thermal_electron): (0.05, 0.1),
+        absolute.place(V.pf_coil.f_a_cs_turn_steel): (0.001, 0.95),
+        absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[12]): (
+            1e-08,
+            0.01,
+        ),
+        absolute.place(V.tfcoil.dr_tf_wp_with_insulation): (0.4, 2.0),
     },
     equalities=(Constraint1, Constraint2HeatedCoreRadiation, Constraint11),
     inequalities=(

@@ -14,7 +14,7 @@ disagree.
 import inspect
 
 import numpy as np
-from cottax.relational_pytree import V, place, to_graph
+from cottax.assemblies.jax import V, absolute
 
 from functional_process.cottax.input.indat import PLASMA_COMPOSITION
 from functional_process.cottax.models.physics.composition import (
@@ -440,21 +440,21 @@ def test_plasma_composition_owns_h_and_he_fractions():
     assemble while silently reading or owning the wrong indices).
     """
     node = PlasmaCompositionNonIgnited
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert graph.definitions
 
     owned = set(node.function_outputs)
     read = set((r.place for r in node.function_reads))
 
-    h_path = place(V.impurity_radiation.f_nd_impurity_electron_array[0])
-    he_path = place(V.impurity_radiation.f_nd_impurity_electron_array[1])
+    h_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[0])
+    he_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[1])
     assert h_path in owned
     assert he_path in owned
     assert h_path not in read
     assert he_path not in read
 
     for i in range(2, 14):
-        idx_path = place(V.impurity_radiation.f_nd_impurity_electron_array[i])
+        idx_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[i])
         assert idx_path in read
         assert idx_path not in owned
 
@@ -464,7 +464,7 @@ def test_calculate_effective_charge_ionisation_profiles_assembles_alone():
     individual reads (no whole-array read left anywhere in this file) and must still
     assemble on its own.
     """
-    graph = to_graph(CalculateEffectiveChargeIonisationProfiles)
+    graph = absolute.declare(CalculateEffectiveChargeIonisationProfiles).graph
     assert graph.definitions
 
 
@@ -478,12 +478,12 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
     """
     plasma_composition_node = PlasmaCompositionNonIgnited
     profiles_node = CalculateEffectiveChargeIonisationProfiles
-    graph = to_graph(plasma_composition_node, profiles_node)
+    graph = absolute.declare(plasma_composition_node, profiles_node).graph
     assert graph.definitions
     assert len(graph.definitions) == 2
 
-    h_path = place(V.impurity_radiation.f_nd_impurity_electron_array[0])
-    he_path = place(V.impurity_radiation.f_nd_impurity_electron_array[1])
+    h_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[0])
+    he_path = absolute.place(V.impurity_radiation.f_nd_impurity_electron_array[1])
     boundary_inputs = set(graph.graph.boundary_inputs)
     assert h_path not in boundary_inputs
     assert he_path not in boundary_inputs

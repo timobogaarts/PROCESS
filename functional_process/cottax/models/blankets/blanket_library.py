@@ -3,7 +3,7 @@
 """
 
 import jax.numpy as jnp
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
 from functional_process.models.blankets.blanket_library import (

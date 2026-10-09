@@ -7,7 +7,7 @@ chosen where a problem is driven; an implementation computes what it can.
 """
 
 from cottax.core.driven import DriverContract, PerProblem, PerUnknown, Role, Start, Steps
-from cottax.relational_pytree import (
+from cottax.assemblies.jax import (
     ConstrainedMinimiser,
     FixedPointIterator,
     RootFinder,

@@ -133,8 +133,8 @@ class Speller:
         return cls.__name__
 
     def place(self, path: VarPath) -> str:
-        """`path` as `place(V...)`, its imports recorded."""
-        self.imports.setdefault("cottax.relational_pytree", set()).update({"V", "place"})
+        """`path` as `absolute.place(V...)`, its imports recorded."""
+        self.imports.setdefault("cottax.assemblies.jax", set()).update({"V", "absolute"})
         keys = []
         for key in path.segments:
             if isinstance(key, GetAttrKey):
@@ -143,7 +143,7 @@ class Speller:
                 keys.append(f"[{key.idx}]")
             else:
                 raise TypeError(f"no spelling for the key {key!r} of {path!r}")
-        return f"place(V{''.join(keys)})"
+        return f"absolute.place(V{''.join(keys)})"
 
     def variant(self, wrapper: Wrapper) -> str:
         """The name a declared node is bound at in its module, its import recorded."""

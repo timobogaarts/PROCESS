@@ -16,7 +16,7 @@ about the profile objects. If a ported function secretly needed something else o
 """
 
 import numpy as np
-from cottax.relational_pytree import to_graph
+from cottax.assemblies.jax import absolute
 
 from functional_process.cottax.models.physics.plasma_profiles import (
     PedestalProfileValues,
@@ -381,7 +381,7 @@ def test_pedestal_profile_values_assembles_alone():
     """`PedestalProfileValues` must assemble as its own one-node graph, the same
     minimal structural check `test_composition.py` runs for `PlasmaComposition`.
     """
-    graph = to_graph(PedestalProfileValues)
+    graph = absolute.declare(PedestalProfileValues).graph
     assert graph.definitions
 
 

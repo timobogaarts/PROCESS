@@ -3,7 +3,7 @@
 `ohcalc`'s superconducting-coil stress block.
 """
 
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import pf_coil
 from functional_process.models.pfcoil.stresses import (

@@ -20,7 +20,7 @@ but reached on the tokamak (`caller.py:331`), which adds two more units here:
 
 from types import MappingProxyType
 
-import cottax.relational_pytree as cx
+import cottax.assemblies.jax as cx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -31,7 +31,7 @@ from cottax.core import Combine, Plan
 from cottax.core.driven import DriverContract
 from cottax.consumers.execution import CallableGraph, run
 from cottax.core import GraphWithValues
-from cottax.relational_pytree import N
+from cottax.assemblies.jax import N
 from cottax.core.realisation import Implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
 
@@ -236,7 +236,7 @@ class _NewtonRootFindDriver(GapsDriver[PortRootFinding]):
 
 
 _ROOT_FIND = N["DuctDiameterRootFind"]
-"""Where `DuctDiameterRootFind`'s body is bound; its problem is `cx.minted_node("problem", ...)` of it."""
+"""Where `DuctDiameterRootFind`'s body is bound; its problem is `cx.absolute.minted_node("problem", ...)` of it."""
 
 
 def _drive(graph, at, contract, implementation, starts):
@@ -245,9 +245,9 @@ def _drive(graph, at, contract, implementation, starts):
     unknown `i`.
     """
     driven = (
-        Plan(graph) + cx.assign(graph, at, contract) + cx.implement({at: implementation})
+        Plan(graph) + cx.absolute.assign(at, contract) + cx.absolute.implement({at: implementation})
     ).graph
-    node = driven[cx.node(at)]
+    node = driven[cx.absolute.node(at)]
     places = node.data[node.contract.takes.index(Start)]
     return CallableGraph(driven), {
         p: jnp.asarray(v) for p, v in zip(places, starts, strict=True)
@@ -257,8 +257,8 @@ def _drive(graph, at, contract, implementation, starts):
 def _duct_diameter_root_find_driven():
     """`DuctDiameterRootFind` driven by `_NewtonRootFindDriver` from `d = 1.0`."""
     return _drive(
-        cx.to_graph({"DuctDiameterRootFind": DuctDiameterRootFind}),
-        cx.minted_node("problem", _ROOT_FIND),
+        cx.absolute.declare({"DuctDiameterRootFind": DuctDiameterRootFind}).graph,
+        cx.absolute.minted_node("problem", _ROOT_FIND),
         PortRootFinding(),
         _NewtonRootFindDriver(),
         (1.0,),
@@ -294,8 +294,8 @@ def test_duct_diameter_root_find_builds_cleanly():
     `ImplicitFunction`'s docstring promises: the problem owns the unknown and reads
     exactly what the body owns (its residual).
     """
-    g = cx.to_graph({"DuctDiameterRootFind": DuctDiameterRootFind})
-    name, problem_name = cx.node(_ROOT_FIND), cx.minted_node("problem", _ROOT_FIND)
+    g = cx.absolute.declare({"DuctDiameterRootFind": DuctDiameterRootFind}).graph
+    name, problem_name = cx.absolute.node(_ROOT_FIND), cx.absolute.minted_node("problem", _ROOT_FIND)
 
     assert set(g.nodes) == {name, problem_name}
     body, problem = g[name], g[problem_name]
@@ -359,11 +359,11 @@ def _duct_feasibility_graph():
     """`DuctFeasibility` (subject to `DuctFeasibilityConditions`' two inequalities)
     assembled together with them and `DuctDiameterRootFind`, each bound at its slot.
     """
-    return cx.to_graph({
+    return cx.absolute.declare({
         "DuctFeasibilityConditions": DuctFeasibilityConditions,
         "DuctDiameterRootFind": DuctDiameterRootFind,
         "DuctFeasibility": DuctFeasibility,
-    })
+    }).graph
 
 
 def test_duct_feasibility_forms_one_combined_cycle_with_the_root_find():
@@ -397,8 +397,8 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     codebase.
     """
     graph = _duct_feasibility_graph()
-    feasibility = graph[cx.node(N["DuctFeasibility"])]
-    root_find_problem = graph[cx.minted_node("problem", _ROOT_FIND)]
+    feasibility = graph[cx.absolute.node(N["DuctFeasibility"])]
+    root_find_problem = graph[cx.absolute.minted_node("problem", _ROOT_FIND)]
     assert is_feasibility(feasibility)
     assert is_root_find(root_find_problem)
 
@@ -496,13 +496,13 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     s_i = 0.5 * kw["ceff_i"]
 
     graph = _duct_feasibility_graph()
-    name = cx.node(N["DuctFeasibility"])
+    name = cx.absolute.node(N["DuctFeasibility"])
     # `DuctFeasibility + DuctDiameterRootFind`'s problem, bound where `DuctFeasibility`
     # was: unknowns `(ceff_i, d_duct)`, in that order.
     merged = (
-        Plan(graph) + Combine(name, (name, cx.minted_node("problem", _ROOT_FIND)), RelationalCondition)
+        Plan(graph) + Combine(name, (name, cx.absolute.minted_node("problem", _ROOT_FIND)), RelationalCondition)
     ).graph
-    assert merged[name] == graph[name] + graph[cx.minted_node("problem", _ROOT_FIND)]
+    assert merged[name] == graph[name] + graph[cx.absolute.minted_node("problem", _ROOT_FIND)]
 
     callable_graph, starts = _drive(
         merged,

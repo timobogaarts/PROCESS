@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/stellarator_helias.IN.DAT` by
 
 import numpy as np
 
-from cottax.relational_pytree import V, place
+from cottax.assemblies.jax import V, absolute
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
@@ -599,14 +599,14 @@ values = {
 
 problem = Optimisation(
     design={
-        place(V.physics.b_plasma_toroidal_on_axis): (4.0, 10.0),
-        place(V.physics.rmajor): (10.0, 30.0),
-        place(V.physics.temp_plasma_electron_vol_avg_kev): (3.0, 15.0),
-        place(V.physics.nd_plasma_electrons_vol_avg): (3e19, 3e20),
-        place(V.physics.hfact): (0.1, 1.2),
-        place(V.tfcoil.t_tf_superconductor_quench): (1.0, 50.0),
-        place(V.tfcoil.f_a_tf_turn_cable_copper): (0.3, 0.9),
-        place(V.physics.f_nd_alpha_thermal_electron): (0.0001, 0.4),
+        absolute.place(V.physics.b_plasma_toroidal_on_axis): (4.0, 10.0),
+        absolute.place(V.physics.rmajor): (10.0, 30.0),
+        absolute.place(V.physics.temp_plasma_electron_vol_avg_kev): (3.0, 15.0),
+        absolute.place(V.physics.nd_plasma_electrons_vol_avg): (3e19, 3e20),
+        absolute.place(V.physics.hfact): (0.1, 1.2),
+        absolute.place(V.tfcoil.t_tf_superconductor_quench): (1.0, 50.0),
+        absolute.place(V.tfcoil.f_a_tf_turn_cable_copper): (0.3, 0.9),
+        absolute.place(V.physics.f_nd_alpha_thermal_electron): (0.0001, 0.4),
     },
     equalities=(Constraint2IgnitedCoreRadiation, Constraint16),
     inequalities=(

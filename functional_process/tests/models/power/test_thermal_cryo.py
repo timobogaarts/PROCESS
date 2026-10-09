@@ -13,7 +13,7 @@ import inspect
 import jax
 import pytest
 from cottax.core import Function
-from cottax.relational_pytree import V, place, to_graph
+from cottax.assemblies.jax import V, absolute
 
 from functional_process.cottax.input.indat import (
     COMPONENT_THERMAL_POWERS,
@@ -591,10 +591,10 @@ def test_delta_eta_step_to_graph_builds(
     i_thermal_electric_conversion,
     i_shld_primary_heat,
 ):
-    """`to_graph(DeltaEtaStep arm)` succeeds, as **one plain node** -- the actual
+    """`absolute.declare(DeltaEtaStep arm).graph` succeeds, as **one plain node** -- the actual
     point of this split.
 
-    Before this split, `to_graph(ComponentThermalPowers(...))` raised `ValueError:
+    Before this split, `absolute.declare(ComponentThermalPowers(...)).graph` raised `ValueError:
     reads ['.power.delta_eta', ...], which it also owns` for every configuration
     (`cottax` refuses to build a node that both reads and owns one `VarPath`).
     `DeltaEtaStep` answered that with a `FixedPointFunction` cut, which minted a
@@ -616,7 +616,7 @@ def test_delta_eta_step_to_graph_builds(
         i_shld_primary_heat,
     )
     node = DELTA_ETA_STEP[arm]
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     cls_name = node.fn.__name__
     assert {n.spelling for n in graph.nodes} == {f"['{cls_name}']"}
     assert ".power.delta_eta" in {o.spelling for o in node.function_outputs}
@@ -668,14 +668,14 @@ def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
 
 
 def test_component_thermal_powers_to_graph_builds_cleanly():
-    """`to_graph(ComponentThermalPowers arm)` no longer raises at all.
+    """`absolute.declare(ComponentThermalPowers arm).graph` no longer raises at all.
 
     Before the six-way split it raised on six self-referencing fields; with all six
     owned elsewhere -- and five of them no longer even read -- it assembles as an
     ordinary single-node graph.
     """
     node = _component_thermal_powers()
-    graph = to_graph(node)
+    graph = absolute.declare(node).graph
     assert {n.spelling for n in graph.nodes} == {f"['{node.fn.__name__}']"}
 
 
@@ -1278,7 +1278,7 @@ def test_cryo_cannot_be_a_plain_node():
     refusal is cottax core's own rule, so it is shown on a hand-built `Function` with
     exactly that interface.
     """
-    qnuc = place(V.fwbs.qnuc)
+    qnuc = absolute.place(V.fwbs.qnuc)
     with pytest.raises(ValueError, match="which it also owns"):
         Function((qnuc,), (qnuc,))
 
@@ -1297,19 +1297,19 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
     qnuc_occupant = CRYO_Q_NUC[_cryo_q_nuc_arm(inuclear, i_tf_sup)]
     if qnuc_occupant is not None:
         qnuc_node = qnuc_occupant
-        assert {n.spelling for n in to_graph(qnuc_node).nodes} == {
+        assert {n.spelling for n in absolute.declare(qnuc_node).graph.nodes} == {
             f"['{qnuc_node.fn.__name__}']"
         }
 
     q_occupant = CRYO_Q_LOADS[_cryo_q_loads_arm(i_tf_sup, int(i_pf_conductor))]
     if q_occupant is not None:
         q_node = q_occupant
-        assert {n.spelling for n in to_graph(q_node).nodes} == {
+        assert {n.spelling for n in absolute.declare(q_node).graph.nodes} == {
             f"['{q_node.fn.__name__}']"
         }
 
     loads = CRYO_LOADS[_cryo_loads_arm(i_tf_sup, int(i_pf_conductor))]
-    assert {n.spelling for n in to_graph(loads).nodes} == {f"['{loads.fn.__name__}']"}
+    assert {n.spelling for n in absolute.declare(loads).graph.nodes} == {f"['{loads.fn.__name__}']"}
 
 
 def test_cryo_split_ownership_is_a_partition():

@@ -5,7 +5,7 @@ interactive page (`out/dsm/<configuration>_<arm>.html`).
     $PY paper_tests/architectures/structure.py [--scheme minimal] [--configurations ...]
 
 The graphs are `study`'s (`study.mda_graph`, `study.block_graph`), built without a
-solve. `cycles` and `cut_variables` are the closures `cx.mda` binds on the machine alone.
+solve. `cycles` and `cut_variables` are the closures `cx.absolute.mda` binds on the machine alone.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bench  # noqa: E402
-import cottax.relational_pytree as cx  # noqa: E402
+import cottax.assemblies.jax as cx  # noqa: E402
 from cottax.core import is_problem  # noqa: E402
-from cottax.relational_pytree import Eq, Le  # noqa: E402
+from cottax.assemblies.jax import Eq, Le  # noqa: E402
 from cottax.consumers.visualization import render_html  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
@@ -60,7 +60,7 @@ def main():
     rows = []
     for name in args.configurations:
         configuration = configurations.load(name)
-        closures = cx.mda(rule).resolution(study.machine_model(configuration).graph).closures
+        closures = cx.absolute.mda(rule).resolution(study.machine_model(configuration).graph).closures
         for arm in study.arms(configuration):
             graph = graph_of(configuration, arm, rule)
             rows.append({

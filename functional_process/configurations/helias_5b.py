@@ -7,7 +7,7 @@ Converted from `tests/regression/input_files/helias_5b.IN.DAT` by
 
 import numpy as np
 
-from cottax.relational_pytree import V, place
+from cottax.assemblies.jax import V, absolute
 from functional_process.configurations import Configuration, Optimisation
 from functional_process.cottax.models.availability.availability import (
     AvailNeutronFluence,
@@ -569,9 +569,9 @@ values = {
 
 problem = Optimisation(
     design={
-        place(V.physics.temp_plasma_electron_vol_avg_kev): (4.0, 25.0),
-        place(V.physics.nd_plasma_electrons_vol_avg): (3.005e19, 5.005e20),
-        place(V.physics.hfact): (0.1, 2.0),
+        absolute.place(V.physics.temp_plasma_electron_vol_avg_kev): (4.0, 25.0),
+        absolute.place(V.physics.nd_plasma_electrons_vol_avg): (3.005e19, 5.005e20),
+        absolute.place(V.physics.hfact): (0.1, 2.0),
     },
     equalities=(Constraint2IgnitedCoreRadiation, Constraint16),
     inequalities=(Constraint84, Constraint24TotalBeta),

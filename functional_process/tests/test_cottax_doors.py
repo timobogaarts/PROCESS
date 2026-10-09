@@ -9,12 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOOR = re.compile(
-    r"cottax\.(relational_pytree|core|core\.(driven|realisation|frozen|refusal_kinds)|relational|pytree"
-    r"|consumers\.(execution|json|openmdao|declaration|visualization|architectures|pickle"
+    r"cottax\.(assemblies\.jax|core|core\.(driven|realisation|frozen|refusal_kinds)|relational|pytree"
+    r"|consumers\.(execution|json|declaration|surface|visualization|architectures|pickle"
     r"|visualization\.latex)"
-    r"|consumers\.(execution|json|openmdao|declaration|visualization|architectures)"
+    r"|consumers\.(execution|json|declaration|surface|visualization|architectures)"
     r"\.(interface|interface_types|refusals)"
-    r"|(relational|pytree)\.consumers\.(execution|json|openmdao|declaration|visualization|architectures)"
+    r"|(relational|pytree)\.consumers\.(execution|json|declaration|surface|visualization|architectures)"
     r"|relational\.consumers\.execution\.jax_solvers)"
 )
 

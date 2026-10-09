@@ -7,8 +7,8 @@ say: a place the port names itself in another area, or a renamed read."""
 import difflib
 from collections.abc import Iterable
 
-from cottax.relational_pytree import DeclarationSurface, Shipped
-from cottax.pytree.consumers.declaration import PytreeNames
+from cottax.assemblies.jax import Shipped, ShippedSurface
+from cottax.pytree.consumers.surface import PytreeLocator
 from cottax.pytree import VarPath
 from jax.tree_util import GetAttrKey
 
@@ -32,14 +32,14 @@ the same name elsewhere: the stellarator winding pack's two areas, locals of
 tokamak's)."""
 
 
-class Area(PytreeNames):
+class Area(PytreeLocator):
     """One area of the data structure, reading a name where PROCESS keeps it: in this
     area if PROCESS has it here or has no such field (a quantity the port names), else
     in the one area PROCESS has it in."""
 
     area: str
 
-    def name(self, x: str) -> VarPath:
+    def place(self, x: str) -> VarPath:
         areas = AREAS_OF.get(x, ())
         if areas and self.area not in areas and PORT_PLACES.get(x) != self.area:
             elsewhere = PORT_PLACES.get(x) or (areas[0] if len(areas) == 1 else None)
@@ -72,7 +72,7 @@ class _Root:
             raise AttributeError(
                 f"{name!r} is not an area of this data structure.{hint}"
             )
-        return DeclarationSurface(Area(name), Shipped())
+        return ShippedSurface(Area(name), Shipped())
 
     def __repr__(self):
         return f"<PROCESS data structure: {len(self._names)} areas>"

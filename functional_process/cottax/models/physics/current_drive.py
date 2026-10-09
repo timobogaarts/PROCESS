@@ -1,6 +1,6 @@
 """Pure-functional port of `process/models/physics/current_drive.py`'s `CurrentDrive`."""
 
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import current_drive, heat_transport
 from functional_process.cottax.stated import states

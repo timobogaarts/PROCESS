@@ -25,7 +25,7 @@ from cottax.core.frozen import AbstractClassVar, Frozen
 from cottax.core.driven import DriverContract
 from cottax.consumers.execution.interface_types import ByRole, Context, Posed, Unknowns
 from cottax.consumers.execution.interface import DriverImplementation
-from cottax.relational_pytree import Box, NotSquare, box
+from cottax.assemblies.jax import Box, NotSquare, box
 from cottax.relational import Le, Max, Relation
 from jax.tree_util import GetAttrKey, register_pytree_with_keys
 

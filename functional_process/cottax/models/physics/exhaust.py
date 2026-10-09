@@ -1,6 +1,6 @@
 """Pure-functional port of `process/models/physics/exhaust.py`."""
 
-from cottax.relational_pytree import V
+from cottax.assemblies.jax import V
 
 from functional_process.cottax.paths import physics
 from functional_process.models.physics.exhaust import (

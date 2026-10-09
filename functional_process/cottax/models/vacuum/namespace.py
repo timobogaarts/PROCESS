@@ -3,7 +3,7 @@
 import dataclasses
 
 import equinox as eqx
-from cottax.relational_pytree import Explicit
+from cottax.assemblies.jax import Explicit
 
 
 class Vacuum(eqx.Module):
