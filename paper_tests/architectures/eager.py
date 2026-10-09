@@ -144,9 +144,18 @@ class _Stepped(DriverImplementation):
     max_steps: int = 256
 
     def __call__(self, posed, context, data):
-        solution = self.solve(posed, context, data)
+        if _traced((context, data[Start])):
+            # Under a trace (what runs once before the timed evaluation, inside
+            # `study.solve`), the compiled solve: a Python loop cannot branch on a tracer.
+            solution = self.compiled(posed, context, data)
+        else:
+            solution = self.solve(posed, context, data)
         steps = {Steps: (solution.stats["num_steps"],)}
         return tuple(solution.value), steps if Steps in posed.reports else {}
+
+
+def _traced(tree) -> bool:
+    return any(isinstance(leaf, jax.core.Tracer) for leaf in jax.tree.leaves(tree))
 
 
 class EagerPicard(_Stepped, DriverImplementation[FixedPointIterator]):
@@ -156,6 +165,12 @@ class EagerPicard(_Stepped, DriverImplementation[FixedPointIterator]):
         solver = optx.FixedPointIteration(rtol=self.rtol, atol=self.atol)
         return _stepped(
             "picard", solver, _update, data[Start], (posed, context), self.max_steps
+        )
+
+    def compiled(self, posed, context, data):
+        solver = optx.FixedPointIteration(rtol=self.rtol, atol=self.atol)
+        return optx.fixed_point(
+            _update, solver, data[Start], args=(posed, context), max_steps=self.max_steps
         )
 
 
@@ -179,6 +194,16 @@ def _linear_solve_uncompiled():
 class EagerNewton(_Stepped, DriverImplementation[RootFinder]):
     """cottax's `Newton` (`optx.Newton`), its loop stepped from Python, its linear
     solve uncompiled."""
+
+    def compiled(self, posed, context, data):
+        solver = optx.Newton(rtol=self.rtol, atol=self.atol)
+        return optx.root_find(
+            _residuals,
+            solver,
+            data[Start],
+            args=(posed, context),
+            max_steps=self.max_steps,
+        )
 
     def solve(self, posed, context, data):
         solver = optx.Newton(rtol=self.rtol, atol=self.atol)
