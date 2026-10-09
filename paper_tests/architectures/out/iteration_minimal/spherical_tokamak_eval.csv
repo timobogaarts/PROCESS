@@ -1,4 +1,4 @@
-# iteration.py, 2026-10-06, tcn585.local.snellius.surf.nl (x86_64), PROCESS a69d6abd, cottax 8ba473d
-configuration,arm,evaluate_ms,serial_us,jacobian_ms,serial_jacobian_us,compile_s,unknowns,block_nodes
-spherical_tokamak_eval,MDA,8.868991979397833,nan,nan,nan,5.630044439982157,0,259
-spherical_tokamak_eval,MDF,0.3197619807906449,172.45195980649441,0.4856590530835092,268.0668595712632,4.771452763990965,3,38
+# iteration.py, 2026-10-09, tcn585.local.snellius.surf.nl (x86_64), PROCESS 12ba3b8c, cottax a30eb62
+configuration,arm,evaluate_ms,serial_us,jacobian_ms,serial_jacobian_us,compile_s,unknowns,block_nodes,eager_walk_ms,eager_ms,eager_steps
+spherical_tokamak_eval,MDA,8.384499931707978,nan,nan,nan,5.674615607014857,0,259,nan,nan,-
+spherical_tokamak_eval,MDF,0.34469400998204947,175.99964048713446,0.5480610998347402,267.93595985509455,4.965935499058105,3,38,2.638284000568092,4.349711001850665,picard:1
