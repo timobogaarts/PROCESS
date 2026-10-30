@@ -67,12 +67,12 @@ class CurveRhs(PerUnknown):
 
 ROLE_PLACES = cx.absolute.role_places | cx.RolePlaces(
     OrderedMap((
-        (Converged, cx.Minted(mints.Converged())),
-        (Status, cx.Minted(mints.Status())),
-        (Bracket, cx.Minted(mints.Bracket())),
-        (CurveX, cx.Minted(mints.CurveX())),
-        (CurveLhs, cx.Minted(mints.CurveLhs())),
-        (CurveRhs, cx.Minted(mints.CurveRhs())),
+        (Converged, mints.Converged()),
+        (Status, mints.Status()),
+        (Bracket, mints.Bracket()),
+        (CurveX, mints.CurveX()),
+        (CurveLhs, mints.CurveLhs()),
+        (CurveRhs, mints.CurveRhs()),
     ))
 )
 """Where every role a port contract takes or reports goes: the shipped surface's rules

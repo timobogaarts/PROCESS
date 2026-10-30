@@ -50,7 +50,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     the wiring, not about a model.
     """
     graph = cx.absolute.declare({"relax": Relax}).graph
-    problem = cx.absolute.minted_node("solve", N["relax"])
+    problem = cx.absolute.node(cx.solve(N["relax"]))
     driven = (
         Plan(graph)
         + SURFACE.assign(problem, PortFixedPointIteration())

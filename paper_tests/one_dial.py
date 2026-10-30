@@ -63,7 +63,7 @@ import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from cottax.core import ExecutableGraph, Function  # noqa: E402
 from cottax.core.frozen import OrderedMap  # noqa: E402
-from cottax.assemblies.jax import Mint, Minted  # noqa: E402
+from cottax.assemblies.jax import Mint  # noqa: E402
 from cottax.pytree import NodePath, VarPath  # noqa: E402
 from cottax.core.refusal_kinds import RequirementUnanswered  # noqa: E402
 from cottax.core.frozen import violations  # noqa: E402
@@ -208,14 +208,14 @@ class Built(Mint):
     """The built machine's copy of a quantity a dial holds."""
 
 
-BUILT_MINT = Minted(Built())
+BUILT_MINT = Built()
 """The namespace a frozen build output's copy is minted in: `.vacuum.n_vac_pumps_high`
 -> `^built.vacuum.n_vac_pumps_high`, as the `PlaceToPlace` a `Cut` takes."""
 class Cond(Mint):
     """A condition this study derives, spelled as cottax's own conditions are."""
 
 
-COND = Minted(Cond())
+COND = Cond()
 CHECK = NodePath((GetAttrKey("Built"),))
 
 

@@ -10,7 +10,7 @@ parameter by position and a variadic parameter reads nothing.
 from __future__ import annotations
 
 from cottax.assemblies.jax import Explicit, Scope, absolute
-from cottax.assemblies.jax import Mint, Minted
+from cottax.assemblies.jax import Mint
 
 __all__ = ["STATED", "states"]
 
@@ -19,7 +19,7 @@ class Stated(Mint):
     """A model's stated value of a quantity, read where a body reads it."""
 
 
-STATED = Minted(Stated())
+STATED = Stated()
 """The namespace a stated value is read from: `^stated.<the place it is for>`."""
 
 

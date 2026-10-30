@@ -18,7 +18,7 @@ regression in its output would show up as a value mismatch downstream.
 import functools
 
 import pytest
-from cottax.assemblies.jax import N, absolute
+from cottax.assemblies.jax import N, absolute, solve
 from cottax.core.realisation import Implemented
 from cottax.relational import is_fixed_point
 
@@ -1087,7 +1087,7 @@ def test_cplife_avail_st_to_graph_assembles():
     node = CplifeAvailStSuperconductingAdjusted
     body, solved = (
         graph[_name(node)],
-        graph[absolute.minted_node("solve", _name(node))],
+        graph[absolute.node(solve(_name(node)))],
     )
     assert isinstance(body, Implemented)
     assert is_fixed_point(solved)

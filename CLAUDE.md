@@ -126,7 +126,7 @@ problem must assemble to the same class.
 **A model's output carries no mint.** A constraint's value is `.constraints.c<id>` and
 the figure of merit `.numerics.objf`, both in the port's own namespace beside the
 limits PROCESS already keeps there. `^cond` said the value was fabricated where it is
-computed; what cottax opens a namespace for is what a *rewrite* mints (`^hat`, `^mda`,
+computed; what cottax opens a namespace for is what a *rewrite* mints (`^copy`, `^closure`,
 `^guess`, `^require`).
 
 So the drift tables this file used to carry are gone (they are in the history, up to the
@@ -387,7 +387,7 @@ IN.DAT --init.init_process--> DataStructure (one big mutable object, ~40 datacla
 | Model constructor injection (`Models.__init__` wiring in `process/main.py`) | nothing yet — closest is a hand-assembled `Insert(nodes)`/`Graph([...])` | This is evidence of *intended* dependency structure (e.g. `PFCoil(cs_fatigue=..., cs_coil=...)`) that could seed which nodes to declare, but it wires *model objects*, not variables — it says nothing about which fields are read vs. owned. |
 | `if data.<switch> == <Enum member>: model_a.run() else: model_b.run()` (costs/blanket/TF coil/tokamak-stellarator-IFE variants) | no direct cottax equivalent — see Difficulties | Runtime variant dispatch on an enum switch. cottax's graph is a fixed structure per `Graph` instance; a switch like this means either building a different `Graph` per configuration, or finding a modelling convention cottax doesn't have yet. |
 | `Area` enum in `scan.py` | a manual, incomplete root-namespace list | Independent evidence that `data.<area>` is the natural unit of namespacing, from a completely different part of the codebase. |
-| `documentation/source/development/standards.md` naming scheme (`<type>_<system>_<description>_<units>`) | the spelling convention `Path.path_str()`/`written()` would render | PROCESS variable names already encode almost everything cottax asks a name to carry (what kind of quantity, which subsystem, units) — a real asset for readable minted names (`^cond.*`, `^hat.*`) and for choosing node/root names that read naturally. |
+| `documentation/source/development/standards.md` naming scheme (`<type>_<system>_<description>_<units>`) | the spelling convention `Path.path_str()`/`written()` would render | PROCESS variable names already encode almost everything cottax asks a name to carry (what kind of quantity, which subsystem, units) — a real asset for readable minted names (`^cond.*`, `^copy.*`) and for choosing node/root names that read naturally. |
 
 ## Difficulties specific to this rewrite (not yet resolved, don't paper over these)
 

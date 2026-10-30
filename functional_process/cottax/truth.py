@@ -3,7 +3,7 @@
 A place the configuration's state holds is read off it (`native.state_of`: the
 configuration's values over PROCESS's defaults). A place PROCESS never stores is either
 a `^stated` value (`indat.STATED_VALUES`) or one of `KNOWN_MINT_VALUES`, each an
-identity read off PROCESS's own source. A copy (`^hat.x`, `^start.x`) reads the place it
+identity read off PROCESS's own source. A copy (`^copy.x`, `^start.x`) reads the place it
 copies.
 """
 

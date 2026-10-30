@@ -782,8 +782,8 @@ def _usable(start) -> bool:
 def condition_scale(conditions: Gaps, start):
     """Per-condition scale for a Newton's residual norm and its tolerance test.
 
-    A residualised fixed point's gap `^cond.X = g(^hat.X, ...) - ^hat.X` is in the unit
-    of the unknown `^hat.X` (a density here: 1e20), so it is scaled by that unknown's
+    A residualised fixed point's gap `^cond.X = g(^copy.X, ...) - ^copy.X` is in the unit
+    of the unknown `^copy.X` (a density here: 1e20), so it is scaled by that unknown's
     start; a condition with no like-named unknown -- a normalised constraint, scale 1 --
     by 1. Without this a combined problem's `max|r|` is the density gap, and a tolerance
     of 1e-10 on it is below float64's resolution at 1e20.
