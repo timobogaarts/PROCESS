@@ -102,4 +102,7 @@ paper_tests/out/flex_he_*.npz
 paper_tests/out/flextok_*.npz
 
 # architecture variants: the measured rows, regenerable with run_all.sh
-paper_tests/architecture_variants/**/*.csv
+paper_tests/architecture_variants/out/
+
+# distributed architectures: benchmark tables, logs and DSM pages, regenerable with run_benchmark.sh and dsm.py
+paper_tests/distributed_architectures/out/
