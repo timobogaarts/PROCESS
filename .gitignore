@@ -100,3 +100,6 @@ paper_tests/out/flextok_*.json
 # the condensed arrays of the sampled studies: regenerable with --figures from a rerun
 paper_tests/out/flex_he_*.npz
 paper_tests/out/flextok_*.npz
+
+# architecture variants: the measured rows, regenerable with run_all.sh
+paper_tests/architecture_variants/**/*.csv
