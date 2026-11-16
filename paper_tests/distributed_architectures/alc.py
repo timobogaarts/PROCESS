@@ -30,19 +30,28 @@ read of the downstream ones, the multipliers `v`, the weights `w` and the last C
 holds `copy = value`, `merit_seen = merit` and the consistency `c = 0`. The three
 disciplines are nested in it.
 
-**The driver.** `Coordinator`, ALC's own (contract `AugmentedLagrangian`). Like any
-driver it reads the model's outputs each iteration (one sweep of the disciplines) and
-decides the next point from them: the copies move to what they copy; `v` and `w` follow
-the method of multipliers on `c`, once the copies settle. Each nested SLSQP starts from
-the same start in every sweep, not the last answer (FR-1).
+**The drivers.** ALC's own contract, `AugmentedLagrangian`, with two drivers. Like any
+driver each reads the model's outputs every iteration (one sweep of the disciplines) and
+decides the next point from them. Each nested SLSQP starts from the same start in every
+sweep, not the last answer (FR-1).
 
-**Three choices depart from Tosserams' stated algorithm** (`alc_report.md`,
+- **The paper baseline** (from 2026-11-16): `anderson.AndersonCoordinator`, at scipy's
+  defaults, with every weight 0.5. A sweep, then the multiplier update `v + 2w²c`, is a
+  map, and Anderson mixing of the last five sweeps chooses the next point.
+- `Coordinator`: the plain sweeps of the earlier runs and the 2026-11-11 benchmark. The
+  copies move to what they copy; `v` and `w` follow the method of multipliers on `c`,
+  once the copies settle.
+
+**The baseline departs from Tosserams' stated algorithm** (`alc_report.md`,
 "Departures"):
-1. the inner loop ends when the copies settle, not when the relaxed objective does,
-   with a fixed tolerance;
-2. the stopping test adds the multiplier step, the copies' movement and COE's to the
-   paper's two tests on `c`;
-3. `beta = 1`: the weights are never raised, below the paper's `beta > 1`.
+1. no inner loop: the multipliers are updated after every sweep (the paper's
+   alternating-direction variant), and successive sweeps are combined by Anderson mixing;
+2. `beta = 1`: the weights are never raised, below the paper's `beta > 1`;
+3. the stopping test is the paper's in kind (`c` small and no longer moving), at 1e-6,
+   with the copies' movement standing in for `c`'s.
+
+`Coordinator` departed in three choices instead: an inner loop that ends when the copies
+settle, a stopping test that adds the multiplier step and COE's movement, and `beta = 1`.
 
 What else convergence took, run by run, is in `alc_report.md`: SLSQP instead of VMCON,
 each objective divided by its penalty curvature, and no weight raised below tolerance.
@@ -51,8 +60,9 @@ No derivative is taken through any optimiser: each subproblem differentiates its
 models in its own variables, the others' variables fixed, and the coordination takes
 none.
 
-    python paper_tests/distributed_architectures/alc.py [--max-sweeps 3000] [--initial-weight 1]
-        [--beta 2.2] [--inner-tolerance 1e-3] [--no-aao]
+    python paper_tests/distributed_architectures/alc.py [--no-aao]     # the baseline
+    python paper_tests/distributed_architectures/alc.py --driver sweeps [--max-sweeps 3000]
+        [--initial-weight 1] [--beta 2.2] [--inner-tolerance 1e-3] [--no-aao]
 """
 
 from __future__ import annotations
@@ -105,6 +115,7 @@ class OperationCopy(Mint):
 
 class EconomicsCopy(Mint):
     """Economics' own copy of a quantity build or operation computes."""
+
 
 
 COPY = {OPERATION: OperationCopy(), ECONOMICS: EconomicsCopy()}
@@ -239,7 +250,9 @@ def recipe(b: C.Base, d: C.Disciplines, cons: Consistency) -> tuple:
        objectives' reads of the downstream copies cut (Gauss-Seidel, build first); the
        coordination problem inserted (`copy = value`, `merit_seen = merit`, `c = 0`),
        determined (the swept copies, `merit_seen`, `v`, `w`), and the three nested in
-       it. Its driver, not the graph, updates `v` and `w` (`Coordinator`).
+       it. Its driver, not the graph, updates `v` and `w` (`Coordinator`). The sweep
+       order does not matter here (`alc_report.md`, section 7), so only the data's is
+       built.
 
     Inside each discipline this is exactly what AAO's SAND does to the whole problem:
     the same cuts, the same closures, the same solve absorbed."""
@@ -457,22 +470,28 @@ def starts(cons: Consistency, initial_weight=INITIAL_WEIGHT) -> dict:
 
 def driven(configuration, d, cons, env, traces: dict, *, max_sweeps=MAX_SWEEPS,
            tolerance=TOLERANCE, dual_tolerance=DUAL_TOLERANCE, inner_tolerance=INNER_TOLERANCE,
-           max_inner=MAX_INNER, beta=BETA, gamma=GAMMA, max_iter=C.study.MAX_ITER, log=None) -> tuple:
+           max_inner=MAX_INNER, beta=BETA, gamma=GAMMA, max_iter=C.study.MAX_ITER, log=None,
+           coordinator=None) -> tuple:
     """`(model, graph)`: the recipe applied, each discipline answered by SLSQP and the
-    coordination by `Coordinator`."""
+    coordination by `Coordinator`, or by `coordinator(log)` (another
+    `AugmentedLagrangian` driver, as `anderson.py` builds; the `Coordinator` settings are
+    then unused)."""
     m, p = plan(configuration, d, cons)
-    coordination = (COORDINATION, AugmentedLagrangian(reports=(Steps,)),
-                    Coordinator(MULTIPLIER, WEIGHT, SEEN_MERIT, beta=beta, gamma=gamma,
-                                tolerance=tolerance, dual_tolerance=dual_tolerance,
-                                inner_tolerance=inner_tolerance, max_inner=max_inner,
-                                max_sweeps=max_sweeps, callback=log))
+    driver = coordinator(log) if coordinator is not None else Coordinator(
+        MULTIPLIER, WEIGHT, SEEN_MERIT, beta=beta, gamma=gamma, tolerance=tolerance,
+        dual_tolerance=dual_tolerance, inner_tolerance=inner_tolerance,
+        max_inner=max_inner, max_sweeps=max_sweeps, callback=log)
+    coordination = (COORDINATION, AugmentedLagrangian(reports=(Steps,)), driver)
     return m, C.drive(p, tuple(PROBLEM.values()), env, traces, max_iter=max_iter,
                       optimiser=SlsqpDriver, also=(coordination,)).graph
 
 
 def run(configuration, *, max_sweeps=MAX_SWEEPS, tolerance=TOLERANCE,
         dual_tolerance=DUAL_TOLERANCE, inner_tolerance=INNER_TOLERANCE, max_inner=MAX_INNER, beta=BETA, gamma=GAMMA,
-        initial_weight=INITIAL_WEIGHT, max_iter=C.study.MAX_ITER, verbose=True) -> dict:
+        initial_weight=INITIAL_WEIGHT, max_iter=C.study.MAX_ITER, verbose=True,
+        coordinator=None) -> dict:
+    """One ALC run: `Coordinator` at the settings given, or `coordinator(log)` (the
+    paper baseline: `anderson.coordinator`, with `initial_weight` 0.5)."""
     d = C.disciplines(configuration)
     state, env = C.mda_env(configuration)
     cons = consistency(d, env)
@@ -490,7 +509,8 @@ def run(configuration, *, max_sweeps=MAX_SWEEPS, tolerance=TOLERANCE,
     m, graph = driven(configuration, d, cons, env, traces, max_sweeps=max_sweeps,
                       tolerance=tolerance, dual_tolerance=dual_tolerance,
                       inner_tolerance=inner_tolerance,
-                      max_inner=max_inner, beta=beta, gamma=gamma, max_iter=max_iter, log=log)
+                      max_inner=max_inner, beta=beta, gamma=gamma, max_iter=max_iter, log=log,
+                      coordinator=coordinator)
     start = starts(cons, initial_weight)
     w0 = start[WEIGHT]
     inputs = C.values(graph, state, m.given, env, set(d.design), start=start)
@@ -512,6 +532,9 @@ def _report(graph, problem, role):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--driver", choices=("anderson", "sweeps"), default="anderson",
+                    help="anderson: the paper baseline (anderson.py, scipy's defaults); "
+                         "sweeps: Coordinator, with the options below")
     ap.add_argument("--max-sweeps", type=int, default=MAX_SWEEPS)
     ap.add_argument("--tolerance", type=float, default=TOLERANCE)
     ap.add_argument("--dual-tolerance", type=float, default=DUAL_TOLERANCE)
@@ -520,9 +543,17 @@ def main(argv=None):
     ap.add_argument("--max-inner", type=int, default=MAX_INNER)
     ap.add_argument("--beta", type=float, default=BETA)
     ap.add_argument("--gamma", type=float, default=GAMMA)
-    ap.add_argument("--initial-weight", type=float, default=INITIAL_WEIGHT)
+    ap.add_argument("--initial-weight", type=float, default=None,
+                    help="default: 0.5 with anderson, 1 with sweeps")
     ap.add_argument("--no-aao", action="store_true")
     args = ap.parse_args(argv)
+    coordinator, weight = None, INITIAL_WEIGHT
+    if args.driver == "anderson":
+        import anderson   # it imports this module: here, not at the top
+
+        coordinator, weight = anderson.coordinator, anderson.INITIAL_WEIGHT
+    if args.initial_weight is not None:
+        weight = args.initial_weight
     configuration = C.load(C.CONFIGURATION)
     d = C.disciplines(configuration)
     for k in C.DISCIPLINES:
@@ -536,7 +567,8 @@ def main(argv=None):
     result = run(configuration, max_sweeps=args.max_sweeps, tolerance=args.tolerance,
                  dual_tolerance=args.dual_tolerance,
                  inner_tolerance=args.inner_tolerance, max_inner=args.max_inner,
-                 beta=args.beta, gamma=args.gamma, initial_weight=args.initial_weight)
+                 beta=args.beta, gamma=args.gamma, initial_weight=weight,
+                 coordinator=coordinator)
     print(f"\nsolved in {result['seconds']:.1f} s (cold: includes compilation), "
           f"{result['steps']} sweeps, {result['updates']} multiplier updates, "
           f"max|c| {np.max(np.abs(result['c'])):.2e}")
@@ -563,4 +595,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    # Run as the module `anderson` imports, not as `__main__`: a second copy of this
+    # module would bring a second `AugmentedLagrangian`, which cottax rightly refuses as
+    # not the contract the coordination accepted.
+    import alc
+
+    alc.main()

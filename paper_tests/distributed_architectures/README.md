@@ -12,10 +12,12 @@ the same cuts and closures, and the coil's implicit solve absorbed.
 - **ALC**: augmented Lagrangian coordination (Tosserams, Etman & Rooda 2008) of build,
   operation and economics, split by design context. There are 43 consistency
   constraints, each discipline is an SLSQP solve, and the coordination is a fixed point
-  over the three, run by ALC's own driver (`alc.Coordinator`). Equivalent at its fixed
-  point. It departs from the paper's stated algorithm in three choices: the inner loop
-  ends when the copies settle (fixed tolerance), the stopping test is stricter, and the
-  weights are never raised (β = 1). What it took to converge, and how each choice stands
+  over the three. Equivalent at its fixed point. The paper baseline runs the coordination
+  with `scipy.optimize.anderson` at scipy's defaults (`anderson.py`), every weight 0.5;
+  `alc.Coordinator` is the plain sweep of the earlier runs. It departs from the paper's
+  stated algorithm in three choices: no inner loop, with Anderson mixing of the sweeps;
+  the weights are never raised (β = 1); and the stopping test is on the copies' movement
+  where the paper's is on `c`'s. What it took to converge, and how each choice stands
   against the paper, is in `alc_report.md`.
 
 ## The partition
@@ -139,17 +141,21 @@ constraints. What makes this work:
   mismatch currently carries.
 - **The coordinator sets the prices.** One sweep solves build, then operation (with
   build's new answer), then economics (with both). The coordinator then reads every
-  inconsistency and raises the price of each that persists (`v ← v + 2w²c`). It does so
-  once the copies have settled, or after 25 sweeps. This is the method of multipliers,
-  like a market finding the price at which supply meets demand. The weights stay at 1.
+  inconsistency and raises the price of each that persists (`v ← v + 2w²c`). This is the
+  method of multipliers, like a market finding the price at which supply meets demand.
+  The weights stay at 0.5.
+- **It also looks ahead.** Left alone, the sweeps creep: each moves the copies and prices
+  only a small part of the way still to go. So the coordinator keeps the last five sweeps,
+  sees where they are heading, and jumps there (Anderson acceleration). It needs no
+  derivatives: the history stands in for them.
 - **At the end** every copy agrees with what it copies (`c = 0`) and the prices have
   stopped moving. Each price is then the marginal value of its quantity to COE: how much
   COE would gain if, say, the coil mass could be 1 % lower. The three teams' optimality
   conditions together are then exactly those of PROCESS's single problem. That holds even
   though the problem is not convex. Here the answer is AAO's optimum: AAO started at
   ALC's answer stays there.
-- **What it costs, and what it buys.** 2336 sweeps, about 7000 small optimisations,
-  against AAO's one 16-iteration solve. In exchange, no team ever needs another team's
+- **What it costs, and what it buys.** 262 sweeps, about 790 small optimisations and
+  about 23 s on a laptop, against AAO's one 16-iteration solve in 0.07 s. In exchange, no team ever needs another team's
   models, variables or constraints, only the numbers that cross between them. So each
   could be a different code, solver or group of people.
 
@@ -166,17 +172,26 @@ ends up 4.4 % higher.
 | `sequential.py` | -- | the sequential recipe; run alone, its result and the refusal of a split whose problems share a cycle |
 | `alc.py` | -- | the ALC recipe, its coordination driver, and a run checked against AAO (AAO started at ALC's answer) |
 | `benchmark.py` | `benchmark.{csv,md}`, `benchmark_problems.csv` | AAO, sequential and ALC side by side: optimum, constraint violation, overarching-loop and per-problem iterations, cold and warm time (mean of `--runs`) |
-| `run_benchmark.sh` | `benchmark.log` | `benchmark.py` with the environment pinned (single-threaded BLAS, as the Snellius jobs) |
+| `anderson.py` | -- | ALC's coordination by `scipy.optimize.anderson` on the sweep map, a host callback as `SlsqpDriver` wraps scipy's SLSQP (`AndersonCoordinator`) |
+| `run_benchmark.sh` | `benchmark.log` (`alc.log`) | `benchmark.py` (`SCRIPT=alc`: `alc.py`) with the environment pinned (single-threaded BLAS, as the Snellius jobs) |
 | `dsm.py` | `stellarator_helias_{sequential,alc}.html` | the XDSM and N2 of a case, cottax's interactive page |
 | `alc_report.md` | -- | the ALC implementation, every change convergence needed, every run |
 
 ```bash
 cd ~/projects/functional_PROCESS/PROCESS
-paper_tests/distributed_architectures/run_benchmark.sh --runs 5     # ~30 min on one CPU, ALC most of it
-# one script by hand:
-JAX_PLATFORMS=cpu PYTHONPATH=~/projects/jaxgraph/src:.:paper_tests/distributed_architectures \
-    ~/anaconda3/envs/func_PROCESS_env/bin/python paper_tests/distributed_architectures/alc.py
+export COTTAX=<cottax>/src                  # see below
+paper_tests/distributed_architectures/run_benchmark.sh --runs 5     # ~4 min on one CPU, ALC most of it
+SCRIPT=alc paper_tests/distributed_architectures/run_benchmark.sh   # ALC alone, with the AAO checks
 ```
+
+**cottax.** The results so far (R9–R12, T1–T34) used cottax's old
+`distributed_architectures` branch, `0ffbd84` and then its tip `42fd44e`, which differs
+only in visualisation. The `~/projects/jaxgraph` checkout that `run_benchmark.sh` still
+defaults to no longer exists. `~/projects/cottax` is on another branch with a different
+history, and these scripts have not been run on it. To reproduce the results, snapshot
+that branch and point `COTTAX` at it:
+`git -C ~/projects/cottax archive 42fd44e src | tar -x -C <dir>`, then
+`COTTAX=<dir>/src`. The branch is `remotes/jaxgraph/distributed_architectures`.
 
 All three cases use SLSQP at the same settings (`ftol` 1e-8, `max_iter` 500, scaled
 coordinates, coupling conditions scaled by the MDA) and start from the file's design.

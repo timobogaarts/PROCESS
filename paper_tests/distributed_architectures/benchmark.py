@@ -16,15 +16,16 @@ What is the same in every case:
 
 What differs is the architecture: one problem (AAO), two in sequence with the magnet
 stage on its own objective and `b_t >= 5` (sequential, not equivalent), three coordinated
-by ALC (equivalent at its fixed point).
+by ALC (equivalent at its fixed point). ALC is the paper baseline: `anderson.py`'s
+Anderson coordination at scipy's defaults, every weight 0.5 (`alc_report.md` section 7).
 
 Each case is built and compiled once; the first solve is reported as **cold** (it
 includes compilation), then `runs` more solves of the same compiled graph are timed
 (**warm**, mean and standard deviation). Every count is checked to be the same in every
 run. Counts:
 
-- **Overarching loop**: ALC's coordination sweeps and multiplier updates; none for the
-  others (SAND on this base nests no MDA).
+- **Overarching loop**: ALC's coordination sweeps and multiplier updates (one per sweep
+  in the baseline); none for the others (SAND on this base nests no MDA).
 - **Sub-optimisers**: per optimisation problem, its SLSQP solves and their iterations
   in total over a run (ALC solves each discipline once per sweep, and once more when the
   coordination's interior is walked at its answer), and how many solves SLSQP did not
@@ -53,6 +54,7 @@ import partition as C
 from functional_process.cottax.architectures.drivers import SlsqpDriver
 
 import alc as A
+import anderson
 import sequential as S
 
 OUT = Path(__file__).parent / "out"
@@ -78,14 +80,20 @@ def build_sequential(configuration) -> dict:
             "problems": {"magnet": S.MAGNET, "plasma": S.PLASMA}, "log": None}
 
 
-def build_alc(configuration) -> dict:
+def build_alc(configuration, initial_weight=anderson.INITIAL_WEIGHT,
+              coordinator=anderson.coordinator) -> dict:
+    """ALC as the paper baseline (Anderson at scipy's defaults, every weight 0.5), or at
+    `initial_weight` with another `coordinator` factory (`None`: `alc.Coordinator` at its
+    defaults)."""
     d = C.disciplines(configuration)
     state, env = C.mda_env(configuration)
     cons = A.consistency(d, env)
     traces: dict = {}
     log: list = []
-    m, graph = A.driven(configuration, d, cons, env, traces, log=lambda *row: log.append(row))
-    inputs = C.values(graph, state, m.given, env, set(d.design), start=A.starts(cons))
+    m, graph = A.driven(configuration, d, cons, env, traces, coordinator=coordinator,
+                        log=lambda *row: log.append(row))
+    inputs = C.values(graph, state, m.given, env, set(d.design),
+                      start=A.starts(cons, initial_weight))
     return {"graph": graph, "inputs": inputs, "traces": traces,
             "problems": {k: A.PROBLEM[k] for k in C.DISCIPLINES}, "log": log}
 
@@ -169,7 +177,7 @@ def provenance() -> dict:
                                    capture_output=True, text=True, check=True).stdout.strip()
             return rev + ("+dirty" if dirty else "")
         except (OSError, subprocess.CalledProcessError):
-            return "?"
+            return f"not a git checkout: {Path(path).name}"   # e.g. a `git archive` snapshot
     import cottax
     import jax
     import scipy
@@ -211,10 +219,13 @@ def write(rows, runs) -> None:
              f"{prov['python']}; `OMP_NUM_THREADS` {prov['threads']}. Every optimisation "
              f"problem: SLSQP, `ftol` 1e-8, `max_iter` {C.study.MAX_ITER}, scaled, from the "
              f"file's start. Warm: mean ± standard deviation over {runs} runs of the compiled "
-             f"graph; cold: the first run, compilation included. ALC departs from Tosserams, "
-             f"Etman & Rooda (2008) in three choices: the inner loop ends when the copies "
-             f"settle (fixed tolerance), the stopping test is stricter, and the weights are "
-             f"never raised (β = 1); see `alc_report.md`.", "",
+             f"graph; cold: the first run, compilation included. ALC is the paper baseline: "
+             f"its coordination is `scipy.optimize.anderson` at scipy's defaults on the sweep "
+             f"(`anderson.py`), every weight 0.5, stopping at 1e-6 on `c` and on the copies' "
+             f"movement. It departs from Tosserams, Etman & Rooda (2008) in three choices: "
+             f"no inner loop, with Anderson mixing of the sweeps; the weights are never "
+             f"raised (β = 1); and the stopping test is on the copies' movement where the "
+             f"paper's is on `c`'s; see `alc_report.md`.", "",
              "| Case | COE | vs AAO | Max violation | Overarching loop | Sub-optimiser iterations (solves) | Cold (s) | Warm (s) |",
              "|---|---|---|---|---|---|---|---|"]
     for r in rows:
