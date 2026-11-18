@@ -29,11 +29,12 @@ from cottax.core import Plan
 from cottax.assemblies.jax import FixedPointIterator, RootFinder
 from cottax.consumers.execution.interface import DriverImplementation
 from cottax.core.driven import Start, Steps
+from cottax.core import FunctionalNode, is_driven
 from cottax.core.realisation import (
     Implement,
-    ImplementedDriven,
-    ImplementedFunction,
     Unimplement,
+    implementation_of,
+    is_implemented,
 )
 from cottax.core.frozen import OrderedMap
 from cottax.relational.consumers.execution.jax_solvers import Newton, Picard
@@ -231,12 +232,12 @@ def eager_graph(graph, node_jit: bool = True, solvers: bool = True):
     driver) as it was."""
     swapped = {}
     for name, node in graph.definitions.items():
-        impl = getattr(node, "implementation", None)
-        if solvers and isinstance(node, ImplementedDriven) and type(impl) in EAGER:
+        impl = implementation_of(node) if is_implemented(node) else None
+        if solvers and is_driven(node) and type(impl) in EAGER:
             swapped[name] = EAGER[type(impl)](
                 rtol=impl.rtol, atol=impl.atol, max_steps=impl.max_steps
             )
-        elif node_jit and isinstance(node, ImplementedFunction):
+        elif node_jit and isinstance(node, FunctionalNode) and impl is not None:
             swapped[name] = NodeJit(impl)
     names = tuple(swapped)
     return (Plan(graph) + Unimplement(names) + Implement(OrderedMap(swapped))).graph

@@ -26,7 +26,7 @@ import numpy as np
 import cottax.assemblies.jax as cx
 from cottax.core.frozen import OrderedMap
 from cottax.core import Plan, Rename
-from cottax.core.driven import is_driven
+from cottax.core import is_driven, kind_of
 from cottax.consumers.execution import CallableGraph, run
 from cottax.consumers.execution.interface_types import ConditionMap, Posed
 from cottax.assemblies.jax import RootFinding
@@ -113,9 +113,9 @@ def starts(graph) -> dict:
     """`{start place: the unknown it starts}` over every driven problem in `graph`."""
     pairs = {}
     for node in graph.definitions.values():
-        if is_driven(node) and Start in node.contract.takes:
-            slot = node.data[node.contract.takes.index(Start)]
-            pairs.update(zip(slot, node.unknowns, strict=True))
+        if is_driven(node) and Start in node.driver.contract.takes:
+            slot = node.driver.data[node.driver.contract.takes.index(Start)]
+            pairs.update(zip(slot, node.owns_inside, strict=True))
     return pairs
 
 
@@ -124,11 +124,11 @@ def _supplied(plan):
     owners = graph.graph.owners
     by_spelling = {v.spelling: v for v in owners}
     for name, node in graph.definitions.items():
-        if not (is_driven(node) and Start in node.contract.takes):
+        if not (is_driven(node) and Start in node.driver.contract.takes):
             continue
-        slot = node.data[node.contract.takes.index(Start)]
+        slot = node.driver.data[node.driver.contract.takes.index(Start)]
         onto = []
-        for start, unknown in zip(slot, node.unknowns, strict=True):
+        for start, unknown in zip(slot, node.owns_inside, strict=True):
             target = by_spelling.get(SUPPLIED_STARTS.get(unknown.spelling, ""))
             if target is not None and owners[target] not in graph.graph.descendants([
                 name
@@ -283,6 +283,7 @@ def _architecture(arm: str, rule=RULE):
 
 
 def _is_bound(node, r) -> bool:
+    node = kind_of(node)  # a condition node is read through its condition
     fixed = lambda side: side is None or side in node.parameters  # noqa: E731
     return r.op is Le and (
         (r.rhs in node.unknowns and fixed(r.lhs))
@@ -295,6 +296,7 @@ def condition_scale(node, env, floor=1e-12) -> tuple:
     a copy of one of its unknowns, measured in `env` (an MDA at the same design): the
     coupling conditions an SQP reads in the unknowns' own units. A constraint or the
     merit is left at 1."""
+    node = kind_of(node)  # a condition node is read through its condition
     unknowns = {_place(u): u for u in node.unknowns}
     scales = []
     for r in node.relations:
@@ -333,7 +335,7 @@ def block_plan(
     plan = Plan(model.graph) + _architecture(arm, rule)
     top = plan.graph[TOP]
     if isinstance(configuration.problem, Optimisation):
-        nlp = programme(top)
+        nlp = programme(top.condition)
         contract = PortMinimisation(reports=(Steps, Converged, Status) if reports else ())
         implementation = optimiser(
             n_equality=len(nlp.equalities),
@@ -373,7 +375,7 @@ def block_values(graph, state, given, env, design, nested_given: bool) -> Ordere
     anything else from the state, else `env`. `GIVEN_STARTS` applies to the starts of
     problems nested under the top where `nested_given`."""
     started = starts(graph)
-    top_starts = set(graph[TOP].data[graph[TOP].contract.takes.index(Start)])
+    top_starts = set(graph[TOP].driver.data[graph[TOP].driver.contract.takes.index(Start)])
     out = {}
     for var in graph.graph.boundary_inputs:
         if var in given:
@@ -489,7 +491,7 @@ def answer(configuration: Configuration, assembled: Assembled) -> dict:
     top = graph[TOP]
     reported = {
         role: np.asarray(out[slot[0]])
-        for role, slot in zip(top.contract.reports, top.reports, strict=True)
+        for role, slot in zip(top.driver.contract.reports, top.driver.reports, strict=True)
     }
     iterations = int(reported[Steps])
     x = tuple(float(np.asarray(out[u])) for u in problem_.design)
@@ -560,7 +562,7 @@ class Interior(ConditionMap):
     def of(cls, graph, problem) -> "Interior":
         node = graph[problem]
         interior = graph.interior(problem)
-        solved = set(node.unknowns)
+        solved = set(node.owns_inside)
         produced = set(interior.graph.owned_variables)
         fixed = tuple(
             dict.fromkeys(
@@ -569,7 +571,7 @@ class Interior(ConditionMap):
                 if p not in solved and p not in produced
             )
         )
-        return cls(CallableGraph(interior), node.unknowns, fixed, node.condition.reads)
+        return cls(CallableGraph(interior), node.owns_inside, fixed, node.condition.reads)
 
     def __call__(self, unknowns, context) -> tuple:
         given = dict(zip(self.context_places, context, strict=True))
@@ -589,10 +591,10 @@ def posed(graph, inputs, problem=TOP) -> tuple:
     fixed = conditions_.context_places
     data = {
         role: tuple(env[p] for p in slot)
-        for role, slot in zip(node.contract.takes, node.data, strict=True)
+        for role, slot in zip(node.driver.contract.takes, node.driver.data, strict=True)
     }
     return (
-        Posed(node.condition, node.contract.reports, conditions_, fixed),
+        Posed(node.condition, node.driver.contract.reports, conditions_, fixed),
         tuple(env[p] for p in fixed),
         data,
     )

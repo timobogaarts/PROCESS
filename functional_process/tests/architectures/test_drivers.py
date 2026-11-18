@@ -58,7 +58,7 @@ def test_picard_driver_drives_a_fixed_point_node_end_to_end():
     ).graph
     # The start is read at the problem's own `Start` place (`^start.toy.u`), not at the
     # unknown's name: writing the latter would be seeding the answer.
-    (start,) = driven[problem].data[driven[problem].contract.takes.index(Start)]
+    (start,) = driven[problem].driver.data[driven[problem].driver.contract.takes.index(Start)]
     out = run(
         GraphWithValues(
             CallableGraph(driven),

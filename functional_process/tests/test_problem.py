@@ -31,7 +31,7 @@ def _file(name):
 @pytest.mark.parametrize("name", NAMES)
 def test_every_configuration_states_its_problem(name):
     configuration = configurations.load(name)
-    top = problem_model(configuration).graph[TOP]
+    top = problem_model(configuration).graph[TOP].condition
     assert top.unknowns
     assert bool(top.objectives) == isinstance(configuration.problem, Optimisation)
 

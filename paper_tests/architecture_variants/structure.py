@@ -19,7 +19,7 @@ import common
 from common import bench
 
 import cottax.assemblies.jax as cx  # noqa: E402
-from cottax.core import Plan, is_problem  # noqa: E402
+from cottax.core import Plan, is_encloser  # noqa: E402
 
 from functional_process import configurations  # noqa: E402
 from functional_process.cottax import study  # noqa: E402
@@ -68,7 +68,7 @@ def main():
                 row.update({
                     "refused": "",
                     "nodes": len(graph.nodes),
-                    "problems": sum(is_problem(graph[n]) for n in graph.nodes),
+                    "problems": sum(is_encloser(graph[n]) for n in graph.nodes),
                     "nested": len(graph.within),
                     "steps": len(study.proved(graph).steps),
                     **arch_structure.top_of(graph),
