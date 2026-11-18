@@ -8,7 +8,7 @@
 #   PY=... COTTAX=... paper_tests/architecture_variants/run_all.sh
 set -u
 PY=${PY:-~/anaconda3/envs/func_PROCESS_env/bin/python}
-COTTAX=${COTTAX:-~/projects/jaxgraph/src}
+COTTAX=${COTTAX:-~/projects/cottax/src}
 export JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=$COTTAX
 # As the Snellius job (`../cluster/job_tables.sh`): single-threaded BLAS. scipy's OpenBLAS,
 # which SLSQP calls, gives last-bit different paths at 1 thread and at 2 or more, and

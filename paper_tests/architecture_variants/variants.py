@@ -26,14 +26,10 @@ import itertools
 from dataclasses import field
 
 import cottax.assemblies.jax as cx
-from cottax.core import FunctionalNode, Nest, Plan
-from cottax.consumers.architectures.architectures import (
-    Boxes,
-    Monolithic,
-    OnCycle,
-    combined,
-    one_mda,
-)
+from cottax.core import Combine, FunctionalNode, Nest, Plan, kind_of
+from cottax.core.frozen import answer
+from cottax.consumers.architectures import Boxes, Monolithic
+from cottax.consumers.architectures.interface import ModelReading
 from cottax.assemblies.jax import RootFinding
 from cottax.relational import programme
 from cottax.relational.consumers.execution.jax_solvers import Newton
@@ -70,6 +66,23 @@ class AllBut(Boxes):
         return f"all-but({', '.join(sorted(map(str, self.names)))})"
 
 
+def _combined(graph, into, nodes):
+    """`nodes` combined into `into`, their first, as `into`'s `ModelReading` folds it:
+    one `Combine`, or none for one node. cottax's own `combined`, less its refusal."""
+    if not nodes[1:]:
+        return ()
+    kind = kind_of(graph[into])
+    return (Combine(into, nodes, answer(ModelReading, kind).combines_as(kind)),)
+
+
+def _one_mda(graph, closures, declared, within):
+    """A cycle's closures folded into its first, the MDA, nested in `within`, and each
+    declared problem nested in the MDA. cottax's own `one_mda`, for a cycle with closures."""
+    mda = closures[0]
+    return (*_combined(graph, mda, closures), Nest(mda, within),
+            *(Nest(p, mda) for p in declared))
+
+
 class Hybrid(Monolithic):
     """Per cycle of the top's scope: its closures folded into one MDA nested in `top`
     where `mda` names the cycle (by its first closure, the name MDF gives that MDA),
@@ -98,11 +111,11 @@ class Hybrid(Monolithic):
             taken = tuple(p for p in cycle.declared if p in self.absorbed)
             if cycle.closures and cycle.closures[0] in self.mda:
                 to_top.extend(taken)
-                placed.extend(one_mda(self, opened, OnCycle(cycle.closures, local), self.top))
+                placed.extend(_one_mda(opened, cycle.closures, local, self.top))
             else:
                 to_top.extend((*cycle.closures, *taken))
                 placed.extend(Nest(p, self.top) for p in local)
-        return (*combined(self, opened, self.top, tuple(to_top)), *placed)
+        return (*_combined(opened, self.top, tuple(to_top)), *placed)
 
     def __repr__(self) -> str:
         return (f"{self._repr()[:-1]}, mda={sorted(map(str, self.mda))}, "

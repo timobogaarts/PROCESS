@@ -28,7 +28,7 @@ cd ~/projects/functional_PROCESS/PROCESS
 paper_tests/architecture_variants/run_all.sh          # ~1.5-2.5 h on one CPU, resumes where it stopped
 paper_tests/architecture_variants/table.py            # with the env below
 # one variant by hand:
-JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=~/projects/jaxgraph/src \
+JAX_ENABLE_X64=1 JAX_PLATFORMS=cpu PYTHONPATH=~/projects/cottax/src \
     ~/anaconda3/envs/func_PROCESS_env/bin/python paper_tests/architecture_variants/solve.py \
     --configurations helias_5b --variants FO --starts 3
 ```
