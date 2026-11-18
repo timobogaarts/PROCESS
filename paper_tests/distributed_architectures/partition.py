@@ -26,7 +26,7 @@ jax.config.update("jax_enable_x64", True)
 import cottax.assemblies.jax as cx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
-from cottax.core import Plan, Violation, unminted  # noqa: E402
+from cottax.core import ConditionalNode, Plan, Violation, unminted  # noqa: E402
 from cottax.core.frozen import OrderedMap  # noqa: E402
 from cottax.relational import programme  # noqa: E402
 
@@ -399,7 +399,7 @@ class Base:
         if node is not None:
             readers = {r for cut in node.cuts for r in cut.readers}
         else:
-            readers = {r for u in g[label].unknowns for r in g.graph.readers.get(u, ())}
+            readers = {r for u in g[label].owns_inside for r in g.graph.readers.get(u, ())}
         found = [k for k, ns in discipline_nodes.items() if readers & ns]
         if len(found) != 1:
             raise ValueError(f"{label} is read by {found or 'no discipline'}")
@@ -407,12 +407,12 @@ class Base:
 
 
 def base(configuration, rule=study.RULE) -> Base:
-    from cottax.core.maths.plan import Combine
-    from cottax.relational.rewrites import FixedPointCut
+    from cottax.core import Combine
+    from cottax.relational import FixedPointCut
 
     model = problem_model(configuration)
     graph = model.graph
-    top = graph[TOP]
+    top = graph[TOP].condition
     by_held = {held(c): cid(c) for c in (*configuration.problem.equalities,
                                          *configuration.problem.inequalities)}
     bounds = OrderedMap((x, tuple(r for r in top.relations
@@ -435,15 +435,15 @@ def condition(objective=None, relations=(), parameters=()):
     """A condition node determining nothing, as a recipe inserts one: minimising
     `objective` (if any), holding `relations` over `parameters`."""
     objectives = () if objective is None else (cx.Objective(objective, cx.Min),)
-    return cx.RelationalCondition(relations=tuple(relations), objectives=objectives,
-                                  unknowns=(), parameters=tuple(parameters))
+    return ConditionalNode(cx.RelationalCondition(relations=tuple(relations), objectives=objectives,
+                                                  unknowns=(), parameters=tuple(parameters)))
 
 
 def requirement_of(closure):
     """AAO's closure of a `FixedPointCut` (`^copy.x = x` per cut), determining nothing:
     the `Insert` that, after its `Cut`s, closes the loop, to be combined into the
     problem that owns its copies."""
-    return condition(relations=closure.definition.relations)
+    return condition(relations=closure.definition.condition.relations)
 
 
 def held_parameters(b: Base, relations) -> tuple:
@@ -454,7 +454,7 @@ def held_parameters(b: Base, relations) -> tuple:
 
 def insert(label, node):
     """`node` inserted at `label`: one binding."""
-    from cottax.core.maths.plan import Insert
+    from cottax.core import Insert
     return Insert(OrderedMap(((label, node),)))
 
 
@@ -507,7 +507,7 @@ def drive(plan: Plan, tops, env, traces: dict, *, max_iter=study.MAX_ITER, optim
         implementations[problem] = implementation
     for t in tops:
         top = plan.graph[t]
-        nlp = programme(top)
+        nlp = programme(top.condition)
         plan = plan + SURFACE.assign(t, PortMinimisation(reports=(Steps, Converged, Status)))
         traces[t] = []
         implementations[t] = optimiser(
@@ -565,7 +565,7 @@ def report(graph, out, top, trace) -> dict:
     """`status`, `iterations`, `objf`, `max_eq`, `min_ie` of one top off a run."""
     node_ = graph[top]
     reported = {role: np.asarray(out[slot[0]])
-                for role, slot in zip(node_.contract.reports, node_.reports, strict=True)}
+                for role, slot in zip(node_.driver.contract.reports, node_.driver.reports, strict=True)}
     iterations = int(reported[Steps])
     status = ("converged" if reported[Converged] else "no-step" if not iterations
               else "cap" if iterations >= study.MAX_ITER else "stopped")

@@ -31,9 +31,10 @@ from __future__ import annotations
 import argparse
 
 import cottax.assemblies.jax as cx
-from cottax.core import Function, Mint, Plan
-from cottax.core.maths.plan import Combine, Delete, Determine, Undetermine
-from cottax.core.realisation import ImplementedFunction
+from cottax.core import FunctionalNode, Mint, Plan
+from cottax.core import Combine, Delete
+from cottax.relational import Determine, Undetermine
+from cottax.core.realisation import implemented
 
 from functional_process.cottax.architectures.drivers import SlsqpDriver
 from functional_process.cottax.models.constraints import NUMERICS, CostOfElectricity, area_of
@@ -64,8 +65,8 @@ report's first finding)."""
 def magnet_merit():
     """Figure of merit 1, `0.2 rmajor`, at `MAGNET_MERIT`. WORKAROUND(FR-10): a plain
     body for the inserted function."""
-    return ImplementedFunction(Function((RMAJOR,), (MAGNET_MERIT,)),
-                               lambda rmajor: O.objective_metric_1(rmajor))
+    return implemented(FunctionalNode((RMAJOR,), (MAGNET_MERIT,)),
+                       lambda rmajor: O.objective_metric_1(rmajor))
 
 
 def _with_lower(relations, x, lower):
@@ -126,7 +127,7 @@ def recipe(b: C.Base, part: C.Partition, bt_min=BT_MIN) -> tuple:
 
     # 3. Add
     for k in ("magnet", "plasma"):
-        absorbed = (*(u for s in b.solves if owner[s] == k for u in b.graph[s].unknowns),
+        absorbed = (*(u for s in b.solves if owner[s] == k for u in b.graph[s].owns_inside),
                     *(m for c in b.closures if owner[c.at] == k for m in c.copies))
         ops.append(Determine(label[k], (*design[k], *absorbed)))
     return tuple(ops)

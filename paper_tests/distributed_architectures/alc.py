@@ -79,12 +79,13 @@ from jax.tree_util import GetAttrKey
 
 import cottax.assemblies.jax as cx
 from cottax.assemblies.jax import Scope, V
-from cottax.core import Function, Mint, Plan
+from cottax.core import FunctionalNode, Mint, Plan
 from cottax.core.driven import Start, Steps
-from cottax.core.maths.plan import Combine, Cut, Delete, Determine, Nest, Undetermine
-from cottax.core.realisation import ImplementedFunction
+from cottax.core import Combine, Cut, Delete, Nest
+from cottax.relational import Determine, Undetermine
+from cottax.core.realisation import implemented
 
-from cottax.core import is_problem
+from cottax.core import kind_of
 from cottax.core.driven import DriverContract
 from functional_process.cottax.architectures.drivers import SlsqpDriver
 from functional_process.cottax.architectures.reading import PortDriver, Reading
@@ -221,7 +222,7 @@ def consistency_body(reference):
 
 def function(body, reads, owns):
     """A function node's definition (not a graph operation). WORKAROUND(FR-10)."""
-    return ImplementedFunction(Function(tuple(reads), tuple(owns)), body)
+    return implemented(FunctionalNode(tuple(reads), tuple(owns)), body)
 
 
 insert = C.insert
@@ -290,7 +291,7 @@ def recipe(b: C.Base, d: C.Disciplines, cons: Consistency) -> tuple:
     # 3. Add
     held = {h: tuple(COPY[h](k.place) for k in d.copies_held_by(h)) for h in C.DISCIPLINES}
     for k in C.DISCIPLINES:
-        absorbed = (*(u for s in b.solves if owner[s] == k for u in b.graph[s].unknowns),
+        absorbed = (*(u for s in b.solves if owner[s] == k for u in b.graph[s].owns_inside),
                     *(m for c in b.closures if owner[c.at] == k for m in c.copies))
         ops.append(Determine(PROBLEM[k], (*d.designs[k], *absorbed, *held[k])))
     rank = {k: i for i, k in enumerate(C.DISCIPLINES)}
@@ -326,7 +327,8 @@ def is_coordination(node) -> bool:
     """A coordination: no objective; some unknowns each on the left of one equality,
     moved to its right-hand side every sweep; the others (multipliers and weights) on
     none; every other relation an equality held at zero (the consistency)."""
-    if not is_problem(node) or node.objectives:
+    node = kind_of(node)  # a contract is asked of the condition
+    if not node.owns_inside or node.objectives:
         return False
     unknowns = set(node.unknowns)
     moved = [r.lhs for r in node.relations if r.lhs in unknowns]
@@ -527,7 +529,7 @@ def run(configuration, *, max_sweeps=MAX_SWEEPS, tolerance=TOLERANCE,
 
 def _report(graph, problem, role):
     node = graph[problem]
-    return dict(zip(node.contract.reports, node.reports, strict=True))[role][0]
+    return dict(zip(node.driver.contract.reports, node.driver.reports, strict=True))[role][0]
 
 
 def main(argv=None):
