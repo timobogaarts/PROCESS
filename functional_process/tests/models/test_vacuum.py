@@ -32,7 +32,7 @@ from cottax.core.driven import DriverContract
 from cottax.consumers.execution import CallableGraph, run
 from cottax.core import GraphWithValues
 from cottax.assemblies.jax import N
-from cottax.core.realisation import Implemented
+from cottax.core.realisation import is_implemented
 from cottax.relational import Eq, RelationalCondition, is_feasibility, is_root_find
 
 from functional_process.cottax.architectures.contracts import SURFACE, PortRootFinding, Start
@@ -248,7 +248,7 @@ def _drive(graph, at, contract, implementation, starts):
         Plan(graph) + SURFACE.assign(at, contract) + cx.absolute.implement({at: implementation})
     ).graph
     node = driven[cx.absolute.node(at)]
-    places = node.data[node.contract.takes.index(Start)]
+    places = node.driver.data[node.driver.contract.takes.index(Start)]
     return CallableGraph(driven), {
         p: jnp.asarray(v) for p, v in zip(places, starts, strict=True)
     }
@@ -299,8 +299,8 @@ def test_duct_diameter_root_find_builds_cleanly():
 
     assert set(g.nodes) == {name, problem_name}
     body, problem = g[name], g[problem_name]
-    assert isinstance(body, Implemented)
-    assert is_root_find(problem)
+    assert is_implemented(body)
+    assert is_root_find(problem.condition)
     assert problem.owns == (vpath(".vacuum.d_duct"),)
     assert problem.reads == body.owns
     assert body.reads == (
@@ -397,8 +397,8 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     codebase.
     """
     graph = _duct_feasibility_graph()
-    feasibility = graph[cx.absolute.node(N["DuctFeasibility"])]
-    root_find_problem = graph[cx.absolute.node(cx.solve(_ROOT_FIND))]
+    feasibility = graph[cx.absolute.node(N["DuctFeasibility"])].condition
+    root_find_problem = graph[cx.absolute.node(cx.solve(_ROOT_FIND))].condition
     assert is_feasibility(feasibility)
     assert is_root_find(root_find_problem)
 
@@ -406,7 +406,7 @@ def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
     assert is_feasibility(joined)
     assert joined.unknowns == feasibility.unknowns + root_find_problem.unknowns
     assert joined.relations == feasibility.relations + root_find_problem.relations
-    assert joined.conditions == feasibility.conditions + root_find_problem.conditions
+    assert joined.reads_inside == feasibility.reads_inside + root_find_problem.reads_inside
 
 
 class _FeasibilityFinding(DriverContract):

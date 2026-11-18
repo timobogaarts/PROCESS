@@ -132,7 +132,7 @@ def exit_code(assembled):
     if LAST.get("graph") is not assembled.graph:
         return None
     top = assembled.graph[TOP]
-    slots = dict(zip(top.contract.reports, top.reports, strict=True))
+    slots = dict(zip(top.driver.contract.reports, top.driver.reports, strict=True))
     if Status not in slots:
         return None
     return int(np.asarray(LAST["out"][slots[Status][0]]))
@@ -295,7 +295,7 @@ class Starts:
         self.block_given = study.problem_model(configuration).given
         started = study.starts(assembled.graph)
         top = assembled.graph[TOP]
-        top_starts = top.data[top.contract.takes.index(study.Start)]
+        top_starts = top.driver.data[top.driver.contract.takes.index(study.Start)]
         self.design_starts = {s: started[s] for s in top_starts if started[s] in set(self.design)}
         self.x0 = {u: float(np.asarray(assembled.inputs[s])) for s, u in self.design_starts.items()}
 

@@ -19,7 +19,7 @@ import functools
 
 import pytest
 from cottax.assemblies.jax import N, absolute, solve
-from cottax.core.realisation import Implemented
+from cottax.core.realisation import is_implemented
 from cottax.relational import is_fixed_point
 
 from functional_process.cottax.models.availability.availability import (
@@ -1071,7 +1071,7 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
     node = occupant
     graph = absolute.declare(node).graph
     body = graph[_name(node)]
-    assert isinstance(body, Implemented)
+    assert is_implemented(body)
     assert set(node.function_outputs) == {CPLIFE_VAR}
     assert CPLIFE_VAR not in set((r.place for r in node.function_reads))
     assert graph.graph.is_acyclic
@@ -1089,8 +1089,8 @@ def test_cplife_avail_st_to_graph_assembles():
         graph[_name(node)],
         graph[absolute.node(solve(_name(node)))],
     )
-    assert isinstance(body, Implemented)
-    assert is_fixed_point(solved)
+    assert is_implemented(body)
+    assert is_fixed_point(solved.condition)
     assert solved.owns == (CPLIFE_VAR,)
     assert graph.graph.is_acyclic
 
@@ -1110,7 +1110,7 @@ def test_branch_node_to_graph_assembles(node):
     standalone, no longer raises the pre-split `reads [...], which it also owns` error.
     """
     graph = absolute.declare(node).graph
-    assert isinstance(graph[_name(node)], Implemented)
+    assert is_implemented(graph[_name(node)])
 
 
 def test_avail_and_cplife_avail_compose_without_ownership_conflict():
@@ -1118,7 +1118,7 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     cplife_node = CplifeAvailSuperconducting
     avail_node = AvailNeutronFluence
     graph = absolute.declare(cplife_node, avail_node).graph
-    assert isinstance(graph[_name(avail_node)], Implemented)
+    assert is_implemented(graph[_name(avail_node)])
     assert CPLIFE_VAR not in set((r.place for r in avail_node.function_reads))
     assert graph.graph.is_acyclic
 
@@ -1130,5 +1130,5 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
     cplife_node = CplifeAvailStSuperconductingAdjusted
     avail_st_node = AvailStNeutronFluenceSphericalTokamakSuperconducting
     graph = absolute.declare(cplife_node, avail_st_node).graph
-    assert isinstance(graph[_name(avail_st_node)], Implemented)
+    assert is_implemented(graph[_name(avail_st_node)])
     assert graph.graph.is_acyclic

@@ -12,7 +12,7 @@ import inspect
 
 import jax
 import pytest
-from cottax.core import Function
+from cottax.core import FunctionalNode
 from cottax.assemblies.jax import V, absolute
 
 from functional_process.cottax.input.indat import (
@@ -1275,12 +1275,12 @@ _CRYO_SWITCH_COMBOS = [
 def test_cryo_cannot_be_a_plain_node():
     """`calculate_cryo` is not declared as a node because a node doing what it does
     would both read and own `.fwbs.qnuc` -- the reason the split below exists. The
-    refusal is cottax core's own rule, so it is shown on a hand-built `Function` with
+    refusal is cottax core's own rule, so it is shown on a hand-built `FunctionalNode` with
     exactly that interface.
     """
     qnuc = absolute.place(V.fwbs.qnuc)
     with pytest.raises(ValueError, match="which it also owns"):
-        Function((qnuc,), (qnuc,))
+        FunctionalNode((qnuc,), (qnuc,))
 
 
 @pytest.mark.parametrize(("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS)

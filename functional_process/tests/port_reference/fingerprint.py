@@ -21,6 +21,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from cottax.core.realisation import implementation_of, is_implemented
+
 HERE = Path(__file__).parent
 
 
@@ -57,13 +59,13 @@ def node(name, d) -> dict:
            "owns": [place(p) for p in d.owns], "levels": []}
     while True:
         out["levels"].append(type(d).__name__)
-        if hasattr(d, "implementation"):
-            out["body"] = body(d.implementation)
-            out["settings"] = settings(d.implementation)
-        if hasattr(d, "driver"):
-            out["driver"] = type(d.contract).__name__
-            out["data"] = [[place(p) for p in slot] for slot in d.data]
-            out["reports"] = [[place(p) for p in slot] for slot in d.reports]
+        if is_implemented(d):
+            out["body"] = body(implementation_of(d))
+            out["settings"] = settings(implementation_of(d))
+        if getattr(d, "driver", None) is not None:
+            out["driver"] = type(d.driver.contract).__name__
+            out["data"] = [[place(p) for p in slot] for slot in d.driver.data]
+            out["reports"] = [[place(p) for p in slot] for slot in d.driver.reports]
         inner = next((getattr(d, f) for f in ("node", "function", "condition")
                       if dataclasses.is_dataclass(d) and f in {x.name for x in dataclasses.fields(d)}),
                      None)

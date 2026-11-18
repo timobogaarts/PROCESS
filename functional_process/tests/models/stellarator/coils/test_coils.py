@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.core.frozen import OrderedMap
-from cottax.core import is_problem, Plan
+from cottax.core import is_encloser, Plan
 from cottax.consumers.execution import CallableGraph, run
 from cottax.core import GraphWithValues
 from cottax.assemblies.jax import V
@@ -470,19 +470,19 @@ class TestIntersect(Tier2Contract):
 
 
 def _problems(graph):
-    return tuple(name for name, d in graph.definitions.items() if is_problem(d))
+    return tuple(name for name, d in graph.definitions.items() if is_encloser(d))
 
 
 def test_intersect_declares_a_body_and_a_root_find_problem():
     """`to_graph(Intersect)` must assemble cleanly into exactly two nodes: the residual
-    body (an `ImplementedFunction`) and the root-find problem it feeds -- the pair a
+    body (an implemented `FunctionalNode`) and the root-find problem it feeds -- the pair a
     `residual` wrapper declares.
     """
     graph = cx.absolute.declare(Intersect).graph
     assert len(graph.definitions) == 2
     assert not graph.graph.is_acyclic
     (problem,) = _problems(graph)
-    assert is_root_find(graph[problem])
+    assert is_root_find(graph[problem].condition)
 
 
 def test_intersect_body_reads_the_unknown_back_without_owning_it():
@@ -528,7 +528,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
         + cx.absolute.implement({problem: IntersectBisectionNewtonPolish()})
     ).graph
     node = driven[problem]
-    slot = lambda role: node.data[node.contract.takes.index(role)][0]  # noqa: E731
+    slot = lambda role: node.driver.data[node.driver.contract.takes.index(role)][0]  # noqa: E731
     wp_width_r_path = cx.absolute.place(V.stellarator.wp_width_r)
     lhs_path = cx.absolute.place(V.stellarator.lhs)
     rhs_path = cx.absolute.place(V.stellarator.rhs)

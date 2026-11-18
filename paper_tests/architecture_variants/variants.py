@@ -64,7 +64,7 @@ class AllBut(Boxes):
     names: frozenset
 
     def folded(self, graph):
-        return tuple(p for p in graph.problems if p not in self.names)
+        return tuple(p for p in graph.enclosers if p not in self.names)
 
     def __repr__(self) -> str:
         return f"all-but({', '.join(sorted(map(str, self.names)))})"
@@ -138,8 +138,8 @@ def _plan_under(configuration, op):
 def switches(configuration, rule=study.RULE) -> Switches:
     graph = _plan_under(configuration, cx.absolute.mdf(TOP, rule)).graph
     within = dict(graph.within)
-    blocks = tuple(p for p in graph.problems if within.get(p) == TOP and _is_closure(p))
-    implicit = tuple(p for p in graph.problems
+    blocks = tuple(p for p in graph.enclosers if within.get(p) == TOP and _is_closure(p))
+    implicit = tuple(p for p in graph.enclosers
                      if not _is_closure(p) and p != TOP and within.get(p) in (TOP, *blocks))
     return Switches(blocks, implicit)
 
@@ -223,12 +223,12 @@ def inner_problems(graph) -> tuple[Inner, ...]:
         return False
 
     out = []
-    for p in graph.problems:
+    for p in graph.enclosers:
         if p == TOP or not under_top(p):
             continue
         node = graph[p]
-        slots = dict(zip(node.contract.reports, node.reports, strict=True))
-        kind = "fixed-point" if isinstance(node.contract, PortFixedPointIteration) else "root-find"
+        slots = dict(zip(node.driver.contract.reports, node.driver.reports, strict=True))
+        kind = "fixed-point" if isinstance(node.driver.contract, PortFixedPointIteration) else "root-find"
         size = sum(isinstance(graph[n], FunctionalNode) for n in graph.cycle_of(p))
         out.append(Inner(p, kind, size, slots[Steps][0]))
     return tuple(out)
@@ -249,7 +249,7 @@ def variant_plan(configuration, variant, env, trace, rule=study.RULE, optimiser=
     plan = Plan(model.graph) + hybrid(variant, rule)
     top = plan.graph[TOP]
     if isinstance(configuration.problem, Optimisation):
-        nlp = programme(top)
+        nlp = programme(top.condition)
         contract = PortMinimisation(reports=(Steps, Converged, Status) if reports else ())
         implementation = optimiser(
             n_equality=len(nlp.equalities),
